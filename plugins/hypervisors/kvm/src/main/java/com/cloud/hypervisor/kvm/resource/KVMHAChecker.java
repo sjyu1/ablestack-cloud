@@ -40,6 +40,9 @@ public class KVMHAChecker extends KVMHABase implements Callable<Boolean> {
         this.hostIp = host;
     }
 
+    public KVMHAChecker() {
+    }
+
     /*
      * True means heartbeaing is on going, or we can't get it's status. False
      * means heartbeating is stopped definitely
@@ -82,37 +85,11 @@ public class KVMHAChecker extends KVMHABase implements Callable<Boolean> {
             hostAndPools = String.format("host IP [%s] in pools [%s]", hostIp, rbdStoragePools.stream().map(pool -> pool._monHost).collect(Collectors.joining(", ")));
             s_logger.debug(String.format("Checking heart beat with KVMHAChecker for %s", hostAndPools));
 
-            ProcessBuilder processBuilder = new ProcessBuilder();
-            processBuilder.command().add("python3");
-            processBuilder.command().add(s_heartBeatPathRbd);
-            processBuilder.command().add("-i");
-            processBuilder.command().add(rbdpools._poolSourceHost);
-            processBuilder.command().add("-p");
-            processBuilder.command().add(rbdpools._poolMountSourcePath);
-            processBuilder.command().add("-n");
-            processBuilder.command().add(rbdpools._poolAuthUserName);
-            processBuilder.command().add("-s");
-            processBuilder.command().add(rbdpools._poolAuthSecret);
-            processBuilder.command().add("-v");
-            processBuilder.command().add(hostIp);
-            processBuilder.command().add("-r");
-            processBuilder.command().add("r");
-            Process process = null;
-            String parsedLine = "";
-            try {
-                process = processBuilder.start();
-                BufferedReader bfr = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                parsedLine = bfr.readLine();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            s_logger.debug(String.format("Checking heart beat with KVMHAChecker [{command=\"%s\", log: \"%s\", pool: \"%s\"}].", processBuilder.command().toString(), parsedLine,
-            rbdpools._monHost));
-
-            if (process != null && parsedLine.contains("DEAD")) {
-                s_logger.warn(String.format("Checking heart beat with KVMHAChecker command [%s] returned. [%s]. It may cause a shutdown of host IP [%s].", processBuilder.command().toString(),
-                        parsedLine, hostIp));
+            String[] buildResult = rbdProcessBuilder(rbdpools, s_heartBeatPathRbd, "KVMHAChecker", null);
+            //  parsedLine = rbdProcessBuilder(rbdpools, s_heartBeatPathRbd, "KVMHAChecker", null);
+            if (buildResult[0].contains("DEAD")) {
+                s_logger.warn(String.format("Checking heart beat with KVMHAChecker command [%s] returned. [%s]. It may cause a shutdown of host IP [%s].", buildResult[1],
+                buildResult[0], hostIp));
             } else {
                 validResult = true;
             }
@@ -123,6 +100,42 @@ public class KVMHAChecker extends KVMHABase implements Callable<Boolean> {
         }
 
         return validResult;
+    }
+
+    public String[] rbdProcessBuilder(RbdStoragePool rbdpools, String checkPath, String checkerType, String volumeUuidList) {
+        ProcessBuilder processBuilder = new ProcessBuilder();
+        processBuilder.command().add("python3");
+        processBuilder.command().add(checkPath);
+        processBuilder.command().add("-i");
+        processBuilder.command().add(rbdpools._poolSourceHost);
+        processBuilder.command().add("-p");
+        processBuilder.command().add(rbdpools._poolMountSourcePath);
+        processBuilder.command().add("-n");
+        processBuilder.command().add(rbdpools._poolAuthUserName);
+        processBuilder.command().add("-s");
+        processBuilder.command().add(rbdpools._poolAuthSecret);
+        processBuilder.command().add("-v");
+        processBuilder.command().add(hostIp);
+        if (checkerType.equals("KVMHAChecker")) {
+            processBuilder.command().add("-r");
+            processBuilder.command().add("r");
+        } else {
+            processBuilder.command().add("-u");
+            processBuilder.command().add(volumeUuidList);
+        }
+        Process process = null;
+        String parsedLine = "";
+        String command = processBuilder.command().toString();
+        try {
+            process = processBuilder.start();
+            BufferedReader bfr = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            parsedLine = bfr.readLine();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        s_logger.debug(String.format("Checking heart beat with " + checkerType + " [{command=\"%s\", log: \"%s\", pool: \"%s\"}].", command, parsedLine,
+        rbdpools._monHost));
+        return new String[] {parsedLine, command};
     }
 
     @Override

@@ -21,9 +21,6 @@ import com.cloud.utils.script.Script;
 import com.cloud.storage.Storage.StoragePoolType;
 import org.apache.log4j.Logger;
 import org.joda.time.Duration;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
 
 import java.util.concurrent.Callable;
 
@@ -53,6 +50,7 @@ public class KVMHAVMActivityChecker extends KVMHABase implements Callable<Boolea
     public Boolean checkingHeartBeat() {
         String parsedLine = "";
         String command = "";
+        String[] buildResult = {};
         if (poolType == StoragePoolType.NetworkFilesystem) {
             Script cmd = new Script(vmActivityCheckPath, activityScriptTimeout.getStandardSeconds(), LOG);
             cmd.add("-i", nfsStoragePool._poolIp);
@@ -68,38 +66,13 @@ public class KVMHAVMActivityChecker extends KVMHABase implements Callable<Boolea
             String result = cmd.execute(parser);
             parsedLine = parser.getLine();
             command = cmd.toString();
-
-            LOG.debug(String.format("Checking heart beat with KVMHAVMActivityChecker [{command=\"%s\", result: \"%s\", log: \"%s\", pool: \"%s\"}].", cmd.toString(), result, parsedLine, nfsStoragePool._poolIp));
+            LOG.debug(String.format("Checking heart beat with KVMHAVMActivityChecker [{command=\"%s\", result: \"%s\", log: \"%s\", pool: \"%s\"}].", command, result, parsedLine, nfsStoragePool._poolIp));
 
         } else if (poolType == StoragePoolType.RBD) {
-            ProcessBuilder processBuilder = new ProcessBuilder();
-            processBuilder.command().add("python3");
-            processBuilder.command().add(vmActivityCheckPath);
-            processBuilder.command().add("-i");
-            processBuilder.command().add(rbdStoragePool._poolSourceHost);
-            processBuilder.command().add("-p");
-            processBuilder.command().add(rbdStoragePool._poolMountSourcePath);
-            processBuilder.command().add("-n");
-            processBuilder.command().add(rbdStoragePool._poolAuthUserName);
-            processBuilder.command().add("-s");
-            processBuilder.command().add(rbdStoragePool._poolAuthSecret);
-            processBuilder.command().add("-v");
-            processBuilder.command().add(hostIp);
-            processBuilder.command().add("-u");
-            processBuilder.command().add(volumeUuidList);
-            command = processBuilder.command().toString();
-            Process process = null;
-
-            try {
-                process = processBuilder.start();
-                BufferedReader bfr = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                parsedLine = bfr.readLine();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            LOG.debug(String.format("Checking heart beat with KVMHAVMActivityChecker [{command=\"%s\", log: \"%s\", pool: \"%s\"}].", command, parsedLine, rbdStoragePool._monHost));
-
+            KVMHAChecker kvmHaChecker = new KVMHAChecker();
+            buildResult = kvmHaChecker.rbdProcessBuilder(rbdStoragePool, vmActivityCheckPath, "KVMHAVMActivityChecker", volumeUuidList);
+            parsedLine = buildResult[0];
+            command = buildResult[1];
         }
         if (parsedLine.contains("DEAD")) {
             LOG.warn(String.format("Checking heart beat with KVMHAVMActivityChecker command [%s]. It is [%s]. It may cause a shutdown of host IP [%s].", command, parsedLine, hostIp));
