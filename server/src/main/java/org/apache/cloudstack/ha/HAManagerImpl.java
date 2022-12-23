@@ -517,6 +517,10 @@ public final class HAManagerImpl extends ManagerBase implements HAManager, Clust
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_HA_RESOURCE_ENABLE, eventDescription = "enabling Balancing for a cluster")
     public boolean enableBalancing(final Cluster cluster) {
+        if (!balancingServiceEnabled.value()) {
+            throw new CloudRuntimeException("balancing Service plugin is disabled");
+        }
+
         clusterDetailsDao.persist(cluster.getId(), Balancing_ENABLED_DETAIL, String.valueOf(true));
 
         /* Using Runnable Interface */
@@ -541,6 +545,10 @@ public final class HAManagerImpl extends ManagerBase implements HAManager, Clust
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_HA_RESOURCE_ENABLE, eventDescription = "enabling Balancing for a cluster")
     public boolean disableBalancing(final Cluster cluster) {
+        if (!balancingServiceEnabled.value()) {
+            throw new CloudRuntimeException("balancing Service plugin is disabled");
+        }
+
         clusterDetailsDao.persist(cluster.getId(), Balancing_ENABLED_DETAIL, String.valueOf(false));
 
         // thread 종료
@@ -852,7 +860,8 @@ public final class HAManagerImpl extends ManagerBase implements HAManager, Clust
                 MaxConcurrentRecoveryOperations,
                 MaxPendingRecoveryOperations,
                 MaxConcurrentFenceOperations,
-                MaxPendingFenceOperations
+                MaxPendingFenceOperations,
+                balancingServiceEnabled
         };
     }
 

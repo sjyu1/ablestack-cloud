@@ -124,6 +124,10 @@ public class CapabilitiesResponse extends BaseResponse {
     @Param(description = "Management Server Host Ip")
     private String host;
 
+    @SerializedName("balancingserviceenabled")
+    @Param(description = "true if Balancing Service plugin is enabled, false otherwise")
+    private boolean balancingServiceEnabled;
+
     @SerializedName("defaultuipagesize")
     @Param(description = "default page size in the UI for various views, value set in the configurations", since = "4.15.2")
     private Long defaultUiPageSize;
@@ -227,6 +231,11 @@ public class CapabilitiesResponse extends BaseResponse {
     public void setHost(String host) {
         this.host = host;
     }
+
+    public void setBalancingServiceEnabled(boolean balancingServiceEnabled) {
+        this.balancingServiceEnabled = balancingServiceEnabled;
+    }
+
     public void setDefaultUiPageSize(Long defaultUiPageSize) {
         this.defaultUiPageSize = defaultUiPageSize;
     }
