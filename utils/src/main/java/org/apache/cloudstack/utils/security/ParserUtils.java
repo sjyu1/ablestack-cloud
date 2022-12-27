@@ -69,4 +69,8 @@ public class ParserUtils {
         }
         return factory;
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 6d17bc44495c41b8e34ab6dd26a0321e30a4108f

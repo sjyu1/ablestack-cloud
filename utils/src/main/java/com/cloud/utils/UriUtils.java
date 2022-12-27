@@ -723,4 +723,8 @@ public class UriUtils {
             throw new CloudRuntimeException(url + " is not a valid uri for RBD");
         }
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 6d17bc44495c41b8e34ab6dd26a0321e30a4108f
