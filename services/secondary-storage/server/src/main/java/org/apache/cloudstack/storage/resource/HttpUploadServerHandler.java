@@ -85,7 +85,7 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
 
     private static final String HEADER_EXPIRES = "X-expires";
 
-    private static final String HEADER_HOST = "X-Forwarded-Host";
+    private static final String HEADER_HOST = "x-host";
 
     private static long processTimeout;
 
