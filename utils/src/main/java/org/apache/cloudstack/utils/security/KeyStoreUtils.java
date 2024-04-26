@@ -21,6 +21,9 @@ package org.apache.cloudstack.utils.security;
 
 import java.io.File;
 
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+
 import com.cloud.utils.PropertiesUtil;
 import com.cloud.utils.db.DbProperties;
 
