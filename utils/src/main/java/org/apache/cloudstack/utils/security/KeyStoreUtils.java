@@ -20,6 +20,9 @@
 package org.apache.cloudstack.utils.security;
 
 import java.io.File;
+import java.io.InputStream;
+import java.io.IOException;
+import java.util.Properties;
 
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
