@@ -26,6 +26,7 @@ import org.apache.logging.log4j.LogManager;
 
 import com.cloud.utils.PropertiesUtil;
 import com.cloud.utils.db.DbProperties;
+import com.cloud.utils.server.ServerProperties;
 
 public class KeyStoreUtils {
 
