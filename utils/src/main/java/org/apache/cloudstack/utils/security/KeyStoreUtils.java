@@ -64,6 +64,7 @@ public class KeyStoreUtils {
 
     public static char[] DEFAULT_KS_PASSPHRASE() {
         final File serverPropsFile = PropertiesUtil.findConfigFile("server.properties.enc");
+        char[] ks_pass = null;
         try {
             if (serverPropsFile == null) {
                 return "vmops.com".toCharArray();
@@ -73,10 +74,12 @@ public class KeyStoreUtils {
                 process.onExit();
                 final Properties properties = ServerProperties.getServerProperties(is);
                 String keystorePassword = properties.getProperty("https.keystore.password");
-                return keystorePassword.toCharArray();
+                ks_pass = keystorePassword.toCharArray();
+                return ks_pass;
             }
         } catch (final IOException e) {
             LOG.error("Failed to read configuration from server.properties file", e);
         }
+        return ks_pass;
     }
 }
