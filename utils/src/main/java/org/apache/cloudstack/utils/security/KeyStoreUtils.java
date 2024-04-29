@@ -67,24 +67,18 @@ public class KeyStoreUtils {
         final File serverPropsFileEnc = PropertiesUtil.findConfigFile("server.properties.enc");
         final File serverPropsFile = PropertiesUtil.findConfigFile("server.properties");
         final String key = DbProperties.getKey();
-        char[] ks_pass = null;
         InputStream is = null;
         try {
             if (serverPropsFileEnc == null) {
-                LOG.info(":::::::::::::::::::::1:::::::::::::::::::::::::");
                 is = new FileInputStream(serverPropsFile);
             } else {
-                LOG.info(":::::::::::::::::::::2:::::::::::::::::::::::::");
                 Process process = Runtime.getRuntime().exec("openssl enc -aes-256-cbc -d -K " + DbProperties.getKey() + " -pass pass:" + DbProperties.getKp() + " -saltlen 16 -md sha256 -iter 100000 -in " + serverPropsFileEnc.getAbsoluteFile());
                 is = process.getInputStream();
                 process.onExit();
             }
             final Properties properties = ServerProperties.getServerProperties(is);
             String keystorePassword = properties.getProperty("https.keystore.password");
-            LOG.info(":::::::::::::::::::::3:::::::::::::::::::::::::");
-            LOG.info(keystorePassword);
-            ks_pass = keystorePassword.toCharArray();
-            return ks_pass;
+            return keystorePassword.toCharArray();
         } catch (final IOException e) {
             LOG.error("Failed to read configuration from server.properties file", e);
         }
