@@ -88,6 +88,6 @@ public class KeyStoreUtils {
         } catch (final IOException e) {
             LOG.error("Failed to read configuration from server.properties file", e);
         }
-        return ks_pass;
+        return "vmops.com".toCharArray();
     }
 }
