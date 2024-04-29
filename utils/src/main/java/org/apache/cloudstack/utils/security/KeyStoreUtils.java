@@ -20,6 +20,7 @@
 package org.apache.cloudstack.utils.security;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.IOException;
 import java.util.Properties;
