@@ -44,7 +44,6 @@ public class KeyStoreUtils {
     public static final String KS_PASSPHRASE_PROPERTY = "keystore.passphrase";
 
     public static final String KS_FILENAME = "cloud.jks";
-    // public static final char[] DEFAULT_KS_PASSPHRASE = "vmops.com".toCharArray();
 
     public static final String CACERT_FILENAME = "cloud.ca.crt";
     public static final String CERT_FILENAME = "cloud.crt";
