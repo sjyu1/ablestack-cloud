@@ -68,6 +68,9 @@ public class KeyStoreUtils {
         final String key = DbProperties.getKey();
         InputStream is = null;
         try {
+            if (serverPropsFile == null && serverPropsFileEnc == null) {
+                return "vmops.com".toCharArray();
+            }
             if (serverPropsFileEnc == null) {
                 is = new FileInputStream(serverPropsFile);
             } else {
