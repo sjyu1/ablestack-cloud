@@ -230,6 +230,7 @@ export default {
     }
   },
   created () {
+    this.getCapabilities()
     if (this.$config.multipleServer) {
       this.server = this.$localStorage.get(SERVER_MANAGER) || this.$config.servers[0]
     }
@@ -307,14 +308,6 @@ export default {
               this.githubredirecturi = item.redirecturi
             }
           })
-        }
-      })
-      api('listCapabilities').then(response => {
-        if (response) {
-          const capability = response.listcapabilitiesresponse.capability || []
-          this.securityfeatures = capability.securityfeaturesenabled
-          this.publickeymodulus = capability.setpublickeymodulus
-          this.publickeyexponent = capability.setpublickeyexponent
         }
       })
     },
