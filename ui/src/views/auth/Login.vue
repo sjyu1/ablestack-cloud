@@ -230,7 +230,6 @@ export default {
     }
   },
   created () {
-    this.getCapabilities()
     if (this.$config.multipleServer) {
       this.server = this.$localStorage.get(SERVER_MANAGER) || this.$config.servers[0]
     }
@@ -280,7 +279,13 @@ export default {
         this.rules.password = []
       }
     },
-    fetchData () {
+    async fetchData () {
+      const capability = await this.getCapabilities()
+      if (capability) {
+        this.securityfeatures = capability.securityfeaturesenabled
+        this.publickeymodulus = capability.setpublickeymodulus
+        this.publickeyexponent = capability.setpublickeyexponent
+      }
       api('listIdps').then(response => {
         if (response) {
           this.idps = response.listidpsresponse.idp || []
@@ -309,6 +314,19 @@ export default {
             }
           })
         }
+      })
+    },
+    getCapabilities () {
+      return new Promise(resolve => {
+        let capability = []
+        api('listCapabilities').then(response => {
+          if (response) {
+            capability = response.listcapabilitiesresponse.capability || []
+            return resolve(capability)
+          }
+        }).catch(() => {
+          return resolve(capability)
+        })
       })
     },
     // handler
@@ -373,17 +391,6 @@ export default {
 
       return `${rootUrl}?${qs.toString()}`
     },
-    async getCapabilities () {
-      api('listCapabilities').then(response => {
-        if (response) {
-          const capability = response.listcapabilitiesresponse.capability || []
-          this.securityfeatures = capability.securityfeaturesenabled
-          this.publickeymodulus = capability.setpublickeymodulus
-          this.publickeyexponent = capability.setpublickeyexponent
-        }
-      })
-      return Promise.resolve()
-    },
     handleSubmit (e) {
       e.preventDefault()
       if (this.state.loginBtn) return
@@ -412,7 +419,6 @@ export default {
           this.Login(loginParams)
             .then((res) => this.loginSuccess(res))
             .catch(() => {
-              this.getCapabilities()
               this.requestFailed()
               this.state.loginBtn = false
             })
