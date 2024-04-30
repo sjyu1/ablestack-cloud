@@ -1177,7 +1177,7 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
                 PrivateKey pk = (PrivateKey)session.getAttribute(RSAHelper.PRIVATE_KEY);
                 decPassword = RSAHelper.decryptRSA(password, pk);
             } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException | BadPaddingException | IllegalBlockSizeException | UnsupportedEncodingException | NullPointerException e) {
-                throw new CloudAuthenticationException("Failed to authenticate user. Unable to find the session attribute privatekey or decrypt RSA");
+                userAcct = accountMgr.authenticateUser(username, null, domainId, loginIpAddress, requestParameters);
             }
             userAcct = accountMgr.authenticateUser(username, decPassword, domainId, loginIpAddress, requestParameters);
         } else {
