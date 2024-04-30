@@ -293,7 +293,7 @@ public final class RootCAProvider extends AdapterBase implements CAProvider, Con
 
     @Override
     public char[] getKeyStorePassphrase() {
-        return KeyStoreUtils.DEFAULT_KS_PASSPHRASE();
+        return KeyStoreUtils.DEFAULT_KS_PASSPHRASE;
     }
 
     /////////////////////////////////////////////////
