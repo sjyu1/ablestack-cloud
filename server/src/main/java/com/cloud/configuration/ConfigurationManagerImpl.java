@@ -1184,7 +1184,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
             if (name.equalsIgnoreCase("alert.smtp.enabledSecurityProtocols") && value != "TLSv1.2") {
                 return "smtp protocols except TLSv1.2 are not supported.";
             }
-            if (name.equlasIgnoreCase("alert.smtp.password")) {
+            if (name.equalsIgnoreCase("alert.smtp.password")) {
                 if (value.length() < 6) {
                     return "smtp password should contain at least 6 characters.";
                 }
