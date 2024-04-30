@@ -1178,22 +1178,6 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
             return "Invalid configuration variable.";
         }
 
-        final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
-        final String alertSmtpUserName = _configDao.getValue("alert.smtp.username");
-        if (securityFeaturesEnabled) {
-            if (name.equalsIgnoreCase("alert.smtp.enabledSecurityProtocols") && value != "TLSv1.2") {
-                return "smtp protocols except TLSv1.2 are not supported.";
-            }
-            if (name.equlasIgnoreCase("alert.smtp.password")) {
-                if (value.length() < 6) {
-                    return "smtp password should contain at least 6 characters.";
-                }
-                if (value.contains(alertSmtpUserName)) {
-                    return "smtp password should not contain smtp username.";
-                }
-            }
-        }
-
         final String configScope = cfg.getScope();
         if (scope != null) {
             if (!configScope.contains(scope) &&
