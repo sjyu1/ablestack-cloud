@@ -1181,7 +1181,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
         final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
         final String alertSmtpUserName = _configDao.getValue("alert.smtp.username");
         if (securityFeaturesEnabled) {
-            if (name.equalsIgnoreCase("alert.smtp.enabledSecurityProtocols") && !value.equals("TLSv1.2")) {
+            if (name.equalsIgnoreCase("alert.smtp.enabledSecurityProtocols") && value != "TLSv1.2") {
                 return "smtp protocols except TLSv1.2 are not supported.";
             }
             if (name.equalsIgnoreCase("alert.smtp.password")) {
