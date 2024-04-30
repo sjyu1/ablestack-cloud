@@ -412,9 +412,7 @@ export default {
           this.Login(loginParams)
             .then((res) => this.loginSuccess(res))
             .catch(() => {
-              if (this.securityfeatures) {
-                this.getCapabilities()
-              }
+              this.getCapabilities()
               this.requestFailed()
               this.state.loginBtn = false
             })
