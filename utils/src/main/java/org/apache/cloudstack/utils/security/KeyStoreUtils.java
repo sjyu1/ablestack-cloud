@@ -20,22 +20,10 @@
 package org.apache.cloudstack.utils.security;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.io.IOException;
-import java.util.Properties;
-
-import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.LogManager;
 
 import com.cloud.utils.PropertiesUtil;
-import com.cloud.utils.db.DbProperties;
-import com.cloud.utils.server.ServerProperties;
 
 public class KeyStoreUtils {
-
-    protected static Logger LOG = LogManager.getLogger(KeyStoreUtils.class);
-
     public static final String KS_SETUP_SCRIPT = "keystore-setup";
     public static final String KS_IMPORT_SCRIPT = "keystore-cert-import";
     public static final String KS_SYSTEMVM_IMPORT_SCRIPT = "keystore-cert-import-sysvm";
@@ -44,6 +32,7 @@ public class KeyStoreUtils {
     public static final String KS_PASSPHRASE_PROPERTY = "keystore.passphrase";
 
     public static final String KS_FILENAME = "cloud.jks";
+    public static final char[] DEFAULT_KS_PASSPHRASE = "vmops.com".toCharArray();
 
     public static final String CACERT_FILENAME = "cloud.ca.crt";
     public static final String CERT_FILENAME = "cloud.crt";
@@ -60,30 +49,5 @@ public class KeyStoreUtils {
     public static boolean isHostSecured() {
         final File confFile = PropertiesUtil.findConfigFile("agent.properties");
         return confFile != null && confFile.exists() && new File(confFile.getParent() + "/" + CERT_FILENAME).exists();
-    }
-
-    public static char[] DEFAULT_KS_PASSPHRASE() {
-        final File serverPropsFileEnc = PropertiesUtil.findConfigFile("server.properties.enc");
-        final File serverPropsFile = PropertiesUtil.findConfigFile("server.properties");
-        final String key = DbProperties.getKey();
-        InputStream is = null;
-        try {
-            if (serverPropsFile == null && serverPropsFileEnc == null) {
-                return "vmops.com".toCharArray();
-            }
-            if (serverPropsFileEnc == null) {
-                is = new FileInputStream(serverPropsFile);
-            } else {
-                Process process = Runtime.getRuntime().exec("openssl enc -aes-256-cbc -d -K " + DbProperties.getKey() + " -pass pass:" + DbProperties.getKp() + " -saltlen 16 -md sha256 -iter 100000 -in " + serverPropsFileEnc.getAbsoluteFile());
-                is = process.getInputStream();
-                process.onExit();
-            }
-            final Properties properties = ServerProperties.getServerProperties(is);
-            String keystorePassword = properties.getProperty("https.keystore.password");
-            return keystorePassword.toCharArray();
-        } catch (final IOException e) {
-            LOG.error("Failed to read configuration from server.properties file", e);
-        }
-        return "vmops.com".toCharArray();
     }
 }
