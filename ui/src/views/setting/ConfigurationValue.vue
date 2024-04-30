@@ -150,6 +150,21 @@
           </a-select>
         </a-tooltip>
       </span>
+      <span v-else-if="configrecord.name === 'alert.smtp.password'">
+        <a-tooltip>
+          <a-input
+            style="width: 20vw; word-break: break-all"
+            class="config-slider-text"
+            type="password"
+            :defaultValue="actualValue"
+            :disabled="(!('updateConfiguration' in $store.getters.apis) || configDisabled)"
+            v-model:value="editableValue"
+            @keydown.esc="editableValueKey = null"
+            @pressEnter="updateConfigurationValue(configrecord)"
+            @change="value => setConfigurationEditable(configrecord, value)"
+          />
+        </a-tooltip>
+      </span>
       <span v-else>
         <a-tooltip :title="editableValue">
           <a-textarea
@@ -337,6 +352,9 @@ export default {
           return []
         }
       }
+      // if (configrecord.name === 'alert.smtp.password') {
+      //   return ''
+      // }
       if (configrecord.value) {
         return String(configrecord.value)
       }
