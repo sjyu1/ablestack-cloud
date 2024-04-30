@@ -352,6 +352,9 @@ export default {
           return []
         }
       }
+      // if (configrecord.name === 'alert.smtp.password') {
+      //   return ''
+      // }
       if (configrecord.value) {
         return String(configrecord.value)
       }
