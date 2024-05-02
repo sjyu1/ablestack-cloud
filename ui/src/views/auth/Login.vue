@@ -280,12 +280,7 @@ export default {
       }
     },
     async fetchData () {
-      const capability = await this.getCapabilities()
-      if (capability) {
-        this.securityfeatures = capability.securityfeaturesenabled
-        this.publickeymodulus = capability.setpublickeymodulus
-        this.publickeyexponent = capability.setpublickeyexponent
-      }
+      await this.getCapabilities()
       api('listIdps').then(response => {
         if (response) {
           this.idps = response.listidpsresponse.idp || []
@@ -322,6 +317,9 @@ export default {
         api('listCapabilities').then(response => {
           if (response) {
             capability = response.listcapabilitiesresponse.capability || []
+            this.securityfeatures = capability.securityfeaturesenabled
+            this.publickeymodulus = capability.setpublickeymodulus
+            this.publickeyexponent = capability.setpublickeyexponent
             return resolve(capability)
           }
         }).catch(() => {
