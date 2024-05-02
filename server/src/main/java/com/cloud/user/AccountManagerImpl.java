@@ -2552,7 +2552,7 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
         String secretCode = ((secretCodeArray == null) ? null : secretCodeArray[0]);
 
 
-        if ((oauthProvider != null && secretCode != null)) {
+        if ((password != null && !password.isEmpty()) || (oauthProvider != null && secretCode != null)) {
             user = getUserAccount(username, password, domainId, requestParameters);
         } else {
             String key = _configDao.getValue("security.singlesignon.key");
