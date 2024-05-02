@@ -148,7 +148,7 @@
         type="primary"
         html-type="submit"
         class="login-button"
-        :loading="state.loginBtn"
+        :loading="state.loginBtn || (securityfeatures && publickeymodulus === '')"
         :disabled="state.loginBtn"
         ref="submit"
         @click="handleSubmit"
