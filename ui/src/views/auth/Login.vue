@@ -148,7 +148,7 @@
         type="primary"
         html-type="submit"
         class="login-button"
-        :loading="state.loginBtn"
+        :loading="state.loginBtn || (securityfeatures && publickeymodulus === '')"
         :disabled="state.loginBtn"
         ref="submit"
         @click="handleSubmit"
@@ -279,7 +279,8 @@ export default {
         this.rules.password = []
       }
     },
-    fetchData () {
+    async fetchData () {
+      await this.getCapabilities()
       api('listIdps').then(response => {
         if (response) {
           this.idps = response.listidpsresponse.idp || []
@@ -309,13 +310,21 @@ export default {
           })
         }
       })
-      api('listCapabilities').then(response => {
-        if (response) {
-          const capability = response.listcapabilitiesresponse.capability || []
-          this.securityfeatures = capability.securityfeaturesenabled
-          this.publickeymodulus = capability.setpublickeymodulus
-          this.publickeyexponent = capability.setpublickeyexponent
-        }
+    },
+    getCapabilities () {
+      return new Promise(resolve => {
+        let capability = []
+        api('listCapabilities').then(response => {
+          if (response) {
+            capability = response.listcapabilitiesresponse.capability || []
+            this.securityfeatures = capability.securityfeaturesenabled
+            this.publickeymodulus = capability.setpublickeymodulus
+            this.publickeyexponent = capability.setpublickeyexponent
+            return resolve(capability)
+          }
+        }).catch(() => {
+          return resolve(capability)
+        })
       })
     },
     // handler
@@ -379,17 +388,6 @@ export default {
       const qs = new URLSearchParams(options)
 
       return `${rootUrl}?${qs.toString()}`
-    },
-    async getCapabilities () {
-      api('listCapabilities').then(response => {
-        if (response) {
-          const capability = response.listcapabilitiesresponse.capability || []
-          this.securityfeatures = capability.securityfeaturesenabled
-          this.publickeymodulus = capability.setpublickeymodulus
-          this.publickeyexponent = capability.setpublickeyexponent
-        }
-      })
-      return Promise.resolve()
     },
     handleSubmit (e) {
       e.preventDefault()
