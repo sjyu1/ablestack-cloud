@@ -1979,6 +1979,8 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
 
         if (StringUtils.isNotBlank(name)) {
             updateHostName(host, name);
+        } else {
+            throw new InvalidParameterValueException("Please enter the host name.");
         }
 
         if (guestOSCategoryId != null) {
@@ -2005,7 +2007,7 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
         }
         if (beforeHostTag != null && hostTags != null && !beforeHostTag.stream().sorted().collect(Collectors.toList()).equals(hostTags.stream().sorted().collect(Collectors.toList()))) {
             msg.append("; host tag = from '" + String.join(",",beforeHostTag) + "' to '" + String.join(",",hostTags) + "'");
-        } else if ((beforeHostTag == null || beforeHostTag.isEmpty()) && hostTags != null) {
+        } else if ((beforeHostTag == null || (beforeHostTag != null && beforeHostTag.isEmpty())) && hostTags != null) {
             msg.append("; host tag = '" + String.join(",",hostTags) + "'");
         }
         ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_HOST_UPDATE, msg.toString(), host.getId(), ApiCommandResourceType.Host.toString());
