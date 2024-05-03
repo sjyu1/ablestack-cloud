@@ -205,6 +205,9 @@ public class ActionEventUtils {
                 String ApiAllowedSourceIp = ApiServiceConfiguration.ApiAllowedSourceIp.valueIn(accountId).replaceAll("\\s", "");
                 event.setClientIp(ApiAllowedSourceIp);
             } else {
+                // system 계정으로 이벤트 추가 시 admin 으로 저장
+                event.setUserId(2L);
+                event.setAccountId(2L);
                 ManagementServerHostVO msHost = s_msHostDao.findByMsid(ManagementServerNode.getManagementServerId());
                 if (msHost != null) {
                     event.setClientIp(msHost.getServiceIP());
@@ -212,6 +215,7 @@ public class ActionEventUtils {
                     String hostIp = Script.runSimpleBashScript("hostname -i");
                     event.setClientIp(hostIp);
                 }
+                event.setParameters("system");
             }
         }
         event = s_eventDao.persist(event);
