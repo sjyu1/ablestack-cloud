@@ -27,14 +27,14 @@ export default {
     const fields = ['level', 'type', 'state', 'description', 'resource', 'username', 'account', 'domain', 'created']
     const securityFields = [ 'level', 'type', 'state', 'description', 'resource',
       { username: (record) => {
-          return record.parameters === 'system' ? 'system' : record.username 
+          return record.parameters === 'system' ? 'system' : record.username
         }
       },
       { account: (record) => {
           return record.parameters === 'system' ? 'system' : record.account
         }
       },
-      'domain', 'created', 'clientip']
+      'domain', 'created', 'clientip' ]
     if (store.getters.features.securityfeaturesenabled) {
       return securityFields
     } else {
