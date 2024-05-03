@@ -483,7 +483,7 @@ public class ConfigurationServerImpl extends ManagerBase implements Configuratio
                 String lastname = "cloud";
 
                 // create an account for the admin user first
-                insertSql = "INSERT INTO `cloud`.`account` (id, uuid, account_name, type, role_id, domain_id, account.default) VALUES (" + id + ", UUID(), '" + username
+                String insertSql = "INSERT INTO `cloud`.`account` (id, uuid, account_name, type, role_id, domain_id, account.default) VALUES (" + id + ", UUID(), '" + username
                         + "', '1', '1', '1', 1)";
                 try {
                     PreparedStatement stmt = txn.prepareAutoCloseStatement(insertSql);
