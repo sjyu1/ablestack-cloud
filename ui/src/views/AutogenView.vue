@@ -1068,13 +1068,36 @@ export default {
           Object.assign(params, metaParams)
         }
       }
-      if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-        'templatefilter' in params && (['template'].includes(this.routeName))) {
-        params.templatefilter = 'all'
-      }
-      if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-        'isofilter' in params && this.routeName === 'iso') {
-        params.isofilter = 'all'
+      this.projectView = Boolean(store.getters.project && store.getters.project.id)
+      if (this.$store.getters.features.securityfeaturesenabled) {
+        if (this.projectView) {
+          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+            'templatefilter' in params && (['template'].includes(this.routeName))) {
+            params.templatefilter = 'self'
+          }
+          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+            'isofilter' in params && this.routeName === 'iso') {
+            params.isofilter = 'self'
+          }
+        } else {
+          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+            'templatefilter' in params && (['template'].includes(this.routeName))) {
+            params.templatefilter = 'all'
+          }
+          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+            'isofilter' in params && this.routeName === 'iso') {
+            params.isofilter = 'all'
+          }
+        }
+      } else {
+        if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+          'templatefilter' in params && (['template'].includes(this.routeName)) && !this.$store.getters.features.securityfeaturesenabled) {
+          params.templatefilter = 'all'
+        }
+        if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+          'isofilter' in params && this.routeName === 'iso') {
+          params.isofilter = 'all'
+        }
       }
       if (Object.keys(this.$route.query).length > 0) {
         if ('page' in this.$route.query) {
@@ -1097,16 +1120,6 @@ export default {
 
       if (typeof this.searchFilters === 'function') {
         this.searchFilters = this.searchFilters()
-      }
-
-      this.projectView = Boolean(store.getters.project && store.getters.project.id)
-      if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-        'templatefilter' in params && (['template'].includes(this.routeName)) && this.projectView) {
-        params.templatefilter = 'self'
-      }
-      if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-        'isofilter' in params && this.routeName === 'iso' && this.projectView) {
-        params.isofilter = 'self'
       }
       this.hasProjectId = ['vm', 'vmgroup', 'ssh', 'affinitygroup', 'volume', 'snapshot', 'vmsnapshot', 'guestnetwork',
         'vpc', 'securitygroups', 'publicip', 'vpncustomergateway', 'template', 'iso', 'event', 'kubernetes',
