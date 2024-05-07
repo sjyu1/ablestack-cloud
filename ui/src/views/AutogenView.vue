@@ -50,8 +50,9 @@
                     }" >
                     <template #suffixIcon><filter-outlined class="ant-select-suffix" /></template>
                     <a-select-option
-                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) &&
-                      ['vm', 'iso', 'template', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool', 'kubernetes'].includes($route.name) ||
+                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) && (projectView &&
+                      ['vm', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool', 'kubernetes'].includes($route.name)) || (!projectView &&
+                      ['vm', 'iso', 'template', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool', 'kubernetes'].includes($route.name)) ||
                       ['account'].includes($route.name)"
                       key="all"
                       :label="$t('label.all')">
@@ -948,6 +949,7 @@ export default {
       const routeName = this.$route.name
       if ((this.projectView && routeName === 'vm') ||
         (!this.projectView && ['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) && ['vm', 'iso', 'template', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool'].includes(routeName)) ||
+        (this.projectView && ['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) && ['vm', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool'].includes(routeName)) ||
         ['account', 'guestnetwork', 'guestvlans', 'oauthsetting', 'guestos', 'guestoshypervisormapping', 'kubernetes'].includes(routeName)) {
         return 'all'
       }
