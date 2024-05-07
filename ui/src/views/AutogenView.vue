@@ -1274,8 +1274,14 @@ export default {
         }
       }
 
-      if (this.$store.getters.listAllProjects && !this.projectView) {
-        params.projectid = '-1'
+      if (this.$store.getters.features.securityfeaturesenabled) {
+        if (!this.$store.getters.listAllProjects && !this.projectView) {
+          params.projectid = '-1'
+        }
+      } else {
+        if (this.$store.getters.listAllProjects && !this.projectView) {
+          params.projectid = '-1'
+        }
       }
 
       params.page = this.page
