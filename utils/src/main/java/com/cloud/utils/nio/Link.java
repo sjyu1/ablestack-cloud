@@ -380,7 +380,7 @@ public class Link {
             return caService.createSSLEngine(sslContext, clientAddress);
         }
         logger.error("CA service is not configured, by-passing CA manager to create SSL engine");
-        char[] passphrase = KeyStoreUtils.DEFAULT_KS_PASSPHRASE;
+        char[] passphrase = KeyStoreUtils.DEFAULT_KS_PASSPHRASE();
         final KeyStore ks = loadKeyStore(NioConnection.class.getResourceAsStream("/cloud.keystore"), passphrase);
         final KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
         final TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
@@ -410,7 +410,7 @@ public class Link {
     }
 
     public static SSLContext initClientSSLContext() throws GeneralSecurityException, IOException {
-        char[] passphrase = KeyStoreUtils.DEFAULT_KS_PASSPHRASE;
+        char[] passphrase = KeyStoreUtils.DEFAULT_KS_PASSPHRASE();
         File confFile = PropertiesUtil.findConfigFile("agent.properties");
         if (confFile != null) {
             logger.info("Conf file found: " + confFile.getAbsolutePath());
