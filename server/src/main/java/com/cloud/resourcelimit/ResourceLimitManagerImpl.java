@@ -72,7 +72,6 @@ import com.cloud.domain.Domain;
 import com.cloud.domain.DomainVO;
 import com.cloud.domain.dao.DomainDao;
 import com.cloud.event.EventTypes;
-import com.cloud.event.ActionEvent;
 import com.cloud.event.ActionEventUtils;
 import com.cloud.exception.InvalidParameterValueException;
 import com.cloud.exception.PermissionDeniedException;
@@ -735,7 +734,6 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, eventDescription = "updating resource limit")
     public ResourceLimitVO updateResourceLimit(Long accountId, Long domainId, Integer typeId, Long max) {
         Account caller = CallContext.current().getCallingAccount();
 
@@ -765,6 +763,7 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
 
         ResourceOwnerType ownerType = null;
         Long ownerId = null;
+        Project project = null;
 
         if (accountId != null) {
             Account account = _entityMgr.findById(Account.class, accountId);
@@ -786,6 +785,7 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
             }
 
             if (account.getType() == Account.Type.PROJECT) {
+                project = _projectDao.findByProjectAccountId(account.getId());
                 _accountMgr.checkAccess(caller, AccessType.ModifyProject, true, account);
             } else {
                 _accountMgr.checkAccess(caller, null, true, account);
@@ -828,12 +828,16 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
         if (limit != null) {
             // Update the existing limit
             _resourceLimitDao.update(limit.getId(), max);
-            logger.info(":::::::::::::::::::::::::::::::::::::1");
-            ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), ownerId, EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, limit.getType().toString() + "limit update to " + Long.toString(max), ownerId, ApiCommandResourceType.Resource.toString());
             return _resourceLimitDao.findById(limit.getId());
         } else {
-            logger.info(":::::::::::::::::::::::::::::::::::::2");
-            ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), ownerId, EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update to " + Long.toString(max), ownerId, ApiCommandResourceType.Resource.toString());
+            logger.info("::::::::::::::::::::::::::::::::::::::::::");
+            if (project != null) {
+                logger.info(caller.getId());
+                logger.info(project.getProjectAccountId());
+                logger.info(project.getDomainId());
+                logger.info(resourceType + "limit update to " + Long.toString(max));
+                ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
+            }
             return _resourceLimitDao.persist(new ResourceLimitVO(resourceType, max, ownerId, ownerType));
         }
     }

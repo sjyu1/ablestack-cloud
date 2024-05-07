@@ -4089,5 +4089,6 @@
 "cluster.add": "CLUSTER.ADD",
 "cluster.update": "CLUSTER.UPDATE",
 "cluster.delete": "CLUSTER.DELETE",
-"label.clientip": "IP Address"
+"label.clientip": "IP Address",
+"resource.update.limit": "RESOURCE.UPDATE.LIMIT"
 }

@@ -4089,5 +4089,6 @@
 "cluster.add": "\ud074\ub7ec\uc2a4\ud130.\ucd94\uac00",
 "cluster.update": "\ud074\ub7ec\uc2a4\ud130.\ud3b8\uc9d1",
 "cluster.delete": "\ud074\ub7ec\uc2a4\ud130.\uc0ad\uc81c",
-"label.clientip": "IP \uc8fc\uc18c"
+"label.clientip": "IP \uc8fc\uc18c",
+"resource.update.limit": "\uad6c\uc131.\uc81c\ud55c.\ubcc0\uacbd"
 }
