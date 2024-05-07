@@ -50,16 +50,8 @@
                     }" >
                     <template #suffixIcon><filter-outlined class="ant-select-suffix" /></template>
                     <a-select-option
-                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) && !projectView
+                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) &&
                       ['vm', 'iso', 'template', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool', 'kubernetes'].includes($route.name) ||
-                      ['account'].includes($route.name)"
-                      key="all"
-                      :label="$t('label.all')">
-                      {{ $t('label.all') }}
-                    </a-select-option>
-                    <a-select-option
-                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) && projectView
-                      ['vm', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool', 'kubernetes'].includes($route.name) ||
                       ['account'].includes($route.name)"
                       key="all"
                       :label="$t('label.all')">
@@ -954,7 +946,9 @@ export default {
         return this.$route.query.filter
       }
       const routeName = this.$route.name
-      if ((this.projectView && routeName === 'vm') || (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) && ['vm', 'iso', 'template', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool'].includes(routeName)) || ['account', 'guestnetwork', 'guestvlans', 'oauthsetting', 'guestos', 'guestoshypervisormapping', 'kubernetes'].includes(routeName)) {
+      if ((this.projectView && routeName === 'vm') ||
+        (!this.projectView && ['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) && ['vm', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool'].includes(routeName)) ||
+        ['account', 'guestnetwork', 'guestvlans', 'oauthsetting', 'guestos', 'guestoshypervisormapping', 'kubernetes'].includes(routeName)) {
         return 'all'
       }
       if (['publicip'].includes(routeName)) {
@@ -1077,29 +1071,18 @@ export default {
         }
       }
       this.projectView = Boolean(store.getters.project && store.getters.project.id)
-      if (this.$store.getters.features.securityfeaturesenabled) {
-        if (this.projectView) {
-          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-            'templatefilter' in params && (['template'].includes(this.routeName))) {
-            params.templatefilter = 'self'
-          }
-          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-            'isofilter' in params && this.routeName === 'iso') {
-            params.isofilter = 'self'
-          }
-        } else {
-          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-            'templatefilter' in params && (['template'].includes(this.routeName))) {
-            params.templatefilter = 'all'
-          }
-          if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-            'isofilter' in params && this.routeName === 'iso') {
-            params.isofilter = 'all'
-          }
+      if (this.projectView) {
+        if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+          'templatefilter' in params && (['template'].includes(this.routeName))) {
+          params.templatefilter = 'self'
+        }
+        if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+          'isofilter' in params && this.routeName === 'iso') {
+          params.isofilter = 'self'
         }
       } else {
         if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
-          'templatefilter' in params && (['template'].includes(this.routeName)) && !this.$store.getters.features.securityfeaturesenabled) {
+          'templatefilter' in params && (['template'].includes(this.routeName))) {
           params.templatefilter = 'all'
         }
         if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
