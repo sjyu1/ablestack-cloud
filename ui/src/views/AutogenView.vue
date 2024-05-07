@@ -1100,6 +1100,14 @@ export default {
       }
 
       this.projectView = Boolean(store.getters.project && store.getters.project.id)
+      if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+        'templatefilter' in params && (['template'].includes(this.routeName)) && this.projectView) {
+        params.templatefilter = 'self'
+      }
+      if (['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) &&
+        'isofilter' in params && this.routeName === 'iso' && this.projectView) {
+        params.isofilter = 'self'
+      }
       this.hasProjectId = ['vm', 'vmgroup', 'ssh', 'affinitygroup', 'volume', 'snapshot', 'vmsnapshot', 'guestnetwork',
         'vpc', 'securitygroups', 'publicip', 'vpncustomergateway', 'template', 'iso', 'event', 'kubernetes',
         'autoscalevmgroup', 'vnfapp'].includes(this.$route.name)
