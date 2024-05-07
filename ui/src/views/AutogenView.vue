@@ -50,8 +50,16 @@
                     }" >
                     <template #suffixIcon><filter-outlined class="ant-select-suffix" /></template>
                     <a-select-option
-                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) &&
+                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) && !projectView
                       ['vm', 'iso', 'template', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool', 'kubernetes'].includes($route.name) ||
+                      ['account'].includes($route.name)"
+                      key="all"
+                      :label="$t('label.all')">
+                      {{ $t('label.all') }}
+                    </a-select-option>
+                    <a-select-option
+                      v-if="['Admin', 'DomainAdmin'].includes($store.getters.userInfo.roletype) && projectView
+                      ['vm', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool', 'kubernetes'].includes($route.name) ||
                       ['account'].includes($route.name)"
                       key="all"
                       :label="$t('label.all')">
