@@ -467,22 +467,24 @@ public class ApiServlet extends HttpServlet {
     protected boolean skip2FAcheckForUser(HttpSession session) {
         boolean skip2FAcheck = false;
         Long userId = (Long) session.getAttribute("userid");
-        boolean is2FAverified = (boolean) session.getAttribute(ApiConstants.IS_2FA_VERIFIED);
-        if (is2FAverified) {
-            logger.debug(String.format("Two factor authentication is already verified for the user %d, so skipping", userId));
-            skip2FAcheck = true;
-        } else {
-            UserAccount userAccount = accountMgr.getUserAccountById(userId);
-            boolean is2FAenabled = userAccount.isUser2faEnabled();
-            if (is2FAenabled) {
-                skip2FAcheck = false;
+        if (session.getAttribute(ApiConstants.IS_2FA_VERIFIED) != null) {
+            boolean is2FAverified = (boolean) session.getAttribute(ApiConstants.IS_2FA_VERIFIED);
+            if (is2FAverified) {
+                logger.debug(String.format("Two factor authentication is already verified for the user %d, so skipping", userId));
+                skip2FAcheck = true;
             } else {
-                Long domainId = userAccount.getDomainId();
-                boolean is2FAmandated = Boolean.TRUE.equals(AccountManagerImpl.enableUserTwoFactorAuthentication.valueIn(domainId)) && Boolean.TRUE.equals(AccountManagerImpl.mandateUserTwoFactorAuthentication.valueIn(domainId));
-                if (is2FAmandated) {
+                UserAccount userAccount = accountMgr.getUserAccountById(userId);
+                boolean is2FAenabled = userAccount.isUser2faEnabled();
+                if (is2FAenabled) {
                     skip2FAcheck = false;
                 } else {
-                    skip2FAcheck = true;
+                    Long domainId = userAccount.getDomainId();
+                    boolean is2FAmandated = Boolean.TRUE.equals(AccountManagerImpl.enableUserTwoFactorAuthentication.valueIn(domainId)) && Boolean.TRUE.equals(AccountManagerImpl.mandateUserTwoFactorAuthentication.valueIn(domainId));
+                    if (is2FAmandated) {
+                        skip2FAcheck = false;
+                    } else {
+                        skip2FAcheck = true;
+                    }
                 }
             }
         }
