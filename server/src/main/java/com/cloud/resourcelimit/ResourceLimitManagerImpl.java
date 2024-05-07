@@ -829,7 +829,7 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
             // Update the existing limit
             _resourceLimitDao.update(limit.getId(), max);
             if (project != null) {
-                ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
+                ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + Long.toString(limit.getMax()) + " to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
             }
             return _resourceLimitDao.findById(limit.getId());
         } else {
