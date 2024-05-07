@@ -35,6 +35,7 @@ import com.cloud.cluster.ManagementServerHostVO;
 import com.cloud.cluster.dao.ManagementServerHostDao;
 import com.cloud.utils.db.GlobalLock;
 import org.apache.cloudstack.acl.SecurityChecker.AccessType;
+import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.engine.subsystem.api.storage.ObjectInDataStoreStateMachine;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -70,6 +71,8 @@ import com.cloud.dc.dao.VlanDao;
 import com.cloud.domain.Domain;
 import com.cloud.domain.DomainVO;
 import com.cloud.domain.dao.DomainDao;
+import com.cloud.event.EventTypes;
+import com.cloud.event.ActionEventUtils;
 import com.cloud.exception.InvalidParameterValueException;
 import com.cloud.exception.PermissionDeniedException;
 import com.cloud.exception.ResourceAllocationException;
@@ -731,6 +734,7 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
     }
 
     @Override
+    @ActionEvent(eventType = EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, eventDescription = "updating resource limit")
     public ResourceLimitVO updateResourceLimit(Long accountId, Long domainId, Integer typeId, Long max) {
         Account caller = CallContext.current().getCallingAccount();
 
@@ -823,8 +827,12 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
         if (limit != null) {
             // Update the existing limit
             _resourceLimitDao.update(limit.getId(), max);
+            logger.info(":::::::::::::::::::::::::::::::::::::1");
+            ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), ownerId, EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, limit.getType().toString() + "limit update to " + Long.toString(max), ownerId, ApiCommandResourceType.Resource.toString());
             return _resourceLimitDao.findById(limit.getId());
         } else {
+            logger.info(":::::::::::::::::::::::::::::::::::::2");
+            ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), ownerId, EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update to " + Long.toString(max), ownerId, ApiCommandResourceType.Resource.toString());
             return _resourceLimitDao.persist(new ResourceLimitVO(resourceType, max, ownerId, ownerType));
         }
     }
