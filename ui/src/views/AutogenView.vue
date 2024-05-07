@@ -947,7 +947,7 @@ export default {
       }
       const routeName = this.$route.name
       if ((this.projectView && routeName === 'vm') ||
-        (!this.projectView && ['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) && ['vm', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool'].includes(routeName)) ||
+        (!this.projectView && ['Admin', 'DomainAdmin'].includes(this.$store.getters.userInfo.roletype) && ['vm', 'iso', 'template', 'pod', 'cluster', 'host', 'systemvm', 'router', 'storagepool'].includes(routeName)) ||
         ['account', 'guestnetwork', 'guestvlans', 'oauthsetting', 'guestos', 'guestoshypervisormapping', 'kubernetes'].includes(routeName)) {
         return 'all'
       }
