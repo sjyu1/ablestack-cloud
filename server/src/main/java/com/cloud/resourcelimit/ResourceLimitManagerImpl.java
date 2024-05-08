@@ -835,6 +835,7 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
         } else {
             if (project != null) {
                 String beforeMax = "";
+                Long convertMax = null;
                 switch (resourceType) {
                     case public_ip:
                         beforeMax = _configDao.getValue(Config.DefaultMaxProjectPublicIPs.key());
@@ -865,12 +866,18 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
                         break;
                     case primary_storage:
                         beforeMax = _configDao.getValue(Config.DefaultMaxProjectPrimaryStorage.key());
+                        convertMax = max / ResourceType.bytesToGiB;
                         break;
                     case secondary_storage:
                         beforeMax = Long.toString(MaxProjectSecondaryStorage.value());
+                        convertMax = max / ResourceType.bytesToGiB;
                         break;
                 }
-                ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + beforeMax + " to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
+                if ((resourceType == ResourceType.primary_storage || resourceType == ResourceType.secondary_storage) && max >= 0) {
+                    ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + beforeMax + " to " + Long.toString(convertMax), project.getId(), ApiCommandResourceType.Project.toString());
+                } else {
+                    ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + beforeMax + " to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
+                }
             }
             return _resourceLimitDao.persist(new ResourceLimitVO(resourceType, max, ownerId, ownerType));
         }
