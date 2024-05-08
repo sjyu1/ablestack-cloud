@@ -964,9 +964,7 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
                 if (ApiServer.SecurityFeaturesEnabled.value()) {
                     Long domainId = 1L;
                     if (userId == null) {
-                        String accountName = "system";
-                        Account userAcct = ApiDBUtils.findAccountByNameDomain(accountName, domainId);
-                        ActionEventUtils.onActionEvent(userAcct.getId(), userAcct.getAccountId(), domainId, EventTypes.EVENT_USER_REQUEST,
+                        ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_USER_REQUEST,
                             "Bad request : reuse credentials or no signature.", new Long(0), null);
                     } else {
                         String accountName = "admin";

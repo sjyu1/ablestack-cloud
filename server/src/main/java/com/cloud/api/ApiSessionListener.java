@@ -37,6 +37,7 @@ import java.util.Date;
 import java.text.SimpleDateFormat;
 
 import com.cloud.user.Account;
+import com.cloud.user.User;
 import com.cloud.event.EventTypes;
 import com.cloud.event.ActionEventUtils;
 import com.cloud.utils.concurrency.NamedThreadFactory;
@@ -132,9 +133,7 @@ public class ApiSessionListener implements HttpSessionListener {
             Date acsTime = new Date(event.getSession().getLastAccessedTime());
             SimpleDateFormat date = new SimpleDateFormat("dd MMM yyyy HH:mm:ss");
             if (userId == null) {
-                String accountName = "system";
-                Account userAcct = ApiDBUtils.findAccountByNameDomain(accountName, domainId);
-                ActionEventUtils.onActionEvent(userAcct.getId(), userAcct.getAccountId(), domainId, EventTypes.EVENT_USER_SESSION_DESTROY,
+                ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, domainId, EventTypes.EVENT_USER_SESSION_DESTROY,
                     "Session destroyed by Id : " + event.getSession().getId() + ", last accessed time : " + date.format(acsTime), new Long(0), null);
             } else {
                 String accountName = "admin";

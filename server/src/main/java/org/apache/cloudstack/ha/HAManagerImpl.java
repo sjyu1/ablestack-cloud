@@ -93,6 +93,8 @@ import com.cloud.vm.dao.VMInstanceDao;
 import com.cloud.vm.UserVmService;
 import com.cloud.org.Cluster;
 import com.cloud.resource.ResourceService;
+import com.cloud.user.User;
+import com.cloud.user.Account;
 import com.cloud.utils.component.ComponentContext;
 import com.cloud.utils.component.ManagerBase;
 import com.cloud.utils.component.PluggableService;
@@ -197,9 +199,11 @@ public final class HAManagerImpl extends ManagerBase implements HAManager, Clust
                 final String message = String.format("Transitioned host HA state from:%s to:%s due to event:%s for the host id:%d",
                         currentHAState, nextState, event, haConfig.getResourceId());
                 LOG.debug(message);
-
+                final CallContext ctx = CallContext.current();
+                final Long callerUserId = ctx.getCallingUserId();
+                final Long callerAccountId = ctx.getCallingAccountId();
                 if (nextState == HAConfig.HAState.Recovering || nextState == HAConfig.HAState.Fencing || nextState == HAConfig.HAState.Fenced) {
-                    ActionEventUtils.onActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(),
+                    ActionEventUtils.onActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId,
                             Domain.ROOT_DOMAIN, EventTypes.EVENT_HA_STATE_TRANSITION, message, haConfig.getResourceId(), ApiCommandResourceType.Host.toString());
                 }
             }

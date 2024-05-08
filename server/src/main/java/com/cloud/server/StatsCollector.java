@@ -136,6 +136,8 @@ import com.cloud.storage.VolumeStatsVO;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.storage.dao.VolumeStatsDao;
+import com.cloud.user.User;
+import com.cloud.user.Account;
 import com.cloud.user.UserStatisticsVO;
 import com.cloud.user.VmDiskStatisticsVO;
 import com.cloud.user.dao.UserStatisticsDao;
@@ -1120,8 +1122,11 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
             }
             // Generate threshold reached alert notification
             if (isExistCount.equalsIgnoreCase("0")) {
+                final CallContext ctx = CallContext.current();
+                final Long callerUserId = ctx.getCallingUserId();
+                final Long callerAccountId = ctx.getCallingAccountId();
                 _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "Database storage capacity, Threshold (" + mysqlDuThreshold + "%) reached. And when the saturation threshold(" + intMysqlDeleteThreshold + "%) is reached, the oldest record in the event table will be deleted every minute until the record falls below the threshold(" +deleteExecutionIntMysqlThreshold+ "%)", "");
-                ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_INFO,
+                ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_INFO,
                         EventTypes.EVENT_THRESHOLD_REACHED, "Database storage capacity, Threshold (" + mysqlDuThreshold + "%) reached. And when the saturation threshold(" + intMysqlDeleteThreshold + "%) is reached, the oldest record in the event table will be deleted every minute until the record falls below the threshold(" +deleteExecutionIntMysqlThreshold+ "%)", new Long(0), null, 0);
             }
 
@@ -1145,7 +1150,10 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
                         PreparedStatement deleteStmt = conn.prepareStatement(deleteQuery);
                         deleteStmt.executeUpdate();
                         txn.commit();
-                        ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_INFO,
+                        final CallContext ctx = CallContext.current();
+                        final Long callerUserId = ctx.getCallingUserId();
+                        final Long callerAccountId = ctx.getCallingAccountId();
+                        ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_INFO,
                                 EventTypes.EVENT_LOG_AUTO_DELETED, "The log has been deleted. Since the database storage capacity (" +mysqlDuThreshold+ "%) is higher than the saturation threshold (" +intMysqlDeleteThreshold+ "%), the 1000 oldest records from the event table are deleted every minute until it falls below (" +deleteExecutionIntMysqlThreshold+ "%)", new Long(0), null, 0);
                     } catch (Exception e) {
                         throw new CloudRuntimeException("SQL: Exception:" + e.getMessage(), e);

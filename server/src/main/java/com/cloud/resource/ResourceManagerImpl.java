@@ -176,6 +176,7 @@ import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.GuestOSCategoryDao;
 import com.cloud.storage.dao.StoragePoolHostDao;
 import com.cloud.storage.dao.VMTemplateDao;
+import com.cloud.user.User;
 import com.cloud.user.Account;
 import com.cloud.user.AccountManager;
 import com.cloud.utils.Ternary;
@@ -1396,8 +1397,10 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
             logger.debug(err, e);
             throw new CloudRuntimeException(err + e.getMessage());
         }
-
-        ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_MAINTENANCE_PREPARE, "starting maintenance for host " + hostId, hostId, null, true, 0);
+        final CallContext ctx = CallContext.current();
+        final Long callerUserId = ctx.getCallingUserId();
+        final Long callerAccountId = ctx.getCallingAccountId();
+        ActionEventUtils.onStartedActionEvent((callerUserId == null) ? (Long)User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? (Long)Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventTypes.EVENT_MAINTENANCE_PREPARE, "starting maintenance for host " + hostId, hostId, null, true, 0);
         _agentMgr.pullAgentToMaintenance(hostId);
 
         /* TODO: move below to listener */
@@ -1716,7 +1719,10 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
     protected boolean setHostIntoMaintenance(HostVO host) throws NoTransitionException {
         logger.debug("Host " + host.getUuid() + " entering in Maintenance");
         resourceStateTransitTo(host, ResourceState.Event.InternalEnterMaintenance, _nodeId);
-        ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(),
+        final CallContext ctx = CallContext.current();
+        final Long callerUserId = ctx.getCallingUserId();
+        final Long callerAccountId = ctx.getCallingAccountId();
+        ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId,
                 EventVO.LEVEL_INFO, EventTypes.EVENT_MAINTENANCE_PREPARE,
                 "completed maintenance for host " + host.getId(), host.getId(), null, 0);
         return true;

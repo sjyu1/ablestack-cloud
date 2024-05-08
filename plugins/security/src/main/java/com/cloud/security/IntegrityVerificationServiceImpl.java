@@ -27,6 +27,8 @@ import com.cloud.event.EventVO;
 import com.cloud.exception.InvalidParameterValueException;
 import com.cloud.security.dao.IntegrityVerificationDao;
 import com.cloud.security.dao.IntegrityVerificationFinalResultDao;
+import com.cloud.user.User;
+import com.cloud.user.Account;
 import com.cloud.utils.component.ManagerBase;
 import com.cloud.utils.component.PluggableService;
 import com.cloud.utils.concurrency.NamedThreadFactory;
@@ -121,7 +123,10 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
         }
 
         private void integrityVerification() {
-            ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_INTEGRITY_VERIFICATION,
+            final CallContext ctx = CallContext.current();
+            final Long callerUserId = ctx.getCallingUserId();
+            final Long callerAccountId = ctx.getCallingAccountId();
+            ActionEventUtils.onStartedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventTypes.EVENT_INTEGRITY_VERIFICATION,
                     "running periodic integrity verification on management server when running the product.", new Long(0), null, true, 0);
             ManagementServerHostVO msHost = msHostDao.findByMsid(ManagementServerNode.getManagementServerId());
             List<String> verificationFailedList = new ArrayList<>();
@@ -419,29 +424,32 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     }
 
     private void updateIntegrityVerificationFinalResult(final long msHostId, String uuid, boolean verificationFinalResult, String verificationFailedListToString, String type) {
+        final CallContext ctx = CallContext.current();
+        final Long callerUserId = ctx.getCallingUserId();
+        final Long callerAccountId = ctx.getCallingAccountId();
         if (verificationFinalResult == false) {
             if(type.equals("Execution")){
                 alertManager.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "Failed to execute integrity verification on the management server when running the product", "");
-                ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_ERROR,
+                ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_ERROR,
                         EventTypes.EVENT_INTEGRITY_VERIFICATION, "Failed to execute integrity verification on the management server when running the product", new Long(0), null, 0);
             }else if(type.equals("Routine")){
                 alertManager.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "Failed to execute integrity verification schedule on the management server when operating the product", "");
-                ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_ERROR,
+                ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_ERROR,
                         EventTypes.EVENT_INTEGRITY_VERIFICATION, "Failed to execute integrity verification schedule on the management server when operating the product", new Long(0), null, 0);
             }else if(type.equals("Manual")){
                 alertManager.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "Failed to execute integrity verification on the management server when operating the product", "");
-                ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_ERROR,
+                ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_ERROR,
                         EventTypes.EVENT_INTEGRITY_VERIFICATION, "Failed to execute integrity verification on the management server when operating the product", new Long(0), null, 0);
             }
         }else {
             if(type.equals("Execution")){
-                ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_INFO,
+                ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_INFO,
                         EventTypes.EVENT_INTEGRITY_VERIFICATION, "Successfully completed integrity verification perform on the management server when running the product", new Long(0), null, 0);
             }else if(type.equals("Routine")){
-                ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_INFO,
+                ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_INFO,
                         EventTypes.EVENT_INTEGRITY_VERIFICATION, "Successfully completed integrity verification schedule perform on the management server when operating the product", new Long(0), null, 0);
             }else if(type.equals("Manual")){
-                ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_INFO,
+                ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_INFO,
                         EventTypes.EVENT_INTEGRITY_VERIFICATION, "Successfully completed integrity verification perform on the management server when operating the product", new Long(0), null, 0);
             }
         }

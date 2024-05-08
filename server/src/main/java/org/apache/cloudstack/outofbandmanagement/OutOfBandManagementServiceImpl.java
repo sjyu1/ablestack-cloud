@@ -63,6 +63,8 @@ import com.cloud.host.dao.HostDao;
 import com.cloud.host.dao.HostDetailsDao;
 import com.cloud.org.Cluster;
 import com.cloud.resource.ResourceState;
+import com.cloud.user.User;
+import com.cloud.user.Account;
 import com.cloud.utils.component.Manager;
 import com.cloud.utils.component.ManagerBase;
 import com.cloud.utils.db.Transaction;
@@ -220,7 +222,10 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
                 final String message = String.format("Transitioned out-of-band management power state from %s to %s due to event: %s for %s", currentPowerState, newPowerState, event, host);
                 LOG.debug(message);
                 if (newPowerState == OutOfBandManagement.PowerState.Unknown) {
-                    ActionEventUtils.onActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), Domain.ROOT_DOMAIN,
+                    final CallContext ctx = CallContext.current();
+                    final Long callerUserId = ctx.getCallingUserId();
+                    final Long callerAccountId = ctx.getCallingAccountId();
+                    ActionEventUtils.onActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, Domain.ROOT_DOMAIN,
                             EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_POWERSTATE_TRANSITION, message, host.getId(), ApiCommandResourceType.Host.toString());
                 }
             }
