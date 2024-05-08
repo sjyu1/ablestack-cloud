@@ -40,6 +40,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 public class AccountDaoImpl extends GenericDaoBase<AccountVO, Long> implements AccountDao {
@@ -333,5 +334,11 @@ public class AccountDaoImpl extends GenericDaoBase<AccountVO, Long> implements A
         SearchCriteria<Long> sc = ActiveDomainCount.create();
         sc.setParameters("state", "enabled");
         return customSearch(sc, null).size();
+    }
+
+    @Override
+    public AccountVO findBySecurity() {
+        AccountVO account = new AccountVO("system", 1L, "", Account.Type.NORMAL, UUID.randomUUID().toString());
+        return account;
     }
 }

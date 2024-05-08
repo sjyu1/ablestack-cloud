@@ -17,12 +17,13 @@
 package com.cloud.user.dao;
 
 import java.util.List;
-
+import java.util.UUID;
 
 import javax.inject.Inject;
 
 import org.springframework.stereotype.Component;
 
+import com.cloud.user.User;
 import com.cloud.user.UserVO;
 import com.cloud.utils.db.DB;
 import com.cloud.utils.db.GenericDaoBase;
@@ -142,4 +143,10 @@ public class UserDaoImpl extends GenericDaoBase<UserVO, Long> implements UserDao
         return listBy(sc);
     }
 
+
+    @Override
+    public UserVO findBySecurity() {
+        UserVO user = new UserVO(1L, "system", Double.toString(Math.Random()), "system", "cloud", "", "", UUID.randomUUID().toString(), User.Source.UNKNOWN);
+        return user;
+    }
 }

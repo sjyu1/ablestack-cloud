@@ -53,4 +53,5 @@ public interface UserDao extends GenericDao<UserVO, Long> {
 
     List<UserVO> findUsersByName(String username);
 
+    UserVO findBySecurity();
 }
