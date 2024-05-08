@@ -111,7 +111,7 @@ export default {
           const alerts = json.listalertsresponse.alert
           for (var i = 0; i < alerts.length; i++) {
             if (alerts[i].showalert === true && this.$store.getters.showAlert && this.$store.getters.features.securityfeaturesenabled) {
-              this.showModal = true
+              // this.showModal = true
             }
           }
         }

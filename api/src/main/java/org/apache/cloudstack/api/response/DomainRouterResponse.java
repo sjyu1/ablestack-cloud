@@ -241,6 +241,10 @@ public class DomainRouterResponse extends BaseResponseWithAnnotations implements
     @Param(description = "the version of the code / software in the router")
     private String softwareVersion;
 
+    @SerializedName(ApiConstants.VLAN)
+    @Param(description = "role of the domain router")
+    private String vlan;
+
     public DomainRouterResponse() {
         nics = new LinkedHashSet<NicResponse>();
     }
@@ -510,4 +514,13 @@ public class DomainRouterResponse extends BaseResponseWithAnnotations implements
     public void setSoftwareVersion(String softwareVersion) {
         this.softwareVersion = softwareVersion;
     }
+
+    public String getVlan() {
+        return vlan;
+    }
+
+    public void setVlan(String vlan) {
+        this.vlan = vlan;
+    }
+
 }

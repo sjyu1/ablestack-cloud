@@ -141,9 +141,15 @@ export default {
           if (input === undefined) {
             continue
           }
-          params.resourcetype = key
-          params.max = input
-          arrAsync.push(this.updateResourceLimit(params))
+          this.dataResource.forEach(item => {
+            if (item.resourcetype === key) {
+              if (item.max !== input) {
+                params.resourcetype = key
+                params.max = input
+                arrAsync.push(this.updateResourceLimit(params))
+              }
+            }
+          })
         }
 
         this.formLoading = true
