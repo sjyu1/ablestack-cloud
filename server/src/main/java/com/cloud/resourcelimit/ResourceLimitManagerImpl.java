@@ -835,21 +835,40 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
         } else {
             if (project != null) {
                 String beforeMax = "";
-                if (resourceType == ResourceType.public_ip || resourceType == ResourceType.snapshot || resourceType == ResourceType.template
-                    || resourceType == ResourceType.user_vm || resourceType == ResourceType.volume || resourceType == ResourceType.network || resourceType == ResourceType.vpc) {
-                        beforeMax = "20";
-                }
-                if (resourceType == ResourceType.cpu) {
-                    beforeMax = "40";
-                }
-                if (resourceType == ResourceType.memory) {
-                    beforeMax = "40960";
-                }
-                if (resourceType == ResourceType.primary_storage) {
-                    beforeMax = "200";
-                }
-                if (resourceType == ResourceType.secondary_storage) {
-                    beforeMax = "400";
+                switch (resourceType) {
+                    case public_ip:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectPublicIPs.key());
+                        break;
+                    case snapshot:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectSnapshots.key());
+                        break;
+                    case template:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectTemplates.key());
+                        break;
+                    case user_vm:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectUserVms.key());
+                        break;
+                    case volume:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectVolumes.key());
+                        break;
+                    case network:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectNetworks.key());
+                        break;
+                    case vpc:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectVpcs.key());
+                        break;
+                    case cpu:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectCpus.key());
+                        break;
+                    case memory:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectMemory.key());
+                        break;
+                    case primary_storage:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectPrimaryStorage.key());
+                        break;
+                    case secondary_storage:
+                        beforeMax = Long.toString(MaxProjectSecondaryStorage.value());
+                        break;
                 }
                 ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + beforeMax + " to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
             }
