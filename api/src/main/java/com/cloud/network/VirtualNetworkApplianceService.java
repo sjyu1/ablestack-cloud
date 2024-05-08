@@ -18,6 +18,7 @@ package com.cloud.network;
 
 import java.util.List;
 
+import org.apache.cloudstack.api.command.admin.router.UpdateRouterGuestVlanCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterTemplateCmd;
 
@@ -48,6 +49,8 @@ public interface VirtualNetworkApplianceService {
     VirtualRouter rebootRouter(long routerId, boolean reprogramNetwork, boolean forced) throws ConcurrentOperationException, ResourceUnavailableException, InsufficientCapacityException;
 
     VirtualRouter upgradeRouter(UpgradeRouterCmd cmd);
+
+    VirtualRouter updateRouterGuestVlan(UpdateRouterGuestVlanCmd cmd);
 
     /**
      * Stops domain router

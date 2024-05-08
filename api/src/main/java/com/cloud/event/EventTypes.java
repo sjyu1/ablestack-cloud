@@ -38,6 +38,7 @@ import com.cloud.dc.Pod;
 import com.cloud.dc.StorageNetworkIpRange;
 import com.cloud.dc.Vlan;
 import com.cloud.domain.Domain;
+import com.cloud.configuration.Resource;
 import com.cloud.org.Cluster;
 import com.cloud.host.Host;
 import com.cloud.network.GuestVlan;
@@ -135,6 +136,7 @@ public class EventTypes {
     public static final String EVENT_ROUTER_UPGRADE = "ROUTER.UPGRADE";
     public static final String EVENT_ROUTER_DIAGNOSTICS = "ROUTER.DIAGNOSTICS";
     public static final String EVENT_ROUTER_HEALTH_CHECKS = "ROUTER.HEALTH.CHECKS";
+    public static final String EVENT_ROUTER_VLAN_UPDATE = "ROUTER.VLAN.UPDATE";
 
     // Console proxy
     public static final String EVENT_PROXY_CREATE = "PROXY.CREATE";
@@ -733,6 +735,9 @@ public class EventTypes {
     public static final String EVENT_LOG_AUTO_DELETED = "LOG.DELETED";
     public static final String EVENT_THRESHOLD_REACHED = "THRESHOLD.REACHED";
 
+    // Resource
+    public static final String EVENT_RESOURCE_UPDATE_LIMIT = "RESOURCE.UPDATE.LIMIT";
+
     static {
 
         // TODO: need a way to force author adding event types to declare the entity details as well, with out braking
@@ -1184,6 +1189,7 @@ public class EventTypes {
 
         //Security
         entityEventDetails.put(EVENT_SECURITY_CHECK, "Security");
+        entityEventDetails.put(EVENT_RESOURCE_UPDATE_LIMIT, Resource.class);
     }
 
     public static String getEntityForEvent(String eventName) {

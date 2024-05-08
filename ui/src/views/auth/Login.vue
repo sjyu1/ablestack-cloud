@@ -280,7 +280,6 @@ export default {
       }
     },
     async fetchData () {
-      await this.getCapabilities()
       api('listIdps').then(response => {
         if (response) {
           this.idps = response.listidpsresponse.idp || []
@@ -310,6 +309,7 @@ export default {
           })
         }
       })
+      await this.getCapabilities()
     },
     getCapabilities () {
       return new Promise(resolve => {

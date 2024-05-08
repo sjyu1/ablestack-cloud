@@ -4089,5 +4089,8 @@
 "cluster.add": "CLUSTER.ADD",
 "cluster.update": "CLUSTER.UPDATE",
 "cluster.delete": "CLUSTER.DELETE",
-"label.clientip": "IP Address"
+"label.clientip": "IP Address",
+"resource.update.limit": "RESOURCE.UPDATE.LIMIT",
+"label.action.update.guest.vlan": "VLAN change complete",
+"label.action.update.guest.vlan.desc": "You must restart the virtual machines and virtual routers using the guest network."
 }

@@ -35,6 +35,7 @@ import com.cloud.cluster.ManagementServerHostVO;
 import com.cloud.cluster.dao.ManagementServerHostDao;
 import com.cloud.utils.db.GlobalLock;
 import org.apache.cloudstack.acl.SecurityChecker.AccessType;
+import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.engine.subsystem.api.storage.ObjectInDataStoreStateMachine;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -70,6 +71,8 @@ import com.cloud.dc.dao.VlanDao;
 import com.cloud.domain.Domain;
 import com.cloud.domain.DomainVO;
 import com.cloud.domain.dao.DomainDao;
+import com.cloud.event.EventTypes;
+import com.cloud.event.ActionEventUtils;
 import com.cloud.exception.InvalidParameterValueException;
 import com.cloud.exception.PermissionDeniedException;
 import com.cloud.exception.ResourceAllocationException;
@@ -760,6 +763,7 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
 
         ResourceOwnerType ownerType = null;
         Long ownerId = null;
+        Project project = null;
 
         if (accountId != null) {
             Account account = _entityMgr.findById(Account.class, accountId);
@@ -781,6 +785,7 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
             }
 
             if (account.getType() == Account.Type.PROJECT) {
+                project = _projectDao.findByProjectAccountId(account.getId());
                 _accountMgr.checkAccess(caller, AccessType.ModifyProject, true, account);
             } else {
                 _accountMgr.checkAccess(caller, null, true, account);
@@ -823,8 +828,57 @@ public class ResourceLimitManagerImpl extends ManagerBase implements ResourceLim
         if (limit != null) {
             // Update the existing limit
             _resourceLimitDao.update(limit.getId(), max);
+            if (project != null) {
+                ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + Long.toString(limit.getMax()) + " to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
+            }
             return _resourceLimitDao.findById(limit.getId());
         } else {
+            if (project != null) {
+                String beforeMax = "";
+                Long convertMax = null;
+                switch (resourceType) {
+                    case public_ip:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectPublicIPs.key());
+                        break;
+                    case snapshot:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectSnapshots.key());
+                        break;
+                    case template:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectTemplates.key());
+                        break;
+                    case user_vm:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectUserVms.key());
+                        break;
+                    case volume:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectVolumes.key());
+                        break;
+                    case network:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectNetworks.key());
+                        break;
+                    case vpc:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectVpcs.key());
+                        break;
+                    case cpu:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectCpus.key());
+                        break;
+                    case memory:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectMemory.key());
+                        break;
+                    case primary_storage:
+                        beforeMax = _configDao.getValue(Config.DefaultMaxProjectPrimaryStorage.key());
+                        convertMax = max / ResourceType.bytesToGiB;
+                        break;
+                    case secondary_storage:
+                        beforeMax = Long.toString(MaxProjectSecondaryStorage.value());
+                        convertMax = max / ResourceType.bytesToGiB;
+                        break;
+                }
+                if ((resourceType == ResourceType.primary_storage || resourceType == ResourceType.secondary_storage) && max >= 0) {
+                    ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + beforeMax + " to " + Long.toString(convertMax), project.getId(), ApiCommandResourceType.Project.toString());
+                } else {
+                    ActionEventUtils.onActionEvent(caller.getId(), project.getProjectAccountId(), project.getDomainId(), EventTypes.EVENT_RESOURCE_UPDATE_LIMIT, resourceType + "limit update from " + beforeMax + " to " + Long.toString(max), project.getId(), ApiCommandResourceType.Project.toString());
+                }
+            }
             return _resourceLimitDao.persist(new ResourceLimitVO(resourceType, max, ownerId, ownerType));
         }
     }
