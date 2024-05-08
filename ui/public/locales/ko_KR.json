@@ -334,7 +334,7 @@
 "label.agree": "\ub3d9\uc758",
 "label.alert": "\uc54c\ub9bc",
 "label.alert.details": "\uc54c\ub9bc \uc0c1\uc138",
-"label.alert.show": "\ub2e4\uc2dc \ubcf4\uc9c0 \uc54a\uae30\u000d",
+"label.alert.show": "\ub2e4\uc2dc \ubcf4\uc9c0 \uc54a\uae30",
 "label.alerts": "\uc54c\ub9bc",
 "label.algorithm": "\uc54c\uace0\ub9ac\uc998",
 "label.all": "\ubaa8\ub450",
@@ -4081,7 +4081,7 @@
 "alert.vr.public.iface.mtu":"VR.\uacf5\uc778\uc778\ud130\ud398\uc774\uc2a4.MTU",
 "alert.vr.private.iface.mtu":"VR.\uc0ac\uc124\uc778\ud130\ud398\uc774\uc2a4.MTU",
 "alert.login":"\ub85c\uadf8\uc778",
-"threshold.reached": "\uC784\uACC4\uCE58\u0020\uB3C4\uB2EC",
+"threshold.reached": "\uc784\uacc4\uce58 \ub3c4\ub2ec",
 "encryption.check": "\uc554\ud638.\ubaa8\ub4c8.\uc810\uac80",
 "host.add": "\ud638\uc2a4\ud2b8.\ucd94\uac00",
 "host.update": "\ud638\uc2a4\ud2b8.\ud3b8\uc9d1",
@@ -4090,5 +4090,7 @@
 "cluster.update": "\ud074\ub7ec\uc2a4\ud130.\ud3b8\uc9d1",
 "cluster.delete": "\ud074\ub7ec\uc2a4\ud130.\uc0ad\uc81c",
 "label.clientip": "IP \uc8fc\uc18c",
-"resource.update.limit": "\uad6c\uc131.\uc81c\ud55c.\ubcc0\uacbd"
+"resource.update.limit": "\uad6c\uc131.\uc81c\ud55c.\ubcc0\uacbd",
+"label.action.update.guest.vlan": "VLAN \ubcc0\uacbd \uc644\ub8cc",
+"label.action.update.guest.vlan.desc": "\ud574\ub2f9 \uac8c\uc2a4\ud2b8 \ub124\ud2b8\uc6cc\ud06c\ub97c \uc0ac\uc6a9\ud558\ub294 \uac00\uc0c1\uba38\uc2e0\uacfc \uac00\uc0c1\ub77c\uc6b0\ud130\ub97c \uc7ac\uc2dc\uc791\ud574\uc57c \ud569\ub2c8\ub2e4."
 }
