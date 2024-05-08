@@ -34,6 +34,7 @@ function beforeStart()
     # encPassword=$(java -classpath $jarfile com.cloud.utils.crypt.EncryptionCLI -i $kek_pass -p $secretkey | sed 's/\//\\\//g')
     # echo "BOOTSTRAP_CLASS=org.apache.cloudstack.ServerDaemon "$encPassword $secretkey >> $process
 
+    kek_pass=$(echo $kek_pass | base64)
     echo "BOOTSTRAP_CLASS=org.apache.cloudstack.ServerDaemon "$kek_pass >> $process
 }
 

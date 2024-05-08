@@ -30,6 +30,7 @@ import java.util.Properties;
 
 import com.cloud.utils.Pair;
 import com.cloud.utils.server.ServerProperties;
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.daemon.Daemon;
 import org.apache.commons.daemon.DaemonContext;
 import org.eclipse.jetty.jmx.MBeanContainer;
@@ -111,8 +112,8 @@ public class ServerDaemon implements Daemon {
 
     public static void main(final String... anArgs) throws Exception {
         if (anArgs.length > 0) {
-            LOG.info(" ::::::::::KEK PASSWORD :::: " + anArgs[0]);
-            DbProperties.setKp(anArgs[0]);
+            LOG.debug("::: KEK PW ::: >> " + new String(Base64.decodeBase64(anArgs[0])));
+            DbProperties.setKp(new String(Base64.decodeBase64(anArgs[0])));
         }
         final ServerDaemon daemon = new ServerDaemon();
         daemon.init(null);
