@@ -25,23 +25,10 @@ export default {
   permission: ['listEvents'],
   columns: () => {
     const fields = ['level', 'type', 'state', 'description', 'resource', 'username', 'account', 'domain', 'created']
-    const securityFields = ['level', 'type', 'state', 'description', 'resource',
-      {
-        username: (record) => {
-          return record.parameters === 'system' ? 'system' : record.username
-        }
-      },
-      {
-        account: (record) => {
-          return record.parameters === 'system' ? 'system' : record.account
-        }
-      },
-      'domain', 'created', 'clientip']
     if (store.getters.features.securityfeaturesenabled) {
-      return securityFields
-    } else {
-      return fields
+      fields.push('clientip')
     }
+    return fields
   },
   details: ['username', 'id', 'description', 'resourcetype', 'resourceid', 'state', 'level', 'type', 'account', 'domain', 'created'],
   searchFilters: ['level', 'domainid', 'account', 'keyword', 'resourcetype'],
