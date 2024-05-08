@@ -26,12 +26,12 @@ export default {
   permission: ['listRouters'],
   params: { projectid: '-1' },
   columns: () => {
-    var columns = ['name', 'state', 'publicip', 'guestnetworkname', 'vpcname', 'redundantstate', 'softwareversion', 'hostname', 'account', 'zonename', 'requiresupgrade']
+    var columns = ['name', 'state', 'publicip', 'guestnetworkname', 'vpcname', 'redundantstate', 'softwareversion', 'hostname', 'account', 'zonename', 'requiresupgrade', 'vlan']
     columns.splice(6, 0, { field: 'version', customTitle: 'templateversion' })
     return columns
   },
   searchFilters: ['name', 'zoneid', 'podid', 'clusterid'],
-  details: ['name', 'id', 'version', 'softwareversion', 'requiresupgrade', 'guestnetworkname', 'vpcname', 'publicip', 'guestipaddress', 'linklocalip', 'serviceofferingname', 'networkdomain', 'isredundantrouter', 'redundantstate', 'hostname', 'account', 'zonename', 'created', 'hostcontrolstate'],
+  details: ['name', 'id', 'version', 'softwareversion', 'requiresupgrade', 'guestnetworkname', 'vpcname', 'publicip', 'guestipaddress', 'linklocalip', 'serviceofferingname', 'networkdomain', 'isredundantrouter', 'redundantstate', 'hostname', 'account', 'zonename', 'created', 'hostcontrolstate', 'vlan'],
   resourceType: 'VirtualRouter',
   filters: () => {
     const filters = ['starting', 'running', 'stopping', 'stopped', 'destroyed', 'expunging', 'migrating', 'error', 'unknown', 'shutdown']
@@ -71,6 +71,14 @@ export default {
     value: 'guestnetworkid'
   }],
   actions: [
+    {
+      api: 'updateRouterGuestVlan',
+      icon: 'edit-outlined',
+      label: 'label.edit',
+      dataView: true,
+      component: shallowRef(defineAsyncComponent(() => import('@/views/infra/routers/UpdateRouterGuestVlan'))),
+      popup: true
+    },
     {
       api: 'startRouter',
       icon: 'caret-right-outlined',
