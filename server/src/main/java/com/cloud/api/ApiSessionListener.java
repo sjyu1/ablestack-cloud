@@ -68,7 +68,7 @@ public class ApiSessionListener implements HttpSessionListener {
     public static void deleteAllExistSessionIds(String newSessionId) {
         for (String key : sessions.keySet()) {
             HttpSession ses = sessions.get(key);
-            if (ses != null && ses.getAttribute("username") != null && !newSessionId.equals(key.toString())) {
+            if (ses != null && !newSessionId.equals(key.toString())) {
                 sessions.get(key.toString()).invalidate();
                 sessions.remove(key.toString());
             }

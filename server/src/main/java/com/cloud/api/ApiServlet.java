@@ -26,7 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.security.KeyPair;
-import java.security.PrivateKey;
 
 import javax.inject.Inject;
 import javax.servlet.ServletConfig;
@@ -248,13 +247,13 @@ public class ApiServlet extends HttpServlet {
                             if (session != null) {
                                 invalidateHttpSession(session, "invalidating session for login call");
                             }
-                            session = req.getSession(true);
-                            if (ApiServer.EnableSecureSessionCookie.value()) {
-                                resp.setHeader("SET-COOKIE", String.format("JSESSIONID=%s;Secure;HttpOnly;Path=/client", session.getId()));
-                                if (logger.isDebugEnabled()) {
-                                    logger.debug("Session cookie is marked secure!");
-                                }
-                            }
+                            // session = req.getSession(true);
+                            // if (ApiServer.EnableSecureSessionCookie.value()) {
+                            //     resp.setHeader("SET-COOKIE", String.format("JSESSIONID=%s;Secure;HttpOnly;Path=/client", session.getId()));
+                            //     if (logger.isDebugEnabled()) {
+                            //         logger.debug("Session cookie is marked secure!");
+                            //     }
+                            // }
                         }
                     }
 
@@ -287,8 +286,7 @@ public class ApiServlet extends HttpServlet {
                             }
                             invalidateHttpSession(session, "invalidating session after logout call");
                         } else {
-                            final PrivateKey privateKey = (PrivateKey) session.getAttribute(RSAHelper.PRIVATE_KEY);
-                            if (privateKey == null) {
+                            if (session != null && session.getAttribute(RSAHelper.PRIVATE_KEY) == null) {
                                 Long userId = (Long) session.getAttribute("userid");
                                 final Account account = (Account) session.getAttribute("accountobj");
                                 Long accountId = null;
