@@ -232,9 +232,10 @@
       <status :text="text ? text : ''" displayText />
     </template>
     <template v-if="column.key === 'vlan'">
-      <a href="javascript:;">
-        <router-link v-if="$route.path === '/guestvlans'" :to="{ path: '/guestvlans/' + record.id }">{{ text }}</router-link>
-      </a>
+      <span v-if="$route.path === '/guestvlans'">
+        <router-link :to="{ path: '/guestvlans/' + record.id }">{{ text }}</router-link>
+      </span>
+      <span v-else>{{ text }}</span>
     </template>
     <template v-if="column.key === 'guestnetworkname'">
       <router-link :to="{ path: '/guestnetwork/' + record.guestnetworkid }">{{ text }}</router-link>

@@ -21,6 +21,7 @@ import static com.cloud.utils.NumbersUtil.toHumanReadableSize;
 
 import java.lang.reflect.Type;
 import java.math.BigInteger;
+import java.net.URI;
 import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -52,6 +53,7 @@ import org.apache.cloudstack.alert.AlertService;
 import org.apache.cloudstack.alert.AlertService.AlertType;
 import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.api.command.admin.router.RebootRouterCmd;
+import org.apache.cloudstack.api.command.admin.router.UpdateRouterGuestVlanCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterTemplateCmd;
 import org.apache.cloudstack.config.ApiServiceConfiguration;
@@ -153,6 +155,7 @@ import com.cloud.network.Network.Provider;
 import com.cloud.network.Network.Service;
 import com.cloud.network.NetworkModel;
 import com.cloud.network.NetworkService;
+import com.cloud.network.Networks.BroadcastDomainType;
 import com.cloud.network.Networks.TrafficType;
 import com.cloud.network.PublicIpAddress;
 import com.cloud.network.RemoteAccessVpn;
@@ -179,7 +182,9 @@ import com.cloud.network.dao.NetworkServiceMapDao;
 import com.cloud.network.dao.NetworkVO;
 import com.cloud.network.dao.OpRouterMonitorServiceDao;
 import com.cloud.network.dao.OpRouterMonitorServiceVO;
+import com.cloud.network.dao.PhysicalNetworkDao;
 import com.cloud.network.dao.PhysicalNetworkServiceProviderDao;
+import com.cloud.network.dao.PhysicalNetworkVO;
 import com.cloud.network.dao.RemoteAccessVpnDao;
 import com.cloud.network.dao.RouterHealthCheckResultDao;
 import com.cloud.network.dao.RouterHealthCheckResultVO;
@@ -375,6 +380,7 @@ Configurable, StateListener<VirtualMachine.State, VirtualMachine.Event, VirtualM
     @Inject protected CommandSetupHelper _commandSetupHelper;
     @Inject protected RouterDeploymentDefinitionBuilder _routerDeploymentManagerBuilder;
     @Inject private ManagementServer mgr;
+    @Inject private PhysicalNetworkDao _physicalNetworkDao;
 
     private int _routerRamSize;
     private int _routerCpuMHz;
@@ -404,6 +410,43 @@ Configurable, StateListener<VirtualMachine.State, VirtualMachine.Event, VirtualM
     @Override
     public VirtualRouter destroyRouter(final long routerId, final Account caller, final Long callerUserId) throws ResourceUnavailableException, ConcurrentOperationException {
         return _nwHelper.destroyRouter(routerId, caller, callerUserId);
+    }
+
+    @Override
+    @ActionEvent(eventType = EventTypes.EVENT_ROUTER_VLAN_UPDATE, eventDescription = "Update router guest vlan", async = true)
+    public VirtualRouter updateRouterGuestVlan(final UpdateRouterGuestVlanCmd cmd) {
+        final Long routerId = cmd.getRouterId();
+        final String vlan = cmd.getVlan();
+
+        final Account caller = CallContext.current().getCallingAccount();
+        _accountMgr.checkAccess(caller, null, true);
+
+        final URI uri = BroadcastDomainType.fromString(vlan);
+
+        final List<Long> networkIds = _routerDao.getRouterNetworks(routerId);
+        if (networkIds.size() > 0) {
+            Long networkId = networkIds.get(0);
+            NetworkVO networkVO = _networkDao.findById(networkId);
+            PhysicalNetworkVO pnVO = _physicalNetworkDao.findById(networkVO.getPhysicalNetworkId());
+
+            String lowVlan = pnVO.getVnetString().split("-")[0];
+            String highVlan = pnVO.getVnetString().split("-")[1];
+            if (Integer.parseInt(lowVlan) <= Integer.parseInt(vlan) && Integer.parseInt(vlan) <= Integer.parseInt(highVlan)) {
+                final List<NicVO> nicList = _nicDao.listByNetworkId(networkId);
+                if (nicList.size() > 0) {
+                    networkVO.setBroadcastUri(uri);
+                    _networkDao.update(networkVO.getId(), networkVO);
+                    for (NicVO  nic : nicList) {
+                        NicVO desNic = _nicDao.findById(nic.getId());
+                        desNic.setIsolationUri(uri);
+                        desNic.setBroadcastUri(uri);
+                        _nicDao.update(desNic.getId(), desNic);
+                    }
+                    return _routerDao.findById(routerId);
+                }
+            }
+        }
+        throw new CloudRuntimeException("Unable to update vlan for router " + routerId);
     }
 
     @Override

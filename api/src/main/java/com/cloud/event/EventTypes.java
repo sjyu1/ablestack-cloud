@@ -135,6 +135,7 @@ public class EventTypes {
     public static final String EVENT_ROUTER_UPGRADE = "ROUTER.UPGRADE";
     public static final String EVENT_ROUTER_DIAGNOSTICS = "ROUTER.DIAGNOSTICS";
     public static final String EVENT_ROUTER_HEALTH_CHECKS = "ROUTER.HEALTH.CHECKS";
+    public static final String EVENT_ROUTER_VLAN_UPDATE = "ROUTER.VLAN.UPDATE";
 
     // Console proxy
     public static final String EVENT_PROXY_CREATE = "PROXY.CREATE";

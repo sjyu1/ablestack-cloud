@@ -35,6 +35,7 @@ import com.cloud.utils.component.ManagerBase;
 import com.cloud.vm.DomainRouterVO;
 import com.cloud.vm.Nic;
 import com.cloud.vm.VirtualMachineProfile;
+import org.apache.cloudstack.api.command.admin.router.UpdateRouterGuestVlanCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterTemplateCmd;
 import org.springframework.stereotype.Component;
@@ -119,6 +120,12 @@ public class MockVpcVirtualNetworkApplianceManager extends ManagerBase implement
      */
     @Override
     public VirtualRouter upgradeRouter(final UpgradeRouterCmd cmd) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public VirtualRouter updateRouterGuestVlan(final UpdateRouterGuestVlanCmd cmd) {
         // TODO Auto-generated method stub
         return null;
     }
