@@ -477,52 +477,6 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
         return true;
     }
 
-    public AccountVO makeSystemAccount() {
-        List<AccountVO> account = new ArrayList<AccountVO>();
-        String sql = "WITH TB1 AS (SELECT 1 AS id, 'system' AS account_name, UUID() AS uuid, '1' AS `type`, "+
-        "'1' AS role_id, '1' AS domain_id, 'enabled' AS state, '0' AS cleanup_needed, '1' AS `default` " +
-        "UNION ALL SELECT id, account_name, uuid, `type`, role_id, domain_id, state, cleanup_needed, `default` FROM `cloud`.`account`)" +
-        "SELECT * FROM TB1 WHERE account_name = 'system'";
-        try (TransactionLegacy txn = TransactionLegacy.open(TransactionLegacy.CLOUD_DB)) {
-            try {
-                PreparedStatement pstmt = txn.prepareAutoCloseStatement(sql);
-                final ResultSet rs = pstmt.executeQuery();
-                while (rs.next()) {
-                    AccountVO accountVO = new AccountVO(rs.getString(2), rs.getLong(6), "", Account.Type.ADMIN, rs.getLong(5), rs.getString(1));
-                    account.add(accountVO);
-                }
-            } catch (SQLException e) {
-                logger.error(String.format("Unable to execute SQL makeSystemAccount(). e : " + e.getMessage()));
-            }
-        }
-        if (account.size() > 0)
-            return account.get(0);
-        return null;
-    }
-
-    public UserVO makeSystemUser() {
-        List<UserVO> user = new ArrayList<UserVO>();
-        String sql = "WITH TB2 AS (SELECT 1 AS id, 'system' AS username, UUID() AS uuid, RAND() AS `password`, '1' AS account_id, 'system' AS firstname, 'cloud' AS lastname, "+
-        "now() AS created, 'enabled' AS state, '0' AS is_registered, '0' AS incorrect_login_attempts, '1' AS `default`, 'UNKNOWN' AS source, '0' AS is_user_2fa_enabled " +
-        "UNION ALL SELECT id, username, uuid, `password`, account_id, firstname, lastname, created, state, is_registered, incorrect_login_attempts, `default`, source, is_user_2fa_enabled FROM `cloud`.`user`)" +
-        "SELECT * FROM TB2 WHERE username = 'system'";
-        try (TransactionLegacy txn = TransactionLegacy.open(TransactionLegacy.CLOUD_DB)) {
-            try {
-                PreparedStatement pstmt = txn.prepareAutoCloseStatement(sql);
-                final ResultSet rs = pstmt.executeQuery();
-                while (rs.next()) {
-                    UserVO userVO = new UserVO(rs.getLong(5), rs.getString(2), rs.getString(4), rs.getString(6), rs.getString(7), null, null, rs.getString(1), User.Source.UNKNOWN);
-                    user.add(userVO);
-                }
-            } catch (SQLException e) {
-                logger.error(String.format("Unable to execute SQL makeSystemUser(). e : " + e.getMessage()));
-            }
-        }
-        if (user.size() > 0)
-            return user.get(0);
-        return null;
-    }
-
     @Override
     public UserVO getSystemUser() {
         if (_systemUser == null) {
@@ -530,7 +484,7 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
             if (!securityFeaturesEnabled) {
                 _systemUser = _userDao.findById(User.UID_SYSTEM);
             } else {
-                _systemUser = makeSystemUser();
+                _systemUser = _userDao.findBySecurity();
             }
         }
         return _systemUser;
@@ -593,7 +547,7 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
             if (!securityFeaturesEnabled) {
                 _systemAccount = _accountDao.findById(Account.ACCOUNT_ID_SYSTEM);
             } else {
-                _systemAccount = makeSystemAccount();
+                _systemAccount = _accountDao.findBySecurity();
             }
         }
         return _systemAccount;
