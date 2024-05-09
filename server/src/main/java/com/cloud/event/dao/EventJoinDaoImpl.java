@@ -123,7 +123,6 @@ public class EventJoinDaoImpl extends GenericDaoBase<EventJoinVO, Long> implemen
                 responseEvent.setUsername("system");
             }
         }
-        responseEvent.setUsername(event.getUserName());
         if (event.getArchived()) {
             responseEvent.setArchived(true);
         }
