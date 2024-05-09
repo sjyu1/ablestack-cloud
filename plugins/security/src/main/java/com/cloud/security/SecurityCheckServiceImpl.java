@@ -244,6 +244,10 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
         final CallContext ctx = CallContext.current();
         final Long callerUserId = ctx.getCallingUserId();
         final Long callerAccountId = ctx.getCallingAccountId();
+        logger.info("::::::::::::::::::::::::::::::::::callerUserId");
+        logger.info(callerUserId);
+        logger.info("::::::::::::::::::::::::::::::::::callerAccountId");
+        logger.info(callerAccountId);
         if (checkFinalResult) {
             if ("Execution".equals(type)) {
                 ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_INFO,
