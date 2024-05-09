@@ -63,8 +63,6 @@ import com.cloud.host.dao.HostDao;
 import com.cloud.host.dao.HostDetailsDao;
 import com.cloud.org.Cluster;
 import com.cloud.resource.ResourceState;
-import com.cloud.user.User;
-import com.cloud.user.Account;
 import com.cloud.utils.component.Manager;
 import com.cloud.utils.component.ManagerBase;
 import com.cloud.utils.db.Transaction;
