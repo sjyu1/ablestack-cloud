@@ -42,7 +42,15 @@ export default {
     }
   },
   details: ['username', 'id', 'description', 'resourcetype', 'resourceid', 'state', 'level', 'type', 'account', 'domain', 'created'],
-  searchFilters: ['level', 'domainid', 'account', 'keyword', 'resourcetype'],
+  searchFilters: () => {
+    const filters = ['level', 'domainid', 'account', 'keyword', 'resourcetype']
+    const securityFilters = ['level', 'domainid', 'keyword', 'resourcetype']
+    if (store.getters.features.securityfeaturesenabled) {
+      return securityFilters
+    } else {
+      return filters
+    }
+  },
   related: [{
     name: 'event',
     title: 'label.event.timeline',
