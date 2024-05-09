@@ -113,9 +113,13 @@ public class EventJoinDaoImpl extends GenericDaoBase<EventJoinVO, Long> implemen
         responseEvent.setLevel(event.getLevel());
         responseEvent.setParentId(event.getStartUuid());
         responseEvent.setState(event.getState());
-        if (event.getUserName().equalsIgnoreCase("null")) {
+        logger.info("event.getUserName()");
+        logger.info(event.getUserName());
+        if (event.getUserName() == null) {
+            logger.info("::::::::1:::::::::::::");
             responseEvent.setUsername("system");
         } else {
+            logger.info("::::::::2:::::::::::::");
             responseEvent.setUsername(event.getUserName());
         }
         responseEvent.setUsername(event.getUserName());
