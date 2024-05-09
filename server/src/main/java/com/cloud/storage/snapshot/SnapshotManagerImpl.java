@@ -1937,10 +1937,8 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         }
         List<String> failedZones = new ArrayList<>();
         SnapshotVO snapshotVO = _snapshotDao.findById(snapshotId);
-        final CallContext ctx = CallContext.current();
-        final Long callerUserId = ctx.getCallingUserId();
-        final Long callerAccountId = ctx.getCallingAccountId();
-        long startEventId = ActionEventUtils.onStartedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventTypes.EVENT_SNAPSHOT_COPY,
+        long startEventId = ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(),
+                CallContext.current().getCallingAccountId(), EventTypes.EVENT_SNAPSHOT_COPY,
                 String.format("Copying snapshot ID: %s", snapshotVO.getUuid()), snapshotId,
                 ApiCommandResourceType.Snapshot.toString(), true, 0);
         DataStore dataStore = getSnapshotZoneImageStore(snapshotId, zoneId);
@@ -1948,7 +1946,8 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         String completedEventMsg = String.format("Copying snapshot ID: %s failed", snapshotVO.getUuid());
         if (dataStore == null) {
             logger.error(String.format("Unable to find an image store for zone ID: %d where snapshot %s is in Ready state", zoneId, snapshotVO));
-            ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, completedEventLevel, EventTypes.EVENT_SNAPSHOT_COPY,
+            ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(),
+                    CallContext.current().getCallingAccountId(), completedEventLevel, EventTypes.EVENT_SNAPSHOT_COPY,
                     completedEventMsg, snapshotId, ApiCommandResourceType.Snapshot.toString(), startEventId);
             return;
         }
@@ -1972,7 +1971,8 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
             completedEventLevel = EventVO.LEVEL_INFO;
             completedEventMsg = String.format("Completed copying snapshot ID: %s to zone(s): %s", snapshotVO.getUuid(), zoneNames);
         }
-        ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, completedEventLevel, EventTypes.EVENT_SNAPSHOT_COPY,
+        ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(),
+                CallContext.current().getCallingAccountId(), completedEventLevel, EventTypes.EVENT_SNAPSHOT_COPY,
                 completedEventMsg, snapshotId, ApiCommandResourceType.Snapshot.toString(), startEventId);
     }
 }

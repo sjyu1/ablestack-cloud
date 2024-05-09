@@ -43,7 +43,6 @@ import javax.naming.ConfigurationException;
 
 import com.cloud.exception.InvalidParameterValueException;
 import com.cloud.user.Account;
-import com.cloud.user.User;
 import com.cloud.utils.Pair;
 import org.apache.cloudstack.agent.directdownload.DirectDownloadAnswer;
 import org.apache.cloudstack.agent.directdownload.DirectDownloadCommand;
@@ -389,9 +388,7 @@ public class DirectDownloadManagerImpl extends ManagerBase implements DirectDown
         }
         String description = "Direct Download for template Id: " + template.getId() + " on pool Id: " + poolId + " failed";
         logger.error(description);
-        final CallContext ctx = CallContext.current();
-        final Long callerUserId = ctx.getCallingUserId();
-        ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, template.getAccountId(), EventVO.LEVEL_INFO, event, description, template.getId(), ApiCommandResourceType.Template.toString(), 0);
+        ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), template.getAccountId(), EventVO.LEVEL_INFO, event, description, template.getId(), ApiCommandResourceType.Template.toString(), 0);
     }
 
     /**

@@ -64,8 +64,6 @@ import com.cloud.org.Cluster;
 import com.cloud.org.Grouping;
 import com.cloud.service.ServiceOfferingVO;
 import com.cloud.service.dao.ServiceOfferingDao;
-import com.cloud.user.User;
-import com.cloud.user.Account;
 import com.cloud.utils.Pair;
 import com.cloud.utils.Ternary;
 import com.cloud.utils.component.ManagerBase;
@@ -140,10 +138,7 @@ public class RollingMaintenanceManagerImpl extends ManagerBase implements Rollin
         String cmdResourceType = ApiCommandResourceType.fromString(entity.name()) != null ? ApiCommandResourceType.fromString(entity.name()).toString() : null;
         String description = String.format("Success: %s, details: %s, hosts updated: %s, hosts skipped: %s", success, details,
                 generateReportHostsUpdated(hostsUpdated), generateReportHostsSkipped(hostsSkipped));
-        final CallContext ctx = CallContext.current();
-        final Long callerUserId = ctx.getCallingUserId();
-        final Long callerAccountId = ctx.getCallingAccountId();
-        ActionEventUtils.onCompletedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId,
+        ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(),
                 EventVO.LEVEL_INFO, cmd.getEventType(),
                 "Completed rolling maintenance for entity " + entity + " with IDs: " + ids + " - " + description, ids.get(0), cmdResourceType, 0);
     }

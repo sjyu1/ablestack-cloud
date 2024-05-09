@@ -26,8 +26,6 @@ import com.cloud.event.ActionEventUtils;
 import com.cloud.event.EventTypes;
 import com.cloud.event.EventVO;
 import com.cloud.host.Host;
-import com.cloud.user.User;
-import com.cloud.user.Account;
 
 public class PowerOperationTask implements Runnable {
     protected static Logger LOG = LogManager.getLogger(PowerOperationTask.class);
@@ -57,10 +55,7 @@ public class PowerOperationTask implements Runnable {
 
             String eventMessage = String
                     .format("Error while issuing out-of-band management action %s for host: %s", powerOperation.name(), host.getName());
-            final CallContext ctx = CallContext.current();
-            final Long callerUserId = ctx.getCallingUserId();
-            final Long callerAccountId = ctx.getCallingAccountId();
-            ActionEventUtils.onCreatedActionEvent((callerUserId == null) ? User.UID_SYSTEM : callerUserId, (callerAccountId == null) ? Account.ACCOUNT_ID_SYSTEM : callerAccountId, EventVO.LEVEL_ERROR,
+            ActionEventUtils.onCreatedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventVO.LEVEL_ERROR,
                     EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ACTION, true, eventMessage, host.getId(), ApiCommandResourceType.Host.toString());
         }
     }
