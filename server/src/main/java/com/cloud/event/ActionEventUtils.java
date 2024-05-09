@@ -201,9 +201,7 @@ public class ActionEventUtils {
         final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
         if (securityFeaturesEnabled) {
             User user = s_userDao.findById(userId);
-            logger.info(":::::::::::::1:::::::::::::");
             if (user == null) {
-                logger.info("::::::::::::2::::::::::::::");
                 ManagementServerHostVO msHost = s_msHostDao.findByMsid(ManagementServerNode.getManagementServerId());
                 if (msHost != null) {
                     event.setClientIp(msHost.getServiceIP());
@@ -212,7 +210,6 @@ public class ActionEventUtils {
                     event.setClientIp(hostIp);
                 }
             } else {
-                logger.info("::::::::::::3:::::::::::::");
                 if (user.getUsername().equalsIgnoreCase("admin")) {
                     String ApiAllowedSourceIp = ApiServiceConfiguration.ApiAllowedSourceIp.valueIn(accountId).replaceAll("\\s", "");
                     event.setClientIp(ApiAllowedSourceIp);
@@ -240,29 +237,14 @@ public class ActionEventUtils {
 
         Map<String, String> eventDescription = new HashMap<String, String>();
         Project project = s_projectDao.findByProjectAccountId(accountId);
-        logger.info(":::::::::::::::::::::::::::::::::::::::::");
-        logger.info(accountId);
-        logger.info(":::::::::::::::::::::::::::::::::::::::::");
         Account account = s_accountDao.findById(accountId);
-        logger.info(":::::::::::::::::::::::::::::::::::::::::");
-        logger.info(userId);
-        logger.info(":::::::::::::::::::::::::::::::::::::::::");
         User user = s_userDao.findById(userId);
-        logger.info(":::::::::::::::::::::::::::::::::::::::::");
-        logger.info(user);
-        logger.info(":::::::::::::::::::::::::::::::::::::::::");
         // if account has been deleted, this might be called during cleanup of resources and results in null pointer
         final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
         if (account == null) {
             if (securityFeaturesEnabled) {
                 if ((Long)accountId == Account.ACCOUNT_ID_SYSTEM) {
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
-                    logger.info("findBySecurity");
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
                     account = s_accountDao.findBySecurity();
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
-                    logger.info(account.getAccountName());
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
                 } else {
                     return;
                 }
@@ -273,13 +255,7 @@ public class ActionEventUtils {
         if (user == null) {
             if (securityFeaturesEnabled) {
                 if ((Long)userId == User.UID_SYSTEM) {
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
-                    logger.info("findBySecurity");
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
                     user = s_userDao.findBySecurity();
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
-                    logger.info(user.getUsername());
-                    logger.info(":::::::::::::::::::::::::::::::::::::::::");
                 } else {
                     return;
                 }
