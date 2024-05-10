@@ -32,6 +32,7 @@ import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.user.UserCmd;
 import org.apache.cloudstack.api.response.UserVmResponse;
 import org.apache.cloudstack.context.CallContext;
+import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 
 import com.cloud.event.EventTypes;
 import com.cloud.exception.ConcurrentOperationException;
@@ -43,6 +44,9 @@ import com.cloud.vm.VirtualMachine;
         requestHasSensitiveInfo = false, responseHasSensitiveInfo = true)
 public class StopVMCmd extends BaseAsyncCmd implements UserCmd {
     protected static Logger logger = LogManager.getLogger(StopVMCmd.class.getName());
+
+    @Inject
+    ConfigurationDao _configDao;
 
     private static final String s_name = "stopvirtualmachineresponse";
 
@@ -120,8 +124,12 @@ public class StopVMCmd extends BaseAsyncCmd implements UserCmd {
     public void execute() throws ServerApiException, ConcurrentOperationException {
         CallContext.current().setEventDetails("Vm Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getId()));
         UserVm result;
-
-        result = _userVmService.stopVirtualMachine(getId(), isForced());
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
+        if (securityFeaturesEnabled && isForced()) {
+            result = _userVmService.forceStopVirtualMachine(getId(), isForced());
+        } else {
+            result = _userVmService.stopVirtualMachine(getId(), isForced());
+        }
 
         if (result != null) {
             UserVmResponse response = _responseGenerator.createUserVmResponse(getResponseView(), "virtualmachine", result).get(0);

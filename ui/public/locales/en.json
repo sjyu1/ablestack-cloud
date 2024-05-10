@@ -4092,5 +4092,7 @@
 "label.clientip": "IP Address",
 "resource.update.limit": "RESOURCE.UPDATE.LIMIT",
 "label.action.update.guest.vlan": "VLAN change complete",
-"label.action.update.guest.vlan.desc": "You must restart the virtual machines and virtual routers using the guest network."
+"label.action.update.guest.vlan.desc": "You must restart the virtual machines and virtual routers using the guest network.",
+"vm.force.stop": "VM.FORCE.STOP",
+"vm.force.reboot": "VM.FORCE.REBOOT"
 }
