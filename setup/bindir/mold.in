@@ -160,6 +160,9 @@ function securityCheck()
             mysql --user=root --password=$DATABASE_PASSWD -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$UUID', 'SECURITY.CHECK', 'Completed', 'Failed to execute security check on the management server when operating the product.', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '$HOST_IP');" > /dev/null 2>&1
         fi
         mysql --user=root --password=$DATABASE_PASSWD -e "use cloud; SET GLOBAL foreign_key_checks=1;" > /dev/null 2>&1
+    else
+        echo "Please enter again kek password."
+        exit 0
     fi
 }
 
