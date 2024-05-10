@@ -5,7 +5,6 @@ jarfile='/usr/share/cloudstack-common/lib/cloudstack-utils.jar'
 process='/etc/default/cloudstack-management'
 securityjarfile='/usr/share/cloudstack-common/lib/'
 scriptpath='/usr/share/cloudstack-common/scripts'
-logfile='/var/log/security_check.log'
 
 function afterStarted()
 {
@@ -146,7 +145,6 @@ function securityCheck()
         fi
 
         failed_files="${failed_files%, }"
-        echo "$failed_files"  2>&1 | tee -a $logfile
 
         # 감사기록 생성
         if [ ! -n "$failed_files" ]; then
