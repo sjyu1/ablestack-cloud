@@ -113,7 +113,11 @@ public class CallContext {
     }
 
     public long getCallingUserId() {
-        return userId;
+        if ((Long)userId == null) {
+            return 1L;
+        } else {
+            return userId;
+        }
     }
 
     public User getCallingUser() {
@@ -315,7 +319,11 @@ public class CallContext {
     }
 
     public long getCallingAccountId() {
-        return accountId;
+        if ((Long)accountId == null) {
+            return 1L;
+        } else {
+            return accountId;
+        }
     }
 
     public String getCallingAccountUuid() {

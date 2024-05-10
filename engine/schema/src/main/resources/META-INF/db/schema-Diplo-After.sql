@@ -52,11 +52,11 @@ CREATE VIEW `cloud`.`event_view` AS
         projects.name project_name
     FROM
         `cloud`.`event`
-            INNER JOIN
+            LEFT JOIN
         `cloud`.`account` ON event.account_id = account.id
-            INNER JOIN
+            LEFT JOIN
         `cloud`.`domain` ON event.domain_id = domain.id
-            INNER JOIN
+            LEFT JOIN
         `cloud`.`user` ON event.user_id = user.id
             LEFT JOIN
         `cloud`.`projects` ON projects.project_account_id = event.account_id

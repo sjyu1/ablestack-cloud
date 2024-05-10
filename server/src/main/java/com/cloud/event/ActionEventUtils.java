@@ -137,7 +137,7 @@ public class ActionEventUtils {
         long startEventId = ctx.getStartEventId();
 
         if (!eventType.equals(""))
-            ActionEventUtils.onStartedActionEvent(userId, accountId, eventType, eventDescription, resourceId, resourceType, eventDisplayEnabled, startEventId);
+            ActionEventUtils.onStartedActionEvent(((Long)userId == null) ? User.UID_SYSTEM : userId, ((Long)accountId == null) ? Account.ACCOUNT_ID_SYSTEM : accountId, eventType, eventDescription, resourceId, resourceType, eventDisplayEnabled, startEventId);
     }
 
     /*
@@ -201,16 +201,18 @@ public class ActionEventUtils {
         final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
         if (securityFeaturesEnabled) {
             User user = s_userDao.findById(userId);
-            if (user.getUsername().equalsIgnoreCase("admin")) {
-                String ApiAllowedSourceIp = ApiServiceConfiguration.ApiAllowedSourceIp.valueIn(accountId).replaceAll("\\s", "");
-                event.setClientIp(ApiAllowedSourceIp);
-            } else {
+            if (user == null) {
                 ManagementServerHostVO msHost = s_msHostDao.findByMsid(ManagementServerNode.getManagementServerId());
                 if (msHost != null) {
                     event.setClientIp(msHost.getServiceIP());
                 } else {
                     String hostIp = Script.runSimpleBashScript("hostname -i");
                     event.setClientIp(hostIp);
+                }
+            } else {
+                if (user.getUsername().equalsIgnoreCase("admin")) {
+                    String ApiAllowedSourceIp = ApiServiceConfiguration.ApiAllowedSourceIp.valueIn(accountId).replaceAll("\\s", "");
+                    event.setClientIp(ApiAllowedSourceIp);
                 }
             }
         }
@@ -238,27 +240,45 @@ public class ActionEventUtils {
         Account account = s_accountDao.findById(accountId);
         User user = s_userDao.findById(userId);
         // if account has been deleted, this might be called during cleanup of resources and results in null pointer
-        if (account == null)
-            return;
-        if (user == null)
-            return;
-        if (project != null)
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
+        if (account == null) {
+            if (securityFeaturesEnabled) {
+                if ((Long)accountId == Account.ACCOUNT_ID_SYSTEM) {
+                    account = s_accountDao.findBySecurity();
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+        if (user == null) {
+            if (securityFeaturesEnabled) {
+                if ((Long)userId == User.UID_SYSTEM) {
+                    user = s_userDao.findBySecurity();
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+        if (project != null) {
             eventDescription.put("project", project.getUuid());
-        eventDescription.put("user", user.getUuid());
-        eventDescription.put("account", account.getUuid());
-        eventDescription.put("event", eventType);
-        eventDescription.put("status", state.toString());
-        eventDescription.put("entity", resourceType);
-        eventDescription.put("entityuuid", resourceUuid);
-        //Put all the first class entities that are touched during the action. For now at least put in the vmid.
-        populateFirstClassEntities(eventDescription);
-        eventDescription.put("description", description);
+            eventDescription.put("user", user.getUuid());
+            eventDescription.put("account", account.getUuid());
+            eventDescription.put("event", eventType);
+            eventDescription.put("status", state.toString());
+            eventDescription.put("entity", resourceType);
+            eventDescription.put("entityuuid", resourceUuid);
+            //Put all the first class entities that are touched during the action. For now at least put in the vmid.
+            populateFirstClassEntities(eventDescription);
+            eventDescription.put("description", description);
 
-        String eventDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z").format(new Date());
-        eventDescription.put("eventDateTime", eventDate);
-
-        event.setDescription(eventDescription);
-
+            String eventDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z").format(new Date());
+            eventDescription.put("eventDateTime", eventDate);
+            event.setDescription(eventDescription);
+        }
         try {
             s_eventBus.publish(event);
         } catch (EventBusException e) {
@@ -397,8 +417,13 @@ public class ActionEventUtils {
     private static long getDomainId(long accountId) {
         AccountVO account = s_accountDao.findByIdIncludingRemoved(accountId);
         if (account == null) {
-            logger.error("Failed to find account(including removed ones) by id '" + accountId + "'");
-            return 0;
+            final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
+            if (securityFeaturesEnabled) {
+                return 1L;
+            } else {
+                logger.error("Failed to find account(including removed ones) by id '" + accountId + "'");
+                return 0;
+            }
         }
         return account.getDomainId();
     }
