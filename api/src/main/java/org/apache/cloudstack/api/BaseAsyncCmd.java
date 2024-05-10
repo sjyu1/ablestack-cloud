@@ -41,9 +41,6 @@ public abstract class BaseAsyncCmd extends BaseCmd {
     @Parameter(name = ApiConstants.CUSTOM_JOB_ID , type = CommandType.STRING)
     private String injectedJobId;
 
-    @Inject
-    public ConfigurationService _configService;
-
     public String getInjectedJobId() {
         return this.injectedJobId;
     }
