@@ -130,8 +130,6 @@ function securityCheck()
         done
 
         # process check
-        systemctl start mold-monitoring
-        
         count1=$(systemctl status mold-monitoring.service | grep -i SUCCESS | wc -l) > /dev/null 2>&1
         if [ "$count1" -eq 0 ]; then
             echo "monitoring.service,false" > /dev/null 2>&1
@@ -183,6 +181,7 @@ function removeVariable()
 if [ "$oper" == "start" ]; then
     beforeStart
     systemctl start cloudstack-management
+    systemctl start mold-monitoring
     # 자체시험 실패 테스트 케이스
     # systemctl stop cloudstack-management
     securityCheck
