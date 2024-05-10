@@ -45,9 +45,9 @@ function securityCheck()
     kek_pass=$(echo $kek_pass | base64 --decode) > /dev/null 2>&1
     key=$(openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc) > /dev/null 2>&1
     DB_FILE="/etc/cloudstack/management/db.properties"
+    openssl enc -aes-256-cbc -d -K $key -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out /etc/cloudstack/management/db.properties
     test=$(cat $DB_FILE | grep 'db.cloud.password' | wc -l) > /dev/null 2>&1
     if [ ! "$test" -eq 0 ]; then
-        openssl enc -aes-256-cbc -d -K $key -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out /etc/cloudstack/management/db.properties
         DbCloudEncPassword=$(sed '/^\#/d' $DB_FILE | grep 'db.cloud.password'  | tail -n 1 | cut -d "=" -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'i | sed 's/^ENC(\(.*\))/\1/')
         encVersion=$(sed '/^\#/d' $DB_FILE | grep 'db.cloud.encryptor.version'  | tail -n 1 | cut -d "=" -f2-)
         DATABASE_PASSWD=$(java -classpath $jarfile com.cloud.utils.crypt.EncryptionCLI -d -i "$DbCloudEncPassword" -p "$key" $encVersion)
