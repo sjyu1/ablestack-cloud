@@ -98,6 +98,12 @@ File=/etc/cloudstack/management/key.enc
 if [ -e "$File" ]; then
     systemctl status mold-monitoring.service | grep -i SUCCESS > /dev/null
     if [[ $? == 0 ]]; then
+        echo "monitoring.service,true"
+    else
+        echo "monitoring.service,false"
+    fi
+    systemctl status cloudstack-management.service | grep -i running > /dev/null
+    if [[ $? == 0 ]]; then
         echo "mold.service,true"
     else
         echo "mold.service,false"
