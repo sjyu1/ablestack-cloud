@@ -162,6 +162,9 @@ function securityCheck()
         mysql --user=root --password=$DATABASE_PASSWD -e "use cloud; SET GLOBAL foreign_key_checks=1;" > /dev/null 2>&1
     else
         echo "Please enter again kek password."
+        afterStarted
+        systemctl stop cloudstack-management
+        systemctl stop mold-monitoring
         exit 0
     fi
 }
