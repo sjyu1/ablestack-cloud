@@ -96,10 +96,16 @@ done
 # process check
 File=/etc/cloudstack/management/key.enc
 if [ -e "$File" ]; then
-    systemctl status mold-monitoring.service | grep -i SUCCESS > /dev/null
-    if [[ $? == 0 ]]; then
-        echo "mold.service,true"
+    count1=$(systemctl status mold-monitoring.service | grep -i SUCCESS | wc -l)
+    if [ "$count1" -eq 0 ]; then
+        echo "monitoring.service,false"
     else
+        echo "monitoring.service,true"
+    fi
+    count2=$(systemctl status cloudstack-management.service | grep -i running | wc -l)
+    if [ "$count2" -eq 0 ]; then
         echo "mold.service,false"
+    else
+        echo "mold.service,true"
     fi
 fi
