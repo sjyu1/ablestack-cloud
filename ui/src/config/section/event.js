@@ -25,13 +25,32 @@ export default {
   permission: ['listEvents'],
   columns: () => {
     const fields = ['level', 'type', 'state', 'description', 'resource', 'username', 'account', 'domain', 'created']
+    const securityFields = ['level', 'type', 'state', 'description', 'resource', 'username',
+      {
+        account: (record) => {
+          if (record.username === 'system') {
+            return 'system'
+          } else {
+            return record.account
+          }
+        }
+      }, 'domain', 'created', 'clientip']
     if (store.getters.features.securityfeaturesenabled) {
-      fields.push('clientip')
+      return securityFields
+    } else {
+      return fields
     }
-    return fields
   },
   details: ['username', 'id', 'description', 'resourcetype', 'resourceid', 'state', 'level', 'type', 'account', 'domain', 'created'],
-  searchFilters: ['level', 'domainid', 'account', 'keyword', 'resourcetype'],
+  searchFilters: () => {
+    const filters = ['level', 'domainid', 'account', 'keyword', 'resourcetype']
+    const securityFilters = ['level', 'domainid', 'keyword', 'resourcetype']
+    if (store.getters.features.securityfeaturesenabled) {
+      return securityFilters
+    } else {
+      return filters
+    }
+  },
   related: [{
     name: 'event',
     title: 'label.event.timeline',
