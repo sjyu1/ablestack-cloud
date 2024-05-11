@@ -168,7 +168,7 @@ public class DomainRouterJoinDaoImpl extends GenericDaoBase<DomainRouterJoinVO, 
                         routerResponse.setGuestNetworkId(router.getNetworkUuid());
                         routerResponse.setGuestNetworkName(router.getNetworkName());
                         routerResponse.setNetworkDomain(router.getNetworkDomain());
-                        routerResponse.setVlan(router.getBroadcastUri().toString().replaceAll("vlan://", ""));
+                        routerResponse.setVlan(router.getBroadcastUri() == null ? "" : router.getBroadcastUri().toString().replaceAll("vlan://", ""));
                     }
                 }
 
