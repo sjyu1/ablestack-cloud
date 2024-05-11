@@ -110,8 +110,6 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
         }
 
         private void securityCheck() {
-            ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_SECURITY_CHECK,
-                    "running periodic security check on management server when running the product.", new Long(0), null, true, 0);
             String type = "";
             if (runMode == "first") {
                 type = "Execution";
@@ -185,8 +183,6 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
 
     @Override
     public boolean runSecurityCheckCommand(final RunSecurityCheckCmd cmd) {
-        ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_SECURITY_CHECK,
-                    "running manual security check on management server when operating the product.", new Long(0), null, true, 0);
         Long mshostId = cmd.getMsHostId();
         ManagementServerHost mshost = msHostDao.findById(mshostId);
         String type = "Manual";
