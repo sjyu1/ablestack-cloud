@@ -3281,6 +3281,60 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     }
 
     @Override
+    @ActionEvent(eventType = EventTypes.EVENT_VM_FORCE_REBOOT, eventDescription = "rebooting Vm", async = true)
+    public UserVm forceRebootVirtualMachine(RebootVMCmd cmd) throws InsufficientCapacityException, ResourceUnavailableException {
+        Account caller = CallContext.current().getCallingAccount();
+        Long vmId = cmd.getId();
+
+        // Verify input parameters
+        UserVmVO vmInstance = _vmDao.findById(vmId);
+        if (vmInstance == null) {
+            throw new InvalidParameterValueException("Unable to find a virtual machine with id " + vmId);
+        }
+
+        if (vmInstance.getState() != State.Running) {
+            throw new InvalidParameterValueException(String.format("The VM %s (%s) is not running, unable to reboot it",
+                    vmInstance.getUuid(), vmInstance.getDisplayNameOrHostName()));
+        }
+
+        _accountMgr.checkAccess(caller, null, true, vmInstance);
+
+        checkIfHostOfVMIsInPrepareForMaintenanceState(vmInstance.getHostId(), vmId, "Reboot");
+
+        // If the VM is Volatile in nature, on reboot discard the VM's root disk and create a new root disk for it: by calling restoreVM
+        long serviceOfferingId = vmInstance.getServiceOfferingId();
+        ServiceOfferingVO offering = serviceOfferingDao.findById(vmInstance.getId(), serviceOfferingId);
+        if (offering != null && offering.getRemoved() == null) {
+            if (offering.isVolatileVm()) {
+                return restoreVMInternal(caller, vmInstance, null);
+            }
+        } else {
+            throw new InvalidParameterValueException("Unable to find service offering: " + serviceOfferingId + " corresponding to the vm");
+        }
+
+        Boolean enterSetup = cmd.getBootIntoSetup();
+        if (enterSetup != null && enterSetup && !HypervisorType.VMware.equals(vmInstance.getHypervisorType())) {
+            throw new InvalidParameterValueException("Booting into a hardware setup menu is not implemented on " + vmInstance.getHypervisorType());
+        }
+
+        UserVm userVm = rebootVirtualMachine(CallContext.current().getCallingUserId(), vmId, enterSetup == null ? false : cmd.getBootIntoSetup(), cmd.isForced());
+        if (userVm != null ) {
+            // update the vmIdCountMap if the vm is in advanced shared network with out services
+            final List<NicVO> nics = _nicDao.listByVmId(vmId);
+            for (NicVO nic : nics) {
+                Network network = _networkModel.getNetwork(nic.getNetworkId());
+                if (_networkModel.isSharedNetworkWithoutServices(network.getId())) {
+                    logger.debug("Adding vm " +vmId +" nic id "+ nic.getId() +" into vmIdCountMap as part of vm " +
+                            "reboot for vm ip fetch ");
+                    vmIdCountMap.put(nic.getId(), new VmAndCountDetails(nic.getInstanceId(), VmIpFetchTrialMax.value()));
+                }
+            }
+            return  userVm;
+        }
+        return  null;
+    }
+
+    @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_DESTROY, eventDescription = "destroying Vm", async = true)
     public UserVm destroyVm(DestroyVMCmd cmd) throws ResourceUnavailableException, ConcurrentOperationException {
         CallContext ctx = CallContext.current();
@@ -5474,6 +5528,47 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_STOP, eventDescription = "stopping Vm", async = true)
     public UserVm stopVirtualMachine(long vmId, boolean forced) throws ConcurrentOperationException {
+        // Input validation
+        Account caller = CallContext.current().getCallingAccount();
+        Long userId = CallContext.current().getCallingUserId();
+
+        // if account is removed, return error
+        if (caller != null && caller.getRemoved() != null) {
+            throw new PermissionDeniedException("The account " + caller.getUuid() + " is removed");
+        }
+
+        UserVmVO vm = _vmDao.findById(vmId);
+        if (vm == null) {
+            throw new InvalidParameterValueException("unable to find a virtual machine with id " + vmId);
+        }
+
+        // check if vm belongs to AutoScale vm group in Disabled state
+        autoScaleManager.checkIfVmActionAllowed(vmId);
+
+        boolean status = false;
+        try {
+            VirtualMachineEntity vmEntity = _orchSrvc.getVirtualMachine(vm.getUuid());
+
+            if(forced) {
+                status = vmEntity.stopForced(Long.toString(userId));
+            } else {
+                status = vmEntity.stop(Long.toString(userId));
+            }
+            if (status) {
+                return _vmDao.findById(vmId);
+            } else {
+                return null;
+            }
+        } catch (ResourceUnavailableException e) {
+            throw new CloudRuntimeException("Unable to contact the agent to stop the virtual machine " + vm, e);
+        } catch (CloudException e) {
+            throw new CloudRuntimeException("Unable to contact the agent to stop the virtual machine " + vm, e);
+        }
+    }
+
+    @Override
+    @ActionEvent(eventType = EventTypes.EVENT_VM_FORCE_STOP, eventDescription = "stopping Vm", async = true)
+    public UserVm forceStopVirtualMachine(long vmId, boolean forced) throws ConcurrentOperationException {
         // Input validation
         Account caller = CallContext.current().getCallingAccount();
         Long userId = CallContext.current().getCallingUserId();

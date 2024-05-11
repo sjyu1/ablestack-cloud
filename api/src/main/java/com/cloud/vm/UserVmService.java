@@ -127,6 +127,8 @@ public interface UserVmService {
 
     UserVm rebootVirtualMachine(RebootVMCmd cmd) throws InsufficientCapacityException, ResourceUnavailableException;
 
+    UserVm forceRebootVirtualMachine(RebootVMCmd cmd) throws InsufficientCapacityException, ResourceUnavailableException;
+
     UserVm updateVirtualMachine(UpdateVMCmd cmd) throws ResourceUnavailableException, InsufficientCapacityException;
 
     /**
@@ -437,6 +439,8 @@ public interface UserVmService {
     UserVm upgradeVirtualMachine(UpgradeVMCmd cmd) throws ResourceAllocationException;
 
     UserVm stopVirtualMachine(long vmId, boolean forced) throws ConcurrentOperationException;
+
+    UserVm forceStopVirtualMachine(long vmId, boolean forced) throws ConcurrentOperationException;
 
     void deletePrivateTemplateRecord(Long templateId);
 
