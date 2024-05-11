@@ -76,8 +76,8 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     private static final Logger LOGGER = LogManager.getLogger(IntegrityVerificationServiceImpl.class);
 
     private static final ConfigKey<Integer> IntegrityVerificationInterval = new ConfigKey<>("Advanced", Integer.class,
-            "integrity.verification.interval", "1",
-            "The interval integrity verification background tasks in days", false);
+            "integrity.verification.interval", "4",
+            "The interval integrity verification background tasks in hour", false);
     private static String runMode = "";
 
     @Inject
@@ -100,7 +100,7 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     public boolean start() {
         runMode = "first";
         if(IntegrityVerificationInterval.value() != 0) {
-            executor.scheduleAtFixedRate(new IntegrityVerificationTask(), 0, IntegrityVerificationInterval.value(), TimeUnit.DAYS);
+            executor.scheduleAtFixedRate(new IntegrityVerificationTask(), 0, IntegrityVerificationInterval.value(), TimeUnit.HOURS);
         }
         return true;
     }
@@ -344,8 +344,9 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_INTEGRITY_VERIFICATION, eventDescription = "running manual integrity verification on management server when running the product.", async = true)
     public boolean runIntegrityVerificationCommand(final RunIntegrityVerificationCmd cmd) {
+        ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_INTEGRITY_VERIFICATION,
+                    "running manual integrity verification on management server when operating the product.", new Long(0), null, true, 0);
         Long mshostId = cmd.getMsHostId();
         List<Boolean> verificationResults = new ArrayList<>();
         List<String> verificationFailedList = new ArrayList<>();

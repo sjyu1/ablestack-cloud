@@ -32,6 +32,7 @@ import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.user.UserCmd;
 import org.apache.cloudstack.api.response.UserVmResponse;
 import org.apache.cloudstack.context.CallContext;
+import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 
 import com.cloud.event.EventTypes;
 import com.cloud.exception.InsufficientCapacityException;
@@ -40,10 +41,16 @@ import com.cloud.user.Account;
 import com.cloud.uservm.UserVm;
 import com.cloud.vm.VirtualMachine;
 
+import javax.inject.Inject;
+
 @APICommand(name = "rebootVirtualMachine", description = "Reboots a virtual machine.", responseObject = UserVmResponse.class, responseView = ResponseView.Restricted, entityType = {VirtualMachine.class},
         requestHasSensitiveInfo = false, responseHasSensitiveInfo = true)
 public class RebootVMCmd extends BaseAsyncCmd implements UserCmd {
     protected static Logger logger = LogManager.getLogger(RebootVMCmd.class.getName());
+
+    @Inject
+    ConfigurationDao _configDao;
+
     private static final String s_name = "rebootvirtualmachineresponse";
 
     /////////////////////////////////////////////////////
@@ -119,7 +126,12 @@ public class RebootVMCmd extends BaseAsyncCmd implements UserCmd {
     public void execute() throws ResourceUnavailableException, InsufficientCapacityException {
         CallContext.current().setEventDetails("Vm Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getId()));
         UserVm result;
-        result = _userVmService.rebootVirtualMachine(this);
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
+        if (securityFeaturesEnabled && isForced()) {
+            result = _userVmService.forceRebootVirtualMachine(this);
+        } else {
+            result = _userVmService.rebootVirtualMachine(this);
+        }
         if (result !=null){
             UserVmResponse response = _responseGenerator.createUserVmResponse(getResponseView(), "virtualmachine", result).get(0);
             response.setResponseName(getCommandName());

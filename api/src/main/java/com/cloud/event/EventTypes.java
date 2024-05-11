@@ -98,7 +98,9 @@ public class EventTypes {
     public static final String EVENT_VM_DESTROY = "VM.DESTROY";
     public static final String EVENT_VM_START = "VM.START";
     public static final String EVENT_VM_STOP = "VM.STOP";
+    public static final String EVENT_VM_FORCE_STOP = "VM.FORCE.STOP";
     public static final String EVENT_VM_REBOOT = "VM.REBOOT";
+    public static final String EVENT_VM_FORCE_REBOOT = "VM.FORCE.REBOOT";
     public static final String EVENT_VM_UPDATE = "VM.UPDATE";
     public static final String EVENT_VM_UPGRADE = "VM.UPGRADE";
     public static final String EVENT_VM_DYNAMIC_SCALE = "VM.DYNAMIC.SCALE";
@@ -748,7 +750,9 @@ public class EventTypes {
         entityEventDetails.put(EVENT_VM_DESTROY, VirtualMachine.class);
         entityEventDetails.put(EVENT_VM_START, VirtualMachine.class);
         entityEventDetails.put(EVENT_VM_STOP, VirtualMachine.class);
+        entityEventDetails.put(EVENT_VM_FORCE_STOP, VirtualMachine.class);
         entityEventDetails.put(EVENT_VM_REBOOT, VirtualMachine.class);
+        entityEventDetails.put(EVENT_VM_FORCE_REBOOT, VirtualMachine.class);
         entityEventDetails.put(EVENT_VM_UPDATE, VirtualMachine.class);
         entityEventDetails.put(EVENT_VM_UPGRADE, VirtualMachine.class);
         entityEventDetails.put(EVENT_VM_DYNAMIC_SCALE, VirtualMachine.class);
