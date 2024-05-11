@@ -344,8 +344,9 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_INTEGRITY_VERIFICATION, eventDescription = "running manual integrity verification on management server when running the product.", async = true)
     public boolean runIntegrityVerificationCommand(final RunIntegrityVerificationCmd cmd) {
+        ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_INTEGRITY_VERIFICATION,
+                    "running manual integrity verification on management server when operating the product.", new Long(0), null, true, 0);
         Long mshostId = cmd.getMsHostId();
         List<Boolean> verificationResults = new ArrayList<>();
         List<String> verificationFailedList = new ArrayList<>();
