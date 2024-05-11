@@ -190,7 +190,7 @@ public class ServerDaemon implements Daemon {
                     LOG.info("::::::::::::::::::::error:::::::::::::::::::::::::::::::::::::");
                     LOG.info(e);
                     ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                            "Deletion of the certificate and encryption key in the key store failed because the certificate has expired.", new Long(0), null);
+                            "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
                 }
             }
         } catch (final IOException e) {
