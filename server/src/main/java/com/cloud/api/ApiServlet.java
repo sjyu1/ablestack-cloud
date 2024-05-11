@@ -326,12 +326,14 @@ public class ApiServlet extends HttpServlet {
                 logger.trace(String.format("new session: %s", session));
             }
 
-            if (!isNew && (command.equalsIgnoreCase(ValidateUserTwoFactorAuthenticationCodeCmd.APINAME) || (!skip2FAcheckForAPIs(command) && !skip2FAcheckForUser(session)))) {
-                logger.debug("Verifying two factor authentication");
-                boolean success = verify2FA(session, command, auditTrailSb, params, remoteAddress, responseType, req, resp);
-                if (!success) {
-                    logger.debug("Verification of two factor authentication failed");
-                    return;
+            if (!ApiServer.SecurityFeaturesEnabled.value()) {
+                if (!isNew && (command.equalsIgnoreCase(ValidateUserTwoFactorAuthenticationCodeCmd.APINAME) || (!skip2FAcheckForAPIs(command) && !skip2FAcheckForUser(session)))) {
+                    logger.debug("Verifying two factor authentication");
+                    boolean success = verify2FA(session, command, auditTrailSb, params, remoteAddress, responseType, req, resp);
+                    if (!success) {
+                        logger.debug("Verification of two factor authentication failed");
+                        return;
+                    }
                 }
             }
 
@@ -398,7 +400,7 @@ public class ApiServlet extends HttpServlet {
                         logger.debug("CIDRs from which account '" + account.toString() + "' is allowed to perform API calls: " + ApiAllowedSourceIp  + "/" + accessAllowedCidr);
                         if (!NetUtils.isIpInCidrList(remoteAddress, (ApiAllowedSourceIp + "/" + accessAllowedCidr).split(","))) {
                             logger.warn("Request by account '" + account.toString() + "' was denied since " + remoteAddress + " does not match " + ApiAllowedSourceIp  + "/" + accessAllowedCidr);
-                            ActionEventUtils.onActionEvent(account.getId(), account.getAccountId(), account.getDomainId(), EventTypes.EVENT_USER_LOGIN,
+                            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, account.getDomainId(), EventTypes.EVENT_USER_LOGIN,
                                 "The access IP of the management terminal has been blocked. Blocked IP: " +  remoteAddress.toString().replace("/", ""), account.getId(), ApiCommandResourceType.User.toString());
                             throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to authenticate user '" + accountName + "' from ip " + remoteAddress.toString().replace("/", ""));
                         }

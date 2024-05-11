@@ -26,6 +26,8 @@ import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.commons.lang3.StringUtils;
 
+import com.cloud.user.User;
+import com.cloud.user.Account;
 import com.cloud.utils.component.ComponentMethodInterceptor;
 
 public class ActionEventInterceptor implements ComponentMethodInterceptor, MethodInterceptor {
@@ -101,12 +103,12 @@ public class ActionEventInterceptor implements ComponentMethodInterceptor, Metho
 
             if (actionEvent.create()) {
                 //This start event has to be used for subsequent events of this action
-                startEventId = ActionEventUtils.onCreatedActionEvent(userId, accountId, EventVO.LEVEL_INFO, eventType,
+                startEventId = ActionEventUtils.onCreatedActionEvent(((Long)userId == null) ? User.UID_SYSTEM : userId, ((Long)accountId == null) ? Account.ACCOUNT_ID_SYSTEM : accountId, EventVO.LEVEL_INFO, eventType,
                         isEventDisplayEnabled, "Successfully created entity for " + eventDescription,
                         eventResourceId, eventResourceType);
                 ctx.setStartEventId(startEventId);
             } else {
-                ActionEventUtils.onCompletedActionEvent(userId, accountId, EventVO.LEVEL_INFO, eventType,
+                ActionEventUtils.onCompletedActionEvent(((Long)userId == null) ? User.UID_SYSTEM : userId, ((Long)accountId == null) ? Account.ACCOUNT_ID_SYSTEM : accountId, EventVO.LEVEL_INFO, eventType,
                         isEventDisplayEnabled, "Successfully completed " + eventDescription,
                         eventResourceId, eventResourceType, startEventId);
             }
@@ -130,12 +132,12 @@ public class ActionEventInterceptor implements ComponentMethodInterceptor, Metho
                 return;
 
             if (actionEvent.create()) {
-                long eventId = ActionEventUtils.onCreatedActionEvent(userId, accountId, EventVO.LEVEL_ERROR, eventType,
+                long eventId = ActionEventUtils.onCreatedActionEvent(((Long)userId == null) ? User.UID_SYSTEM : userId, ((Long)accountId == null) ? Account.ACCOUNT_ID_SYSTEM : accountId, EventVO.LEVEL_ERROR, eventType,
                         isEventDisplayEnabled, "Error while creating entity for " + eventDescription,
                         eventResourceId, eventResourceType);
                 ctx.setStartEventId(eventId);
             } else {
-                ActionEventUtils.onCompletedActionEvent(userId, accountId, EventVO.LEVEL_ERROR, eventType, isEventDisplayEnabled,
+                ActionEventUtils.onCompletedActionEvent(((Long)userId == null) ? User.UID_SYSTEM : userId, ((Long)accountId == null) ? Account.ACCOUNT_ID_SYSTEM : accountId, EventVO.LEVEL_ERROR, eventType, isEventDisplayEnabled,
                         "Error while " + eventDescription,
                         eventResourceId, eventResourceType, startEventId);
             }

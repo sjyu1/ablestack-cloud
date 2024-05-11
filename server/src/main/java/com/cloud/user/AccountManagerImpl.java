@@ -440,16 +440,28 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
 
     @Override
     public boolean configure(final String name, final Map<String, Object> params) throws ConfigurationException {
-        _systemAccount = _accountDao.findById(Account.ACCOUNT_ID_SYSTEM);
-        if (_systemAccount == null) {
-            throw new ConfigurationException("Unable to find the system account using " + Account.ACCOUNT_ID_SYSTEM);
-        }
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
+        if (!securityFeaturesEnabled) {
+            _systemAccount = _accountDao.findById(Account.ACCOUNT_ID_SYSTEM);
+            if (_systemAccount == null) {
+                throw new ConfigurationException("Unable to find the system account using " + Account.ACCOUNT_ID_SYSTEM);
+            }
 
-        _systemUser = _userDao.findById(User.UID_SYSTEM);
-        if (_systemUser == null) {
-            throw new ConfigurationException("Unable to find the system user using " + User.UID_SYSTEM);
-        }
+            _systemUser = _userDao.findById(User.UID_SYSTEM);
+            if (_systemUser == null) {
+                throw new ConfigurationException("Unable to find the system user using " + User.UID_SYSTEM);
+            }
+        } else {
+            _systemAccount = _accountDao.findBySecurity();
+            if (_systemAccount == null) {
+                throw new ConfigurationException("Unable to find the system account using " + Account.ACCOUNT_ID_SYSTEM);
+            }
 
+            _systemUser =_userDao.findBySecurity();
+            if (_systemUser == null) {
+                throw new ConfigurationException("Unable to find the system user using " + User.UID_SYSTEM);
+            }
+        }
         Map<String, String> configs = _configDao.getConfiguration(params);
 
         String loginAttempts = configs.get(Config.IncorrectLoginAttemptsAllowed.key());
@@ -464,7 +476,12 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
     @Override
     public UserVO getSystemUser() {
         if (_systemUser == null) {
-            _systemUser = _userDao.findById(User.UID_SYSTEM);
+            final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
+            if (!securityFeaturesEnabled) {
+                _systemUser = _userDao.findById(User.UID_SYSTEM);
+            } else {
+                _systemUser = _userDao.findBySecurity();
+            }
         }
         return _systemUser;
     }
@@ -522,7 +539,12 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
     @Override
     public AccountVO getSystemAccount() {
         if (_systemAccount == null) {
-            _systemAccount = _accountDao.findById(Account.ACCOUNT_ID_SYSTEM);
+            final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
+            if (!securityFeaturesEnabled) {
+                _systemAccount = _accountDao.findById(Account.ACCOUNT_ID_SYSTEM);
+            } else {
+                _systemAccount = _accountDao.findBySecurity();
+            }
         }
         return _systemAccount;
     }

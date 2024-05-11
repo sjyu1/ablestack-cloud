@@ -113,7 +113,16 @@ public class EventJoinDaoImpl extends GenericDaoBase<EventJoinVO, Long> implemen
         responseEvent.setLevel(event.getLevel());
         responseEvent.setParentId(event.getStartUuid());
         responseEvent.setState(event.getState());
-        responseEvent.setUsername(event.getUserName());
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(configDao.getValue("security.features.enabled"));
+        if (!securityFeaturesEnabled) {
+            responseEvent.setUsername(event.getUserName());
+        } else {
+            if ("admin".equalsIgnoreCase(event.getUserName())) {
+                responseEvent.setUsername(event.getUserName());
+            } else {
+                responseEvent.setUsername("system");
+            }
+        }
         if (event.getArchived()) {
             responseEvent.setArchived(true);
         }
@@ -132,7 +141,6 @@ public class EventJoinDaoImpl extends GenericDaoBase<EventJoinVO, Long> implemen
         }
         ApiResponseHelper.populateOwner(responseEvent, event);
         responseEvent.setObjectName("event");
-        final boolean securityFeaturesEnabled = Boolean.parseBoolean(configDao.getValue("security.features.enabled"));
         if (securityFeaturesEnabled) {
             responseEvent.setClientIp(event.getClientIp());
         }
