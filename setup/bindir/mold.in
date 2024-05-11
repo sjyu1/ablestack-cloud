@@ -38,6 +38,7 @@ function beforeStart()
     echo "BOOTSTRAP_CLASS=org.apache.cloudstack.ServerDaemon "$kek_pass >> $process
 }
 
+
 if [ "$oper" == "start" ]; then
     beforeStart
     systemctl start cloudstack-management
