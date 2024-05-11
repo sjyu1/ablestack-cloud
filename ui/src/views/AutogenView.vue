@@ -1268,7 +1268,7 @@ export default {
       }
 
       if (this.$store.getters.features.securityfeaturesenabled) {
-        if (!this.$store.getters.listAllProjects && !this.projectView) {
+        if (!this.$store.getters.listAllProjects && !this.projectView && this.$route.name === 'event') {
           params.projectid = '-1'
         }
       } else {
