@@ -66,8 +66,8 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
     protected static Logger LOGGER = LogManager.getLogger(SecurityCheckServiceImpl.class);
 
     private static final ConfigKey<Integer> SecurityCheckInterval = new ConfigKey<>("Advanced", Integer.class,
-            "security.check.interval", "1",
-            "The interval security check background tasks in days", false);
+            "security.check.interval", "4",
+            "The interval security check background tasks in hour", false);
     private static String runMode = "";
 
     @Inject
@@ -88,7 +88,7 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
     public boolean start() {
         runMode = "first";
         if(SecurityCheckInterval.value() != 0) {
-            executor.scheduleAtFixedRate(new SecurityCheckTask(), 0, SecurityCheckInterval.value(), TimeUnit.DAYS);
+            executor.scheduleAtFixedRate(new SecurityCheckTask(), 0, SecurityCheckInterval.value(), TimeUnit.HOURS);
         }
         return true;
     }
