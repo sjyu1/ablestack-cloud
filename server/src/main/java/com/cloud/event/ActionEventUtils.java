@@ -236,11 +236,14 @@ public class ActionEventUtils {
             new org.apache.cloudstack.framework.events.Event(ManagementService.Name, eventCategory, eventType, resourceType, resourceUuid);
 
         Map<String, String> eventDescription = new HashMap<String, String>();
-        Project project = s_projectDao.findByProjectAccountId(accountId);
+        Project project = null;
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
+        if (!securityFeaturesEnabled || (securityFeaturesEnabled && (Long)accountId != Account.ACCOUNT_ID_SYSTEM)) {
+            project = s_projectDao.findByProjectAccountId(accountId);
+        }
         Account account = s_accountDao.findById(accountId);
         User user = s_userDao.findById(userId);
         // if account has been deleted, this might be called during cleanup of resources and results in null pointer
-        final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
         if (account == null) {
             if (securityFeaturesEnabled) {
                 if ((Long)accountId == Account.ACCOUNT_ID_SYSTEM) {
