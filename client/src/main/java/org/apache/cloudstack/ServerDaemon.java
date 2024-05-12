@@ -58,6 +58,11 @@ import org.apache.logging.log4j.LogManager;
 
 import com.cloud.utils.PropertiesUtil;
 import com.cloud.utils.db.DbProperties;
+import com.cloud.utils.script.Script;
+import com.cloud.user.User;
+import com.cloud.user.Account;
+import com.cloud.event.ActionEventUtils;
+import com.cloud.event.EventTypes;
 import org.apache.commons.lang3.StringUtils;
 
 /***
@@ -157,6 +162,35 @@ public class ServerDaemon implements Daemon {
             setWebAppLocation(properties.getProperty(WEBAPP_DIR));
             setAccessLogFile(properties.getProperty(ACCESS_LOG, null));
             setSessionTimeout(Integer.valueOf(properties.getProperty(SESSION_TIMEOUT, "10")));
+            if (confFileEnc != null) {
+                try {
+                    String keystore = "keytool -list -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD) + " -v | grep 'until:' | sed 's/^.*until://'";
+                    String keystoreDate = Script.runSimpleBashScript(keystore);
+                    SimpleDateFormat date = new SimpleDateFormat("EEE MMM dd HH:mm:ss Z yyyy");
+                    Date endDate = date.parse(keystoreDate);
+                    Date currentDate = new Date();
+                    int compare = endDate.compareTo(currentDate);
+                    if (compare < 0) {
+                        LOG.info("::::::::::::::::::::만료:::::::::::::::::::::::::::::::::::::");
+                        String keystoreDelete = "keytool -delete -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD);
+                        int cmdResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
+                        if (cmdResult == 1) {
+                            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
+                                "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
+                        } else {
+                            // String keystoreRm = "rm -rf /etc/cloudstack/management/cloud.jks";
+                            // Script.runSimpleBashScript(keystoreRm);
+                            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
+                                "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.", new Long(0), null);
+                        }
+                    }
+                } catch (Exception e) {
+                    LOG.info("::::::::::::::::::::error:::::::::::::::::::::::::::::::::::::");
+                    LOG.info(e);
+                    ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
+                        "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
+                }
+            }
         } catch (final IOException e) {
             LOG.warn("Failed to read configuration from server.properties file", e);
         } finally {

@@ -736,6 +736,7 @@ public class EventTypes {
     public static final String EVENT_INTEGRITY_VERIFICATION = "INTEGRITY.VERIFICATION";
     public static final String EVENT_LOG_AUTO_DELETED = "LOG.DELETED";
     public static final String EVENT_THRESHOLD_REACHED = "THRESHOLD.REACHED";
+    public static final String EVENT_ENCRYPTION_CHECK = "ENCRYPTION.CHECK";
 
     // Resource
     public static final String EVENT_RESOURCE_UPDATE_LIMIT = "RESOURCE.UPDATE.LIMIT";
@@ -1193,6 +1194,7 @@ public class EventTypes {
 
         //Security
         entityEventDetails.put(EVENT_SECURITY_CHECK, "Security");
+        entityEventDetails.put(EVENT_ENCRYPTION_CHECK, "Encryption");
         entityEventDetails.put(EVENT_RESOURCE_UPDATE_LIMIT, Resource.class);
     }
 
