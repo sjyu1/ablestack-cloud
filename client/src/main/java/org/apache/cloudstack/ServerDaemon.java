@@ -413,7 +413,7 @@ public class ServerDaemon implements Daemon {
         event.setStartId(0L);
         String hostIp = Script.runSimpleBashScript("hostname -i");
         event.setClientIp(hostIp);
-        event = eventDao.persist(event);
+        eventDao.persist(event);
     }
 
     ///////////////////////////////////////////
