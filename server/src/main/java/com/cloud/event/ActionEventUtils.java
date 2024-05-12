@@ -241,11 +241,8 @@ public class ActionEventUtils {
         if (!securityFeaturesEnabled || (securityFeaturesEnabled && (Long)accountId != Account.ACCOUNT_ID_SYSTEM)) {
             project = s_projectDao.findByProjectAccountId(accountId);
         }
-        logger.info(project);
         Account account = s_accountDao.findById(accountId);
-        logger.info(account);
         User user = s_userDao.findById(userId);
-        logger.info(user);
         // if account has been deleted, this might be called during cleanup of resources and results in null pointer
         if (account == null) {
             if (securityFeaturesEnabled) {
