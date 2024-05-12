@@ -64,7 +64,6 @@ import com.cloud.utils.script.Script;
 import com.cloud.user.User;
 import com.cloud.user.Account;
 import com.cloud.event.EventVO;
-import com.cloud.event.ActionEventUtils;
 import com.cloud.event.EventTypes;
 import org.apache.commons.lang3.StringUtils;
 
