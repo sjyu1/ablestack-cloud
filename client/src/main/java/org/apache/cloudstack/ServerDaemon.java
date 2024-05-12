@@ -374,7 +374,7 @@ public class ServerDaemon implements Daemon {
                 String keystoreDelete = "keytool -delete -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD);
                 int deleteResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
                 if (deleteResult == 1) {
-                    String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');";
+                    String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');\"";
                     Script.runSimpleBashScript(eventCmd);
                 } else {
                     String keystoreDestroy = "for var in {1..5} ; do echo 01010101 > " + properties.getProperty(KEYSTORE_FILE) + " ; done";
@@ -382,17 +382,17 @@ public class ServerDaemon implements Daemon {
                     String keystoreRm = "rm -rf " + properties.getProperty(KEYSTORE_FILE);
                     int rmResult = Script.runSimpleBashScriptForExitValue(keystoreRm);
                     if (destroyResult == 1 || rmResult == 1) {
-                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');";
+                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');\"";
                         Script.runSimpleBashScript(eventCmd);
                     } else {
-                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '" + hostIp + "');";
+                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '" + hostIp + "');\"";
                         Script.runSimpleBashScript(eventCmd);
                     }
                 }
             }
         } catch (Exception e) {
             LOG.error("Error while certificateCheck", e);
-            String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');";
+            String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');\"";
             Script.runSimpleBashScript(eventCmd);
         }
     }
