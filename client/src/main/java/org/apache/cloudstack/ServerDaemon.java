@@ -380,17 +380,16 @@ public class ServerDaemon implements Daemon {
                     String keystoreRm = "rm -rf " + properties.getProperty(KEYSTORE_FILE);
                     int rmResult = Script.runSimpleBashScriptForExitValue(keystoreRm);
                     if (destroyResult == 1 || rmResult == 1) {
-                        LOG.info("::::::::::::::::::실패:::::::::::::::::::::::::");
                         ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
                             "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
                     } else {
-                        LOG.info("::::::::::::::::::성공:::::::::::::::::::::::::");
                         ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
                             "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.", new Long(0), null);
                     }
                 }
             }
         } catch (Exception e) {
+            LOG.info(":::::::::::::::::::::::::::::::::" + e.toString());
             ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
                 "The certificate has expired and destruction of the certificate and encryption key in the keystore failed : error " + e.toString(), new Long(0), null);
         }
