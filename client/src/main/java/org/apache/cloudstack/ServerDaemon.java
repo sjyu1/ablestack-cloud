@@ -405,36 +405,36 @@ public class ServerDaemon implements Daemon {
 
     private String getDbInfo() {
         Properties dbProps = new Properties();
-            InputStream is = null;
-            try {
-                final File propsEnc = PropertiesUtil.findConfigFile(dbPropertiesEnc);
-                final File props = PropertiesUtil.findConfigFile(dbProperties);
-                if (propsEnc != null && propsEnc.exists()) {
-                    Process process = Runtime.getRuntime().exec("openssl enc -aes-256-cbc -d -K " + DbProperties.getKey() + " -pass pass:" + DbProperties.getKp() + " -saltlen 16 -md sha256 -iter 100000 -in " + propsEnc.getAbsoluteFile());
-                    is = process.getInputStream();
-                    process.onExit();
-                } else {
-                    is = new FileInputStream(props);
-                }
-                if (is == null) {
-                    is = PropertiesUtil.openStreamFromURL(dbProperties);
-                }
-                if (is == null) {
-                    LOG.error("Failed to find db.properties");
-                }
-                if (is != null) {
-                    dbProps.load(is);
-                }
-                String encDbPassword = dbProps.getProperty("db.cloud.password");
-                LOG.info("::::::::::::::::::::::::::::::"+ encDbPassword + ":::::::::::::::::::::::::::::::::");
-                String encPassword = substring(4, encDbPassword.length() - 1);
-                LOG.info("::::::::::::::::::::::::::::::"+ encPassword + ":::::::::::::::::::::::::::::::::");
-                return DBEncryptionUtil.decrypt(encPassword);
-            } catch (IOException e) {
-                LOG.error(String.format("Failed to load DB properties: %s", e.getMessage()), e);
-            } finally {
-                IOUtils.closeQuietly(is);
+        InputStream is = null;
+        try {
+            final File propsEnc = PropertiesUtil.findConfigFile(dbPropertiesEnc);
+            final File props = PropertiesUtil.findConfigFile(dbProperties);
+            if (propsEnc != null && propsEnc.exists()) {
+                Process process = Runtime.getRuntime().exec("openssl enc -aes-256-cbc -d -K " + DbProperties.getKey() + " -pass pass:" + DbProperties.getKp() + " -saltlen 16 -md sha256 -iter 100000 -in " + propsEnc.getAbsoluteFile());
+                is = process.getInputStream();
+                process.onExit();
+            } else {
+                is = new FileInputStream(props);
             }
+            if (is == null) {
+                is = PropertiesUtil.openStreamFromURL(dbProperties);
+            }
+            if (is == null) {
+                LOG.error("Failed to find db.properties");
+            }
+            if (is != null) {
+                dbProps.load(is);
+            }
+            String encDbPassword = dbProps.getProperty("db.cloud.password");
+            LOG.info("::::::::::::::::::::::::::::::"+ encDbPassword + ":::::::::::::::::::::::::::::::::");
+            String encPassword = substring(4, encDbPassword.length() - 1);
+            LOG.info("::::::::::::::::::::::::::::::"+ encPassword + ":::::::::::::::::::::::::::::::::");
+            return DBEncryptionUtil.decrypt(encPassword);
+        } catch (IOException e) {
+            LOG.error(String.format("Failed to load DB properties: %s", e.getMessage()), e);
+        } finally {
+            IOUtils.closeQuietly(is);
+        }
     }
 
     ///////////////////////////////////////////
