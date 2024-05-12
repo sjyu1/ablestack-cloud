@@ -36,7 +36,6 @@ import com.cloud.utils.server.ServerProperties;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.daemon.Daemon;
 import org.apache.commons.daemon.DaemonContext;
-import org.apache.commons.io.IOUtils;
 import org.eclipse.jetty.jmx.MBeanContainer;
 import org.eclipse.jetty.server.ForwardedRequestCustomizer;
 import org.eclipse.jetty.server.HttpConfiguration;
@@ -92,8 +91,6 @@ public class ServerDaemon implements Daemon {
     private static final String ACCESS_LOG = "access.log";
     private static final String serverProperties = "server.properties";
     private static final String serverPropertiesEnc = "server.properties.enc";
-    private static final String dbProperties = "db.properties";
-    private static final String dbPropertiesEnc = "db.properties.enc";
     private static final String keyFileEnc = "key.enc";
 
 
@@ -363,8 +360,8 @@ public class ServerDaemon implements Daemon {
 
     private void certificateCheck(Properties properties) {
         String dbpw = getDbInfo();
+        LOG.info("::::::::::::::::::::::::::::::"+ dbpw + ":::::::::::::::::::::::::::::::::");
         if (dbpw != null) {
-            LOG.info("::::::::::::::::::::::::::::::"+ dbpw + ":::::::::::::::::::::::::::::::::");
             String hostIp = Script.runSimpleBashScript("hostname -i");
             String uuid = UUID.randomUUID().toString();
             try {
@@ -404,39 +401,12 @@ public class ServerDaemon implements Daemon {
     }
 
     private String getDbInfo() {
-        Properties dbProps = new Properties();
-        InputStream is = null;
-        try {
-            final File propsEnc = PropertiesUtil.findConfigFile(dbPropertiesEnc);
-            final File props = PropertiesUtil.findConfigFile(dbProperties);
-            if (propsEnc != null && propsEnc.exists()) {
-                LOG.info(":::::::::::::::::::::::" + DbProperties.getKey());
-                LOG.info(":::::::::::::::::::::::" + DbProperties.getKp());
-                Process process = Runtime.getRuntime().exec("openssl enc -aes-256-cbc -d -K " + DbProperties.getKey() + " -pass pass:" + DbProperties.getKp() + " -saltlen 16 -md sha256 -iter 100000 -in " + propsEnc.getAbsoluteFile());
-                is = process.getInputStream();
-                process.onExit();
-            } else {
-                is = new FileInputStream(props);
-            }
-            if (is == null) {
-                is = PropertiesUtil.openStreamFromURL(dbProperties);
-            }
-            if (is == null) {
-                LOG.error("Failed to find db.properties");
-            }
-            if (is != null) {
-                dbProps.load(is);
-            }
-            String encDbPassword = dbProps.getProperty("db.cloud.password");
-            LOG.info("::::::::::::::::::::::::::::::"+ encDbPassword + ":::::::::::::::::::::::::::::::::");
-            String encPassword = encDbPassword.substring(4, encDbPassword.length() - 1);
-            LOG.info("::::::::::::::::::::::::::::::"+ encPassword + ":::::::::::::::::::::::::::::::::");
-            return DBEncryptionUtil.decrypt(encPassword);
-        } catch (IOException e) {
-            LOG.error(String.format("Failed to load DB properties: %s", e.getMessage()), e);
-        } finally {
-            IOUtils.closeQuietly(is);
-        }
+        final Properties dbProps = DbProperties.getDbProperties();
+        String encDbPassword = dbProps.getProperty("db.cloud.password");
+        LOG.info("::::::::::::::::::::::::::::::"+ encDbPassword + ":::::::::::::::::::::::::::::::::");
+        String encPassword = encDbPassword.substring(4, encDbPassword.length() - 1);
+        LOG.info("::::::::::::::::::::::::::::::"+ encPassword + ":::::::::::::::::::::::::::::::::");
+        return DBEncryptionUtil.decrypt(encPassword);
     }
 
     ///////////////////////////////////////////
