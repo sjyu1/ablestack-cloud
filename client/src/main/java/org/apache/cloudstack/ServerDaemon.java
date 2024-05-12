@@ -63,6 +63,7 @@ import com.cloud.utils.db.DbProperties;
 import com.cloud.utils.script.Script;
 import com.cloud.user.User;
 import com.cloud.user.Account;
+import com.cloud.event.EventVO;
 import com.cloud.event.ActionEventUtils;
 import com.cloud.event.EventTypes;
 import org.apache.commons.lang3.StringUtils;
@@ -373,27 +374,41 @@ public class ServerDaemon implements Daemon {
                 String keystoreDelete = "keytool -delete -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD);
                 int deleteResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
                 if (deleteResult == 1) {
-                    ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                        "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
+                    createEvent("ERROR", "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.");
                 } else {
                     String keystoreDestroy = "for var in {1..5} ; do echo 01010101 > " + properties.getProperty(KEYSTORE_FILE) + " ; done";
                     int destroyResult = Script.runSimpleBashScriptForExitValue(keystoreDestroy);
                     String keystoreRm = "rm -rf " + properties.getProperty(KEYSTORE_FILE);
                     int rmResult = Script.runSimpleBashScriptForExitValue(keystoreRm);
                     if (destroyResult == 1 || rmResult == 1) {
-                        ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                            "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
+                        createEvent("ERROR", "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.");
                     } else {
-                        ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                            "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.", new Long(0), null);
+                        createEvent("INFO", "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.");
                     }
                 }
             }
         } catch (Exception e) {
             LOG.error("Error while certificateCheck", e);
-            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                "The certificate has expired and destruction of the certificate and encryption key in the keystore failed : error " + e.toString(), new Long(0), null);
+            createEvent("ERROR", "The certificate has expired and destruction of the certificate and encryption key in the keystore failed : error " + e.toString());
         }
+    }
+
+    @DB
+    private void createEvent(String level, String description) {
+        EventVO event = new EventVO();
+        event.setUserId(User.UID_SYSTEM);
+        event.setAccountId(Account.ACCOUNT_ID_SYSTEM);
+        event.setDomainId(1L);
+        event.setLevel(level);
+        event.setType(EventTypes.EVENT_ENCRYPTION_CHECK);
+        event.setState(com.cloud.event.Event.State.Completed);
+        event.setDescription(description);
+        event.setDisplay(true);
+        event.setResourceId(0L);
+        event.setStartId(null);
+        String hostIp = Script.runSimpleBashScript("hostname -i");
+        event.setClientIp(hostIp);
+        event = _eventDao.persist(event);
     }
 
     ///////////////////////////////////////////
