@@ -398,15 +398,6 @@ public class ServerDaemon implements Daemon {
         }
     }
 
-    private String getDbInfo() {
-        final Properties dbProps = DbProperties.getDbProperties();
-        String encDbPassword = dbProps.getProperty("db.cloud.password");
-        LOG.info("::::::::::::::::::::::::::::::"+ encDbPassword + ":::::::::::::::::::::::::::::::::");
-        String encPassword = encDbPassword.substring(4, encDbPassword.length() - 1);
-        LOG.info("::::::::::::::::::::::::::::::"+ encPassword + ":::::::::::::::::::::::::::::::::");
-        return DBEncryptionUtil.decrypt(encPassword);
-    }
-
     ///////////////////////////////////////////
     /////////////// Setters ///////////////////
     ///////////////////////////////////////////
