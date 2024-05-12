@@ -29,6 +29,7 @@ import java.net.URL;
 import java.util.Properties;
 import java.util.Date;
 import java.text.SimpleDateFormat;
+import javax.inject.Inject;
 
 import com.cloud.utils.Pair;
 import com.cloud.utils.server.ServerProperties;
@@ -64,6 +65,7 @@ import com.cloud.utils.db.DbProperties;
 import com.cloud.utils.script.Script;
 import com.cloud.user.User;
 import com.cloud.user.Account;
+import com.cloud.event.dao.EventDao;
 import com.cloud.event.EventVO;
 import com.cloud.event.EventTypes;
 import org.apache.commons.lang3.StringUtils;
@@ -76,6 +78,9 @@ import org.apache.commons.lang3.StringUtils;
 public class ServerDaemon implements Daemon {
     protected static Logger LOG = LogManager.getLogger(ServerDaemon.class);
     private static final String WEB_XML = "META-INF/webapp/WEB-INF/web.xml";
+
+    @Inject
+    EventDao eventDao;
 
     /////////////////////////////////////////////////////
     /////////////// Server Properties ///////////////////
@@ -408,7 +413,7 @@ public class ServerDaemon implements Daemon {
         event.setStartId(null);
         String hostIp = Script.runSimpleBashScript("hostname -i");
         event.setClientIp(hostIp);
-        event = _eventDao.persist(event);
+        event = eventDao.persist(event);
     }
 
     ///////////////////////////////////////////
