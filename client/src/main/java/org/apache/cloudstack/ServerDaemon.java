@@ -29,7 +29,6 @@ import java.net.URL;
 import java.util.Properties;
 import java.util.Date;
 import java.text.SimpleDateFormat;
-import javax.inject.Inject;
 
 import com.cloud.utils.Pair;
 import com.cloud.utils.server.ServerProperties;
@@ -421,7 +420,11 @@ public class ServerDaemon implements Daemon {
                 if (is != null) {
                     dbProps.load(is);
                 }
-                String dbPass = dbProps.getProperty("db.cloud.password");
+                String encDbPassword = dbProps.getProperty("db.cloud.password");
+                LOG.info("::::::::::::::::::::::::::::::"+ encDbPassword + ":::::::::::::::::::::::::::::::::");
+                String encPassword = substring(4, encDbPassword.length()-1);
+                LOG.info("::::::::::::::::::::::::::::::"+ encPassword + ":::::::::::::::::::::::::::::::::");
+                return DBEncryptionUtil.decrypt(encPassword);
             } catch (IOException e) {
                 LOG.error(String.format("Failed to load DB properties: %s", e.getMessage()), e);
             } finally {
