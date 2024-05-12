@@ -4045,6 +4045,7 @@
 "integrity.verification": "\ubb34\uacb0\uc131.\uac80\uc99d",
 "log.deleted": "\ub85c\uadf8.\uc0ad\uc81c",
 "integrity.verification.delete": "\ubb34\uacb0\uc131.\uac80\uc99d.\uc0ad\uc81c",
+"router.vlan.update": "\ub77c\uc6b0\ud130.VLAN.\uc5c5\ub370\uc774\ud2b8",
 "alert.memory":"\uba54\ubaa8\ub9ac",
 "alert.cpu":"\uc911\uc559\ucc98\ub9ac\uc7a5\uce58(CPU)",
 "alert.storage":"\uc800\uc7a5\uc18c",
