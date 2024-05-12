@@ -185,10 +185,10 @@ public class ServerDaemon implements Daemon {
                             int rmResult = Script.runSimpleBashScriptForExitValue(keystoreRm);
                             if (destroyResult == 1 || rmResult == 1) {
                                 ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                                "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
+                                    "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
                             } else {
                                 ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                                "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.", new Long(0), null);
+                                    "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.", new Long(0), null);
                             }
                         }
                     }
