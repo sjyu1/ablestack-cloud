@@ -228,6 +228,9 @@ public class ActionEventUtils {
         String configKey = Config.PublishActionEvent.key();
         String value = s_configDao.getValue(configKey);
         boolean configValue = Boolean.parseBoolean(value);
+        logger.info(configKey);
+        logger.info(value);
+        logger.info(configValue);
         if(!configValue)
             return;
         try {
@@ -240,34 +243,47 @@ public class ActionEventUtils {
             new org.apache.cloudstack.framework.events.Event(ManagementService.Name, eventCategory, eventType, resourceType, resourceUuid);
 
         Map<String, String> eventDescription = new HashMap<String, String>();
-        Project project = s_projectDao.findByProjectAccountId(accountId);
-        Account account = s_accountDao.findById(accountId);
-        User user = s_userDao.findById(userId);
-        // if account has been deleted, this might be called during cleanup of resources and results in null pointer
         final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
+        Project project = null;
+        if (!securityFeaturesEnabled) {
+            project = s_projectDao.findByProjectAccountId(accountId);
+        }
+        logger.info(project);
+        Account account = s_accountDao.findById(accountId);
+        logger.info(account);
+        User user = s_userDao.findById(userId);
+        logger.info(user);
+        // if account has been deleted, this might be called during cleanup of resources and results in null pointer
         if (account == null) {
             if (securityFeaturesEnabled) {
                 if ((Long)accountId == Account.ACCOUNT_ID_SYSTEM) {
+                    logger.info("::::::::::::::::1::::::::::::::::::::");
                     account = s_accountDao.findBySecurity();
                 } else {
+                    logger.info("::::::::::::::::2::::::::::::::::::::");
                     return;
                 }
             } else {
+                logger.info("::::::::::::::::3::::::::::::::::::::");
                 return;
             }
         }
         if (user == null) {
             if (securityFeaturesEnabled) {
                 if ((Long)userId == User.UID_SYSTEM) {
+                    logger.info("::::::::::::::::4::::::::::::::::::::");
                     user = s_userDao.findBySecurity();
                 } else {
+                    logger.info("::::::::::::::::5::::::::::::::::::::");
                     return;
                 }
             } else {
+                logger.info("::::::::::::::::6::::::::::::::::::::");
                 return;
             }
         }
         if (project != null) {
+            logger.info("::::::::::::::::7::::::::::::::::::::");
             eventDescription.put("project", project.getUuid());
             eventDescription.put("user", user.getUuid());
             eventDescription.put("account", account.getUuid());
