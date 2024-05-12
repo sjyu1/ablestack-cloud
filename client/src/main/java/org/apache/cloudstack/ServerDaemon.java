@@ -60,7 +60,6 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
 import com.cloud.utils.PropertiesUtil;
-import com.cloud.utils.db.DB;
 import com.cloud.utils.db.DbProperties;
 import com.cloud.utils.script.Script;
 import com.cloud.user.User;
@@ -398,7 +397,6 @@ public class ServerDaemon implements Daemon {
         }
     }
 
-    @DB
     private void createEvent(String level, String description) {
         EventVO event = new EventVO();
         event.setUserId(User.UID_SYSTEM);
