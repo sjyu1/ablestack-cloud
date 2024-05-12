@@ -109,6 +109,7 @@ public class ActionEventUtils {
     }
 
     public static Long onActionEvent(Long userId, Long accountId, Long domainId, String type, String description, Long resourceId, String resourceType) {
+        logger.info("::::::::::::::onActionEvent():::::::::::::::::::::");
         Ternary<Long, String, String> resourceDetails = getResourceDetails(resourceId, resourceType, type);
         publishOnEventBus(userId, accountId, EventCategory.ACTION_EVENT.getName(), type, com.cloud.event.Event.State.Completed, description, resourceDetails.second(), resourceDetails.third());
         Event event = persistActionEvent(userId, accountId, domainId, null, type, Event.State.Completed, true, description, resourceDetails.first(), resourceDetails.third(), null);
@@ -174,6 +175,7 @@ public class ActionEventUtils {
                                             Event.State state, boolean eventDisplayEnabled, String description,
                                             Long resourceId, String resourceType, Long startEventId) {
         EventVO event = new EventVO();
+        logger.info("::::::::::::::persistActionEvent()start:::::::::::::::::::::");
         event.setUserId(userId);
         event.setAccountId(accountId);
         event.setType(type);
@@ -216,11 +218,13 @@ public class ActionEventUtils {
                 }
             }
         }
+        logger.info("::::::::::::::persistActionEvent()end:::::::::::::::::::::");
         event = s_eventDao.persist(event);
         return event;
     }
 
     private static void publishOnEventBus(long userId, long accountId, String eventCategory, String eventType, Event.State state, String description, String resourceUuid, String resourceType) {
+        logger.info("::::::::::::::publishOnEventBus()start:::::::::::::::::::::");
         String configKey = Config.PublishActionEvent.key();
         String value = s_configDao.getValue(configKey);
         boolean configValue = Boolean.parseBoolean(value);
@@ -284,6 +288,7 @@ public class ActionEventUtils {
         } catch (EventBusException e) {
             logger.warn("Failed to publish action event on the event bus.");
         }
+        logger.info("::::::::::::::publishOnEventBus()end:::::::::::::::::::::");
     }
 
     private static Ternary<Long, String, String> getResourceDetailsUsingEntityClassAndContext(Class<?> entityClass, ApiCommandResourceType resourceType) {
