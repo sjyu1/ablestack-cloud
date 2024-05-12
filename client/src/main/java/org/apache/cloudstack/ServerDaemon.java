@@ -27,6 +27,8 @@ import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
 import java.net.URL;
 import java.util.Properties;
+import java.util.Date;
+import java.text.SimpleDateFormat;
 
 import com.cloud.utils.Pair;
 import com.cloud.utils.server.ServerProperties;
@@ -171,24 +173,28 @@ public class ServerDaemon implements Daemon {
                     Date currentDate = new Date();
                     int compare = endDate.compareTo(currentDate);
                     if (compare < 0) {
-                        LOG.info("::::::::::::::::::::만료:::::::::::::::::::::::::::::::::::::");
                         String keystoreDelete = "keytool -delete -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD);
-                        int cmdResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
-                        if (cmdResult == 1) {
+                        int deleteResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
+                        if (deleteResult == 1) {
                             ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
                                 "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
                         } else {
-                            // String keystoreRm = "rm -rf /etc/cloudstack/management/cloud.jks";
-                            // Script.runSimpleBashScript(keystoreRm);
-                            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
+                            String keystoreDestroy = "for var in {1..5} ; do echo 01010101 > " + properties.getProperty(KEYSTORE_FILE) + " ; done";
+                            int destroyResult = Script.runSimpleBashScriptForExitValue(keystoreDestroy);
+                            String keystoreRm = "rm -rf " + properties.getProperty(KEYSTORE_FILE);
+                            int rmResult = Script.runSimpleBashScriptForExitValue(keystoreRm);
+                            if (destroyResult == 1 || rmResult == 1) {
+                                ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
+                                "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
+                            } else {
+                                ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
                                 "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.", new Long(0), null);
+                            }
                         }
                     }
                 } catch (Exception e) {
-                    LOG.info("::::::::::::::::::::error:::::::::::::::::::::::::::::::::::::");
-                    LOG.info(e);
                     ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
-                        "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.", new Long(0), null);
+                        "The certificate has expired and destruction of the certificate and encryption key in the keystore failed : error " + e.toString(), new Long(0), null);
                 }
             }
         } catch (final IOException e) {
