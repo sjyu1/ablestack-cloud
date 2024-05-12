@@ -410,6 +410,8 @@ public class ServerDaemon implements Daemon {
             final File propsEnc = PropertiesUtil.findConfigFile(dbPropertiesEnc);
             final File props = PropertiesUtil.findConfigFile(dbProperties);
             if (propsEnc != null && propsEnc.exists()) {
+                LOG.info(":::::::::::::::::::::::" + DbProperties.getKey());
+                LOG.info(":::::::::::::::::::::::" + DbProperties.getKp());
                 Process process = Runtime.getRuntime().exec("openssl enc -aes-256-cbc -d -K " + DbProperties.getKey() + " -pass pass:" + DbProperties.getKp() + " -saltlen 16 -md sha256 -iter 100000 -in " + propsEnc.getAbsoluteFile());
                 is = process.getInputStream();
                 process.onExit();
