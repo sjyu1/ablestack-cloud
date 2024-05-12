@@ -543,7 +543,8 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
             if (!securityFeaturesEnabled) {
                 _systemAccount = _accountDao.findById(Account.ACCOUNT_ID_SYSTEM);
             } else {
-                _systemAccount = _accountDao.findBySecurity();
+                _systemAccount = _accountDao.findById(Account.ACCOUNT_ID_SYSTEM);
+                // _systemAccount = _accountDao.findBySecurity();
             }
         }
         return _systemAccount;
