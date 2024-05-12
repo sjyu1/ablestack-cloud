@@ -62,11 +62,6 @@ import org.apache.logging.log4j.LogManager;
 import com.cloud.utils.PropertiesUtil;
 import com.cloud.utils.db.DbProperties;
 import com.cloud.utils.script.Script;
-import com.cloud.user.User;
-import com.cloud.user.Account;
-import com.cloud.event.dao.EventDao;
-import com.cloud.event.EventVO;
-import com.cloud.event.EventTypes;
 import org.apache.commons.lang3.StringUtils;
 
 /***
@@ -77,9 +72,6 @@ import org.apache.commons.lang3.StringUtils;
 public class ServerDaemon implements Daemon {
     protected static Logger LOG = LogManager.getLogger(ServerDaemon.class);
     private static final String WEB_XML = "META-INF/webapp/WEB-INF/web.xml";
-
-    @Inject
-    EventDao eventDao;
 
     /////////////////////////////////////////////////////
     /////////////// Server Properties ///////////////////
@@ -98,6 +90,8 @@ public class ServerDaemon implements Daemon {
     private static final String ACCESS_LOG = "access.log";
     private static final String serverProperties = "server.properties";
     private static final String serverPropertiesEnc = "server.properties.enc";
+    private static final String dbProperties = "db.properties";
+    private static final String dbPropertiesEnc = "db.properties.enc";
     private static final String keyFileEnc = "key.enc";
 
 
@@ -366,6 +360,10 @@ public class ServerDaemon implements Daemon {
     }
 
     private void certificateCheck(Properties properties) {
+        String dbpw = getDbInfo();
+        LOG.info("::::::::::::::::::::::::::::::"+ dbpw + ":::::::::::::::::::::::::::::::::");
+        String hostIp = Script.runSimpleBashScript("hostname -i");
+        String uuid = UUID.randomUUID().toString();
         try {
             String keystore = "keytool -list -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD) + " -v | grep 'until:' | sed 's/^.*until://'";
             String keystoreDate = Script.runSimpleBashScript(keystore);
@@ -378,43 +376,57 @@ public class ServerDaemon implements Daemon {
                 String keystoreDelete = "keytool -delete -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD);
                 int deleteResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
                 if (deleteResult == 1) {
-                    createEvent("ERROR", "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.");
+                    String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');";
+                    Script.runSimpleBashScript(eventCmd);
                 } else {
                     String keystoreDestroy = "for var in {1..5} ; do echo 01010101 > " + properties.getProperty(KEYSTORE_FILE) + " ; done";
                     int destroyResult = Script.runSimpleBashScriptForExitValue(keystoreDestroy);
                     String keystoreRm = "rm -rf " + properties.getProperty(KEYSTORE_FILE);
                     int rmResult = Script.runSimpleBashScriptForExitValue(keystoreRm);
                     if (destroyResult == 1 || rmResult == 1) {
-                        createEvent("ERROR", "The certificate has expired and destruction of the certificate and encryption key in the keystore failed.");
+                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');";
+                        Script.runSimpleBashScript(eventCmd);
                     } else {
-                        createEvent("INFO", "The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.");
+                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '" + hostIp + "');";
+                        Script.runSimpleBashScript(eventCmd);
                     }
                 }
             }
         } catch (Exception e) {
             LOG.error("Error while certificateCheck", e);
-            createEvent("ERROR", "The certificate has expired and destruction of the certificate and encryption key in the keystore failed : error " + e.toString());
+            String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e 'INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');";
+            Script.runSimpleBashScript(eventCmd);
         }
     }
 
-    private Long createEvent(String level, String description) {
-        EventVO event = new EventVO();
-        event.setUserId(User.UID_SYSTEM);
-        event.setAccountId(Account.ACCOUNT_ID_SYSTEM);
-        event.setDomainId(1L);
-        event.setLevel(level);
-        event.setType(EventTypes.EVENT_ENCRYPTION_CHECK);
-        event.setState(com.cloud.event.Event.State.Completed);
-        event.setDescription(description);
-        event.setDisplay(true);
-        event.setResourceId(0L);
-        event.setStartId(0L);
-        String hostIp = Script.runSimpleBashScript("hostname -i");
-        event.setClientIp(hostIp);
-        event = eventDao.persist(event);
-        LOG.info(event);
-        LOG.info(event.getId());
-        return event.getId();
+    private String getDbInfo() {
+        Properties dbProps = new Properties();
+            InputStream is = null;
+            try {
+                final File propsEnc = PropertiesUtil.findConfigFile(dbPropertiesEnc);
+                final File props = PropertiesUtil.findConfigFile(dbProperties);
+                if (propsEnc != null && propsEnc.exists()) {
+                    Process process = Runtime.getRuntime().exec("openssl enc -aes-256-cbc -d -K " + DbProperties.getKey() + " -pass pass:" + DbProperties.getKp() + " -saltlen 16 -md sha256 -iter 100000 -in " + propsEnc.getAbsoluteFile());
+                    is = process.getInputStream();
+                    process.onExit();
+                } else {
+                    is = new FileInputStream(props);
+                }
+                if (is == null) {
+                    is = PropertiesUtil.openStreamFromURL(dbProperties);
+                }
+                if (is == null) {
+                    LOG.error("Failed to find db.properties");
+                }
+                if (is != null) {
+                    dbProps.load(is);
+                }
+                String dbPass = dbProps.getProperty("db.cloud.password");
+            } catch (IOException e) {
+                LOG.error(String.format("Failed to load DB properties: %s", e.getMessage()), e);
+            } finally {
+                IOUtils.closeQuietly(is);
+            }
     }
 
     ///////////////////////////////////////////
