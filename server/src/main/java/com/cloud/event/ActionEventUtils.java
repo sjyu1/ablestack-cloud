@@ -109,7 +109,6 @@ public class ActionEventUtils {
     }
 
     public static Long onActionEvent(Long userId, Long accountId, Long domainId, String type, String description, Long resourceId, String resourceType) {
-        logger.info("::::::::::::::onActionEvent():::::::::::::::::::::");
         Ternary<Long, String, String> resourceDetails = getResourceDetails(resourceId, resourceType, type);
         publishOnEventBus(userId, accountId, EventCategory.ACTION_EVENT.getName(), type, com.cloud.event.Event.State.Completed, description, resourceDetails.second(), resourceDetails.third());
         Event event = persistActionEvent(userId, accountId, domainId, null, type, Event.State.Completed, true, description, resourceDetails.first(), resourceDetails.third(), null);
@@ -175,7 +174,6 @@ public class ActionEventUtils {
                                             Event.State state, boolean eventDisplayEnabled, String description,
                                             Long resourceId, String resourceType, Long startEventId) {
         EventVO event = new EventVO();
-        logger.info("::::::::::::::persistActionEvent()start:::::::::::::::::::::");
         event.setUserId(userId);
         event.setAccountId(accountId);
         event.setType(type);
@@ -218,19 +216,14 @@ public class ActionEventUtils {
                 }
             }
         }
-        logger.info("::::::::::::::persistActionEvent()end:::::::::::::::::::::");
         event = s_eventDao.persist(event);
         return event;
     }
 
     private static void publishOnEventBus(long userId, long accountId, String eventCategory, String eventType, Event.State state, String description, String resourceUuid, String resourceType) {
-        logger.info("::::::::::::::publishOnEventBus()start:::::::::::::::::::::");
         String configKey = Config.PublishActionEvent.key();
         String value = s_configDao.getValue(configKey);
         boolean configValue = Boolean.parseBoolean(value);
-        logger.info(configKey);
-        logger.info(value);
-        logger.info(configValue);
         if(!configValue)
             return;
         try {
@@ -257,33 +250,26 @@ public class ActionEventUtils {
         if (account == null) {
             if (securityFeaturesEnabled) {
                 if ((Long)accountId == Account.ACCOUNT_ID_SYSTEM) {
-                    logger.info("::::::::::::::::1::::::::::::::::::::");
                     account = s_accountDao.findBySecurity();
                 } else {
-                    logger.info("::::::::::::::::2::::::::::::::::::::");
                     return;
                 }
             } else {
-                logger.info("::::::::::::::::3::::::::::::::::::::");
                 return;
             }
         }
         if (user == null) {
             if (securityFeaturesEnabled) {
                 if ((Long)userId == User.UID_SYSTEM) {
-                    logger.info("::::::::::::::::4::::::::::::::::::::");
                     user = s_userDao.findBySecurity();
                 } else {
-                    logger.info("::::::::::::::::5::::::::::::::::::::");
                     return;
                 }
             } else {
-                logger.info("::::::::::::::::6::::::::::::::::::::");
                 return;
             }
         }
         if (project != null) {
-            logger.info("::::::::::::::::7::::::::::::::::::::");
             eventDescription.put("project", project.getUuid());
             eventDescription.put("user", user.getUuid());
             eventDescription.put("account", account.getUuid());
@@ -304,7 +290,6 @@ public class ActionEventUtils {
         } catch (EventBusException e) {
             logger.warn("Failed to publish action event on the event bus.");
         }
-        logger.info("::::::::::::::publishOnEventBus()end:::::::::::::::::::::");
     }
 
     private static Ternary<Long, String, String> getResourceDetailsUsingEntityClassAndContext(Class<?> entityClass, ApiCommandResourceType resourceType) {

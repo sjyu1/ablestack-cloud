@@ -369,6 +369,7 @@ public class ServerDaemon implements Daemon {
             Date currentDate = new Date();
             int compare = endDate.compareTo(currentDate);
             if (compare < 0) {
+                LOG.info("::::::::::::::expired certificate::::::::::::::");
                 String keystoreDelete = "keytool -delete -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD);
                 int deleteResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
                 if (deleteResult == 1) {
@@ -389,7 +390,7 @@ public class ServerDaemon implements Daemon {
                 }
             }
         } catch (Exception e) {
-            LOG.info(":::::::::::::::::::::::::::::::::" + e.toString());
+            LOG.error("Error while certificateCheck", e);
             ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
                 "The certificate has expired and destruction of the certificate and encryption key in the keystore failed : error " + e.toString(), new Long(0), null);
         }
