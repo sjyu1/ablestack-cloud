@@ -455,17 +455,8 @@ public class ConfigurationServerImpl extends ManagerBase implements Configuratio
                 TransactionLegacy txn = TransactionLegacy.currentTxn();
                 final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
                 if (!securityFeaturesEnabled) {
-                    // insert system account
-                    String insertSql = "INSERT INTO `cloud`.`account` (id, uuid, account_name, type, role_id, domain_id, account.default) VALUES (1, UUID(), 'system', '1', '1', '1', 1)";
-
-                    try {
-                        PreparedStatement stmt = txn.prepareAutoCloseStatement(insertSql);
-                        stmt.executeUpdate();
-                    } catch (SQLException ex) {
-                        logger.debug("Looks like system account already exists");
-                    }
                     // insert system user
-                    insertSql = "INSERT INTO `cloud`.`user` (id, uuid, username, password, account_id, firstname, lastname, created, user.default)"
+                    String insertSql = "INSERT INTO `cloud`.`user` (id, uuid, username, password, account_id, firstname, lastname, created, user.default)"
                             + " VALUES (1, UUID(), 'system', RAND(), 1, 'system', 'cloud', now(), 1)";
 
                     try {
@@ -475,6 +466,16 @@ public class ConfigurationServerImpl extends ManagerBase implements Configuratio
                         logger.debug("Looks like system user already exists");
                     }
                 }
+                // insert system account
+                String insertSql = "INSERT INTO `cloud`.`account` (id, uuid, account_name, type, role_id, domain_id, account.default) VALUES (1, UUID(), 'system', '1', '1', '1', 1)";
+
+                try {
+                    PreparedStatement stmt = txn.prepareAutoCloseStatement(insertSql);
+                    stmt.executeUpdate();
+                } catch (SQLException ex) {
+                    logger.debug("Looks like system account already exists");
+                }
+
                 // insert admin user, but leave the account disabled until we set a
                 // password with the user authenticator
                 long id = 2;
@@ -483,7 +484,7 @@ public class ConfigurationServerImpl extends ManagerBase implements Configuratio
                 String lastname = "cloud";
 
                 // create an account for the admin user first
-                String insertSql = "INSERT INTO `cloud`.`account` (id, uuid, account_name, type, role_id, domain_id, account.default) VALUES (" + id + ", UUID(), '" + username
+                insertSql = "INSERT INTO `cloud`.`account` (id, uuid, account_name, type, role_id, domain_id, account.default) VALUES (" + id + ", UUID(), '" + username
                         + "', '1', '1', '1', 1)";
                 try {
                     PreparedStatement stmt = txn.prepareAutoCloseStatement(insertSql);
