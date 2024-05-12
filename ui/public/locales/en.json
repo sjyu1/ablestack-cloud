@@ -4045,6 +4045,7 @@
 "integrity.verification": "INTEGRITY.VERIFICATION",
 "log.deleted": "LOG.DELETED",
 "integrity.verification.delete": "INTEGRITY.VERIFICATION.DELETE",
+"router.vlan.update": "ROUTER.VLAN.UPDATE",
 "alert.memory":"MEMORY",
 "alert.cpu":"CPU",
 "alert.storage":"STORAGE",
