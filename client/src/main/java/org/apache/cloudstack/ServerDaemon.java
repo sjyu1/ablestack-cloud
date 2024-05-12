@@ -24,7 +24,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.FileNotFoundException;
 import java.lang.management.ManagementFactory;
 import java.net.URL;
 import java.util.Properties;
@@ -195,7 +194,7 @@ public class ServerDaemon implements Daemon {
                             }
                         }
                     }
-                } catch (FileNotFoundException | Exception e) {
+                } catch (Exception e) {
                     ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, 1L, EventTypes.EVENT_ENCRYPTION_CHECK,
                         "The certificate has expired and destruction of the certificate and encryption key in the keystore failed : error " + e.toString(), new Long(0), null);
                 }
