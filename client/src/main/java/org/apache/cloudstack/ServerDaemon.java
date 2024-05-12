@@ -62,7 +62,6 @@ import org.apache.logging.log4j.LogManager;
 import com.cloud.utils.PropertiesUtil;
 import com.cloud.utils.db.DbProperties;
 import com.cloud.utils.script.Script;
-import com.cloud.utils.crypt.DBEncryptionUtil;
 import org.apache.commons.lang3.StringUtils;
 
 /***
