@@ -244,7 +244,8 @@ public class ActionEventUtils {
 
         Map<String, String> eventDescription = new HashMap<String, String>();
         Project project = null;
-        if ((Long)accountId != Account.ACCOUNT_ID_SYSTEM) {
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
+        if (!securityFeaturesEnabled || (securityFeaturesEnabled && (Long)accountId != Account.ACCOUNT_ID_SYSTEM)) {
             project = s_projectDao.findByProjectAccountId(accountId);
         }
         logger.info(project);
@@ -254,7 +255,7 @@ public class ActionEventUtils {
         logger.info(user);
         // if account has been deleted, this might be called during cleanup of resources and results in null pointer
         if (account == null) {
-            final boolean securityFeaturesEnabled = Boolean.parseBoolean(s_configDao.getValue("security.features.enabled"));
+            
             if (securityFeaturesEnabled) {
                 if ((Long)accountId == Account.ACCOUNT_ID_SYSTEM) {
                     logger.info("::::::::::::::::1::::::::::::::::::::");
