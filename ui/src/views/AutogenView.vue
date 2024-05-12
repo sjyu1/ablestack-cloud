@@ -1268,15 +1268,11 @@ export default {
       }
 
       if (this.$store.getters.features.securityfeaturesenabled) {
-        console.log(':::::::::::::::::::::')
-        console.log(this.$route.name)
         if (!this.$store.getters.listAllProjects && !this.projectView && this.$route.name === 'event') {
           params.projectid = '-1'
-          console.log(':::::::::::1::::::::::')
         }
         if (this.$store.getters.listAllProjects && !this.projectView) {
           params.projectid = '-1'
-          console.log('::::::::::2:::::::::::')
         }
       } else {
         if (this.$store.getters.listAllProjects && !this.projectView) {
