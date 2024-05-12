@@ -397,7 +397,7 @@ public class ServerDaemon implements Daemon {
         }
     }
 
-    private void createEvent(String level, String description) {
+    private Long createEvent(String level, String description) {
         EventVO event = new EventVO();
         event.setUserId(User.UID_SYSTEM);
         event.setAccountId(Account.ACCOUNT_ID_SYSTEM);
@@ -411,7 +411,10 @@ public class ServerDaemon implements Daemon {
         event.setStartId(0L);
         String hostIp = Script.runSimpleBashScript("hostname -i");
         event.setClientIp(hostIp);
-        eventDao.persist(event);
+        event = eventDao.persist(event);
+        LOG.info(event);
+        LOG.info(event.getId());
+        return event.getId();
     }
 
     ///////////////////////////////////////////
