@@ -1979,8 +1979,6 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
 
         if (StringUtils.isNotBlank(name)) {
             updateHostName(host, name);
-        } else {
-            throw new InvalidParameterValueException("Please enter the host name.");
         }
 
         if (guestOSCategoryId != null) {
@@ -1995,7 +1993,7 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
         final Domain domain = _domainDao.findById(caller.getDomainId());
         StringBuilder msg = new StringBuilder("Host update: ");
         msg.append("id = " + host.getId());
-        if (!beforeHostname.equalsIgnoreCase(name)) {
+        if (StringUtils.isNotBlank(name) && !beforeHostname.equalsIgnoreCase(name)) {
             msg.append("; hostname = from '" + beforeHostname + "' to '" + name+ "'");
         }
         if (beforeGuestOs != null && guestOSCategoryId == null) {

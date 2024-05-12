@@ -338,7 +338,7 @@ public class AccountDaoImpl extends GenericDaoBase<AccountVO, Long> implements A
 
     @Override
     public AccountVO findBySecurity() {
-        AccountVO account = new AccountVO("system", 1L, "", Account.Type.NORMAL, UUID.randomUUID().toString());
+        AccountVO account = new AccountVO("system", 1L, "", Account.Type.ADMIN, UUID.randomUUID().toString());
         return account;
     }
 }
