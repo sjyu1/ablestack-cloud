@@ -27,6 +27,9 @@ import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
 import java.net.URL;
 import java.util.Properties;
+import java.util.Date;
+import java.util.UUID;
+import java.text.SimpleDateFormat;
 
 import com.cloud.utils.Pair;
 import com.cloud.utils.server.ServerProperties;
@@ -58,6 +61,7 @@ import org.apache.logging.log4j.LogManager;
 
 import com.cloud.utils.PropertiesUtil;
 import com.cloud.utils.db.DbProperties;
+import com.cloud.utils.script.Script;
 import org.apache.commons.lang3.StringUtils;
 
 /***
@@ -145,6 +149,9 @@ public class ServerDaemon implements Daemon {
             LOG.info(":::::::serverProps::::::::" + properties);
             if (properties == null) {
                 return;
+            }
+            if (confFileEnc != null) {
+                certificateCheck(properties);
             }
             setBindInterface(properties.getProperty(BIND_INTERFACE, null));
             setContextPath(properties.getProperty(CONTEXT_PATH, "/client"));
@@ -348,6 +355,46 @@ public class ServerDaemon implements Daemon {
             LOG.error("Error while reading hex key", e);
         }
         return key;
+    }
+
+    private void certificateCheck(Properties properties) {
+        final Properties dbProps = DbProperties.getDbProperties();
+        String dbpw = dbProps.getProperty("db.cloud.password");
+        String hostIp = Script.runSimpleBashScript("hostname -i");
+        String uuid = UUID.randomUUID().toString();
+        try {
+            String keystore = "keytool -list -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD) + " -v | grep 'until:' | sed 's/^.*until://'";
+            String keystoreDate = Script.runSimpleBashScript(keystore);
+            SimpleDateFormat date = new SimpleDateFormat("EEE MMM dd HH:mm:ss Z yyyy");
+            Date endDate = date.parse(keystoreDate);
+            Date currentDate = new Date();
+            int compare = endDate.compareTo(currentDate);
+            if (compare < 0) {
+                LOG.info("::::::::::::::expired certificate::::::::::::::");
+                String keystoreDelete = "keytool -delete -alias ablecloud -keystore " + properties.getProperty(KEYSTORE_FILE) + " -storepass " + properties.getProperty(KEYSTORE_PASSWORD);
+                int deleteResult = Script.runSimpleBashScriptForExitValue(keystoreDelete);
+                if (deleteResult == 1) {
+                    String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');\"";
+                    Script.runSimpleBashScript(eventCmd);
+                } else {
+                    String keystoreDestroy = "for var in {1..5} ; do echo 01010101 > " + properties.getProperty(KEYSTORE_FILE) + " ; done";
+                    int destroyResult = Script.runSimpleBashScriptForExitValue(keystoreDestroy);
+                    String keystoreRm = "rm -rf " + properties.getProperty(KEYSTORE_FILE);
+                    int rmResult = Script.runSimpleBashScriptForExitValue(keystoreRm);
+                    if (destroyResult == 1 || rmResult == 1) {
+                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');\"";
+                        Script.runSimpleBashScript(eventCmd);
+                    } else {
+                        String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and the certificate and encryption key in the key store have been successfully destroyed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '" + hostIp + "');\"";
+                        Script.runSimpleBashScript(eventCmd);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.error("Error while certificateCheck", e);
+            String eventCmd = "mysql -uroot -p" + dbpw + " -t cloud -e \"INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('" + uuid + "', 'ENCRYPTION.CHECK', 'Completed', 'The certificate has expired and destruction of the certificate and encryption key in the keystore failed.', '1', '1', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERORR', '0', '0', '1', '" + hostIp + "');\"";
+            Script.runSimpleBashScript(eventCmd);
+        }
     }
 
     ///////////////////////////////////////////
