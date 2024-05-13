@@ -5,28 +5,6 @@
 # 자체시험 실패 테스트 케이스
 # exit 1
 
-# ps 프로세스 감지
-# commandname="org.apache.cloudstack.ServerDaemon"
-# count=$(ps ax -o command | grep "$commandname" | grep -v "^grep" | wc -l)
-# if [ "$count" -eq 0 ]; then
-#         echo "Error : mold 프로세스를 찾지 못했습니다."
-# else
-#         echo "Success : mold 프로세스가 정상적으로 감지되었습니다."
-# fi
-
-# http 헤더 감지
-# hostname=$(hostname -i)
-# url="https://$hostname:8443/client/#/user/login"
-# httpstatus=$(curl -k -s "$url" -o /dev/null -w "%{http_code}")
-# curlresult=$?
-# if [ "$curlresult" -ne 0 ]; then
-#         echo "Error : HTTP 접속 이상 - curl exit staus [$curlresult]."
-# elif [ "$httpstatus" -ge 400 ]; then
-#         echo "Error : HTTP status 이상 - HTTP status [$httpstatus]."
-# else
-#         echo "Success : mold http 헤더가 정상적으로 감지되었습니다."
-# fi
-
 kek_pass=$(echo $1 | base64 --decode) > /dev/null 2>&1
 db_file="/etc/cloudstack/management/db.properties"
 jar_file='/usr/share/cloudstack-common/lib/cloudstack-utils.jar'
