@@ -39,8 +39,13 @@ function beforeStart()
 
     kek_pass=$(echo $kek_pass | base64)
     echo "BOOTSTRAP_CLASS=org.apache.cloudstack.ServerDaemon "$kek_pass >> $process
-    sed -i "9s/$/ $kek_pass/g" $monitoring
-    systemctl daemon-reload
+
+    init=$(sed -n '9p' $monitoring)
+    blank=' '
+    if [[ "$init" != *"$blank"* ]]; then
+        sed -i "9s/$/ $kek_pass/g" $monitoring
+        systemctl daemon-reload
+    fi
 }
 
 if [ "$oper" == "start" ]; then
