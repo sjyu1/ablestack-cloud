@@ -66,7 +66,7 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
     protected static Logger LOGGER = LogManager.getLogger(SecurityCheckServiceImpl.class);
 
     private static final ConfigKey<Integer> SecurityCheckInterval = new ConfigKey<>("Advanced", Integer.class,
-            "security.check.interval", "4",
+            "security.check.interval", "0",
             "The interval security check background tasks in hour", false);
     private static String runMode = "";
 
