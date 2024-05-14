@@ -52,8 +52,10 @@ if [ "$oper" == "start" ]; then
     beforeStart
     systemctl start cloudstack-management
     systemctl start mold-monitoring
-    # 자체시험 실패 테스트 케이스
+    # 자체시험 실패 테스트 케이스(mold)
     # systemctl stop cloudstack-management
+    # 자체시험 실패 테스트 케이스(monitoring)
+    # systemctl stop mold-monitoring
     afterStarted
 elif [ "$oper" == "restart" ]; then
     beforeStart
