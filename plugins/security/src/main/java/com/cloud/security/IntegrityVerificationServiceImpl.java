@@ -133,7 +133,6 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
             if (runMode == "first") {
                 type = "Execution";
                 // mold 시작 또는 재시작 시 initial 업데이트
-                LOGGER.info("::::::::::::::::::::::mold 시작 또는 재시작 시 initial 업데이트::::::::::::::::::::::::::::");
                 List<IntegrityVerification> exeResult = new ArrayList<>(integrityVerificationDao.getIntegrityVerifications(msHost.getId()));
                 for (IntegrityVerification exe : exeResult) {
                     String exeFilePath = exe.getFilePath();
@@ -147,7 +146,6 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
                         throw new RuntimeException(e);
                     }
                 }
-                LOGGER.info("::::::::::::::::::::::mold 시작 또는 재시작 시 initial 업데이트::::::::::::::::::::::::::::");
             } else {
                 type = "Routine";
             }
@@ -405,7 +403,6 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     }
 
     private void updateIntegrityVerification(long msHostId, String filePath, String comparisonHashValue, boolean verificationResult, String verificationMessage) {
-        LOGGER.info("::::::::::::::::::::::::::::::updateIntegrityVerification");
         boolean newIntegrityVerificationEntry = false;
         IntegrityVerificationVO connectivityVO = integrityVerificationDao.getIntegrityVerificationResult(msHostId, filePath);
         if (connectivityVO == null) {
