@@ -30,7 +30,7 @@ function securitycheck {
                 database_password=$(java -classpath $jar_file com.cloud.utils.crypt.EncryptionCLI -d -i "$db_enc_password" -p "$(cat $key_file)" $enc_version)
                 mysql --user=root --password=$database_password -e "use cloud; SET GLOBAL foreign_key_checks=0;" > /dev/null 2>&1
                 mysql --user=root --password=$database_password -e "use cloud; CREATE TABLE IF NOT EXISTS security_check (id bigint unsigned NOT NULL AUTO_INCREMENT, mshost_id bigint unsigned NOT NULL COMMENT 'the ID of the mshost', check_result tinyint(1) default 1 not null comment 'check executions success or failure', check_date datetime DEFAULT NULL COMMENT 'the last security check time', check_failed_list mediumtext null, type varchar(32) null, service varchar(32) null, PRIMARY KEY (id), KEY i_security_checks__mshost_id (mshost_id), CONSTRAINT fk_security_checks__mshost_id FOREIGN KEY (mshost_id) REFERENCES mshost (id) ON DELETE CASCADE) ENGINE=InnoDB CHARSET=utf8mb3;" > /dev/null 2>&1
-                value="$(mysql --user=root --password=$database_password -se "use cloud; SELECT value FROM configuration WHERE name='security.check.interval';")"
+                value="$(mysql --user=root --password=$database_password -se "use cloud; SELECT value FROM configuration WHERE name='security.check.interval';")" > /dev/null 2>&1
                 if [ -n "$value" ]; then
                         interval=$value
                 fi
