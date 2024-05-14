@@ -1638,11 +1638,17 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             _messageBus.publish(_name, TemplateManager.MESSAGE_RESET_TEMPLATE_PERMISSION_EVENT, PublishScope.LOCAL, template.getId());
         }
         if (cmd instanceof UpdateTemplatePermissionsCmd && accountNames != null) {
-            msg.append("; operation =" + operation + "; account =" + String.join(",",accountNames));
+            msg.append("; operation =" + operation);
+            if (!"reset".equalsIgnoreCase(operation)) {
+                msg.append("; account =" + String.join(",",accountNames));
+            }
             ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_TEMPLATE_PERMISSION_UPDATE, msg.toString(), template.getId(), ApiCommandResourceType.Template.toString());
         }
         if (cmd instanceof UpdateIsoPermissionsCmd && accountNames != null) {
-            msg.append("; operation =" + operation + "; account =" + String.join(",",accountNames));
+            msg.append("; operation =" + operation);
+            if (!"reset".equalsIgnoreCase(operation)) {
+                msg.append("; account =" + String.join(",",accountNames));
+            }
             ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_ISO_PERMISSION_UPDATE, msg.toString(), template.getId(), ApiCommandResourceType.Iso.toString());
         }
         return true;
