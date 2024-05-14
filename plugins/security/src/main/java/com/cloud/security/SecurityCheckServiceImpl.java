@@ -272,7 +272,7 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
                 alertManager.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "Failed to execute security check on the management server when operating the product.", "");
             }
         }
-        String service = "mold";
+        String service = "Mold";
         SecurityCheckVO connectivityVO = new SecurityCheckVO(msHostId, checkFinalResult, checkFailedList, type, service);
         connectivityVO.setMsHostId(msHostId);
         connectivityVO.setCheckResult(checkFinalResult);
