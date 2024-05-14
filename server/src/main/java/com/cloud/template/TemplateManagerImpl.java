@@ -1543,12 +1543,12 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
 
         if (isPublic != null) {
             updatedTemplate.setPublicTemplate(isPublic.booleanValue());
-            msg.append("; isPublic =" + String.valueOf(isPublic) + ";");
+            msg.append("; isPublic =" + String.valueOf(isPublic));
         }
 
         if (isFeatured != null) {
             updatedTemplate.setFeatured(isFeatured.booleanValue());
-            msg.append("; isFeatured =" + String.valueOf(isFeatured) + ";");
+            msg.append("; isFeatured =" + String.valueOf(isFeatured));
         }
 
         if (isExtractable != null) {
@@ -1558,7 +1558,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             } else {
                 // For Isos normal user can change it, as their are no derivatives.
                 updatedTemplate.setExtractable(isExtractable.booleanValue());
-                msg.append("; isExtractable =" + String.valueOf(isExtractable) + ";");
+                msg.append("; isExtractable =" + String.valueOf(isExtractable));
             }
         }
 
@@ -1638,11 +1638,11 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             _messageBus.publish(_name, TemplateManager.MESSAGE_RESET_TEMPLATE_PERMISSION_EVENT, PublishScope.LOCAL, template.getId());
         }
         if (cmd instanceof UpdateTemplatePermissionsCmd && accountNames != null) {
-            msg.append("; operation =" + operation + "account =" + accountNames.toString() + ";");
+            msg.append("; operation =" + operation + "; account =" + String.join(",",accountNames));
             ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_TEMPLATE_PERMISSION_UPDATE, msg.toString(), template.getId(), ApiCommandResourceType.Template.toString());
         }
         if (cmd instanceof UpdateIsoPermissionsCmd && accountNames != null) {
-            msg.append("; operation =" + operation + "account =" + accountNames.toString() + ";");
+            msg.append("; operation =" + operation + "; account =" + String.join(",",accountNames));
             ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_ISO_PERMISSION_UPDATE, msg.toString(), template.getId(), ApiCommandResourceType.Iso.toString());
         }
         return true;
