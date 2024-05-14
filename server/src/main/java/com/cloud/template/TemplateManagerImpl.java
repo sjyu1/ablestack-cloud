@@ -1637,11 +1637,12 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             _launchPermissionDao.removeAllPermissions(id);
             _messageBus.publish(_name, TemplateManager.MESSAGE_RESET_TEMPLATE_PERMISSION_EVENT, PublishScope.LOCAL, template.getId());
         }
-        msg.append("; operation =" + operation + "account =" + accountNames.toString() + ";");
         if (cmd instanceof UpdateTemplatePermissionsCmd && accountNames != null) {
+            msg.append("; operation =" + operation + "account =" + accountNames.toString() + ";");
             ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_TEMPLATE_PERMISSION_UPDATE, msg.toString(), template.getId(), ApiCommandResourceType.Template.toString());
         }
         if (cmd instanceof UpdateIsoPermissionsCmd && accountNames != null) {
+            msg.append("; operation =" + operation + "account =" + accountNames.toString() + ";");
             ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_ISO_PERMISSION_UPDATE, msg.toString(), template.getId(), ApiCommandResourceType.Iso.toString());
         }
         return true;
