@@ -28,7 +28,7 @@ function securitycheck {
                 enc_version=$(sed '/^\#/d' $db_file | grep 'db.cloud.encryptor.version'  | tail -n 1 | cut -d "=" -f2-)
                 database_password=$(java -classpath $jar_file com.cloud.utils.crypt.EncryptionCLI -d -i "$db_enc_password" -p "$(cat $key_file)" $enc_version)
                 mysql --user=root --password=$database_password -e "use cloud; SET GLOBAL foreign_key_checks=0;" > /dev/null 2>&1
-                mysql --user=root --password=$database_password -e "use cloud; CREATE TABLE IF NOT EXISTS security_check (id bigint unsigned NOT NULL AUTO_INCREMENT, mshost_id bigint unsigned NOT NULL COMMENT 'the ID of the mshost', check_result tinyint(1) default 1 not null comment 'check executions success or failure', check_date datetime DEFAULT NULL COMMENT 'the last security check time', check_failed_list mediumtext null, type varchar(32) null, PRIMARY KEY (id), KEY i_security_checks__mshost_id (mshost_id), CONSTRAINT fk_security_checks__mshost_id FOREIGN KEY (mshost_id) REFERENCES mshost (id) ON DELETE CASCADE) ENGINE=InnoDB CHARSET=utf8mb3;" > /dev/null 2>&1
+                mysql --user=root --password=$database_password -e "use cloud; CREATE TABLE IF NOT EXISTS security_check (id bigint unsigned NOT NULL AUTO_INCREMENT, mshost_id bigint unsigned NOT NULL COMMENT 'the ID of the mshost', check_result tinyint(1) default 1 not null comment 'check executions success or failure', check_date datetime DEFAULT NULL COMMENT 'the last security check time', check_failed_list mediumtext null, type varchar(32) null, service varchar(32) null, PRIMARY KEY (id), KEY i_security_checks__mshost_id (mshost_id), CONSTRAINT fk_security_checks__mshost_id FOREIGN KEY (mshost_id) REFERENCES mshost (id) ON DELETE CASCADE) ENGINE=InnoDB CHARSET=utf8mb3;" > /dev/null 2>&1
 
                 if [ $cnt -eq 1 ]; then
                         echo "Monitoring Execution 자체시험 시작 감사기록 생성-------------------------"
@@ -136,26 +136,26 @@ function securitycheck {
                 if [ ! -n "$failed_files" ]; then
                         echo "Monitoring Execution 자체시험 성공 감사기록 생성-------------------------"
                         if [ $cnt -eq 1 ]; then
-                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type) VALUES ('1', '1', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Execution')"  > /dev/null 2>&1
+                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type, service) VALUES ('1', '1', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Execution', 'Monitoring')"  > /dev/null 2>&1
                                 uuid=$(cat /proc/sys/kernel/random/uuid)
                                 mysql --user=root --password=$database_password -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$uuid', 'SECURITY.CHECK', 'Completed', 'Successfully completed security check perform on monitoring service when running the product.', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '$host_ip');" > /dev/null 2>&1
                         echo "Monitoring Routine 자체시험 성공 감사기록 생성-------------------------"
                         else
-                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type) VALUES ('1', '1', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Routine')"  > /dev/null 2>&1
+                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type, service) VALUES ('1', '1', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Routine', 'Monitoring')"  > /dev/null 2>&1
                                 uuid=$(cat /proc/sys/kernel/random/uuid)
                                 mysql --user=root --password=$database_password -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$uuid', 'SECURITY.CHECK', 'Completed', 'Successfully completed security check perform on monitoring service when operating the product.', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '$host_ip');" > /dev/null 2>&1
                         fi
                 else
                         echo "Monitoring Execution 자체시험 실패 감사기록 및 알림 생성-------------------------"
                         if [ $cnt -eq 1 ]; then
-                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type) VALUES ('1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Execution')"  > /dev/null 2>&1
+                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type, service) VALUES ('1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Execution', 'Monitoring')"  > /dev/null 2>&1
                                 uuid=$(cat /proc/sys/kernel/random/uuid)
                                 mysql --user=root --password=$database_password -e "use cloud; INSERT INTO alert (uuid, type, pod_id, data_center_id, subject, sent_count, created, last_sent, archived, name) VALUES ('$uuid', '14', '0', '0', 'Monitoring service security check failed when running the product.', '1', DATE_SUB(NOW(), INTERVAL 9 HOUR), DATE_SUB(NOW(), INTERVAL 9 HOUR), '0', 'ALERT.MANAGEMENT');" > /dev/null 2>&1
                                 uuid=$(cat /proc/sys/kernel/random/uuid)
                                 mysql --user=root --password=$database_password -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$uuid', 'SECURITY.CHECK', 'Completed', 'Failed to execute security check on monitoring service when running the product.', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '$host_ip');" > /dev/null 2>&1
                         echo "Monitoring Routine 자체시험 실패 감사기록 및 알림 생성-------------------------"
                         else
-                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type) VALUES ('1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Routine')"  > /dev/null 2>&1
+                                mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type, service) VALUES ('1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Routine', 'Monitoring')"  > /dev/null 2>&1
                                 uuid=$(cat /proc/sys/kernel/random/uuid)
                                 mysql --user=root --password=$database_password -e "use cloud; INSERT INTO alert (uuid, type, pod_id, data_center_id, subject, sent_count, created, last_sent, archived, name) VALUES ('$uuid', '14', '0', '0', 'Monitoring service security check failed when operating the product.', '1', DATE_SUB(NOW(), INTERVAL 9 HOUR), DATE_SUB(NOW(), INTERVAL 9 HOUR), '0', 'ALERT.MANAGEMENT');" > /dev/null 2>&1
                                 uuid=$(cat /proc/sys/kernel/random/uuid)

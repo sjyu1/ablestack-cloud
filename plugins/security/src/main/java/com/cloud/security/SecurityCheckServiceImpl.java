@@ -171,6 +171,7 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
             securityCheckResponse.setCheckDate(scResult.getCheckDate());
             securityCheckResponse.setCheckFailedList(scResult.getCheckFailedList());
             securityCheckResponse.setType(scResult.getType());
+            securityCheckResponse.serService(scResult.getService());
             responses.add(securityCheckResponse);
         }
         return responses;
@@ -271,12 +272,14 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
                 alertManager.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "Failed to execute security check on the management server when operating the product.", "");
             }
         }
-        SecurityCheckVO connectivityVO = new SecurityCheckVO(msHostId, checkFinalResult, checkFailedList, type);
+        String service = "mold";
+        SecurityCheckVO connectivityVO = new SecurityCheckVO(msHostId, checkFinalResult, checkFailedList, type, service);
         connectivityVO.setMsHostId(msHostId);
         connectivityVO.setCheckResult(checkFinalResult);
         connectivityVO.setCheckFailedList(checkFailedList);
         connectivityVO.setCheckDate(new Date());
         connectivityVO.setType(type);
+        connectivityVO.serService(service);
         securityCheckDao.persist(connectivityVO);
     }
 
