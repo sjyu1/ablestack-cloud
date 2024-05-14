@@ -135,9 +135,10 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
             } else {
                 type = "Routine";
             }
-            List<IntegrityVerificationFinalResult> initialResult = integrityVerificationFinalResultDao.listByIntegrityVerificationFinalResult(2L);
-            if (initialResult == null) {
-                String monitoringFile = "/usr/lib/systemd/system/mold-monitoring.service";
+            List<IntegrityVerificationFinalResultVO> initialResult = integrityVerificationFinalResultDao.listByIntegrityVerificationFinalResult(2L);
+            if (initialResult == null || initialResult.isEmpty()) {
+                String monitoringFilePath = "/usr/lib/systemd/system/mold-monitoring.service";
+                File monitoringFile = new File(monitoringFilePath);
                 String monitoringFileHashValue = calculateHash(monitoringFile, "SHA-512");
                 updateIntegrityVerification(msHost.getId(), monitoringFile, monitoringFileHashValue);
             }
