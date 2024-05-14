@@ -279,7 +279,7 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
         connectivityVO.setCheckFailedList(checkFailedList);
         connectivityVO.setCheckDate(new Date());
         connectivityVO.setType(type);
-        connectivityVO.serService(service);
+        connectivityVO.setService(service);
         securityCheckDao.persist(connectivityVO);
     }
 
