@@ -135,6 +135,12 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
             } else {
                 type = "Routine";
             }
+            List<IntegrityVerificationFinalResult> initialResult = integrityVerificationFinalResultDao.listByIntegrityVerificationFinalResult(2L);
+            if (initialResult == null) {
+                String monitoringFile = "/usr/lib/systemd/system/mold-monitoring.service";
+                String monitoringFileHashValue = calculateHash(monitoringFile, "SHA-512");
+                updateIntegrityVerification(msHost.getId(), monitoringFile, monitoringFileHashValue);
+            }
             List<IntegrityVerification> result = new ArrayList<>(integrityVerificationDao.getIntegrityVerifications(msHost.getId()));
             for (IntegrityVerification ivResult : result) {
                 String filePath = ivResult.getFilePath();
@@ -386,6 +392,12 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
         verificationFailedListToString = verificationFailedListToString.replaceFirst(", $", "");
         updateIntegrityVerificationFinalResult(msHost.getId(), uuid, verificationFinalResult, verificationFailedListToString, type);
         return verificationFinalResult;
+    }
+
+    private void updateIntegrityVerification(long msHostId, String monitoringFile, String monitoringFileHashValue) {
+        IntegrityVerificationVO connectivityVO = integrityVerificationDao.getIntegrityVerificationResult(msHostId, monitoringFile);
+        connectivityVO.setInitialHashValue(monitoringFileHashValue);
+        integrityVerificationDao.update(connectivityVO.getId(), connectivityVO);
     }
 
     private void updateIntegrityVerificationResult(final long msHostId, String filePath, String comparisonHashValue, boolean verificationResult, String verificationMessage) {
