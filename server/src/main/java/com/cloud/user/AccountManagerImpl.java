@@ -2791,6 +2791,8 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
                 }
             } else {
                 logger.info("User " + userAccount.getUsername() + " is disabled/locked");
+                User user = _userDao.getUserByName(userAccount.getUsername(), userAccount.getDomainId());
+                ActionEventUtils.onActionEvent(user.getId(), user.getAccountId(), account.getDomainId(), EventTypes.EVENT_USER_LOGIN, "Login attempt failed. UserId : " + user.getId(), user.getId(), ApiCommandResourceType.User.toString());
                 throw new CloudAuthenticationException("Failed to authenticate user. User " + userAccount.getUsername() + " is disable/locked. Please contact your administrator or try again later.");
             }
             return null;
@@ -2809,7 +2811,7 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
                     (allowedLoginAttempts - attemptsMade) + " attempt(s) remaining");
             User user = _userDao.getUserByName(account.getUsername(), account.getDomainId());
             ActionEventUtils.onActionEvent(user.getId(), user.getAccountId(), account.getDomainId(), EventTypes.EVENT_USER_LOGIN, "Login attempt failed. UserId : " + user.getId(), user.getId(), ApiCommandResourceType.User.toString());
-        } else if (attemptsMade == allowedLoginAttempts) {
+        } else {
             updateLoginAttempts(account.getId(), allowedLoginAttempts, true);
             logger.warn("User " + account.getUsername() +
                     " has been disabled due to multiple failed login attempts." + " Please contact admin.");
@@ -2820,12 +2822,6 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
             _enableExecutor.schedule(new EnableUserTask(user), enableTime, TimeUnit.SECONDS);
             throw new CloudAuthenticationException("Failed to authenticate user " + account.getUsername() + " in domain " + account.getDomainId() +
             "; The user has been disabled due to multiple failed login attempts. Your account will be automatically activated after "+ enableTime +" seconds. Please try again in a moment.");
-        } else {
-            updateLoginAttempts(account.getId(), allowedLoginAttempts, true);
-            logger.warn("User " + account.getUsername() +
-                    " has been disabled due to multiple failed login attempts." + " Please contact admin.");
-            User user = _userDao.getUserByName(account.getUsername(), account.getDomainId());
-            ActionEventUtils.onActionEvent(user.getId(), user.getAccountId(), account.getDomainId(), EventTypes.EVENT_USER_LOGIN, "Login attempt failed. UserId : " + user.getId(), user.getId(), ApiCommandResourceType.User.toString());
         }
     }
 
