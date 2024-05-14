@@ -171,7 +171,7 @@ public class SecurityCheckServiceImpl extends ManagerBase implements PluggableSe
             securityCheckResponse.setCheckDate(scResult.getCheckDate());
             securityCheckResponse.setCheckFailedList(scResult.getCheckFailedList());
             securityCheckResponse.setType(scResult.getType());
-            securityCheckResponse.serService(scResult.getService());
+            securityCheckResponse.setService(scResult.getService());
             responses.add(securityCheckResponse);
         }
         return responses;
