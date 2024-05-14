@@ -132,25 +132,25 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
             String type = "";
             if (runMode == "first") {
                 type = "Execution";
+                // mold 시작 또는 재시작 시 initial 업데이트
+                LOGGER.info("::::::::::::::::::::::mold 시작 또는 재시작 시 initial 업데이트::::::::::::::::::::::::::::");
+                List<IntegrityVerification> exeResult = new ArrayList<>(integrityVerificationDao.getIntegrityVerifications(msHost.getId()));
+                for (IntegrityVerification exe : exeResult) {
+                    String exeFilePath = exe.getFilePath();
+                    File exeFile = new File(exeFilePath);
+                    try {
+                        String exeComparisonHashValue = calculateHash(exeFile, "SHA-512");
+                        boolean exeVerificationResult = true;
+                        String exeVerificationMessage = "The integrity of the file has been verified.";
+                        updateIntegrityVerification(msHost.getId(), exeFilePath, exeComparisonHashValue, exeVerificationResult, exeVerificationMessage);
+                    } catch (NoSuchAlgorithmException | IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                LOGGER.info("::::::::::::::::::::::mold 시작 또는 재시작 시 initial 업데이트::::::::::::::::::::::::::::");
             } else {
                 type = "Routine";
             }
-            List<IntegrityVerificationFinalResultVO> initialResult = integrityVerificationFinalResultDao.listByIntegrityVerificationFinalResult(2L);
-            LOGGER.info("::::::::::::::::::::::::::::::::::::::::::::::::::");
-            LOGGER.info(initialResult);
-            if (initialResult == null || initialResult.isEmpty()) {
-                LOGGER.info("initialResult");
-                try {
-                    String monitoringFilePath = "/usr/lib/systemd/system/mold-monitoring.service";
-                    File monitoringFile = new File(monitoringFilePath);
-                    String monitoringFileHashValue = calculateHash(monitoringFile, "SHA-512");
-                    LOGGER.info("monitoringFileHashValue : " + monitoringFileHashValue);
-                    updateIntegrityVerification(msHost.getId(), monitoringFilePath, monitoringFileHashValue);
-                } catch (NoSuchAlgorithmException | IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            LOGGER.info("::::::::::::::::::::::::::::::::::::::::::::::::::");
             List<IntegrityVerification> result = new ArrayList<>(integrityVerificationDao.getIntegrityVerifications(msHost.getId()));
             for (IntegrityVerification ivResult : result) {
                 String filePath = ivResult.getFilePath();
@@ -404,11 +404,26 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
         return verificationFinalResult;
     }
 
-    private void updateIntegrityVerification(long msHostId, String monitoringFile, String monitoringFileHashValue) {
-        LOGGER.info("updateIntegrityVerification");
-        IntegrityVerificationVO connectivityVO = integrityVerificationDao.getIntegrityVerificationResult(msHostId, monitoringFile);
-        connectivityVO.setInitialHashValue(monitoringFileHashValue);
-        integrityVerificationDao.update(connectivityVO.getId(), connectivityVO);
+    private void updateIntegrityVerification(long msHostId, String filePath, String comparisonHashValue, boolean verificationResult, String verificationMessage) {
+        LOGGER.info("::::::::::::::::::::::::::::::updateIntegrityVerification");
+        boolean newIntegrityVerificationEntry = false;
+        IntegrityVerificationVO connectivityVO = integrityVerificationDao.getIntegrityVerificationResult(msHostId, filePath);
+        if (connectivityVO == null) {
+            connectivityVO = new IntegrityVerificationVO(msHostId, filePath);
+            newIntegrityVerificationEntry = true;
+        }
+        connectivityVO.setVerificationResult(verificationResult);
+        connectivityVO.setComparisonHashValue(comparisonHashValue);
+        connectivityVO.setInitialHashValue(comparisonHashValue);
+        connectivityVO.setVerificationDate(new Date());
+        if (StringUtils.isNotEmpty(verificationMessage)) {
+            connectivityVO.setVerificationDetails(verificationMessage.getBytes(com.cloud.utils.StringUtils.getPreferredCharset()));
+        }
+        if (newIntegrityVerificationEntry) {
+            integrityVerificationDao.persist(connectivityVO);
+        } else {
+            integrityVerificationDao.update(connectivityVO.getId(), connectivityVO);
+        }
     }
 
     private void updateIntegrityVerificationResult(final long msHostId, String filePath, String comparisonHashValue, boolean verificationResult, String verificationMessage) {
