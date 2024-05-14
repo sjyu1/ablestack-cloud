@@ -140,7 +140,7 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
                 String monitoringFilePath = "/usr/lib/systemd/system/mold-monitoring.service";
                 File monitoringFile = new File(monitoringFilePath);
                 String monitoringFileHashValue = calculateHash(monitoringFile, "SHA-512");
-                updateIntegrityVerification(msHost.getId(), monitoringFile, monitoringFileHashValue);
+                updateIntegrityVerification(msHost.getId(), monitoringFilePath, monitoringFileHashValue);
             }
             List<IntegrityVerification> result = new ArrayList<>(integrityVerificationDao.getIntegrityVerifications(msHost.getId()));
             for (IntegrityVerification ivResult : result) {
