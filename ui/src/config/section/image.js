@@ -187,7 +187,7 @@ export default {
           dataView: true,
           popup: true,
           show: (record, store) => {
-            return (['Admin'].includes(store.userInfo.roletype) || // If admin or owner or belongs to current project
+            return (!store.getters.features.securityfeaturesenabled && ['Admin'].includes(store.userInfo.roletype) || // If admin or owner or belongs to current project
               (record.domainid === store.userInfo.domainid && record.account === store.userInfo.account) ||
               (record.domainid === store.userInfo.domainid && record.projectid && store.project && store.project.id && record.projectid === store.project.id)) &&
               record.templatetype !== 'SYSTEM' &&
@@ -345,7 +345,7 @@ export default {
           args: ['op', 'accounts', 'projectids'],
           popup: true,
           show: (record, store) => {
-            return (['Admin'].includes(store.userInfo.roletype) || // If admin or owner or belongs to current project
+            return (!store.getters.features.securityfeaturesenabled && ['Admin'].includes(store.userInfo.roletype) || // If admin or owner or belongs to current project
               (record.domainid === store.userInfo.domainid && record.account === store.userInfo.account) ||
               (record.domainid === store.userInfo.domainid && record.projectid && store.project && store.project.id && record.projectid === store.project.id)) &&
               !(record.account === 'system' && record.domainid === 1) &&
