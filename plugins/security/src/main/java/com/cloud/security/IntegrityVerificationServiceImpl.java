@@ -136,16 +136,21 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
                 type = "Routine";
             }
             List<IntegrityVerificationFinalResultVO> initialResult = integrityVerificationFinalResultDao.listByIntegrityVerificationFinalResult(2L);
+            LOGGER.info("::::::::::::::::::::::::::::::::::::::::::::::::::");
+            LOGGER.info(initialResult);
             if (initialResult == null || initialResult.isEmpty()) {
+                LOGGER.info("initialResult");
                 try {
                     String monitoringFilePath = "/usr/lib/systemd/system/mold-monitoring.service";
                     File monitoringFile = new File(monitoringFilePath);
                     String monitoringFileHashValue = calculateHash(monitoringFile, "SHA-512");
+                    LOGGER.info("monitoringFileHashValue : " + monitoringFileHashValue);
                     updateIntegrityVerification(msHost.getId(), monitoringFilePath, monitoringFileHashValue);
                 } catch (NoSuchAlgorithmException | IOException e) {
                     throw new RuntimeException(e);
                 }
             }
+            LOGGER.info("::::::::::::::::::::::::::::::::::::::::::::::::::");
             List<IntegrityVerification> result = new ArrayList<>(integrityVerificationDao.getIntegrityVerifications(msHost.getId()));
             for (IntegrityVerification ivResult : result) {
                 String filePath = ivResult.getFilePath();
@@ -400,6 +405,7 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     }
 
     private void updateIntegrityVerification(long msHostId, String monitoringFile, String monitoringFileHashValue) {
+        LOGGER.info("updateIntegrityVerification");
         IntegrityVerificationVO connectivityVO = integrityVerificationDao.getIntegrityVerificationResult(msHostId, monitoringFile);
         connectivityVO.setInitialHashValue(monitoringFileHashValue);
         integrityVerificationDao.update(connectivityVO.getId(), connectivityVO);
