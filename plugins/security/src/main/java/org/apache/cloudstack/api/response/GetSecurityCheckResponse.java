@@ -100,7 +100,7 @@ public class GetSecurityCheckResponse extends BaseResponse {
         this.type = type;
     }
 
-    public void serService(String service) {
+    public void setService(String service) {
         this.service = service;
     }
 
