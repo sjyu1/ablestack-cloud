@@ -145,8 +145,13 @@ export default {
       },
       {
         key: 'type',
-        title: this.$t('label.type'),
+        title: this.$t('label.verification.type'),
         dataIndex: 'type'
+      },
+      {
+        key: 'servicename',
+        title: this.$t('label.serviceunitname'),
+        dataIndex: 'servicename'
       }
     ]
     this.innerColumns = [
