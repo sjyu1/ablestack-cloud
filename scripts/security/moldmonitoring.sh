@@ -4,7 +4,7 @@
 
 # 변수
 key_file="/etc/cloudstack/management/key"
-db_file="/etc/cloudstack/management/db.properties"
+monitoring_file="/etc/cloudstack/management/monitoring.properties"
 jar_file='/usr/share/cloudstack-common/lib/cloudstack-utils.jar'
 securityjarfile='/usr/share/cloudstack-common/lib/'
 scriptpath='/usr/share/cloudstack-common/scripts'
@@ -18,15 +18,18 @@ interval=4
 function securitycheck {
         openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc -out $key_file > /dev/null 2>&1
         echo "암호키 복호화 완료-------------------------------------------------"
-        openssl enc -aes-256-cbc -d -K $(cat $key_file) -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $db_file > /dev/null 2>&1
+        if [ -e "$monitoring_file" ]; then
+                rm -rf $monitoring_file
+        fi 
+        openssl enc -aes-256-cbc -d -K $(cat $key_file) -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file > /dev/null 2>&1
         echo "암호키로 DB 설정파일 복호화 완료--------------------------------------"
-        check=$(cat $db_file | grep 'db.cloud.password' | wc -l) > /dev/null 2>&1
+        check=$(cat $monitoring_file | grep 'db.cloud.password' | wc -l) > /dev/null 2>&1
         if [ ! "$check" -eq 0 ]; then
                 echo "자체시험 실행-------------------------------------------------------"
                 cnt=$((cnt+1))
                 echo "cnt : $cnt"
-                db_enc_password=$(sed '/^\#/d' $db_file | grep 'db.cloud.password'  | tail -n 1 | cut -d "=" -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'i | sed 's/^ENC(\(.*\))/\1/')
-                enc_version=$(sed '/^\#/d' $db_file | grep 'db.cloud.encryptor.version'  | tail -n 1 | cut -d "=" -f2-)
+                db_enc_password=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.password'  | tail -n 1 | cut -d "=" -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'i | sed 's/^ENC(\(.*\))/\1/')
+                enc_version=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.encryptor.version'  | tail -n 1 | cut -d "=" -f2-)
                 database_password=$(java -classpath $jar_file com.cloud.utils.crypt.EncryptionCLI -d -i "$db_enc_password" -p "$(cat $key_file)" $enc_version)
                 mysql --user=root --password=$database_password -e "use cloud; SET GLOBAL foreign_key_checks=0;" > /dev/null 2>&1
                 mysql --user=root --password=$database_password -e "use cloud; CREATE TABLE IF NOT EXISTS security_check (id bigint unsigned NOT NULL AUTO_INCREMENT, mshost_id bigint unsigned NOT NULL COMMENT 'the ID of the mshost', check_result tinyint(1) default 1 not null comment 'check executions success or failure', check_date datetime DEFAULT NULL COMMENT 'the last security check time', check_failed_list mediumtext null, type varchar(32) null, service varchar(32) null, PRIMARY KEY (id), KEY i_security_checks__mshost_id (mshost_id), CONSTRAINT fk_security_checks__mshost_id FOREIGN KEY (mshost_id) REFERENCES mshost (id) ON DELETE CASCADE) ENGINE=InnoDB CHARSET=utf8mb3;" > /dev/null 2>&1
@@ -45,7 +48,7 @@ function securitycheck {
                 fi
 
                 echo "자체시험 시작-------------------------------------------------------"
-                utils 55 count
+                # utils 55 count
                 utils_cmd=${securityjarfile}junit-4.13.2.jar:${securityjarfile}hamcrest-all-1.3.jar:${securityjarfile}cloudstack-utils-test.jar:${securityjarfile}cloudstack-utils.jar:${securityjarfile}commons-lang-2.6.jar:${securityjarfile}commons-io-2.8.0.jar:${securityjarfile}bcprov-jdk15on-1.70.jar:${securityjarfile}guava-testlib-18.0.jar:${securityjarfile}guava-31.1-jre.jar:${securityjarfile}httpcore-4.4.16.jar:${securityjarfile}httpclient-4.5.14.jar:${securityjarfile}mockito-core-3.12.4.jar:${securityjarfile}byte-buddy-1.10.5.jar:${securityjarfile}byte-buddy-agent-1.10.5.jar:${securityjarfile}commons-validator-1.6.jar:${securityjarfile}commons-net-3.7.2.jar:${securityjarfile}commons-lang3-3.11.jar:${securityjarfile}java-ipv6-0.17.jar:${securityjarfile}objenesis-3.2.jar:${securityjarfile}commons-collections4-4.4.jar:${securityjarfile}commons-collections-3.2.2.jar:${securityjarfile}spring-core-5.3.26.jar:${securityjarfile}commons-logging-1.2.jar:${securityjarfile}gson-1.7.2.jar:${securityjarfile}jackson-core-2.13.3.jar:${securityjarfile}jackson-databind-2.13.3.jar:${securityjarfile}jackson-annotations-2.13.3.jar:${securityjarfile}trilead-ssh2-1.0.0-build217.jar:${securityjarfile}joda-time-2.12.5.jar:${securityjarfile}jsch-0.1.55.jar:${securityjarfile}commons-compress-1.21.jar:${securityjarfile}reflections-0.10.2.jar:${securityjarfile}commons-httpclient-3.1.jar:${securityjarfile}xercesImpl-2.12.2.jar:${securityjarfile}nashorn-core-15.3.jar:${securityjarfile}activation-1.1.1.jar:${securityjarfile}mail-1.5.0-b01.jar:${securityjarfile}bcpkix-jdk15on-1.70.jar:${securityjarfile}bctls-jdk15on-1.70.jar:${securityjarfile}bcutil-jdk15on-1.70.jar:${securityjarfile}aws-java-sdk-core-1.12.439.jar:${securityjarfile}junit-dataprovider-1.13.1.jar:${securityjarfile}javax.servlet-api-4.0.1.jar:${securityjarfile}spring-test-5.3.26.jar
 
                 utils_class_name=("com.cloud.utils.backoff.impl.ConstantTimeBackoffTest" "com.cloud.utils.compression.CompressionUtilTest" "com.cloud.utils.crypt.EncryptionSecretKeyCheckerTest" "com.cloud.utils.crypto.EncryptionSecretKeyCheckerTest" "com.cloud.utils.crypto.RSAHelperTest" "com.cloud.utils.encoding.UrlEncoderTest" "com.cloud.utils.exception.ExceptionUtilTest" "com.cloud.utils.net.Ip4AddressTest" "com.cloud.utils.net.IpTest" "com.cloud.utils.net.MacAddressTest" "com.cloud.utils.net.NetUtilsTest" "com.cloud.utils.rest.BasicRestClientTest" "com.cloud.utils.rest.HttpClientHelperTest" "com.cloud.utils.rest.HttpStatusCodeHelperTest" "com.cloud.utils.rest.HttpUriRequestBuilderTest" "com.cloud.utils.rest.RESTServiceConnectorTest" "com.cloud.utils.security.SSLUtilsTest" "com.cloud.utils.ssh.SshHelperTest" "com.cloud.utils.ssh.SSHKeysHelperTest" "com.cloud.utils.storage.QCOW2UtilsTest" "com.cloud.utils.testcase.NioTest" "com.cloud.utils.validation.ChecksumUtilTest" "com.cloud.utils.xmlobject.TestXmlObject" "com.cloud.utils.xmlobject.TestXmlObject2" "com.cloud.utils.DateUtilTest" "com.cloud.utils.FileUtilTest" "com.cloud.utils.HttpUtilsTest" "com.cloud.utils.HumanReadableJsonTest" "com.cloud.utils.LogUtilsTest" "com.cloud.utils.NumbersUtilTest" "com.cloud.utils.PasswordGeneratorTest" "com.cloud.utils.ProcessUtilTest" "com.cloud.utils.PropertiesUtilsTest" "com.cloud.utils.ReflectUtilTest" "com.cloud.utils.ScriptTest" "com.cloud.utils.StringUtilsTest" "com.cloud.utils.SwiftUtilTest" "com.cloud.utils.TernaryTest" "com.cloud.utils.TestProfiler" "com.cloud.utils.UriUtilsParametrizedTest" "com.cloud.utils.UriUtilsTest" "com.cloud.utils.UuidUtilsTest" "org.apache.cloudstack.utils.bytescale.ByteScaleUtilsTest" "org.apache.cloudstack.utils.hypervisor.HypervisorUtilsTest" "org.apache.cloudstack.utils.imagestore.ImageStoreUtilTest" "org.apache.cloudstack.utils.jsinterpreter.JsInterpreterTest" "org.apache.cloudstack.utils.mailing.SMTPMailSenderTest" "org.apache.cloudstack.utils.process.ProcessTest" "org.apache.cloudstack.utils.redfish.RedfishClientTest" "org.apache.cloudstack.utils.reflectiontostringbuilderutils.ReflectionToStringBuilderUtilsTest" "org.apache.cloudstack.utils.security.CertUtilsTest" "org.apache.cloudstack.utils.security.DigestHelperTest" "org.apache.cloudstack.utils.security.ParserUtilsTest" "org.apache.cloudstack.utils.volume.VirtualMachineDiskInfoTest" "org.apache.cloudstack.utils.CloudStackVersionTest")
@@ -169,9 +172,9 @@ function securitycheck {
                 mysql --user=root --password=$database_password -e "use cloud; SET GLOBAL foreign_key_checks=1;" > /dev/null 2>&1
 
                 echo "복호화된 설정 파일 01 덮어쓰기 및 삭제-------------------------"
-                if [ -e "$db_file" ]; then
-                        for var in {1..5} ; do echo 01010101 > $db_file ; done
-                        rm -rf $db_file
+                if [ -e "$monitoring_file" ]; then
+                        for var in {1..5} ; do echo 01010101 > $monitoring_file ; done
+                        rm -rf $monitoring_file
                 fi
                 if [ -e "$key_file" ]; then
                         for var in {1..5} ; do echo 01010101 > $key_file ; done
@@ -187,10 +190,15 @@ function securitycheck {
                 done
         else
                 echo "DB 비밀번호를 정상적으로 가져오지 못한 경우 자체시험 실행 불가 (감사기록 생성 불가)-------------"
+                echo "설정 파일 01 덮어쓰기-------------------------------------------"
                 if [ -e "$key_file" ]; then
                         for var in {1..5} ; do echo 01010101 > $key_file ; done
                         rm -rf $key_file
                 fi
+                if [ -e "$monitoring_file" ]; then
+                        for var in {1..5} ; do echo 01010101 > $key_file ; done
+                        rm -rf $monitoring_file
+                fi 
                 echo "변수 01 덮어쓰기-------------------------------------------"
                 for var in {1..5}
                 do 
