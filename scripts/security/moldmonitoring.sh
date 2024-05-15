@@ -3,7 +3,7 @@
 # mold-monitoring 서비스는 4시간 간격으로 매일 자체시험 (대상 : java, script, service)을 실행
 
 # 변수
-key_file="/etc/cloudstack/management/key"
+monitoring_key="/etc/cloudstack/management/monitoring.key"
 monitoring_file="/etc/cloudstack/management/monitoring.properties"
 jar_file='/usr/share/cloudstack-common/lib/cloudstack-utils.jar'
 securityjarfile='/usr/share/cloudstack-common/lib/'
@@ -16,20 +16,24 @@ interval=4
 
 # 자체시험 실행
 function securitycheck {
-        openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc -out $key_file > /dev/null 2>&1
+        if [ -e "$monitoring_key" ]; then
+                rm -rf $monitoring_key
+        fi
         if [ -e "$monitoring_file" ]; then
                 rm -rf $monitoring_file
-        fi 
-        openssl enc -aes-256-cbc -d -K $(cat $key_file) -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file > /dev/null 2>&1
+        fi
+        echo "키 및 설정 파일 복호화 시작--------------------------------------"
+        openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc -out $monitoring_key > /dev/null 2>&1
+        openssl enc -aes-256-cbc -d -K $(cat $monitoring_key) -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file > /dev/null 2>&1
         check=$(cat $monitoring_file | grep 'db.cloud.password' | wc -l) > /dev/null 2>&1
+        # echo "$check" 테스트 후 삭제 예정
+        echo "$check" 
         if [ ! "$check" -eq 0 ]; then
-                echo "키 및 설정 파일 복호화 완료--------------------------------------"
-                echo "자체시험 실행-------------------------------------------------------"
+                echo "키 및 설정 파일 복호화 완료 및 자체시험 실행--------------------------------------"
                 cnt=$((cnt+1))
-                echo "cnt : $cnt"
                 db_enc_password=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.password'  | tail -n 1 | cut -d "=" -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'i | sed 's/^ENC(\(.*\))/\1/')
                 enc_version=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.encryptor.version'  | tail -n 1 | cut -d "=" -f2-)
-                database_password=$(java -classpath $jar_file com.cloud.utils.crypt.EncryptionCLI -d -i "$db_enc_password" -p "$(cat $key_file)" $enc_version)
+                database_password=$(java -classpath $jar_file com.cloud.utils.crypt.EncryptionCLI -d -i "$db_enc_password" -p "$(cat $monitoring_key)" $enc_version)
                 mysql --user=root --password=$database_password -e "use cloud; SET GLOBAL foreign_key_checks=0;" > /dev/null 2>&1
                 mysql --user=root --password=$database_password -e "use cloud; CREATE TABLE IF NOT EXISTS security_check (id bigint unsigned NOT NULL AUTO_INCREMENT, mshost_id bigint unsigned NOT NULL COMMENT 'the ID of the mshost', check_result tinyint(1) default 1 not null comment 'check executions success or failure', check_date datetime DEFAULT NULL COMMENT 'the last security check time', check_failed_list mediumtext null, type varchar(32) null, service varchar(32) null, PRIMARY KEY (id), KEY i_security_checks__mshost_id (mshost_id), CONSTRAINT fk_security_checks__mshost_id FOREIGN KEY (mshost_id) REFERENCES mshost (id) ON DELETE CASCADE) ENGINE=InnoDB CHARSET=utf8mb3;" > /dev/null 2>&1
                 value="$(mysql --user=root --password=$database_password -se "use cloud; SELECT value FROM configuration WHERE name='security.check.interval';")" > /dev/null 2>&1
@@ -175,9 +179,9 @@ function securitycheck {
                         for var in {1..5} ; do echo 01010101 > $monitoring_file ; done
                         rm -rf $monitoring_file
                 fi
-                if [ -e "$key_file" ]; then
-                        for var in {1..5} ; do echo 01010101 > $key_file ; done
-                        rm -rf $key_file
+                if [ -e "$monitoring_key" ]; then
+                        for var in {1..5} ; do echo 01010101 > $monitoring_key ; done
+                        rm -rf $monitoring_key
                 fi
 
                 echo "변수 01 덮어쓰기------------------------------------------"
@@ -188,14 +192,14 @@ function securitycheck {
                         database_password=01010101
                 done
         else
-                echo "DB 비밀번호를 정상적으로 가져오지 못한 경우 자체시험 실행 불가 (감사기록 생성 불가)-------------"
+                echo "키 및 설정파일 복호화 실패로 자체시험 실행 불가 (감사기록 생성 불가)-------------"
                 echo "설정 파일 01 덮어쓰기-------------------------------------------"
-                if [ -e "$key_file" ]; then
-                        for var in {1..5} ; do echo 01010101 > $key_file ; done
-                        rm -rf $key_file
+                if [ -e "$monitoring_key" ]; then
+                        for var in {1..5} ; do echo 01010101 > $monitoring_key ; done
+                        rm -rf $monitoring_key
                 fi
                 if [ -e "$monitoring_file" ]; then
-                        for var in {1..5} ; do echo 01010101 > $key_file ; done
+                        for var in {1..5} ; do echo 01010101 > $monitoring_file ; done
                         rm -rf $monitoring_file
                 fi 
                 echo "변수 01 덮어쓰기-------------------------------------------"
