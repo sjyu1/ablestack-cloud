@@ -24,7 +24,11 @@ function securitycheck {
         fi
         echo "키 및 설정 파일 복호화 시작--------------------------------------"
         openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc -out $monitoring_key > /dev/null 2>&1
+        echo ":::::::::::::::::::::::::1"
+        echo "$?"
         openssl enc -aes-256-cbc -d -K $(cat $monitoring_key) -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file > /dev/null 2>&1
+        echo ":::::::::::::::::::::::::2"
+        echo "$?"
         check=$(cat $monitoring_file | grep 'db.cloud.password' | wc -l) > /dev/null 2>&1
         # echo "$check" 테스트 후 삭제 예정
         echo "$check" 
