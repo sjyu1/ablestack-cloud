@@ -20,7 +20,7 @@ function securitycheck {
                 rm -rf $monitoring_file
         fi
         key=$(openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc)
-        openssl enc -aes-256-cbc -d -K $key -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file > /dev/null 2>&1
+        openssl enc -aes-256-cbc -d -K $key -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file
         db_enc_password=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.password'  | tail -n 1 | cut -d "=" -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'i | sed 's/^ENC(\(.*\))/\1/')
         enc_version=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.encryptor.version'  | tail -n 1 | cut -d "=" -f2-)
         if [ -n "$key" ]; then
