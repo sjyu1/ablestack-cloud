@@ -184,6 +184,7 @@ function securitycheck {
         fi
 }
 
+# 변수 및 설정파일 파기
 function removeVariable {
         echo "변수 01 덮어쓰기------------------------------------------"
         for var in {1..5}
