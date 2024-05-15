@@ -13,6 +13,7 @@ kek_pass=$(echo $1 | base64 --decode) > /dev/null 2>&1
 host_ip=$(hostname -i)
 cnt=0
 interval=4
+fail=0
 
 # 자체시험 실행
 function securitycheck {
@@ -69,6 +70,7 @@ function securitycheck {
                         else
                         echo "$utils_class,false" > /dev/null 2>&1
                         failed_files+="$utils_class, "
+                        fail=$((fail+1))
                         fi
                 done
 
@@ -86,6 +88,7 @@ function securitycheck {
                         else
                         echo "$api_class,false" > /dev/null 2>&1
                         failed_files+="$api_class, "
+                        fail=$((fail+1))
                         fi
                 done
 
@@ -103,6 +106,7 @@ function securitycheck {
                         else
                         echo "$fw_class,false" > /dev/null 2>&1
                         failed_files+="$fw_class, "
+                        fail=$((fail+1))
                         fi
                 done
 
@@ -123,6 +127,7 @@ function securitycheck {
                                 *)
                                         echo "$utils_cmd,false" > /dev/null 2>&1
                                         failed_files+="$utils_cmd, "
+                                        fail=$((fail+1))
                                         ;;
                         esac
 
@@ -133,6 +138,7 @@ function securitycheck {
                 if [ "$count1" -eq 0 ]; then
                         echo "monitoring.service,false" > /dev/null 2>&1
                         failed_files+="monitoring.service, "
+                        fail=$((fail+1))
                 else
                         echo "monitoring.service,true" > /dev/null 2>&1
                 fi
@@ -140,14 +146,14 @@ function securitycheck {
                 if [ "$count2" -eq 0 ]; then
                         echo "mold.service,false" > /dev/null 2>&1
                         failed_files+="mold.service, "
+                        fail=$((fail+1))
                 else
                         echo "mold.service,true" > /dev/null 2>&1
                 fi
 
                 failed_files="${failed_files%, }"
                 echo "자체시험 실패 리스트 : $failed_files"
-
-                if [ ! -n "$failed_files" ]; then
+                if [ $fail -eq 0 ]; then
                         echo "Monitoring Execution 자체시험 성공 감사기록 생성-------------------------"
                         if [ $cnt -eq 1 ]; then
                                 mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type, service) VALUES ('1', '1', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Execution', 'Monitoring')"  > /dev/null 2>&1
