@@ -3,7 +3,6 @@
 oper=$1
 jarfile='/usr/share/cloudstack-common/lib/cloudstack-utils.jar'
 process='/etc/default/cloudstack-management'
-monitoring='/usr/lib/systemd/system/mold-monitoring.service'
 securityjarfile='/usr/share/cloudstack-common/lib/'
 scriptpath='/usr/share/cloudstack-common/scripts'
 
@@ -40,12 +39,6 @@ function beforeStart()
     kek_pass=$(echo $kek_pass | base64)
     echo "BOOTSTRAP_CLASS=org.apache.cloudstack.ServerDaemon "$kek_pass >> $process
 
-    init=$(sed -n '9p' $monitoring)
-    blank=' '
-    if [[ "$init" != *"$blank"* ]]; then
-        sed -i "9s/$/ $kek_pass/g" $monitoring
-        systemctl daemon-reload
-    fi
 }
 
 if [ "$oper" == "start" ]; then
