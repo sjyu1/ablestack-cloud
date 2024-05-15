@@ -11,8 +11,8 @@ scriptpath='/usr/share/cloudstack-common/scripts'
 kek_pass=$(echo $1 | base64 --decode) > /dev/null 2>&1
 host_ip=$(hostname -i)
 cnt=0
-interval=4
 fail=0
+interval=4
 
 # 자체시험 실행
 function securitycheck {
