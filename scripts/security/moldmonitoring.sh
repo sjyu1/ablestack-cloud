@@ -190,7 +190,6 @@ function removeVariable {
         for var in {1..5}
         do
                 key=01010101
-                kek_pass=01010101
                 db_enc_password=01010101
                 database_password=01010101
         done
