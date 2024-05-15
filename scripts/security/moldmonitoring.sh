@@ -3,6 +3,7 @@
 # mold-monitoring 서비스는 4시간 간격으로 매일 자체시험 (대상 : java, script, service)을 실행
 
 # 변수
+monitoring_key="/etc/cloudstack/management/monitoring.key"
 monitoring_file="/etc/cloudstack/management/monitoring.properties"
 jar_file='/usr/share/cloudstack-common/lib/cloudstack-utils.jar'
 securityjarfile='/usr/share/cloudstack-common/lib/'
@@ -16,16 +17,19 @@ interval=4
 
 # 자체시험 실행
 function securitycheck {
+        if [ -e "$monitoring_key" ]; then
+                rm -rf $monitoring_key
+        fi
         if [ -e "$monitoring_file" ]; then
                 rm -rf $monitoring_file
         fi
-        key=$(openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc)
-        openssl enc -aes-256-cbc -d -K $key -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file
+        openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc -out $monitoring_key
+        openssl enc -aes-256-cbc -d -K $(cat $monitoring_key) -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file
         db_enc_password=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.password'  | tail -n 1 | cut -d "=" -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'i | sed 's/^ENC(\(.*\))/\1/')
         enc_version=$(sed '/^\#/d' $monitoring_file | grep 'db.cloud.encryptor.version'  | tail -n 1 | cut -d "=" -f2-)
-        if [ -n "$key" ]; then
+        if [ -n "$(cat $monitoring_key)" ]; then
                 echo "키 파일 복호화 완료--------------------------------------"
-                database_password=$(java -classpath $jar_file com.cloud.utils.crypt.EncryptionCLI -d -i "$db_enc_password" -p $key $enc_version)
+                database_password=$(java -classpath $jar_file com.cloud.utils.crypt.EncryptionCLI -d -i "$db_enc_password" -p "$(cat $monitoring_key)" $enc_version)
                 if [ ! $database_password ]; then
                         echo "DB 설정 파일 복호화 실패--------------------------------------"
                         removeVariable
@@ -189,7 +193,6 @@ function removeVariable {
         echo "변수 01 덮어쓰기------------------------------------------"
         for var in {1..5}
         do
-                key=01010101
                 kek_pass=01010101
                 db_enc_password=01010101
                 database_password=01010101
@@ -199,7 +202,11 @@ function removeVariable {
         if [ -e "$monitoring_file" ]; then
                 for var in {1..5} ; do echo 01010101 > $monitoring_file ; done
                 rm -rf $monitoring_file
-        fi 
+        fi
+        if [ -e "$monitoring_key" ]; then
+                for var in {1..5} ; do echo 01010101 > $monitoring_key ; done
+                rm -rf $monitoring_key
+        fi
 }
 
 if [ $# -gt 0 ]; then
