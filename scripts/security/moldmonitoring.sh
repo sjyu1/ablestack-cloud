@@ -17,14 +17,13 @@ interval=4
 # 자체시험 실행
 function securitycheck {
         openssl enc -aria-256-cbc -a -d -pbkdf2 -k $kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/key.enc -out $key_file > /dev/null 2>&1
-        echo "암호키 복호화 완료-------------------------------------------------"
         if [ -e "$monitoring_file" ]; then
                 rm -rf $monitoring_file
         fi 
         openssl enc -aes-256-cbc -d -K $(cat $key_file) -pass pass:$kek_pass -saltlen 16 -md sha256 -iter 100000 -in /etc/cloudstack/management/db.properties.enc -out $monitoring_file > /dev/null 2>&1
-        echo "암호키로 DB 설정파일 복호화 완료--------------------------------------"
         check=$(cat $monitoring_file | grep 'db.cloud.password' | wc -l) > /dev/null 2>&1
         if [ ! "$check" -eq 0 ]; then
+                echo "키 및 설정 파일 복호화 완료--------------------------------------"
                 echo "자체시험 실행-------------------------------------------------------"
                 cnt=$((cnt+1))
                 echo "cnt : $cnt"
