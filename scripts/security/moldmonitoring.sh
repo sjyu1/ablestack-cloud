@@ -147,7 +147,6 @@ function securitycheck {
                         fi
 
                         failed_files="${failed_files%, }"
-                        echo "자체시험 실패 리스트 : $failed_files -----------------"
                         if [ $fail -eq 0 ]; then
                                 if [ $cnt -eq 1 ]; then
                                         echo "Monitoring Execution 자체시험 성공 감사기록 생성-------------------------"
@@ -161,6 +160,7 @@ function securitycheck {
                                         mysql --user=root --password=$database_password -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$uuid', 'SECURITY.CHECK', 'Completed', 'Successfully completed security check perform on monitoring service when operating the product.', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '$host_ip');" > /dev/null 2>&1
                                 fi
                         else
+                                echo "자체시험 실패 리스트 : $failed_files -----------------"
                                 if [ $cnt -eq 1 ]; then
                                         echo "Monitoring Execution 자체시험 실패 감사기록 및 알림 생성-------------------------"
                                         mysql --user=root --password=$database_password -e "use cloud; INSERT INTO security_check (mshost_id, check_result, check_date, check_failed_list, type, service) VALUES ('1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), '$failed_files', 'Execution', 'Monitoring')"  > /dev/null 2>&1
@@ -216,7 +216,7 @@ function sendAlertMail {
         smtp_sender="$(mysql --user=root --password=$database_password -se "use cloud; SELECT value FROM configuration WHERE name='alert.email.sender';")" > /dev/null 2>&1
         smtp_recipient="$(mysql --user=root --password=$database_password -se "use cloud; SELECT value FROM configuration WHERE name='alert.email.addresses';")" > /dev/null 2>&1
         if [ -n "$smtp_server" ] && [ -n "$smtp_port" ] && [ -n "$smtp_username" ] && [ -n "$smtp_enc_password" ] && [ -n "$smtp_password" ] && [ -n "$smtp_sender" ] && [ -n "$smtp_recipient" ]; then
-                echo "SMTP 설정으로 알림 메일 전송 --------------------------------------"
+                echo "SMTP 설정으로 알림 메일 전송--------------------------------------"
                 python "$scriptpath/security/mail_send.py" --smtp-server $smtp_server --smtp-port $smtp_port --from-email-addr $smtp_sender --from-email-pw $smtp_password --to-email-addr $smtp_recipient --subject "$subject"
                 res=$?
                 if [ $res -eq 0 ]; then
