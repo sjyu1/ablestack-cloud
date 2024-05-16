@@ -225,8 +225,8 @@ function sendAlertMail {
                         mysql --user=root --password=$database_password -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$uuid', 'ALERT.MAIL', 'Completed', 'Successfully alert email has been sent : `$subject`', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'INFO', '0', '0', '1', '$host_ip');" > /dev/null 2>&1
                 else
                         echo "알림 메일 전송 실패 --------------------------------------"
-                        # uuid=$(cat /proc/sys/kernel/random/uuid)
-                        # mysql --user=root --password=$database_password -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$uuid', 'ALERT.MAIL', 'Completed', 'Failed to alert email sending.', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERROR', '0', '0', '1', '$host_ip');" > /dev/null 2>&1
+                        uuid=$(cat /proc/sys/kernel/random/uuid)
+                        mysql --user=root --password=$database_password -e "use cloud; INSERT INTO event (uuid, type, state, description, user_id, account_id, domain_id, resource_id, created, level, start_id, archived, display, client_ip) VALUES ('$uuid', 'ALERT.MAIL', 'Completed', 'Failed to alert email sending : `$subject`'', '2', '2', '1', '0', DATE_SUB(NOW(), INTERVAL 9 HOUR), 'ERROR', '0', '0', '1', '$host_ip');" > /dev/null 2>&1
                 fi
         else
                 echo "SMTP 미설정으로 알림 메일 전송 skip--------------------------------------"

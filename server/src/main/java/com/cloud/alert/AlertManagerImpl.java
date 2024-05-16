@@ -71,9 +71,9 @@ import com.cloud.event.ActionEvent;
 import com.cloud.event.AlertGenerator;
 import com.cloud.event.EventTypes;
 import com.cloud.event.ActionEventUtils;
+import com.cloud.event.EventVO;
 import com.cloud.user.Account;
 import com.cloud.user.User;
-import com.cloud.domain.Domain;
 import com.cloud.host.Host;
 import com.cloud.host.HostVO;
 import com.cloud.network.Ipv6Service;
@@ -796,10 +796,12 @@ public class AlertManagerImpl extends ManagerBase implements AlertManager, Confi
         mailProps.setRecipients(addresses);
         try {
             sendMessage(mailProps);
-            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.ALERT_MAIL,
-                            "Successfully alert email has been sent : " + mailProps.getSubject(), new Long(0), null);
+            ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, EventVO.LEVEL_INFO, EventTypes.ALERT_MAIL,
+                            "Successfully alert email has been sent : " + mailProps.getSubject(), new Long(0), null, 0);
         } catch (Exception e) {
-            logger.info("Failed alert email sending failed." + e);
+            ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, EventVO.LEVEL_ERROR, EventTypes.ALERT_MAIL,
+                            "Failed to alert email sending : " + mailProps.getSubject(), new Long(0), null, 0);
+            logger.info("Failed to alert email sending." + e);
         }
 
     }
