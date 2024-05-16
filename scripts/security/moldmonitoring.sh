@@ -193,7 +193,7 @@ function securitycheck {
 
 # 변수 및 설정파일 파기
 function removeVariable {
-        echo "변수 01 덮어쓰기------------------------------------------"
+        echo "변수 및 설정파일 01 덮어쓰기 후 설정파일 파기------------------------------------------"
         for var in {1..5}
         do
                 key=01010101
@@ -202,7 +202,6 @@ function removeVariable {
                 smtp_password=01010101
         done
 
-        echo "설정 파일 01 덮어쓰기-------------------------------------------"
         if [ -e "$monitoring_file" ]; then
                 for var in {1..5} ; do echo 01010101 > $monitoring_file ; done
                 rm -rf $monitoring_file
