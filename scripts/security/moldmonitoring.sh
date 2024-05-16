@@ -195,8 +195,8 @@ function removeVariable {
         for var in {1..5}
         do
                 key=01010101
-                db_enc_password=01010101
                 database_password=01010101
+                smtp_password=01010101
         done
 
         echo "설정 파일 01 덮어쓰기-------------------------------------------"
