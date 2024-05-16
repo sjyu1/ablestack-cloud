@@ -4097,5 +4097,6 @@
 "vm.force.stop": "VM.\uac15\uc81c.\uc911\uc9c0",
 "vm.force.reboot": "VM.\uac15\uc81c.\uc7ac\ubd80\ud305",
 "template.permission.update": "\ud15c\ud50c\ub9bf.\uad8c\ud55c.\ubcc0\uacbd",
-"iso.permission.update": "ISO.\uad8c\ud55c.\ubcc0\uacbd"
+"iso.permission.update": "ISO.\uad8c\ud55c.\ubcc0\uacbd",
+"alert.mail": "\uc54c\ub9bc.\uba54\uc77c"
 }

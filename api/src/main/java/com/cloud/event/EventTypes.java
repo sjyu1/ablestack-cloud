@@ -32,6 +32,7 @@ import org.apache.cloudstack.ha.HAConfig;
 import org.apache.cloudstack.usage.Usage;
 import org.apache.cloudstack.vm.schedule.VMSchedule;
 
+import com.cloud.alert.Alert;
 import com.cloud.dc.DataCenter;
 import com.cloud.dc.DataCenterGuestIpv6Prefix;
 import com.cloud.dc.Pod;
@@ -676,6 +677,7 @@ public class EventTypes {
 
     //Alert generation
     public static final String ALERT_GENERATE = "ALERT.GENERATE";
+    public static final String ALERT_MAIL = "ALERT.MAIL";
 
     // OpenDaylight
     public static final String EVENT_EXTERNAL_OPENDAYLIGHT_ADD_CONTROLLER = "PHYSICAL.ODLCONTROLLER.ADD";
@@ -1198,6 +1200,8 @@ public class EventTypes {
         //Security
         entityEventDetails.put(EVENT_SECURITY_CHECK, "Security");
         entityEventDetails.put(EVENT_RESOURCE_UPDATE_LIMIT, Resource.class);
+
+        entityEventDetails.put(ALERT_MAIL, Alert.class);
     }
 
     public static String getEntityForEvent(String eventName) {

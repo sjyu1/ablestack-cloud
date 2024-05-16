@@ -1188,7 +1188,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
                 if (value.length() < 6) {
                     return "smtp password should contain at least 6 characters.";
                 }
-                if (value.contains(alertSmtpUserName)) {
+                if (alertSmtpUserName != null && value.contains(alertSmtpUserName)) {
                     return "smtp password should not contain smtp username.";
                 }
             }

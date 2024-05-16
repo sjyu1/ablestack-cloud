@@ -4097,5 +4097,6 @@
 "vm.force.stop": "VM.FORCE.STOP",
 "vm.force.reboot": "VM.FORCE.REBOOT",
 "template.permission.update": "TEMPLATE.PERMISSION.UPDATE",
-"iso.permission.update": "ISO.PERMISSION.UPDATE"
+"iso.permission.update": "ISO.PERMISSION.UPDATE",
+"alert.mail": "ALERT.MAIL"
 }
