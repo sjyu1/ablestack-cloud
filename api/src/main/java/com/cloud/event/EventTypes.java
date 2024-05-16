@@ -32,6 +32,7 @@ import org.apache.cloudstack.ha.HAConfig;
 import org.apache.cloudstack.usage.Usage;
 import org.apache.cloudstack.vm.schedule.VMSchedule;
 
+import com.cloud.alert.Alert;
 import com.cloud.dc.DataCenter;
 import com.cloud.dc.DataCenterGuestIpv6Prefix;
 import com.cloud.dc.Pod;
