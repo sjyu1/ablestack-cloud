@@ -18,12 +18,6 @@ import com.sun.mail.smtp.SMTPMessage;
 import com.sun.mail.smtp.SMTPSSLTransport;
 import com.sun.mail.smtp.SMTPTransport;
 
-import com.cloud.event.ActionEventUtils;
-import com.cloud.user.Account;
-import com.cloud.user.User;
-import com.cloud.domain.Domain;
-import com.cloud.event.EventTypes;
-
 import java.io.UnsupportedEncodingException;
 
 import java.util.Date;
@@ -180,8 +174,6 @@ public class SMTPMailSender {
 
             smtpTrans.connect();
             smtpTrans.sendMessage(message, message.getAllRecipients());
-            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.ALERT_MAIL,
-                            "Successfully alert email has been sent : " + mailProps.getSubject(), new Long(0), null);
             smtpTrans.close();
 
         } catch (MessagingException | UnsupportedEncodingException ex) {
