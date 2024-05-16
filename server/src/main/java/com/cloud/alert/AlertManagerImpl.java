@@ -798,8 +798,8 @@ public class AlertManagerImpl extends ManagerBase implements AlertManager, Confi
             sendMessage(mailProps);
             ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.ALERT_MAIL,
                             "Successfully alert email has been sent : " + mailProps.getSubject(), new Long(0), null);
-        } catch (MessagingException | UnsupportedEncodingException ex) {
-            logger.info("Failed alert email sending failed.");
+        } catch (Exception e) {
+            logger.info("Failed alert email sending failed." + e);
         }
 
     }
