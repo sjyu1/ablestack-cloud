@@ -794,13 +794,18 @@ public class AlertManagerImpl extends ManagerBase implements AlertManager, Confi
         }
 
         mailProps.setRecipients(addresses);
+        final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
         try {
             sendMessage(mailProps);
-            ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, EventVO.LEVEL_INFO, EventTypes.ALERT_MAIL,
+            if (securityFeaturesEnabled) {
+                ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, EventVO.LEVEL_INFO, EventTypes.ALERT_MAIL,
                             "Successfully alert email has been sent : " + mailProps.getSubject(), new Long(0), null, 0);
+            }
         } catch (Exception e) {
-            ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, EventVO.LEVEL_ERROR, EventTypes.ALERT_MAIL,
+            if (securityFeaturesEnabled) {
+                ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, EventVO.LEVEL_ERROR, EventTypes.ALERT_MAIL,
                             "Failed to alert email sending : " + mailProps.getSubject(), new Long(0), null, 0);
+            }
             logger.info("Failed to alert email sending." + e);
         }
 
