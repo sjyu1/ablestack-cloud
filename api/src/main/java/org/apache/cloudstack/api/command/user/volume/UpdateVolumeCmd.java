@@ -77,7 +77,7 @@ public class UpdateVolumeCmd extends BaseAsyncCustomIdCmd implements UserCmd {
     @Parameter(name = ApiConstants.TYPE, type = CommandType.STRING, description = "The state of the volume", since = "4.3")
     private String VolumeType;
 
-    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "new name of the volume", since = "4.16")
+    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "볼륨 이름", since = "4.16")
     private String name;
 
     /////////////////////////////////////////////////////

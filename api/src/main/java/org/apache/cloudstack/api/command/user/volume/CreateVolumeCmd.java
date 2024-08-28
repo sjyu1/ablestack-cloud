@@ -76,13 +76,13 @@ public class CreateVolumeCmd extends BaseAsyncCreateCustomIdCmd implements UserC
                required = false,
                type = CommandType.UUID,
                entityType = DiskOfferingResponse.class,
-               description = "the ID of the disk offering. Either diskOfferingId or snapshotId must be passed in.")
+               description = "디스크 오퍼링의 아이디")
     private Long diskOfferingId;
 
-    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "the name of the disk volume")
+    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "볼륨의 이름")
     private String volumeName;
 
-    @Parameter(name = ApiConstants.SIZE, type = CommandType.LONG, description = "Arbitrary volume size")
+    @Parameter(name = ApiConstants.SIZE, type = CommandType.LONG, description = "볼륨의 사이즈")
     private Long size;
 
     @Parameter(name = ApiConstants.MIN_IOPS, type = CommandType.LONG, description = "min iops")
@@ -214,7 +214,7 @@ public class CreateVolumeCmd extends BaseAsyncCreateCustomIdCmd implements UserC
             setEntityId(volume.getId());
             setEntityUuid(volume.getUuid());
         } else {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create volume");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "볼륨을 생성하지 못했습니다.");
         }
     }
 
@@ -240,7 +240,7 @@ public class CreateVolumeCmd extends BaseAsyncCreateCustomIdCmd implements UserC
             response.setResponseName(getCommandName());
             setResponseObject(response);
         } else {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create a volume");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "볼륨을 생성하지 못했습니다.");
         }
     }
 }

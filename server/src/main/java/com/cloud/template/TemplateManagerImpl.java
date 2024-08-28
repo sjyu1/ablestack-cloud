@@ -200,6 +200,7 @@ import com.cloud.utils.EncryptionUtil;
 import com.cloud.utils.EnumUtils;
 import com.cloud.utils.Pair;
 import com.cloud.utils.StringUtils;
+import com.cloud.utils.UriUtils;
 import com.cloud.utils.component.AdapterBase;
 import com.cloud.utils.component.ManagerBase;
 import com.cloud.utils.concurrency.NamedThreadFactory;
@@ -210,6 +211,7 @@ import com.cloud.utils.db.Transaction;
 import com.cloud.utils.db.TransactionCallbackNoReturn;
 import com.cloud.utils.db.TransactionStatus;
 import com.cloud.utils.exception.CloudRuntimeException;
+import com.cloud.utils.net.NetUtils;
 import com.cloud.vm.UserVmVO;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine.State;
@@ -361,14 +363,34 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     @ActionEvent(eventType = EventTypes.EVENT_TEMPLATE_CREATE, eventDescription = "creating template")
     public VirtualMachineTemplate registerTemplate(RegisterTemplateCmd cmd) throws URISyntaxException, ResourceAllocationException {
         Account account = CallContext.current().getCallingAccount();
+
+        //validating the url only when url is not null. url can be null incase of form based post upload
+        if (cmd.getUrl() != null) {
+            if (cmd.getUrl().toLowerCase().contains("file://")) {
+                throw new InvalidParameterValueException("File:// 유형 URL은 현재 지원되지 않습니다.");
+            }
+            UriUtils.validateUrl(cmd.getFormat(), cmd.getUrl());
+        }
+
+        // name parameter length check
+        if ((org.apache.commons.lang3.StringUtils.isBlank(cmd.getTemplateName())
+                || !NetUtils.verifyDomainNameLabel(cmd.getTemplateName(), true))) {
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
+        // displayText parameter length check
+        if (cmd.getDisplayText() != null && !NetUtils.verifyDomainNameLabel(cmd.getDisplayText(), true)) {
+            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
         if (cmd.getTemplateTag() != null) {
             if (!_accountService.isRootAdmin(account.getId())) {
-                throw new PermissionDeniedException("Parameter templatetag can only be specified by a Root Admin, permission denied");
+                throw new PermissionDeniedException("매개변수 템플릿 태그는 루트 관리자만 지정할 수 있으며 권한이 거부되었습니다.");
             }
         }
         if (cmd.isRoutingType() != null) {
             if (!_accountService.isRootAdmin(account.getId())) {
-                throw new PermissionDeniedException("Parameter isrouting can only be specified by a Root Admin, permission denied");
+                throw new PermissionDeniedException("매개변수 라우팅은 루트 관리자만 지정할 수 있으며 권한이 거부되었습니다.");
             }
         }
 
@@ -383,7 +405,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             }
             return template;
         } else {
-            throw new CloudRuntimeException("Failed to create a template");
+            throw new CloudRuntimeException("템플릿을 생성하지 못했습니다.");
         }
     }
 
@@ -1670,7 +1692,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             }
             DataStore store = _dataStoreMgr.getImageStoreWithFreeCapacity(zoneId);
             if (store == null) {
-                throw new CloudRuntimeException("cannot find an image store for zone " + zoneId);
+                throw new CloudRuntimeException(zoneId + "zone에 대한 이미지 저장소를 찾을 수 없습니다.");
             }
             AsyncCallFuture<TemplateApiResult> future = null;
 
@@ -1693,13 +1715,13 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             } else if (volumeId != null) {
                 VolumeInfo volInfo = _volFactory.getVolume(volumeId);
                 if (volInfo == null) {
-                    throw new InvalidParameterValueException("No such volume exist");
+                    throw new InvalidParameterValueException("해당 볼륨이 존재하지 않습니다.");
                 }
 
                 _accountMgr.checkAccess(caller, null, true, volInfo);
                 future = _tmpltSvr.createTemplateFromVolumeAsync(volInfo, tmplInfo, store);
             } else {
-                throw new CloudRuntimeException("Creating private Template need to specify snapshotId or volumeId");
+                throw new CloudRuntimeException("프라이빗 템플릿을 생성하려면 snapshotId 또는 VolumeId를 지정해야 합니다.");
             }
 
             CommandResult result = null;
@@ -1709,8 +1731,8 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
 
                 if (result.isFailed()) {
                     privateTemplate = null;
-                    logger.debug("Failed to create template" + result.getResult());
-                    throw new CloudRuntimeException("Failed to create template" + result.getResult());
+                    logger.debug("템플릿을 생성하지 못했습니다." + result.getResult());
+                    throw new CloudRuntimeException("템플릿을 생성하지 못했습니다." + result.getResult());
                 }
 
                 // create entries in template_zone_ref table
@@ -1729,11 +1751,11 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
                                 privateTemplate.getSourceTemplateId(), srcTmpltStore.getPhysicalSize(), privateTemplate.getSize());
                 _usageEventDao.persist(usageEvent);
             } catch (InterruptedException e) {
-                logger.debug("Failed to create template", e);
-                throw new CloudRuntimeException("Failed to create template", e);
+                logger.debug("템플릿을 생성하지 못했습니다.", e);
+                throw new CloudRuntimeException("템플릿을 생성하지 못했습니다.", e);
             } catch (ExecutionException e) {
-                logger.debug("Failed to create template", e);
-                throw new CloudRuntimeException("Failed to create template", e);
+                logger.debug("템플릿을 생성하지 못했습니다.", e);
+                throw new CloudRuntimeException("템플릿을 생성하지 못했습니다.", e);
             }
 
         } finally {
@@ -1773,7 +1795,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         if (privateTemplate != null) {
             return privateTemplate;
         } else {
-            throw new CloudRuntimeException("Failed to create a template");
+            throw new CloudRuntimeException("템플릿을 생성하지 못했습니다.");
         }
     }
 
@@ -2029,14 +2051,20 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         _accountMgr.checkAccess(caller, null, true, templateOwner);
 
         String name = cmd.getTemplateName();
+        // name parameter length check
         if ((org.apache.commons.lang3.StringUtils.isBlank(name)
-                || (name.length() > VirtualMachineTemplate.MAXIMUM_TEMPLATE_NAME_LENGTH))) {
-            throw new InvalidParameterValueException(String.format("Template name cannot be null and cannot be more %s characters", VirtualMachineTemplate.MAXIMUM_TEMPLATE_NAME_LENGTH));
+                || !NetUtils.verifyDomainNameLabel(name, true))) {
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
+        // displayText parameter length check
+        if (cmd.getDisplayText() != null && !NetUtils.verifyDomainNameLabel(cmd.getDisplayText(), true)) {
+            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
         }
 
         if (cmd.getTemplateTag() != null) {
             if (!_accountService.isRootAdmin(caller.getId())) {
-                throw new PermissionDeniedException("Parameter templatetag can only be specified by a Root Admin, permission denied");
+                throw new PermissionDeniedException("매개변수 템플릿 태그는 루트 관리자만 지정할 수 있으며 권한이 거부되었습니다");
             }
         }
 
@@ -2048,7 +2076,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         Boolean isPublic = cmd.isPublic();
         Boolean featured = cmd.isFeatured();
         int bitsValue = ((bits == null) ? 64 : bits.intValue());
-        boolean requiresHvmValue = ((requiresHvm == null) ? true : requiresHvm.booleanValue());
+        boolean requiresHvmValue = ((requiresHvm == null) ? false : requiresHvm.booleanValue());
         boolean passwordEnabledValue = ((passwordEnabled == null) ? false : passwordEnabled.booleanValue());
         boolean sshKeyEnabledValue = ((sshKeyEnabled == null) ? false : sshKeyEnabled.booleanValue());
         if (isPublic == null) {
@@ -2059,20 +2087,19 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         boolean allowPublicUserTemplates = AllowPublicUserTemplates.valueIn(templateOwner.getId());
         final Long zoneId = cmd.getZoneId();
         if (!isAdmin && !allowPublicUserTemplates && isPublic) {
-            throw new PermissionDeniedException("Failed to create template " + name + ", only private templates can be created.");
+            throw new PermissionDeniedException(name + " 템플릿 생성 실패, 개인 템플릿만 생성할 수 있습니다.");
         }
 
         Long volumeId = cmd.getVolumeId();
         Long snapshotId = cmd.getSnapshotId();
         if (zoneId != null && snapshotId == null) {
-            throw new InvalidParameterValueException("Failed to create private template record, zone ID can only be specified together with snapshot ID.");
+            throw new InvalidParameterValueException("개인 템플릿 기록을 생성하지 못했습니다. zone ID는 스냅샷 ID와 함께 지정할 수 있습니다.");
         }
         if ((volumeId == null) && (snapshotId == null)) {
-            throw new InvalidParameterValueException("Failed to create private template record, neither volume ID nor snapshot ID were specified.");
+            throw new InvalidParameterValueException("개인 템플릿 레코드를 생성하지 못했습니다. 볼륨 ID와 스냅샷 ID가 모두 지정되지 않았습니다.");
         }
         if ((volumeId != null) && (snapshotId != null)) {
-            throw new InvalidParameterValueException("Failed to create private template record, please specify only one of volume ID (" + volumeId +
-                    ") and snapshot ID (" + snapshotId + ")");
+            throw new InvalidParameterValueException("개인 템플릿 레코드를 생성하지 못했습니다. 볼륨 ID (" + volumeId + "와 스냅샷 ID (" + snapshotId + ") 중 하나만 지정하십시오.");
         }
 
         HypervisorType hyperType;
@@ -2082,21 +2109,21 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         if (volumeId != null) { // create template from volume
             volume = _volumeDao.findById(volumeId);
             if (volume == null) {
-                throw new InvalidParameterValueException("Failed to create private template record, unable to find volume " + volumeId);
+                throw new InvalidParameterValueException("개인 템플릿 기록을 생성하지 못했습니다. " + volumeId + "볼륨을 찾을 수 없습니다.");
             }
             // check permissions
             _accountMgr.checkAccess(caller, null, true, volume);
 
             // Don't support creating templates from encrypted volumes (yet)
             if (volume.getPassphraseId() != null) {
-                throw new UnsupportedOperationException("Cannot create templates from encrypted volumes");
+                throw new UnsupportedOperationException("암호화된 볼륨에서는 템플릿을 생성할 수 없습니다");
             }
 
             // If private template is created from Volume, check that the volume
             // will not be active when the private template is
             // created
             if (!_volumeMgr.volumeInactive(volume)) {
-                String msg = "Unable to create private template for volume: " + volume.getName() + "; volume is attached to a non-stopped VM, please stop the VM first";
+                String msg = "볼륨에 대한 개인 템플릿을 생성할 수 없습니다: " + volume.getName() + "; 볼륨이 중지되지 않은 VM에 연결되어 있습니다. 먼저 VM을 중지하세요.";
                 if (logger.isInfoEnabled()) {
                     logger.info(msg);
                 }
@@ -2110,22 +2137,21 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         } else { // create template from snapshot
             snapshot = _snapshotDao.findById(snapshotId);
             if (snapshot == null) {
-                throw new InvalidParameterValueException("Failed to create private template record, unable to find snapshot " + snapshotId);
+                throw new InvalidParameterValueException("개인 템플릿 기록을 생성하지 못했습니다. " + snapshotId + " 스냅샷을 찾을 수 없습니다.");
             }
             // Volume could be removed so find including removed to record source template id.
             volume = _volumeDao.findByIdIncludingRemoved(snapshot.getVolumeId());
 
             // Don't support creating templates from encrypted volumes (yet)
             if (volume != null && volume.getPassphraseId() != null) {
-                throw new UnsupportedOperationException("Cannot create templates from snapshots of encrypted volumes");
+                throw new UnsupportedOperationException("암호화된 볼륨의 스냅샷에서는 템플릿을 생성할 수 없습니다.");
             }
 
             // check permissions
             _accountMgr.checkAccess(caller, null, true, snapshot);
 
             if (snapshot.getState() != Snapshot.State.BackedUp) {
-                throw new InvalidParameterValueException("Snapshot id=" + snapshotId + " is not in " + Snapshot.State.BackedUp +
-                        " state yet and can't be used for template creation");
+                throw new InvalidParameterValueException("스냅샷 ID=" + snapshotId + "은 아직 " + Snapshot.State.BackedUp + "상태가 아니므로 템플릿 생성에 사용할 수 없습니다.");
             }
 
             /*
@@ -2143,10 +2169,10 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         if (zoneId != null) {
             DataCenterVO zone = _dcDao.findById(zoneId);
             if (zone == null) {
-                throw new InvalidParameterValueException("Failed to create private template record, invalid zone specified");
+                throw new InvalidParameterValueException("개인 템플릿 레코드를 생성하지 못했습니다. 잘못된 zone이 지정되었습니다.");
             }
             if (DataCenter.Type.Edge.equals(zone.getType())) {
-                throw new InvalidParameterValueException("Failed to create private template record, Edge zones do not support template creation from snapshots");
+                throw new InvalidParameterValueException("개인 템플릿 기록을 생성하지 못했습니다. Edge zone은 스냅샷에서 템플릿 생성을 지원하지 않습니다.");
             }
         }
 
@@ -2159,7 +2185,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         Long guestOSId = cmd.getOsTypeId();
         GuestOSVO guestOS = _guestOSDao.findById(guestOSId);
         if (guestOS == null) {
-            throw new InvalidParameterValueException("GuestOS with ID: " + guestOSId + " does not exist.");
+            throw new InvalidParameterValueException("ID가 " + guestOSId + "인 GuestOS가 존재하지 않습니다.");
         }
 
         Long nextTemplateId = _tmpltDao.getNextInSequence(Long.class, "id");
@@ -2178,7 +2204,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         String templateTag = cmd.getTemplateTag();
         if (templateTag != null) {
             if (logger.isDebugEnabled()) {
-                logger.debug("Adding template tag: " + templateTag);
+                logger.debug("템플릿 태그 추가: " + templateTag);
             }
         }
         privateTemplate = new VMTemplateVO(nextTemplateId, name, ImageFormat.RAW, isPublic, featured, isExtractable,
@@ -2187,7 +2213,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
 
         if (sourceTemplateId != null) {
             if (logger.isDebugEnabled()) {
-                logger.debug("This template is getting created from other template, setting source template Id to: " + sourceTemplateId);
+                logger.debug("이 템플릿은 다른 템플릿에서 생성됩니다. 소스 템플릿 ID를 다음으로 설정합니다.: " + sourceTemplateId);
             }
         }
 
@@ -2245,7 +2271,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             CallContext.current().putContextParameter(VirtualMachineTemplate.class, template.getUuid());
             return template;
         } else {
-            throw new CloudRuntimeException("Failed to create a template");
+            throw new CloudRuntimeException("템플릿을 생성하지 못했습니다.");
         }
 
     }
@@ -2392,6 +2418,18 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
                 vnfTemplateManager.updateVnfTemplate(template.getId(), (UpdateVnfTemplateCmd) cmd);
             }
             templateTag = ((UpdateTemplateCmd)cmd).getTemplateTag();
+        }
+
+        // name parameter length check
+        if ((org.apache.commons.lang3.StringUtils.isBlank(name)
+        || !NetUtils.verifyDomainNameLabel(name, true))) {
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
+        // displayText parameter length check
+        if ((org.apache.commons.lang3.StringUtils.isBlank(displayText)
+        || !NetUtils.verifyDomainNameLabel(displayText, true))) {
+            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
         }
 
         // update is needed if any of the fields below got filled by the user

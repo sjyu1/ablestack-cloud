@@ -82,28 +82,28 @@ export default {
         param: 'serviceofferingid'
       }],
       actions: [{
-        api: 'createServiceOffering',
-        icon: 'plus-outlined',
-        label: 'label.add.compute.offering',
-        docHelp: 'adminguide/service_offerings.html#creating-a-new-compute-offering',
-        listView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddComputeOffering.vue')))
-      }, {
+      //   api: 'createServiceOffering',
+      //   icon: 'plus-outlined',
+      //   label: 'label.add.compute.offering',
+      //   docHelp: 'adminguide/service_offerings.html#creating-a-new-compute-offering',
+      //   listView: true,
+      //   popup: true,
+      //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddComputeOffering.vue')))
+      // }, {
         api: 'updateServiceOffering',
         icon: 'edit-outlined',
         label: 'label.edit',
         docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
         dataView: true,
         args: ['name', 'displaytext', 'storagetags', 'hosttags']
-      }, {
-        api: 'updateServiceOffering',
-        icon: 'lock-outlined',
-        label: 'label.action.update.offering.access',
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        dataView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
+      // }, {
+      //   api: 'updateServiceOffering',
+      //   icon: 'lock-outlined',
+      //   label: 'label.action.update.offering.access',
+      //   docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+      //   dataView: true,
+      //   popup: true,
+      //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
       },
       {
         api: 'updateServiceOffering',
@@ -134,83 +134,83 @@ export default {
         groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
       }]
     },
-    {
-      name: 'systemoffering',
-      title: 'label.system.offerings',
-      icon: 'setting-outlined',
-      docHelp: 'adminguide/service_offerings.html#system-service-offerings',
-      permission: ['listServiceOfferings', 'listInfrastructure'],
-      searchFilters: ['name', 'zoneid', 'domainid', 'cpunumber', 'cpuspeed', 'memory'],
-      params: { issystem: 'true', isrecursive: 'true' },
-      columns: ['name', 'state', 'systemvmtype', 'cpunumber', 'cpuspeed', 'memory', 'storagetype', 'order'],
-      filters: ['active', 'inactive'],
-      details: ['name', 'id', 'displaytext', 'systemvmtype', 'provisioningtype', 'storagetype', 'iscustomized', 'limitcpuuse', 'cpunumber', 'cpuspeed', 'memory', 'storagetags', 'hosttags', 'tags', 'domain', 'zone', 'created', 'dynamicscalingenabled', 'diskofferingstrictness'],
-      resourceType: 'ServiceOffering',
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'events',
-          resourceType: 'ServiceOffering',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
-          show: () => { return 'listEvents' in store.getters.apis }
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue'))),
-          show: (record, route, user) => { return ['Admin', 'DomainAdmin'].includes(user.roletype) }
-        }
-      ],
-      actions: [{
-        api: 'createServiceOffering',
-        icon: 'plus-outlined',
-        label: 'label.add.system.service.offering',
-        docHelp: 'adminguide/service_offerings.html#creating-a-new-system-service-offering',
-        listView: true,
-        params: { issystem: 'true' },
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddComputeOffering.vue')))
-      }, {
-        api: 'updateServiceOffering',
-        icon: 'edit-outlined',
-        label: 'label.edit',
-        dataView: true,
-        params: { issystem: 'true' },
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        args: ['name', 'displaytext', 'storagetags', 'hosttags']
-      }, {
-        api: 'updateServiceOffering',
-        icon: 'play-circle-outlined',
-        label: 'label.action.enable.system.service.offering',
-        message: 'message.action.enable.system.service.offering',
-        dataView: true,
-        params: { issystem: 'true' },
-        args: ['state'],
-        mapping: {
-          state: {
-            value: (record) => { return 'Active' }
-          }
-        },
-        groupAction: true,
-        popup: true,
-        show: (record) => { return record.state !== 'Active' },
-        groupMap: (selection) => { return selection.map(x => { return { id: x, state: 'Active' } }) }
-      }, {
-        api: 'deleteServiceOffering',
-        icon: 'pause-circle-outlined',
-        label: 'label.action.disable.system.service.offering',
-        message: 'message.action.disable.system.service.offering',
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        dataView: true,
-        params: { issystem: 'true' },
-        groupAction: true,
-        popup: true,
-        show: (record) => { return record.state === 'Active' },
-        groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-      }]
-    },
+    // {
+    //   name: 'systemoffering',
+    //   title: 'label.system.offerings',
+    //   icon: 'setting-outlined',
+    //   docHelp: 'adminguide/service_offerings.html#system-service-offerings',
+    //   permission: ['listServiceOfferings', 'listInfrastructure'],
+    //   searchFilters: ['name', 'zoneid', 'domainid', 'cpunumber', 'cpuspeed', 'memory'],
+    //   params: { issystem: 'true', isrecursive: 'true' },
+    //   columns: ['name', 'state', 'systemvmtype', 'cpunumber', 'cpuspeed', 'memory', 'storagetype', 'order'],
+    //   filters: ['active', 'inactive'],
+    //   details: ['name', 'id', 'displaytext', 'systemvmtype', 'provisioningtype', 'storagetype', 'iscustomized', 'limitcpuuse', 'cpunumber', 'cpuspeed', 'memory', 'storagetags', 'hosttags', 'tags', 'domain', 'zone', 'created', 'dynamicscalingenabled', 'diskofferingstrictness'],
+    //   resourceType: 'ServiceOffering',
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'events',
+    //       resourceType: 'ServiceOffering',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
+    //       show: () => { return 'listEvents' in store.getters.apis }
+    //     },
+    //     {
+    //       name: 'comments',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue'))),
+    //       show: (record, route, user) => { return ['Admin', 'DomainAdmin'].includes(user.roletype) }
+    //     }
+    //   ],
+    //   actions: [{
+    //     api: 'createServiceOffering',
+    //     icon: 'plus-outlined',
+    //     label: 'label.add.system.service.offering',
+    //     docHelp: 'adminguide/service_offerings.html#creating-a-new-system-service-offering',
+    //     listView: true,
+    //     params: { issystem: 'true' },
+    //     popup: true,
+    //     component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddComputeOffering.vue')))
+    //   }, {
+    //     api: 'updateServiceOffering',
+    //     icon: 'edit-outlined',
+    //     label: 'label.edit',
+    //     dataView: true,
+    //     params: { issystem: 'true' },
+    //     docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+    //     args: ['name', 'displaytext', 'storagetags', 'hosttags']
+    //   }, {
+    //     api: 'updateServiceOffering',
+    //     icon: 'play-circle-outlined',
+    //     label: 'label.action.enable.system.service.offering',
+    //     message: 'message.action.enable.system.service.offering',
+    //     dataView: true,
+    //     params: { issystem: 'true' },
+    //     args: ['state'],
+    //     mapping: {
+    //       state: {
+    //         value: (record) => { return 'Active' }
+    //       }
+    //     },
+    //     groupAction: true,
+    //     popup: true,
+    //     show: (record) => { return record.state !== 'Active' },
+    //     groupMap: (selection) => { return selection.map(x => { return { id: x, state: 'Active' } }) }
+    //   }, {
+    //     api: 'deleteServiceOffering',
+    //     icon: 'pause-circle-outlined',
+    //     label: 'label.action.disable.system.service.offering',
+    //     message: 'message.action.disable.system.service.offering',
+    //     docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+    //     dataView: true,
+    //     params: { issystem: 'true' },
+    //     groupAction: true,
+    //     popup: true,
+    //     show: (record) => { return record.state === 'Active' },
+    //     groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    //   }]
+    // },
     {
       name: 'diskoffering',
       title: 'label.disk.offerings',
@@ -261,14 +261,14 @@ export default {
         param: 'diskofferingid'
       }],
       actions: [{
-        api: 'createDiskOffering',
-        icon: 'plus-outlined',
-        label: 'label.add.disk.offering',
-        docHelp: 'adminguide/service_offerings.html#creating-a-new-disk-offering',
-        listView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddDiskOffering.vue')))
-      }, {
+      //   api: 'createDiskOffering',
+      //   icon: 'plus-outlined',
+      //   label: 'label.add.disk.offering',
+      //   docHelp: 'adminguide/service_offerings.html#creating-a-new-disk-offering',
+      //   listView: true,
+      //   popup: true,
+      //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddDiskOffering.vue')))
+      // }, {
         api: 'updateDiskOffering',
         icon: 'edit-outlined',
         label: 'label.edit',
@@ -276,14 +276,14 @@ export default {
         dataView: true,
         args: ['name', 'displaytext', 'tags']
       }, {
-        api: 'updateDiskOffering',
-        icon: 'lock-outlined',
-        label: 'label.action.update.offering.access',
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        dataView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
-      }, {
+      //   api: 'updateDiskOffering',
+      //   icon: 'lock-outlined',
+      //   label: 'label.action.update.offering.access',
+      //   docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+      //   dataView: true,
+      //   popup: true,
+      //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
+      // }, {
         api: 'updateDiskOffering',
         icon: 'play-circle-outlined',
         label: 'label.action.enable.disk.offering',
@@ -395,14 +395,14 @@ export default {
         }
       ],
       actions: [{
-        api: 'createNetworkOffering',
-        icon: 'plus-outlined',
-        label: 'label.add.network.offering',
-        docHelp: 'adminguide/networking.html#creating-a-new-network-offering',
-        listView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddNetworkOffering.vue')))
-      }, {
+      //   api: 'createNetworkOffering',
+      //   icon: 'plus-outlined',
+      //   label: 'label.add.network.offering',
+      //   docHelp: 'adminguide/networking.html#creating-a-new-network-offering',
+      //   listView: true,
+      //   popup: true,
+      //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddNetworkOffering.vue')))
+      // }, {
         api: 'updateNetworkOffering',
         icon: 'edit-outlined',
         label: 'label.edit',
@@ -447,14 +447,14 @@ export default {
         popup: true,
         groupMap: (selection) => { return selection.map(x => { return { id: x, state: 'Disabled' } }) }
       }, {
-        api: 'updateNetworkOffering',
-        icon: 'lock-outlined',
-        label: 'label.action.update.offering.access',
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        dataView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
-      }, {
+      //   api: 'updateNetworkOffering',
+      //   icon: 'lock-outlined',
+      //   label: 'label.action.update.offering.access',
+      //   docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+      //   dataView: true,
+      //   popup: true,
+      //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
+      // }, {
         api: 'deleteNetworkOffering',
         icon: 'delete-outlined',
         label: 'label.remove.network.offering',
@@ -465,97 +465,97 @@ export default {
         popup: true,
         groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
       }]
-    },
-    {
-      name: 'vpcoffering',
-      title: 'label.vpc.offerings',
-      icon: 'deployment-unit-outlined',
-      docHelp: 'plugins/nuage-plugin.html?#vpc-offerings',
-      permission: ['listVPCOfferings'],
-      searchFilters: ['name', 'zoneid', 'domainid'],
-      resourceType: 'VpcOffering',
-      columns: ['name', 'state', 'displaytext', 'domain', 'zone', 'order'],
-      details: ['name', 'id', 'displaytext', 'internetprotocol', 'distributedvpcrouter', 'tags', 'service', 'fornsx', 'nsxmode', 'domain', 'zone', 'created'],
-      related: [{
-        name: 'vpc',
-        title: 'label.vpc',
-        param: 'vpcofferingid'
-      }],
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'events',
-          resourceType: 'VpcOffering',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
-          show: () => { return 'listEvents' in store.getters.apis }
-        }
-      ],
-      actions: [{
-        api: 'createVPCOffering',
-        icon: 'plus-outlined',
-        docHelp: 'plugins/nuage-plugin.html?#optional-create-and-enable-vpc-offering',
-        label: 'label.add.vpc.offering',
-        listView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddVpcOffering.vue')))
-      }, {
-        api: 'updateVPCOffering',
-        icon: 'edit-outlined',
-        label: 'label.edit',
-        dataView: true,
-        args: ['name', 'displaytext']
-      }, {
-        api: 'updateVPCOffering',
-        icon: 'play-circle-outlined',
-        label: 'label.enable.vpc.offering',
-        message: 'message.confirm.enable.vpc.offering',
-        dataView: true,
-        show: (record) => { return record.state === 'Disabled' },
-        args: ['state'],
-        mapping: {
-          state: {
-            value: (record) => { return 'Enabled' }
-          }
-        },
-        groupAction: true,
-        popup: true,
-        groupMap: (selection) => { return selection.map(x => { return { id: x, state: 'Enabled' } }) }
-      }, {
-        api: 'updateVPCOffering',
-        icon: 'pause-circle-outlined',
-        label: 'label.disable.vpc.offering',
-        message: 'message.confirm.disable.vpc.offering',
-        dataView: true,
-        show: (record) => { return record.state === 'Enabled' },
-        args: ['state'],
-        mapping: {
-          state: {
-            value: (record) => { return 'Disabled' }
-          }
-        },
-        groupAction: true,
-        popup: true,
-        groupMap: (selection) => { return selection.map(x => { return { id: x, state: 'Disabled' } }) }
-      }, {
-        api: 'updateVPCOffering',
-        icon: 'lock-outlined',
-        label: 'label.action.update.offering.access',
-        dataView: true,
-        popup: true,
-        component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
-      }, {
-        api: 'deleteVPCOffering',
-        icon: 'delete-outlined',
-        label: 'label.remove.vpc.offering',
-        message: 'message.confirm.remove.vpc.offering',
-        dataView: true,
-        groupAction: true,
-        popup: true,
-        groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-      }]
     }
+    // {
+    //   name: 'vpcoffering',
+    //   title: 'label.vpc.offerings',
+    //   icon: 'deployment-unit-outlined',
+    //   docHelp: 'plugins/nuage-plugin.html?#vpc-offerings',
+    //   permission: ['listVPCOfferings'],
+    //   searchFilters: ['name', 'zoneid', 'domainid'],
+    //   resourceType: 'VpcOffering',
+    //   columns: ['name', 'state', 'displaytext', 'domain', 'zone', 'order'],
+    //   details: ['name', 'id', 'displaytext', 'internetprotocol', 'distributedvpcrouter', 'tags', 'service', 'fornsx', 'nsxmode', 'domain', 'zone', 'created'],
+    //   related: [{
+    //     name: 'vpc',
+    //     title: 'label.vpc',
+    //     param: 'vpcofferingid'
+    //   }],
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'events',
+    //       resourceType: 'VpcOffering',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
+    //       show: () => { return 'listEvents' in store.getters.apis }
+    //     }
+    //   ],
+    //   actions: [{
+    //     api: 'createVPCOffering',
+    //     icon: 'plus-outlined',
+    //     docHelp: 'plugins/nuage-plugin.html?#optional-create-and-enable-vpc-offering',
+    //     label: 'label.add.vpc.offering',
+    //     listView: true,
+    //     popup: true,
+    //     component: shallowRef(defineAsyncComponent(() => import('@/views/offering/AddVpcOffering.vue')))
+    //   }, {
+    //     api: 'updateVPCOffering',
+    //     icon: 'edit-outlined',
+    //     label: 'label.edit',
+    //     dataView: true,
+    //     args: ['name', 'displaytext']
+    //   }, {
+    //     api: 'updateVPCOffering',
+    //     icon: 'play-circle-outlined',
+    //     label: 'label.enable.vpc.offering',
+    //     message: 'message.confirm.enable.vpc.offering',
+    //     dataView: true,
+    //     show: (record) => { return record.state === 'Disabled' },
+    //     args: ['state'],
+    //     mapping: {
+    //       state: {
+    //         value: (record) => { return 'Enabled' }
+    //       }
+    //     },
+    //     groupAction: true,
+    //     popup: true,
+    //     groupMap: (selection) => { return selection.map(x => { return { id: x, state: 'Enabled' } }) }
+    //   }, {
+    //     api: 'updateVPCOffering',
+    //     icon: 'pause-circle-outlined',
+    //     label: 'label.disable.vpc.offering',
+    //     message: 'message.confirm.disable.vpc.offering',
+    //     dataView: true,
+    //     show: (record) => { return record.state === 'Enabled' },
+    //     args: ['state'],
+    //     mapping: {
+    //       state: {
+    //         value: (record) => { return 'Disabled' }
+    //       }
+    //     },
+    //     groupAction: true,
+    //     popup: true,
+    //     groupMap: (selection) => { return selection.map(x => { return { id: x, state: 'Disabled' } }) }
+    //   }, {
+    //     api: 'updateVPCOffering',
+    //     icon: 'lock-outlined',
+    //     label: 'label.action.update.offering.access',
+    //     dataView: true,
+    //     popup: true,
+    //     component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
+    //   }, {
+    //     api: 'deleteVPCOffering',
+    //     icon: 'delete-outlined',
+    //     label: 'label.remove.vpc.offering',
+    //     message: 'message.confirm.remove.vpc.offering',
+    //     dataView: true,
+    //     groupAction: true,
+    //     popup: true,
+    //     groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    //   }]
+    // }
   ]
 }

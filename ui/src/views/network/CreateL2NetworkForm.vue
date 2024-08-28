@@ -73,7 +73,7 @@
               </a-select-option>
             </a-select>
           </a-form-item>
-          <ownership-selection v-if="isAdminOrDomainAdmin()" @fetch-owner="fetchOwnerOptions"/>
+          <!-- <ownership-selection v-if="isAdminOrDomainAdmin()" @fetch-owner="fetchOwnerOptions"/> -->
           <a-form-item name="networkofferingid" ref="networkofferingid">
             <template #label>
               <tooltip-label :title="$t('label.networkofferingid')" :tooltip="apiParams.networkofferingid.description"/>
@@ -104,7 +104,7 @@
               v-model:value="form.vlanid"
               :placeholder="apiParams.vlan ? apiParams.vlan.description : $t('label.vlanid')"/>
           </a-form-item>
-          <a-form-item
+          <!-- <a-form-item
             v-if="!isObjectEmpty(selectedNetworkOffering) && selectedNetworkOffering.specifyvlan"
             name="bypassvlanoverlapcheck"
             ref="bypassvlanoverlapcheck">
@@ -148,7 +148,7 @@
             <a-input
               v-model:value="form.isolatedpvlanid"
               :placeholder="apiParams.isolatedpvlan.description"/>
-          </a-form-item>
+          </a-form-item> -->
           <div :span="24" class="action-button">
             <a-button
               :loading="actionLoading"

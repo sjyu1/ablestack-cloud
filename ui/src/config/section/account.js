@@ -44,14 +44,14 @@ export default {
     title: 'label.networks',
     param: 'account'
   }, {
-    name: 'ssh',
-    title: 'label.sshkeypairs',
-    param: 'account'
-  }, {
-    name: 'userdata',
-    title: 'label.userdata',
-    param: 'account'
-  }, {
+  //   name: 'ssh',
+  //   title: 'label.sshkeypairs',
+  //   param: 'account'
+  // }, {
+  //   name: 'userdata',
+  //   title: 'label.userdata',
+  //   param: 'account'
+  // }, {
     name: 'template',
     title: 'label.templates',
     param: 'account'
@@ -74,15 +74,15 @@ export default {
       show: (record, route, user) => { return ['Admin', 'DomainAdmin'].includes(user.roletype) },
       component: shallowRef(defineAsyncComponent(() => import('@/components/view/ResourceLimitTab.vue')))
     },
-    {
-      name: 'certificate',
-      component: shallowRef(defineAsyncComponent(() => import('@/views/iam/SSLCertificateTab.vue')))
-    },
-    {
-      name: 'settings',
-      component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue'))),
-      show: () => { return 'listConfigurations' in store.getters.apis }
-    },
+    // {
+    //   name: 'certificate',
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/iam/SSLCertificateTab.vue')))
+    // },
+    // {
+    //   name: 'settings',
+    //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue'))),
+    //   show: () => { return 'listConfigurations' in store.getters.apis }
+    // },
     {
       name: 'events',
       resourceType: 'Account',
@@ -91,41 +91,42 @@ export default {
     }
   ],
   actions: [
-    {
-      api: 'createAccount',
-      icon: 'plus-outlined',
-      label: 'label.add.account',
-      listView: true,
-      popup: true,
-      component: shallowRef(defineAsyncComponent(() => import('@/views/iam/AddAccount.vue')))
-    },
-    {
-      api: 'ldapCreateAccount',
-      icon: 'user-add-outlined',
-      label: 'label.add.ldap.account',
-      docHelp: 'adminguide/accounts.html#using-an-ldap-server-for-user-authentication',
-      listView: true,
-      popup: true,
-      show: (record, store) => {
-        return store.isLdapEnabled
-      },
-      component: shallowRef(defineAsyncComponent(() => import('@/views/iam/AddLdapAccount.vue')))
-    },
-    {
-      api: 'updateAccount',
-      icon: 'edit-outlined',
-      label: 'label.action.edit.account',
-      dataView: true,
-      args: ['newname', 'account', 'domainid', 'networkdomain', 'roleid'],
-      mapping: {
-        account: {
-          value: (record) => { return record.name }
-        },
-        domainid: {
-          value: (record) => { return record.domainid }
-        }
-      }
-    },
+    // {
+    //   api: 'createAccount',
+    //   icon: 'plus-outlined',
+    //   label: 'label.add.account',
+    //   listView: true,
+    //   popup: true,
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/iam/AddAccount.vue')))
+    // },
+    // {
+    //   api: 'ldapCreateAccount',
+    //   icon: 'user-add-outlined',
+    //   label: 'label.add.ldap.account',
+    //   docHelp: 'adminguide/accounts.html#using-an-ldap-server-for-user-authentication',
+    //   listView: true,
+    //   popup: true,
+    //   show: (record, store) => {
+    //     return store.isLdapEnabled
+    //   },
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/iam/AddLdapAccount.vue')))
+    // },
+    // {
+    //   api: 'updateAccount',
+    //   icon: 'edit-outlined',
+    //   label: 'label.action.edit.account',
+    //   dataView: true,
+    //   // args: ['newname', 'account', 'domainid', 'networkdomain', 'roleid'],
+    //   args: ['newname', 'account'],
+    //   mapping: {
+    //     account: {
+    //       value: (record) => { return record.name }
+    //     },
+    //     domainid: {
+    //       value: (record) => { return record.domainid }
+    //     }
+    //   }
+    // },
     {
       api: 'updateResourceCount',
       icon: 'sync-outlined',
@@ -201,23 +202,23 @@ export default {
       popup: true,
       groupMap: (selection) => { return selection.map(x => { return { id: x, lock: true } }) }
     },
-    {
-      api: 'uploadSslCert',
-      icon: 'SafetyCertificateOutlined',
-      label: 'label.add.certificate',
-      dataView: true,
-      args: ['name', 'certificate', 'privatekey', 'certchain', 'password', 'account', 'domainid'],
-      post: true,
-      show: (record) => { return record.state === 'enabled' },
-      mapping: {
-        account: {
-          value: (record) => { return record.name }
-        },
-        domainid: {
-          value: (record) => { return record.domainid }
-        }
-      }
-    },
+    // {
+    //   api: 'uploadSslCert',
+    //   icon: 'SafetyCertificateOutlined',
+    //   label: 'label.add.certificate',
+    //   dataView: true,
+    //   args: ['name', 'certificate', 'privatekey', 'certchain', 'password', 'account', 'domainid'],
+    //   post: true,
+    //   show: (record) => { return record.state === 'enabled' },
+    //   mapping: {
+    //     account: {
+    //       value: (record) => { return record.name }
+    //     },
+    //     domainid: {
+    //       value: (record) => { return record.domainid }
+    //     }
+    //   }
+    // },
     {
       api: 'deleteAccount',
       icon: 'delete-outlined',

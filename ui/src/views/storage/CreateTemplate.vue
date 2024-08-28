@@ -69,7 +69,7 @@
           </a-select-option>
         </a-select>
       </a-form-item>
-      <a-form-item name="domainid" ref="domainid" v-if="'listDomains' in $store.getters.apis">
+      <!-- <a-form-item name="domainid" ref="domainid" v-if="'listDomains' in $store.getters.apis">
           <template #label>
             <tooltip-label :title="$t('label.domainid')" :tooltip="apiParams.domainid.description"/>
           </template>
@@ -109,7 +109,7 @@
               {{ acc.name }}
             </a-select-option>
           </a-select>
-        </a-form-item>
+        </a-form-item> -->
 
       <a-form-item
           name="ostypeid"
@@ -124,7 +124,7 @@
           v-model:value="form.ostypeid"
           :loading="osTypes.loading"
           :placeholder="apiParams.ostypeid.description">
-          <a-select-option v-for="opt in osTypes.opts" :key="opt.id" :label="opt.name || opt.description">
+          <a-select-option v-for="opt in osTypes.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="opt.id" :label="opt.name || opt.description">
               {{ opt.name || opt.description }}
           </a-select-option>
           </a-select>

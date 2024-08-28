@@ -29,7 +29,7 @@
             layout="vertical"
           >
             <a-steps direction="vertical" size="small">
-              <a-step
+              <!-- <a-step
                 v-if="!isNormalUserOrProject"
                 :title="this.$t('label.assign.instance.another')">
                 <template #description>
@@ -39,7 +39,7 @@
                       @fetch-owner="fetchOwnerOptions"/>
                   </div>
                 </template>
-              </a-step>
+              </a-step> -->
               <a-step :title="$t('label.select.deployment.infrastructure')" status="process">
                 <template #description>
                   <div style="margin-top: 15px">
@@ -142,7 +142,7 @@
                 </template>
               </a-step>
               <a-step
-                :title="$t('label.template.iso.rbdimage')"
+                :title="$t('label.template')"
                 :status="zoneSelected ? 'process' : 'wait'">
                 <template #description>
                   <div v-if="zoneSelected" style="margin-top: 15px">
@@ -443,14 +443,14 @@
                         @select-network-item="($event) => updateNetworks($event)"
                         @handle-search-filter="($event) => handleSearchFilter('networks', $event)"
                       ></network-selection>
-                      <network-configuration
+                      <!-- <network-configuration
                         v-if="networks.length > 0"
                         :items="networks"
                         :preFillContent="dataPreFill"
                         @update-network-config="($event) => updateNetworkConfig($event)"
                         @handler-error="($event) => hasError = $event"
                         @select-default-network-item="($event) => updateDefaultNetworks($event)"
-                      ></network-configuration>
+                      ></network-configuration> -->
                     </div>
                   </div>
                 </template>
@@ -468,7 +468,7 @@
                     @select-security-group-item="($event) => updateSecurityGroups($event)"></security-group-selection>
                 </template>
               </a-step>
-              <a-step
+              <!-- <a-step
                 v-if="isUserAllowedToListSshKeys"
                 :title="$t('label.sshkeypairs')"
                 :status="zoneSelected ? 'process' : 'wait'">
@@ -486,7 +486,7 @@
                     />
                   </div>
                 </template>
-              </a-step>
+              </a-step> -->
               <a-step
                 :title="$t('label.ovf.properties')"
                 :status="zoneSelected ? 'process' : 'wait'"
@@ -546,7 +546,7 @@
                   </div>
                 </template>
               </a-step>
-              <a-step
+              <!-- <a-step
                 :title="$t('label.advanced.mode')"
                 :status="zoneSelected ? 'process' : 'wait'">
                 <template #description v-if="zoneSelected">
@@ -786,7 +786,7 @@
                     </a-form-item>
                   </div>
                 </template>
-              </a-step>
+              </a-step> -->
               <a-step
                 :title="$t('label.details')"
                 :status="zoneSelected ? 'process' : 'wait'">
@@ -796,13 +796,13 @@
                     <a-form-item :label="$t('label.name.optional')" name="name" ref="name">
                       <a-input v-model:value="form.name" />
                     </a-form-item>
-                    <a-form-item :label="$t('label.group.optional')" name="group" ref="group">
+                    <!-- <a-form-item :label="$t('label.group.optional')" name="group" ref="group">
                       <a-auto-complete
                         v-model:value="form.group"
                         :filterOption="filterOption"
                         :options="options.instanceGroups" />
-                    </a-form-item>
-                    <a-form-item :label="$t('label.keyboard')" name="keyboard" ref="keyboard">
+                    </a-form-item> -->
+                    <!-- <a-form-item :label="$t('label.keyboard')" name="keyboard" ref="keyboard">
                       <a-select
                         v-model:value="form.keyboard"
                         :options="keyboardSelectOptions"
@@ -810,7 +810,7 @@
                         optionFilterProp="label"
                         :filterOption="filterOption"
                       ></a-select>
-                    </a-form-item>
+                    </a-form-item> -->
                     <a-form-item v-if="tabKey!=='volumeId'">
                     <a-form-item :label="$t('label.deploy.vm.number')" name="vmNumber" ref="vmNumber">
                       <a-input-number :min=1 :max=50 :maxlength="2" v-model:value="form.vmNumber" />
@@ -1385,28 +1385,28 @@ export default {
           key: 'templateid',
           tab: this.$t('label.templates')
         }]
-      } else if (this.isoId) {
-        tabList = [{
-          key: 'isoid',
-          tab: this.$t('label.isos')
-        }]
-      } else if (this.volumeId) {
-        tabList = [{
-          key: 'volumeId',
-          tab: this.$t('label.data.rbd.image')
-        }]
+      // } else if (this.isoId) {
+      //   tabList = [{
+      //     key: 'isoid',
+      //     tab: this.$t('label.isos')
+      //   }]
+      // } else if (this.volumeId) {
+      //   tabList = [{
+      //     key: 'volumeId',
+      //     tab: this.$t('label.data.rbd.image')
+      //   }]
       } else {
         tabList = [{
           key: 'templateid',
           tab: this.$t('label.templates')
-        },
-        {
-          key: 'isoid',
-          tab: this.$t('label.isos')
-        },
-        {
-          key: 'volumeId',
-          tab: this.$t('label.glue.images')
+        // },
+        // {
+        //   key: 'isoid',
+        //   tab: this.$t('label.isos')
+        // },
+        // {
+        //   key: 'volumeId',
+        //   tab: this.$t('label.glue.images')
         }]
       }
 

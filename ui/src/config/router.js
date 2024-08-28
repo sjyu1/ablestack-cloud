@@ -19,7 +19,7 @@
 import { UserLayout, BasicLayout, RouteView } from '@/layouts'
 import AutogenView from '@/views/AutogenView.vue'
 import IFramePlugin from '@/views/plugins/IFramePlugin.vue'
-import ApiDocsPlugin from '@/views/plugins/ApiDocsPlugin.vue'
+// import ApiDocsPlugin from '@/views/plugins/ApiDocsPlugin.vue'
 
 import { shallowRef } from 'vue'
 import { vueProps } from '@/vue-app'
@@ -28,21 +28,21 @@ import compute from '@/config/section/compute'
 import storage from '@/config/section/storage'
 import network from '@/config/section/network'
 import image from '@/config/section/image'
-import desktop from '@/config/section/desktop'
-import automation from '@/config/section/automation'
-import project from '@/config/section/project'
+// import desktop from '@/config/section/desktop'
+// import automation from '@/config/section/automation'
+// import project from '@/config/section/project'
 import event from '@/config/section/event'
-import user from '@/config/section/user'
+// import user from '@/config/section/user'
 import account from '@/config/section/account'
-import domain from '@/config/section/domain'
-import role from '@/config/section/role'
+// import domain from '@/config/section/domain'
+// import role from '@/config/section/role'
 import infra from '@/config/section/infra'
 import zone from '@/config/section/zone'
 import offering from '@/config/section/offering'
-import config from '@/config/section/config'
-import tools from '@/config/section/tools'
-import quota from '@/config/section/plugin/quota'
-import cloudian from '@/config/section/plugin/cloudian'
+// import config from '@/config/section/config'
+// import tools from '@/config/section/tools'
+// import quota from '@/config/section/plugin/quota'
+// import cloudian from '@/config/section/plugin/cloudian'
 
 function generateRouterMap (section) {
   var map = {
@@ -213,21 +213,21 @@ export function asyncRouterMap () {
       generateRouterMap(storage),
       generateRouterMap(network),
       generateRouterMap(image),
-      generateRouterMap(desktop),
-      generateRouterMap(automation),
+      // generateRouterMap(desktop),
+      // generateRouterMap(automation),
       generateRouterMap(event),
-      generateRouterMap(project),
-      generateRouterMap(user),
-      generateRouterMap(role),
+      // generateRouterMap(project),
+      // generateRouterMap(user),
+      // generateRouterMap(role),
       generateRouterMap(account),
-      generateRouterMap(domain),
+      // generateRouterMap(domain),
       generateRouterMap(infra),
       generateRouterMap(zone),
       generateRouterMap(offering),
-      generateRouterMap(config),
-      generateRouterMap(tools),
-      generateRouterMap(quota),
-      generateRouterMap(cloudian),
+      // generateRouterMap(config),
+      // generateRouterMap(tools),
+      // generateRouterMap(quota),
+      // generateRouterMap(cloudian),
       {
         path: '/exception',
         name: 'exception',
@@ -279,15 +279,15 @@ export function asyncRouterMap () {
     })
   }
 
-  const apidocs = vueProps.$config.apidocs
-  if (apidocs !== false) {
-    routerMap[0].children.push({
-      path: '/apidocs/',
-      name: 'apidocs',
-      component: shallowRef(ApiDocsPlugin),
-      meta: { title: 'label.api.docs', icon: 'read-outlined' }
-    })
-  }
+  // const apidocs = vueProps.$config.apidocs
+  // if (apidocs !== false) {
+  //   routerMap[0].children.push({
+  //     path: '/apidocs/',
+  //     name: 'apidocs',
+  //     component: shallowRef(ApiDocsPlugin),
+  //     meta: { title: 'label.api.docs', icon: 'read-outlined' }
+  //   })
+  // }
 
   return routerMap
 }

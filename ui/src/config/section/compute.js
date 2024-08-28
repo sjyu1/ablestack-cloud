@@ -88,7 +88,8 @@ export default {
       details: () => {
         var fields = ['name', 'qemuagentversion', 'displayname', 'id', 'state', 'publicip', 'ipaddress', 'ip6address', 'templatename', 'ostypename',
           'serviceofferingname', 'isdynamicallyscalable', 'haenable', 'hypervisor', 'boottype', 'bootmode', 'account',
-          'domain', 'zonename', 'userdataid', 'userdataname', 'userdataparams', 'userdatadetails', 'userdatapolicy', 'hostcontrolstate', 'vbmcport']
+          // 'domain', 'zonename', 'userdataid', 'userdataname', 'userdataparams', 'userdatadetails', 'userdatapolicy', 'hostcontrolstate', 'vbmcport']
+          'domain', 'zonename', 'userdataid', 'userdataname', 'userdataparams', 'userdatadetails', 'userdatapolicy', 'hostcontrolstate']
         const listZoneHaveSGEnabled = store.getters.zones.filter(zone => zone.securitygroupsenabled === true)
         if (!listZoneHaveSGEnabled || listZoneHaveSGEnabled.length === 0) {
           return fields
@@ -166,29 +167,29 @@ export default {
           popup: true,
           groupMap: (selection, values) => { return selection.map(x => { return { id: x, forced: values.forced } }) }
         },
-        {
-          api: 'cloneVirtualMachine',
-          icon: 'file-add-outlined',
-          label: 'label.action.clone.vm',
-          message: 'message.action.clone.instance',
-          docHelp: 'adminguide/virtual_machines.html#cloning-vms',
-          dataView: true,
-          popup: true,
-          show: (record) => { return true },
-          disabled: (record) => { return record.hostcontrolstate === 'Offline' && record.hypervisor === 'KVM' },
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/CloneVM.vue')))
-        },
-        {
-          api: 'restoreVirtualMachine',
-          icon: 'sync-outlined',
-          label: 'label.reinstall.vm',
-          message: 'message.reinstall.vm',
-          dataView: true,
-          popup: true,
-          show: (record) => { return ['Running', 'Stopped'].includes(record.state) },
-          disabled: (record) => { return record.hostcontrolstate === 'Offline' },
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ReinstallVm.vue')))
-        },
+        // {
+        //   api: 'cloneVirtualMachine',
+        //   icon: 'file-add-outlined',
+        //   label: 'label.action.clone.vm',
+        //   message: 'message.action.clone.instance',
+        //   docHelp: 'adminguide/virtual_machines.html#cloning-vms',
+        //   dataView: true,
+        //   popup: true,
+        //   show: (record) => { return true },
+        //   disabled: (record) => { return record.hostcontrolstate === 'Offline' && record.hypervisor === 'KVM' },
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/CloneVM.vue')))
+        // },
+        // {
+        //   api: 'restoreVirtualMachine',
+        //   icon: 'sync-outlined',
+        //   label: 'label.reinstall.vm',
+        //   message: 'message.reinstall.vm',
+        //   dataView: true,
+        //   popup: true,
+        //   show: (record) => { return ['Running', 'Stopped'].includes(record.state) },
+        //   disabled: (record) => { return record.hostcontrolstate === 'Offline' },
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ReinstallVm.vue')))
+        // },
         {
           api: 'createVMSnapshot',
           icon: 'camera-outlined',
@@ -286,49 +287,49 @@ export default {
             }
           }
         },
-        {
-          api: 'attachIso',
-          icon: 'paper-clip-outlined',
-          label: 'label.action.attach.iso',
-          docHelp: 'adminguide/templates.html#attaching-an-iso-to-a-vm',
-          dataView: true,
-          popup: true,
-          show: (record) => { return ['Running', 'Stopped'].includes(record.state) && !record.isoid },
-          disabled: (record) => { return record.hostcontrolstate === 'Offline' || record.hostcontrolstate === 'Maintenance' },
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AttachIso.vue')))
-        },
-        {
-          api: 'detachIso',
-          icon: 'link-outlined',
-          label: 'label.action.detach.iso',
-          message: 'message.detach.iso.confirm',
-          dataView: true,
-          args: (record, store) => {
-            var args = ['virtualmachineid']
-            if (record && record.hypervisor && record.hypervisor === 'VMware') {
-              args.push('forced')
-            }
-            return args
-          },
-          show: (record) => { return ['Running', 'Stopped'].includes(record.state) && 'isoid' in record && record.isoid },
-          disabled: (record) => { return record.hostcontrolstate === 'Offline' || record.hostcontrolstate === 'Maintenance' },
-          mapping: {
-            virtualmachineid: {
-              value: (record, params) => { return record.id }
-            }
-          }
-        },
-        {
-          api: 'updateVMAffinityGroup',
-          icon: 'swap-outlined',
-          label: 'label.change.affinity',
-          docHelp: 'adminguide/virtual_machines.html#change-affinity-group-for-an-existing-vm',
-          dataView: true,
-          args: ['affinitygroupids'],
-          show: (record) => { return ['Stopped'].includes(record.state) },
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ChangeAffinity'))),
-          popup: true
-        },
+        // {
+        //   api: 'attachIso',
+        //   icon: 'paper-clip-outlined',
+        //   label: 'label.action.attach.iso',
+        //   docHelp: 'adminguide/templates.html#attaching-an-iso-to-a-vm',
+        //   dataView: true,
+        //   popup: true,
+        //   show: (record) => { return ['Running', 'Stopped'].includes(record.state) && !record.isoid },
+        //   disabled: (record) => { return record.hostcontrolstate === 'Offline' || record.hostcontrolstate === 'Maintenance' },
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AttachIso.vue')))
+        // },
+        // {
+        //   api: 'detachIso',
+        //   icon: 'link-outlined',
+        //   label: 'label.action.detach.iso',
+        //   message: 'message.detach.iso.confirm',
+        //   dataView: true,
+        //   args: (record, store) => {
+        //     var args = ['virtualmachineid']
+        //     if (record && record.hypervisor && record.hypervisor === 'VMware') {
+        //       args.push('forced')
+        //     }
+        //     return args
+        //   },
+        //   show: (record) => { return ['Running', 'Stopped'].includes(record.state) && 'isoid' in record && record.isoid },
+        //   disabled: (record) => { return record.hostcontrolstate === 'Offline' || record.hostcontrolstate === 'Maintenance' },
+        //   mapping: {
+        //     virtualmachineid: {
+        //       value: (record, params) => { return record.id }
+        //     }
+        //   }
+        // },
+        // {
+        //   api: 'updateVMAffinityGroup',
+        //   icon: 'swap-outlined',
+        //   label: 'label.change.affinity',
+        //   docHelp: 'adminguide/virtual_machines.html#change-affinity-group-for-an-existing-vm',
+        //   dataView: true,
+        //   args: ['affinitygroupids'],
+        //   show: (record) => { return ['Stopped'].includes(record.state) },
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ChangeAffinity'))),
+        //   popup: true
+        // },
         {
           api: 'scaleVirtualMachine',
           icon: 'arrows-alt-outlined',
@@ -379,37 +380,37 @@ export default {
             }
           }
         },
-        {
-          api: 'resetSSHKeyForVirtualMachine',
-          icon: 'lock-outlined',
-          label: 'label.reset.ssh.key.pair',
-          message: 'message.desc.reset.ssh.key.pair',
-          docHelp: 'adminguide/virtual_machines.html#resetting-ssh-keys',
-          dataView: true,
-          show: (record) => { return ['Stopped'].includes(record.state) },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ResetSshKeyPair')))
-        },
-        {
-          api: 'resetUserDataForVirtualMachine',
-          icon: 'solution-outlined',
-          label: 'label.reset.userdata.on.vm',
-          message: 'message.desc.reset.userdata',
-          docHelp: 'adminguide/virtual_machines.html#resetting-userdata',
-          dataView: true,
-          show: (record) => { return ['Stopped'].includes(record.state) },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ResetUserData')))
-        },
-        {
-          api: 'assignVirtualMachine',
-          icon: 'user-add-outlined',
-          label: 'label.assign.instance.another',
-          dataView: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AssignInstance'))),
-          popup: true,
-          show: (record) => { return ['Stopped'].includes(record.state) }
-        },
+        // {
+        //   api: 'resetSSHKeyForVirtualMachine',
+        //   icon: 'lock-outlined',
+        //   label: 'label.reset.ssh.key.pair',
+        //   message: 'message.desc.reset.ssh.key.pair',
+        //   docHelp: 'adminguide/virtual_machines.html#resetting-ssh-keys',
+        //   dataView: true,
+        //   show: (record) => { return ['Stopped'].includes(record.state) },
+        //   popup: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ResetSshKeyPair')))
+        // },
+        // {
+        //   api: 'resetUserDataForVirtualMachine',
+        //   icon: 'solution-outlined',
+        //   label: 'label.reset.userdata.on.vm',
+        //   message: 'message.desc.reset.userdata',
+        //   docHelp: 'adminguide/virtual_machines.html#resetting-userdata',
+        //   dataView: true,
+        //   show: (record) => { return ['Stopped'].includes(record.state) },
+        //   popup: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ResetUserData')))
+        // },
+        // {
+        //   api: 'assignVirtualMachine',
+        //   icon: 'user-add-outlined',
+        //   label: 'label.assign.instance.another',
+        //   dataView: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AssignInstance'))),
+        //   popup: true,
+        //   show: (record) => { return ['Stopped'].includes(record.state) }
+        // },
         {
           api: 'recoverVirtualMachine',
           icon: 'medicine-box-outlined',
@@ -418,14 +419,14 @@ export default {
           dataView: true,
           show: (record, store) => { return ['Destroyed'].includes(record.state) && store.features.allowuserexpungerecovervm }
         },
-        {
-          api: 'unmanageVirtualMachine',
-          icon: 'disconnect-outlined',
-          label: 'label.action.unmanage.virtualmachine',
-          message: 'message.action.unmanage.virtualmachine',
-          dataView: true,
-          show: (record) => { return ['Running', 'Stopped'].includes(record.state) && ['VMware', 'KVM'].includes(record.hypervisor) }
-        },
+        // {
+        //   api: 'unmanageVirtualMachine',
+        //   icon: 'disconnect-outlined',
+        //   label: 'label.action.unmanage.virtualmachine',
+        //   message: 'message.action.unmanage.virtualmachine',
+        //   dataView: true,
+        //   show: (record) => { return ['Running', 'Stopped'].includes(record.state) && ['VMware', 'KVM'].includes(record.hypervisor) }
+        // },
         {
           api: 'expungeVirtualMachine',
           icon: 'delete-outlined',
@@ -435,36 +436,36 @@ export default {
           dataView: true,
           show: (record, store) => { return ['Destroyed', 'Expunging'].includes(record.state) && store.features.allowuserexpungerecovervm }
         },
-        {
-          api: 'allocateVbmcToVM',
-          icon: 'heart-filled',
-          label: 'label.vbmcport.allocate',
-          message: 'message.action.vbmcport.allocate.instance',
-          dataView: true,
-          popup: true,
-          args: ['virtualmachineid'],
-          show: (record) => { return record.vbmcport === 'None' },
-          mapping: {
-            virtualmachineid: {
-              value: (record, params) => { return record.id }
-            }
-          }
-        },
-        {
-          api: 'removeVbmcToVM',
-          icon: 'heart-filled',
-          label: 'label.vbmcport.remove',
-          message: 'message.action.vbmcport.remove.instance',
-          dataView: true,
-          popup: true,
-          args: ['virtualmachineid'],
-          show: (record) => { return record.vbmcport !== 'None' },
-          mapping: {
-            virtualmachineid: {
-              value: (record, params) => { return record.id }
-            }
-          }
-        },
+        // {
+        //   api: 'allocateVbmcToVM',
+        //   icon: 'heart-filled',
+        //   label: 'label.vbmcport.allocate',
+        //   message: 'message.action.vbmcport.allocate.instance',
+        //   dataView: true,
+        //   popup: true,
+        //   args: ['virtualmachineid'],
+        //   show: (record) => { return record.vbmcport === 'None' },
+        //   mapping: {
+        //     virtualmachineid: {
+        //       value: (record, params) => { return record.id }
+        //     }
+        //   }
+        // },
+        // {
+        //   api: 'removeVbmcToVM',
+        //   icon: 'heart-filled',
+        //   label: 'label.vbmcport.remove',
+        //   message: 'message.action.vbmcport.remove.instance',
+        //   dataView: true,
+        //   popup: true,
+        //   args: ['virtualmachineid'],
+        //   show: (record) => { return record.vbmcport !== 'None' },
+        //   mapping: {
+        //     virtualmachineid: {
+        //       value: (record, params) => { return record.id }
+        //     }
+        //   }
+        // },
         {
           api: 'destroyVirtualMachine',
           icon: 'delete-outlined',
@@ -530,10 +531,10 @@ export default {
           resourceType: 'VmSnapshot',
           component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
           show: () => { return 'listEvents' in store.getters.apis }
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+        // },
+        // {
+        //   name: 'comments',
+        //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
         }
       ],
       actions: [
@@ -579,512 +580,512 @@ export default {
           groupMap: (selection) => { return selection.map(x => { return { vmsnapshotid: x } }) }
         }
       ]
-    },
-    {
-      name: 'kubernetes',
-      title: 'label.kubernetes',
-      icon: ['fa-solid', 'fa-dharmachakra'],
-      docHelp: 'plugins/cloudstack-kubernetes-service.html',
-      searchFilters: ['name', 'domainid', 'account', 'state'],
-      permission: ['listKubernetesClusters'],
-      columns: (store) => {
-        var fields = ['name', 'state', 'clustertype', 'size', 'cpunumber', 'memory', 'kubernetesversionname']
-        if (['Admin', 'DomainAdmin'].includes(store.userInfo.roletype)) {
-          fields.push('account')
-        }
-        if (store.listAllProjects) {
-          fields.push('project')
-        }
-        if (store.apis.scaleKubernetesCluster.params.filter(x => x.name === 'autoscalingenabled').length > 0) {
-          fields.splice(2, 0, 'autoscalingenabled')
-        }
-        fields.push('zonename')
-        return fields
-      },
-      filters: () => {
-        const filters = ['cloud.managed', 'external.managed']
-        return filters
-      },
-      details: ['name', 'description', 'zonename', 'kubernetesversionname', 'autoscalingenabled', 'minsize', 'maxsize', 'size', 'controlnodes', 'cpunumber', 'memory', 'keypair', 'associatednetworkname', 'account', 'domain', 'zonename', 'clustertype', 'created'],
-      tabs: [
-        {
-          name: 'k8s',
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/KubernetesServiceTab.vue')))
-        }
-      ],
-      resourceType: 'KubernetesCluster',
-      actions: [
-        {
-          api: 'createKubernetesCluster',
-          icon: 'plus-outlined',
-          label: 'label.kubernetes.cluster.create',
-          docHelp: 'plugins/cloudstack-kubernetes-service.html#creating-a-new-kubernetes-cluster',
-          listView: true,
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/CreateKubernetesCluster.vue')))
-        },
-        {
-          api: 'startKubernetesCluster',
-          icon: 'caret-right-outlined',
-          label: 'label.kubernetes.cluster.start',
-          message: 'message.kubernetes.cluster.start',
-          docHelp: 'plugins/cloudstack-kubernetes-service.html#starting-a-stopped-kubernetes-cluster',
-          dataView: true,
-          show: (record) => { return ['Stopped'].includes(record.state) && record.clustertype === 'CloudManaged' },
-          groupAction: true,
-          popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-        },
-        {
-          api: 'stopKubernetesCluster',
-          icon: 'poweroff-outlined',
-          label: 'label.kubernetes.cluster.stop',
-          message: 'message.kubernetes.cluster.stop',
-          docHelp: 'plugins/cloudstack-kubernetes-service.html#stopping-kubernetes-cluster',
-          dataView: true,
-          show: (record) => { return !['Stopped', 'Destroyed', 'Destroying'].includes(record.state) && record.clustertype === 'CloudManaged' },
-          groupAction: true,
-          popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-        },
-        {
-          api: 'scaleKubernetesCluster',
-          icon: 'swap-outlined',
-          label: 'label.kubernetes.cluster.scale',
-          message: 'message.kubernetes.cluster.scale',
-          docHelp: 'plugins/cloudstack-kubernetes-service.html#scaling-kubernetes-cluster',
-          dataView: true,
-          show: (record) => { return ['Created', 'Running', 'Stopped'].includes(record.state) && record.clustertype === 'CloudManaged' },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ScaleKubernetesCluster.vue')))
-        },
-        {
-          api: 'upgradeKubernetesCluster',
-          icon: 'plus-circle-outlined',
-          label: 'label.kubernetes.cluster.upgrade',
-          message: 'message.kubernetes.cluster.upgrade',
-          docHelp: 'plugins/cloudstack-kubernetes-service.html#upgrading-kubernetes-cluster',
-          dataView: true,
-          show: (record) => { return ['Created', 'Running'].includes(record.state) && record.clustertype === 'CloudManaged' },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/UpgradeKubernetesCluster.vue')))
-        },
-        {
-          api: 'deleteKubernetesCluster',
-          icon: 'delete-outlined',
-          label: 'label.kubernetes.cluster.delete',
-          message: 'message.kubernetes.cluster.delete',
-          docHelp: 'plugins/cloudstack-kubernetes-service.html#deleting-kubernetes-cluster',
-          dataView: true,
-          show: (record) => { return !['Destroyed', 'Destroying'].includes(record.state) },
-          groupAction: true,
-          popup: true,
-          args: (record, store, group) => {
-            if (record.clustertype === 'CloudManaged') {
-              return []
-            }
-            return (['Admin'].includes(store.userInfo.roletype) || store.features.allowuserexpungerecovervm)
-              ? ['cleanup', 'expunge'] : ['cleanup']
-          },
-          groupMap: (selection, values) => { return selection.map(x => { return { id: x, expunge: values.expunge, cleanup: values.cleanup } }) }
-        }
-      ]
-    },
-    {
-      name: 'autoscalevmgroup',
-      title: 'label.autoscale.vm.groups',
-      icon: 'fullscreen-outlined',
-      docHelp: 'adminguide/autoscale_with_virtual_router.html',
-      resourceType: 'AutoScaleVmGroup',
-      permission: ['listAutoScaleVmGroups'],
-      searchFilters: ['name', 'zoneid', 'domainid', 'account'],
-      columns: (store) => {
-        var fields = ['name', 'state', 'associatednetworkname', 'publicip', 'publicport', 'privateport', 'minmembers', 'maxmembers', 'availablevirtualmachinecount', 'account']
-        if (store.listAllProjects) {
-          fields.push('project')
-        }
-        return fields
-      },
-      details: ['name', 'id', 'account', 'domain', 'associatednetworkname', 'associatednetworkid', 'lbruleid', 'lbprovider', 'publicip', 'publicipid', 'publicport', 'privateport', 'minmembers', 'maxmembers', 'availablevirtualmachinecount', 'interval', 'state', 'created'],
-      related: [{
-        name: 'vm',
-        title: 'label.instances',
-        param: 'autoscalevmgroupid'
-      }],
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'autoscale.vm.profile',
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleVmProfile.vue')))
-        },
-        {
-          name: 'loadbalancerrule',
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleLoadBalancing.vue')))
-        },
-        {
-          name: 'scaleup.policy',
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleUpPolicyTab.vue')))
-        },
-        {
-          name: 'scaledown.policy',
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleDownPolicyTab.vue')))
-        },
-        {
-          name: 'events',
-          resourceType: 'AutoScaleVmGroup',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
-          show: () => { return 'listEvents' in store.getters.apis }
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
-        }
-      ],
-      actions: [
-        {
-          api: 'createAutoScaleVmGroup',
-          icon: 'plus-outlined',
-          label: 'label.new.autoscale.vmgroup',
-          listView: true,
-          component: () => import('@/views/compute/CreateAutoScaleVmGroup.vue')
-        },
-        {
-          api: 'enableAutoScaleVmGroup',
-          icon: 'play-circle-outlined',
-          label: 'label.enable.autoscale.vmgroup',
-          message: 'message.confirm.enable.autoscale.vmgroup',
-          dataView: true,
-          groupAction: true,
-          popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) },
-          show: (record) => { return record.state === 'DISABLED' }
-        },
-        {
-          api: 'disableAutoScaleVmGroup',
-          icon: 'pause-circle-outlined',
-          label: 'label.disable.autoscale.vmgroup',
-          message: 'message.confirm.disable.autoscale.vmgroup',
-          dataView: true,
-          groupAction: true,
-          popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) },
-          show: (record) => { return ['ENABLED', 'SCALING'].includes(record.state) }
-        },
-        {
-          api: 'updateAutoScaleVmGroup',
-          icon: 'edit-outlined',
-          label: 'label.update.autoscale.vmgroup',
-          dataView: true,
-          args: (record, store) => {
-            var args = ['name']
-            if (record.state === 'DISABLED') {
-              args.push('maxmembers')
-              args.push('minmembers')
-              args.push('interval')
-            }
-            return args
-          }
-        },
-        {
-          api: 'deleteAutoScaleVmGroup',
-          icon: 'delete-outlined',
-          label: 'label.delete.autoscale.vmgroup',
-          message: 'message.action.delete.autoscale.vmgroup',
-          dataView: true,
-          args: ['cleanup'],
-          groupAction: true,
-          popup: true,
-          groupMap: (selection, values) => { return selection.map(x => { return { id: x, cleanup: values.cleanup || null } }) }
-        }
-      ]
-    },
-    {
-      name: 'vmgroup',
-      title: 'label.instance.groups',
-      icon: 'gold-outlined',
-      docHelp: 'adminguide/virtual_machines.html#changing-the-vm-name-os-or-group',
-      resourceType: 'VMInstanceGroup',
-      permission: ['listInstanceGroups'],
-      searchFilters: ['name', 'zoneid', 'domainid', 'account'],
-      columns: (store) => {
-        var fields = ['name', 'account']
-        if (store.listAllProjects) {
-          fields.push('project')
-        }
-        fields.push('domain')
-        return fields
-      },
-      details: ['name', 'id', 'account', 'domain', 'created'],
-      related: [{
-        name: 'vm',
-        title: 'label.instances',
-        param: 'groupid'
-      }],
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
-        }
-      ],
-      actions: [
-        {
-          api: 'createInstanceGroup',
-          icon: 'plus-outlined',
-          label: 'label.new.instance.group',
-          listView: true,
-          args: ['name']
-        },
-        {
-          api: 'updateInstanceGroup',
-          icon: 'edit-outlined',
-          label: 'label.update.instance.group',
-          dataView: true,
-          args: ['name']
-        },
-        {
-          api: 'deleteInstanceGroup',
-          icon: 'delete-outlined',
-          label: 'label.delete.instance.group',
-          message: 'message.action.delete.instance.group',
-          dataView: true,
-          groupAction: true,
-          popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-        }
-      ]
-    },
-    {
-      name: 'ssh',
-      title: 'label.ssh.key.pairs',
-      icon: 'key-outlined',
-      docHelp: 'adminguide/virtual_machines.html#using-ssh-keys-for-authentication',
-      permission: ['listSSHKeyPairs'],
-      searchFilters: ['name', 'domainid', 'account', 'fingerprint'],
-      columns: () => {
-        var fields = ['name', 'fingerprint']
-        if (['Admin', 'DomainAdmin'].includes(store.getters.userInfo.roletype)) {
-          fields.push('account')
-          if (store.getters.listAllProjects) {
-            fields.push('project')
-          }
-          fields.push('domain')
-        } else if (store.getters.listAllProjects) {
-          fields.push('project')
-        }
-        return fields
-      },
-      resourceType: 'SSHKeyPair',
-      details: ['id', 'name', 'fingerprint', 'account', 'domain', 'project'],
-      related: [{
-        name: 'vm',
-        title: 'label.instances',
-        param: 'keypair'
-      }],
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
-        }
-      ],
-      actions: [
-        {
-          api: 'createSSHKeyPair',
-          icon: 'plus-outlined',
-          label: 'label.create.ssh.key.pair',
-          docHelp: 'adminguide/virtual_machines.html#creating-the-ssh-keypair',
-          listView: true,
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/CreateSSHKeyPair.vue')))
-        },
-        {
-          api: 'deleteSSHKeyPair',
-          icon: 'delete-outlined',
-          label: 'label.remove.ssh.key.pair',
-          message: 'message.please.confirm.remove.ssh.key.pair',
-          dataView: true,
-          args: ['name', 'account', 'domainid', 'projectid'],
-          mapping: {
-            name: {
-              value: (record, params) => { return record.name }
-            },
-            projectid: {
-              value: (record, params) => { return record.projectid }
-            },
-            account: {
-              value: (record, params) => { return record.account }
-            },
-            domainid: {
-              value: (record, params) => { return record.domainid }
-            }
-          },
-          groupAction: true,
-          popup: true,
-          groupMap: (selection, values, record) => {
-            return selection.map(x => {
-              const data = record.filter(y => { return y.id === x })
-              return {
-                name: data[0].name,
-                account: data[0].account,
-                domainid: data[0].domainid,
-                projectid: data[0].projectid
-              }
-            })
-          }
-        }
-      ]
-    },
-    {
-      name: 'userdata',
-      title: 'label.user.data',
-      icon: 'solution-outlined',
-      docHelp: 'adminguide/virtual_machines.html#user-data-and-meta-data',
-      permission: ['listUserData'],
-      columns: () => {
-        var fields = ['name', 'id']
-        if (['Admin', 'DomainAdmin'].includes(store.getters.userInfo.roletype)) {
-          fields.push('account')
-          if (store.getters.listAllProjects) {
-            fields.push('project')
-          }
-          fields.push('domain')
-        } else if (store.getters.listAllProjects) {
-          fields.push('project')
-        }
-        return fields
-      },
-      resourceType: 'UserData',
-      details: ['id', 'name', 'userdata', 'account', 'domain', 'params'],
-      related: [{
-        name: 'vm',
-        title: 'label.instances',
-        param: 'userdata'
-      }],
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
-        }
-      ],
-      actions: [
-        {
-          api: 'registerUserData',
-          icon: 'plus-outlined',
-          label: 'label.register.user.data',
-          docHelp: 'adminguide/virtual_machines.html#creating-the-ssh-keypair',
-          listView: true,
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/RegisterUserData.vue')))
-        },
-        {
-          api: 'deleteUserData',
-          icon: 'delete-outlined',
-          label: 'label.remove.user.data',
-          message: 'message.please.confirm.remove.user.data',
-          dataView: true,
-          args: ['id', 'account', 'domainid'],
-          mapping: {
-            id: {
-              value: (record, params) => { return record.id }
-            },
-            account: {
-              value: (record, params) => { return record.account }
-            },
-            domainid: {
-              value: (record, params) => { return record.domainid }
-            }
-          },
-          groupAction: true,
-          popup: true,
-          groupMap: (selection, values, record) => {
-            return selection.map(x => {
-              const data = record.filter(y => { return y.id === x })
-              return {
-                id: x, account: data[0].account, domainid: data[0].domainid
-              }
-            })
-          }
-        }
-      ]
-    },
-    {
-      name: 'affinitygroup',
-      title: 'label.affinity.groups',
-      icon: 'swap-outlined',
-      docHelp: 'adminguide/virtual_machines.html#affinity-groups',
-      permission: ['listAffinityGroups'],
-      searchFilters: ['name', 'zoneid', 'domainid', 'account', 'type'],
-      columns: () => {
-        var fields = ['name', 'type', 'description']
-        if (['Admin', 'DomainAdmin'].includes(store.getters.userInfo.roletype)) {
-          fields.push('account')
-          if (store.getters.listAllProjects) {
-            fields.push('project')
-          }
-          fields.push('domain')
-        } else if (store.getters.listAllProjects) {
-          fields.push('project')
-        }
-        return fields
-      },
-      details: ['name', 'id', 'description', 'type', 'account', 'domain'],
-      related: [{
-        name: 'vm',
-        title: 'label.instances',
-        param: 'affinitygroupid'
-      }],
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'events',
-          resourceType: 'AffinityGroup',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
-          show: () => { return 'listEvents' in store.getters.apis }
-        }
-      ],
-      actions: [
-        {
-          api: 'createAffinityGroup',
-          icon: 'plus-outlined',
-          label: 'label.add.affinity.group',
-          docHelp: 'adminguide/virtual_machines.html#creating-a-new-affinity-group',
-          listView: true,
-          args: ['name', 'description', 'type'],
-          mapping: {
-            type: {
-              options: ['host anti-affinity (Strict)', 'host affinity (Strict)', 'host anti-affinity (Non-Strict)', 'host affinity (Non-Strict)']
-            }
-          }
-        },
-        {
-          api: 'deleteAffinityGroup',
-          icon: 'delete-outlined',
-          label: 'label.delete.affinity.group',
-          docHelp: 'adminguide/virtual_machines.html#delete-an-affinity-group',
-          message: 'message.delete.affinity.group',
-          dataView: true,
-          groupAction: true,
-          popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-        }
-      ]
     }
+    // {
+    //   name: 'kubernetes',
+    //   title: 'label.kubernetes',
+    //   icon: ['fa-solid', 'fa-dharmachakra'],
+    //   docHelp: 'plugins/cloudstack-kubernetes-service.html',
+    //   searchFilters: ['name', 'domainid', 'account', 'state'],
+    //   permission: ['listKubernetesClusters'],
+    //   columns: (store) => {
+    //     var fields = ['name', 'state', 'clustertype', 'size', 'cpunumber', 'memory', 'kubernetesversionname']
+    //     if (['Admin', 'DomainAdmin'].includes(store.userInfo.roletype)) {
+    //       fields.push('account')
+    //     }
+    //     if (store.listAllProjects) {
+    //       fields.push('project')
+    //     }
+    //     if (store.apis.scaleKubernetesCluster.params.filter(x => x.name === 'autoscalingenabled').length > 0) {
+    //       fields.splice(2, 0, 'autoscalingenabled')
+    //     }
+    //     fields.push('zonename')
+    //     return fields
+    //   },
+    //   filters: () => {
+    //     const filters = ['cloud.managed', 'external.managed']
+    //     return filters
+    //   },
+    //   details: ['name', 'description', 'zonename', 'kubernetesversionname', 'autoscalingenabled', 'minsize', 'maxsize', 'size', 'controlnodes', 'cpunumber', 'memory', 'keypair', 'associatednetworkname', 'account', 'domain', 'zonename', 'clustertype', 'created'],
+    //   tabs: [
+    //     {
+    //       name: 'k8s',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/KubernetesServiceTab.vue')))
+    //     }
+    //   ],
+    //   resourceType: 'KubernetesCluster',
+    //   actions: [
+    //     {
+    //       api: 'createKubernetesCluster',
+    //       icon: 'plus-outlined',
+    //       label: 'label.kubernetes.cluster.create',
+    //       docHelp: 'plugins/cloudstack-kubernetes-service.html#creating-a-new-kubernetes-cluster',
+    //       listView: true,
+    //       popup: true,
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/CreateKubernetesCluster.vue')))
+    //     },
+    //     {
+    //       api: 'startKubernetesCluster',
+    //       icon: 'caret-right-outlined',
+    //       label: 'label.kubernetes.cluster.start',
+    //       message: 'message.kubernetes.cluster.start',
+    //       docHelp: 'plugins/cloudstack-kubernetes-service.html#starting-a-stopped-kubernetes-cluster',
+    //       dataView: true,
+    //       show: (record) => { return ['Stopped'].includes(record.state) && record.clustertype === 'CloudManaged' },
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    //     },
+    //     {
+    //       api: 'stopKubernetesCluster',
+    //       icon: 'poweroff-outlined',
+    //       label: 'label.kubernetes.cluster.stop',
+    //       message: 'message.kubernetes.cluster.stop',
+    //       docHelp: 'plugins/cloudstack-kubernetes-service.html#stopping-kubernetes-cluster',
+    //       dataView: true,
+    //       show: (record) => { return !['Stopped', 'Destroyed', 'Destroying'].includes(record.state) && record.clustertype === 'CloudManaged' },
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    //     },
+    //     {
+    //       api: 'scaleKubernetesCluster',
+    //       icon: 'swap-outlined',
+    //       label: 'label.kubernetes.cluster.scale',
+    //       message: 'message.kubernetes.cluster.scale',
+    //       docHelp: 'plugins/cloudstack-kubernetes-service.html#scaling-kubernetes-cluster',
+    //       dataView: true,
+    //       show: (record) => { return ['Created', 'Running', 'Stopped'].includes(record.state) && record.clustertype === 'CloudManaged' },
+    //       popup: true,
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ScaleKubernetesCluster.vue')))
+    //     },
+    //     {
+    //       api: 'upgradeKubernetesCluster',
+    //       icon: 'plus-circle-outlined',
+    //       label: 'label.kubernetes.cluster.upgrade',
+    //       message: 'message.kubernetes.cluster.upgrade',
+    //       docHelp: 'plugins/cloudstack-kubernetes-service.html#upgrading-kubernetes-cluster',
+    //       dataView: true,
+    //       show: (record) => { return ['Created', 'Running'].includes(record.state) && record.clustertype === 'CloudManaged' },
+    //       popup: true,
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/UpgradeKubernetesCluster.vue')))
+    //     },
+    //     {
+    //       api: 'deleteKubernetesCluster',
+    //       icon: 'delete-outlined',
+    //       label: 'label.kubernetes.cluster.delete',
+    //       message: 'message.kubernetes.cluster.delete',
+    //       docHelp: 'plugins/cloudstack-kubernetes-service.html#deleting-kubernetes-cluster',
+    //       dataView: true,
+    //       show: (record) => { return !['Destroyed', 'Destroying'].includes(record.state) },
+    //       groupAction: true,
+    //       popup: true,
+    //       args: (record, store, group) => {
+    //         if (record.clustertype === 'CloudManaged') {
+    //           return []
+    //         }
+    //         return (['Admin'].includes(store.userInfo.roletype) || store.features.allowuserexpungerecovervm)
+    //           ? ['cleanup', 'expunge'] : ['cleanup']
+    //       },
+    //       groupMap: (selection, values) => { return selection.map(x => { return { id: x, expunge: values.expunge, cleanup: values.cleanup } }) }
+    //     }
+    //   ]
+    // },
+    // {
+    //   name: 'autoscalevmgroup',
+    //   title: 'label.autoscale.vm.groups',
+    //   icon: 'fullscreen-outlined',
+    //   docHelp: 'adminguide/autoscale_with_virtual_router.html',
+    //   resourceType: 'AutoScaleVmGroup',
+    //   permission: ['listAutoScaleVmGroups'],
+    //   searchFilters: ['name', 'zoneid', 'domainid', 'account'],
+    //   columns: (store) => {
+    //     var fields = ['name', 'state', 'associatednetworkname', 'publicip', 'publicport', 'privateport', 'minmembers', 'maxmembers', 'availablevirtualmachinecount', 'account']
+    //     if (store.listAllProjects) {
+    //       fields.push('project')
+    //     }
+    //     return fields
+    //   },
+    //   details: ['name', 'id', 'account', 'domain', 'associatednetworkname', 'associatednetworkid', 'lbruleid', 'lbprovider', 'publicip', 'publicipid', 'publicport', 'privateport', 'minmembers', 'maxmembers', 'availablevirtualmachinecount', 'interval', 'state', 'created'],
+    //   related: [{
+    //     name: 'vm',
+    //     title: 'label.instances',
+    //     param: 'autoscalevmgroupid'
+    //   }],
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'autoscale.vm.profile',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleVmProfile.vue')))
+    //     },
+    //     {
+    //       name: 'loadbalancerrule',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleLoadBalancing.vue')))
+    //     },
+    //     {
+    //       name: 'scaleup.policy',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleUpPolicyTab.vue')))
+    //     },
+    //     {
+    //       name: 'scaledown.policy',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/AutoScaleDownPolicyTab.vue')))
+    //     },
+    //     {
+    //       name: 'events',
+    //       resourceType: 'AutoScaleVmGroup',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
+    //       show: () => { return 'listEvents' in store.getters.apis }
+    //     },
+    //     {
+    //       name: 'comments',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+    //     }
+    //   ],
+    //   actions: [
+    //     {
+    //       api: 'createAutoScaleVmGroup',
+    //       icon: 'plus-outlined',
+    //       label: 'label.new.autoscale.vmgroup',
+    //       listView: true,
+    //       component: () => import('@/views/compute/CreateAutoScaleVmGroup.vue')
+    //     },
+    //     {
+    //       api: 'enableAutoScaleVmGroup',
+    //       icon: 'play-circle-outlined',
+    //       label: 'label.enable.autoscale.vmgroup',
+    //       message: 'message.confirm.enable.autoscale.vmgroup',
+    //       dataView: true,
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection) => { return selection.map(x => { return { id: x } }) },
+    //       show: (record) => { return record.state === 'DISABLED' }
+    //     },
+    //     {
+    //       api: 'disableAutoScaleVmGroup',
+    //       icon: 'pause-circle-outlined',
+    //       label: 'label.disable.autoscale.vmgroup',
+    //       message: 'message.confirm.disable.autoscale.vmgroup',
+    //       dataView: true,
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection) => { return selection.map(x => { return { id: x } }) },
+    //       show: (record) => { return ['ENABLED', 'SCALING'].includes(record.state) }
+    //     },
+    //     {
+    //       api: 'updateAutoScaleVmGroup',
+    //       icon: 'edit-outlined',
+    //       label: 'label.update.autoscale.vmgroup',
+    //       dataView: true,
+    //       args: (record, store) => {
+    //         var args = ['name']
+    //         if (record.state === 'DISABLED') {
+    //           args.push('maxmembers')
+    //           args.push('minmembers')
+    //           args.push('interval')
+    //         }
+    //         return args
+    //       }
+    //     },
+    //     {
+    //       api: 'deleteAutoScaleVmGroup',
+    //       icon: 'delete-outlined',
+    //       label: 'label.delete.autoscale.vmgroup',
+    //       message: 'message.action.delete.autoscale.vmgroup',
+    //       dataView: true,
+    //       args: ['cleanup'],
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection, values) => { return selection.map(x => { return { id: x, cleanup: values.cleanup || null } }) }
+    //     }
+    //   ]
+    // },
+    // {
+    //   name: 'vmgroup',
+    //   title: 'label.instance.groups',
+    //   icon: 'gold-outlined',
+    //   docHelp: 'adminguide/virtual_machines.html#changing-the-vm-name-os-or-group',
+    //   resourceType: 'VMInstanceGroup',
+    //   permission: ['listInstanceGroups'],
+    //   searchFilters: ['name', 'zoneid', 'domainid', 'account'],
+    //   columns: (store) => {
+    //     var fields = ['name', 'account']
+    //     if (store.listAllProjects) {
+    //       fields.push('project')
+    //     }
+    //     fields.push('domain')
+    //     return fields
+    //   },
+    //   details: ['name', 'id', 'account', 'domain', 'created'],
+    //   related: [{
+    //     name: 'vm',
+    //     title: 'label.instances',
+    //     param: 'groupid'
+    //   }],
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'comments',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+    //     }
+    //   ],
+    //   actions: [
+    //     {
+    //       api: 'createInstanceGroup',
+    //       icon: 'plus-outlined',
+    //       label: 'label.new.instance.group',
+    //       listView: true,
+    //       args: ['name']
+    //     },
+    //     {
+    //       api: 'updateInstanceGroup',
+    //       icon: 'edit-outlined',
+    //       label: 'label.update.instance.group',
+    //       dataView: true,
+    //       args: ['name']
+    //     },
+    //     {
+    //       api: 'deleteInstanceGroup',
+    //       icon: 'delete-outlined',
+    //       label: 'label.delete.instance.group',
+    //       message: 'message.action.delete.instance.group',
+    //       dataView: true,
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    //     }
+    //   ]
+    // },
+    // {
+    //   name: 'ssh',
+    //   title: 'label.ssh.key.pairs',
+    //   icon: 'key-outlined',
+    //   docHelp: 'adminguide/virtual_machines.html#using-ssh-keys-for-authentication',
+    //   permission: ['listSSHKeyPairs'],
+    //   searchFilters: ['name', 'domainid', 'account', 'fingerprint'],
+    //   columns: () => {
+    //     var fields = ['name', 'fingerprint']
+    //     if (['Admin', 'DomainAdmin'].includes(store.getters.userInfo.roletype)) {
+    //       fields.push('account')
+    //       if (store.getters.listAllProjects) {
+    //         fields.push('project')
+    //       }
+    //       fields.push('domain')
+    //     } else if (store.getters.listAllProjects) {
+    //       fields.push('project')
+    //     }
+    //     return fields
+    //   },
+    //   resourceType: 'SSHKeyPair',
+    //   details: ['id', 'name', 'fingerprint', 'account', 'domain', 'project'],
+    //   related: [{
+    //     name: 'vm',
+    //     title: 'label.instances',
+    //     param: 'keypair'
+    //   }],
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'comments',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+    //     }
+    //   ],
+    //   actions: [
+    //     {
+    //       api: 'createSSHKeyPair',
+    //       icon: 'plus-outlined',
+    //       label: 'label.create.ssh.key.pair',
+    //       docHelp: 'adminguide/virtual_machines.html#creating-the-ssh-keypair',
+    //       listView: true,
+    //       popup: true,
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/CreateSSHKeyPair.vue')))
+    //     },
+    //     {
+    //       api: 'deleteSSHKeyPair',
+    //       icon: 'delete-outlined',
+    //       label: 'label.remove.ssh.key.pair',
+    //       message: 'message.please.confirm.remove.ssh.key.pair',
+    //       dataView: true,
+    //       args: ['name', 'account', 'domainid', 'projectid'],
+    //       mapping: {
+    //         name: {
+    //           value: (record, params) => { return record.name }
+    //         },
+    //         projectid: {
+    //           value: (record, params) => { return record.projectid }
+    //         },
+    //         account: {
+    //           value: (record, params) => { return record.account }
+    //         },
+    //         domainid: {
+    //           value: (record, params) => { return record.domainid }
+    //         }
+    //       },
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection, values, record) => {
+    //         return selection.map(x => {
+    //           const data = record.filter(y => { return y.id === x })
+    //           return {
+    //             name: data[0].name,
+    //             account: data[0].account,
+    //             domainid: data[0].domainid,
+    //             projectid: data[0].projectid
+    //           }
+    //         })
+    //       }
+    //     }
+    //   ]
+    // },
+    // {
+    //   name: 'userdata',
+    //   title: 'label.user.data',
+    //   icon: 'solution-outlined',
+    //   docHelp: 'adminguide/virtual_machines.html#user-data-and-meta-data',
+    //   permission: ['listUserData'],
+    //   columns: () => {
+    //     var fields = ['name', 'id']
+    //     if (['Admin', 'DomainAdmin'].includes(store.getters.userInfo.roletype)) {
+    //       fields.push('account')
+    //       if (store.getters.listAllProjects) {
+    //         fields.push('project')
+    //       }
+    //       fields.push('domain')
+    //     } else if (store.getters.listAllProjects) {
+    //       fields.push('project')
+    //     }
+    //     return fields
+    //   },
+    //   resourceType: 'UserData',
+    //   details: ['id', 'name', 'userdata', 'account', 'domain', 'params'],
+    //   related: [{
+    //     name: 'vm',
+    //     title: 'label.instances',
+    //     param: 'userdata'
+    //   }],
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'comments',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+    //     }
+    //   ],
+    //   actions: [
+    //     {
+    //       api: 'registerUserData',
+    //       icon: 'plus-outlined',
+    //       label: 'label.register.user.data',
+    //       docHelp: 'adminguide/virtual_machines.html#creating-the-ssh-keypair',
+    //       listView: true,
+    //       popup: true,
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/compute/RegisterUserData.vue')))
+    //     },
+    //     {
+    //       api: 'deleteUserData',
+    //       icon: 'delete-outlined',
+    //       label: 'label.remove.user.data',
+    //       message: 'message.please.confirm.remove.user.data',
+    //       dataView: true,
+    //       args: ['id', 'account', 'domainid'],
+    //       mapping: {
+    //         id: {
+    //           value: (record, params) => { return record.id }
+    //         },
+    //         account: {
+    //           value: (record, params) => { return record.account }
+    //         },
+    //         domainid: {
+    //           value: (record, params) => { return record.domainid }
+    //         }
+    //       },
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection, values, record) => {
+    //         return selection.map(x => {
+    //           const data = record.filter(y => { return y.id === x })
+    //           return {
+    //             id: x, account: data[0].account, domainid: data[0].domainid
+    //           }
+    //         })
+    //       }
+    //     }
+    //   ]
+    // },
+    // {
+    //   name: 'affinitygroup',
+    //   title: 'label.affinity.groups',
+    //   icon: 'swap-outlined',
+    //   docHelp: 'adminguide/virtual_machines.html#affinity-groups',
+    //   permission: ['listAffinityGroups'],
+    //   searchFilters: ['name', 'zoneid', 'domainid', 'account', 'type'],
+    //   columns: () => {
+    //     var fields = ['name', 'type', 'description']
+    //     if (['Admin', 'DomainAdmin'].includes(store.getters.userInfo.roletype)) {
+    //       fields.push('account')
+    //       if (store.getters.listAllProjects) {
+    //         fields.push('project')
+    //       }
+    //       fields.push('domain')
+    //     } else if (store.getters.listAllProjects) {
+    //       fields.push('project')
+    //     }
+    //     return fields
+    //   },
+    //   details: ['name', 'id', 'description', 'type', 'account', 'domain'],
+    //   related: [{
+    //     name: 'vm',
+    //     title: 'label.instances',
+    //     param: 'affinitygroupid'
+    //   }],
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'events',
+    //       resourceType: 'AffinityGroup',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
+    //       show: () => { return 'listEvents' in store.getters.apis }
+    //     }
+    //   ],
+    //   actions: [
+    //     {
+    //       api: 'createAffinityGroup',
+    //       icon: 'plus-outlined',
+    //       label: 'label.add.affinity.group',
+    //       docHelp: 'adminguide/virtual_machines.html#creating-a-new-affinity-group',
+    //       listView: true,
+    //       args: ['name', 'description', 'type'],
+    //       mapping: {
+    //         type: {
+    //           options: ['host anti-affinity (Strict)', 'host affinity (Strict)', 'host anti-affinity (Non-Strict)', 'host affinity (Non-Strict)']
+    //         }
+    //       }
+    //     },
+    //     {
+    //       api: 'deleteAffinityGroup',
+    //       icon: 'delete-outlined',
+    //       label: 'label.delete.affinity.group',
+    //       docHelp: 'adminguide/virtual_machines.html#delete-an-affinity-group',
+    //       message: 'message.delete.affinity.group',
+    //       dataView: true,
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    //     }
+    //   ]
+    // }
   ]
 }

@@ -80,33 +80,33 @@ export default {
     name: 'resources',
     component: shallowRef(defineAsyncComponent(() => import('@/views/infra/Resources.vue')))
   }, {
-    name: 'settings',
-    component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue')))
-  }, {
+  //   name: 'settings',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue')))
+  // }, {
     name: 'events',
     resourceType: 'Zone',
     component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
     show: () => { return 'listEvents' in store.getters.apis }
-  }, {
-    name: 'comments',
-    component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+  // }, {
+  //   name: 'comments',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
   }],
   actions: [
-    {
-      api: 'createZone',
-      icon: 'plus-outlined',
-      label: 'label.add.zone',
-      docHelp: 'installguide/configuration.html#adding-a-zone',
-      listView: true,
-      popup: true,
-      component: shallowRef(defineAsyncComponent(() => import('@/views/infra/zone/ZoneWizard.vue')))
-    },
+    // {
+    //   api: 'createZone',
+    //   icon: 'plus-outlined',
+    //   label: 'label.add.zone',
+    //   docHelp: 'installguide/configuration.html#adding-a-zone',
+    //   listView: true,
+    //   popup: true,
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/zone/ZoneWizard.vue')))
+    // },
     {
       api: 'updateZone',
       icon: 'edit-outlined',
       label: 'label.action.edit.zone',
       dataView: true,
-      args: ['name', 'dns1', 'dns2', 'ip6dns1', 'ip6dns2', 'internaldns1', 'internaldns2', 'guestcidraddress', 'domain', 'localstorageenabled'],
+      args: ['name', 'dns1', 'dns2', 'internaldns1', 'internaldns2', 'guestcidraddress', 'localstorageenabled'],
       show: (record) => { return record.networktype === 'Advanced' }
     },
     {
@@ -201,61 +201,61 @@ export default {
         }
       }
     },
-    {
-      api: 'addVmwareDc',
-      icon: 'block-outlined',
-      label: 'label.add.vmware.datacenter',
-      dataView: true,
-      show: record => !record.vmwaredc,
-      args: ['zoneid', 'name', 'vcenter', 'username', 'password'],
-      mapping: {
-        zoneid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'updateVmwareDc',
-      icon: 'block-outlined',
-      label: 'label.update.vmware.datacenter',
-      message: 'message.restart.mgmt.server',
-      additionalMessage: 'message.restart.mgmt.server',
-      dataView: true,
-      show: record => record.vmwaredc,
-      args: ['zoneid', 'name', 'vcenter', 'username', 'password'],
-      mapping: {
-        zoneid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'removeVmwareDc',
-      icon: 'minus-square-outlined',
-      label: 'label.remove.vmware.datacenter',
-      message: 'message.confirm.remove.vmware.datacenter',
-      dataView: true,
-      show: record => record.vmwaredc,
-      args: ['zoneid'],
-      mapping: {
-        zoneid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'startRollingMaintenance',
-      icon: 'setting-outlined',
-      label: 'label.start.rolling.maintenance',
-      message: 'label.start.rolling.maintenance',
-      dataView: true,
-      args: ['timeout', 'payload', 'forced', 'zoneids'],
-      mapping: {
-        zoneids: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
+    // {
+    //   api: 'addVmwareDc',
+    //   icon: 'block-outlined',
+    //   label: 'label.add.vmware.datacenter',
+    //   dataView: true,
+    //   show: record => !record.vmwaredc,
+    //   args: ['zoneid', 'name', 'vcenter', 'username', 'password'],
+    //   mapping: {
+    //     zoneid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'updateVmwareDc',
+    //   icon: 'block-outlined',
+    //   label: 'label.update.vmware.datacenter',
+    //   message: 'message.restart.mgmt.server',
+    //   additionalMessage: 'message.restart.mgmt.server',
+    //   dataView: true,
+    //   show: record => record.vmwaredc,
+    //   args: ['zoneid', 'name', 'vcenter', 'username', 'password'],
+    //   mapping: {
+    //     zoneid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'removeVmwareDc',
+    //   icon: 'minus-square-outlined',
+    //   label: 'label.remove.vmware.datacenter',
+    //   message: 'message.confirm.remove.vmware.datacenter',
+    //   dataView: true,
+    //   show: record => record.vmwaredc,
+    //   args: ['zoneid'],
+    //   mapping: {
+    //     zoneid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'startRollingMaintenance',
+    //   icon: 'setting-outlined',
+    //   label: 'label.start.rolling.maintenance',
+    //   message: 'label.start.rolling.maintenance',
+    //   dataView: true,
+    //   args: ['timeout', 'payload', 'forced', 'zoneids'],
+    //   mapping: {
+    //     zoneids: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
     {
       api: 'deleteZone',
       icon: 'delete-outlined',

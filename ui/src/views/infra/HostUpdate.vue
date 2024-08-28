@@ -33,13 +33,13 @@
           v-model:value="form.name"
           v-focus="true" />
       </a-form-item>
-      <a-form-item name="hosttags" ref="hosttags">
+      <!-- <a-form-item name="hosttags" ref="hosttags">
         <template #label>
           <tooltip-label :title="$t('label.hosttags')" :tooltip="$t('label.hosttags.explicit.description')"/>
         </template>
         <a-input v-model:value="form.hosttags" />
-      </a-form-item>
-      <a-form-item name="istagarule" ref="istagarule">
+      </a-form-item> -->
+      <!-- <a-form-item name="istagarule" ref="istagarule">
         <template #label>
           <tooltip-label :title="$t('label.istagarule')" :tooltip="apiParams.istagarule.description"/>
         </template>
@@ -61,7 +61,7 @@
             {{ osCategory.name }}
           </a-select-option>
         </a-select>
-      </a-form-item>
+      </a-form-item> -->
 
       <div :span="24" class="action-button">
         <a-button :loading="loading" @click="onCloseAction">{{ $t('label.cancel') }}</a-button>

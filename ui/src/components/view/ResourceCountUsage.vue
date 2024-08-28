@@ -91,8 +91,7 @@ export default {
   data () {
     return {
       usageList: [
-        'vm', 'cpu', 'memory', 'primarystorage', 'volume', 'ip', 'network',
-        'vpc', 'secondarystorage', 'snapshot', 'template', 'project'
+        'vm', 'cpu', 'memory', 'primarystorage', 'volume', 'ip', 'network', 'snapshot', 'template'
       ],
       taggedUsage: {},
       tagData: {},

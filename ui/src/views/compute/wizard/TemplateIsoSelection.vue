@@ -17,11 +17,11 @@
 
 <template>
   <div>
-    <a-input-search
+    <!-- <a-input-search
       class="search-input"
       :placeholder="$t('label.search')"
       @search="handleSearch">
-    </a-input-search>
+    </a-input-search> -->
     <a-spin :spinning="loading">
       <a-tabs
         :animated="false"

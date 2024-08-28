@@ -22,12 +22,12 @@
         <span v-html="$t('message.migrate.instance.to.host')" />
       </template>
     </a-alert>
-    <a-input-search
+    <!-- <a-input-search
       class="top-spaced"
       :placeholder="$t('label.search')"
       v-model:value="searchQuery"
       @search="fetchData"
-      v-focus="true" />
+      v-focus="true" /> -->
     <a-table
       class="top-spaced"
       size="small"

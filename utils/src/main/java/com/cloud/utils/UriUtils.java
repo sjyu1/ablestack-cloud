@@ -266,7 +266,7 @@ public class UriUtils {
             URI uri = new URI(url);
             if ((uri.getScheme() == null) ||
                     (!uri.getScheme().equalsIgnoreCase("http") && !uri.getScheme().equalsIgnoreCase("https") && !uri.getScheme().equalsIgnoreCase("file"))) {
-                throw new IllegalArgumentException("Unsupported scheme for url: " + url);
+                throw new IllegalArgumentException("url에 대해 지원되지 않는 형식: " + url);
             }
 
             int port = uri.getPort();
@@ -280,10 +280,10 @@ public class UriUtils {
             try {
                 InetAddress hostAddr = InetAddress.getByName(host);
                 if (hostAddr.isAnyLocalAddress() || hostAddr.isLinkLocalAddress() || hostAddr.isLoopbackAddress() || hostAddr.isMulticastAddress()) {
-                    throw new IllegalArgumentException("Illegal host specified in url");
+                    throw new IllegalArgumentException("URL에 잘못된 호스트가 지정되었습니다.");
                 }
             } catch (UnknownHostException uhe) {
-                throw new IllegalArgumentException("Unable to resolve " + host);
+                throw new IllegalArgumentException("해결할 수 없음 " + host);
             }
 
             // verify format
@@ -293,7 +293,7 @@ public class UriUtils {
             }
             return new Pair<String, Integer>(host, port);
         } catch (URISyntaxException use) {
-            throw new IllegalArgumentException("Invalid URL: " + url);
+            throw new IllegalArgumentException("잘못된 URL: " + url);
         }
     }
 
@@ -455,11 +455,11 @@ public class UriUtils {
                                                                      .noneMatch(uriMatchesAnyExtension);
 
             if (unknownExtension) {
-                throw new IllegalArgumentException("Please specify a valid " + format.toLowerCase());
+                throw new IllegalArgumentException("유효한 것을 지정하십시오. " + format.toLowerCase());
             }
 
-            throw new IllegalArgumentException("Please specify a valid URL. "
-                                                       + "URL:" + uripath + " is an invalid for the format " + format.toLowerCase());
+            throw new IllegalArgumentException("유효한 URL을 지정하세요. "
+                                                       + "URL:" + uripath + "는 " + format.toLowerCase() + " 형식에 유효하지 않습니다.");
         }
     }
 

@@ -84,10 +84,10 @@ export default {
           resourceType: 'Volume',
           component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
           show: () => { return 'listEvents' in store.getters.apis }
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+        // },
+        // {
+        //   name: 'comments',
+        //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
         }
       ],
       searchFilters: () => {
@@ -165,28 +165,28 @@ export default {
           popup: true,
           component: shallowRef(defineAsyncComponent(() => import('@/views/storage/TakeSnapshot.vue')))
         },
-        {
-          api: 'createSnapshotPolicy',
-          icon: 'clock-circle-outlined',
-          docHelp: 'adminguide/storage.html#working-with-volume-snapshots',
-          label: 'label.action.recurring.snapshot',
-          dataView: true,
-          show: (record, store) => {
-            return record.state === 'Ready' && (record.hypervisor !== 'KVM' ||
-                record.hypervisor === 'KVM' && record.vmstate === 'Running' && store.features.kvmsnapshotenabled ||
-                record.hypervisor === 'KVM' && record.vmstate !== 'Running')
-          },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/storage/RecurringSnapshotVolume.vue'))),
-          mapping: {
-            volumeid: {
-              value: (record) => { return record.id }
-            },
-            intervaltype: {
-              options: ['HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY']
-            }
-          }
-        },
+        // {
+        //   api: 'createSnapshotPolicy',
+        //   icon: 'clock-circle-outlined',
+        //   docHelp: 'adminguide/storage.html#working-with-volume-snapshots',
+        //   label: 'label.action.recurring.snapshot',
+        //   dataView: true,
+        //   show: (record, store) => {
+        //     return record.state === 'Ready' && (record.hypervisor !== 'KVM' ||
+        //         record.hypervisor === 'KVM' && record.vmstate === 'Running' && store.features.kvmsnapshotenabled ||
+        //         record.hypervisor === 'KVM' && record.vmstate !== 'Running')
+        //   },
+        //   popup: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/storage/RecurringSnapshotVolume.vue'))),
+        //   mapping: {
+        //     volumeid: {
+        //       value: (record) => { return record.id }
+        //     },
+        //     intervaltype: {
+        //       options: ['HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY']
+        //     }
+        //   }
+        // },
         {
           api: 'resizeVolume',
           icon: 'fullscreen-outlined',
@@ -250,10 +250,10 @@ export default {
           },
           args: (record, store) => {
             var fields = ['volumeid', 'name', 'displaytext', 'ostypeid', 'isdynamicallyscalable', 'requireshvm', 'passwordenabled']
-            if (['Admin', 'DomainAdmin'].includes(store.userInfo.roletype)) {
-              fields.push('domainid')
-              fields.push('account')
-            }
+            // if (['Admin', 'DomainAdmin'].includes(store.userInfo.roletype)) {
+            //   fields.push('domainid')
+            //   fields.push('account')
+            // }
             if (['Admin'].includes(store.userInfo.roletype) || store.features.userpublictemplateenabled) {
               fields.push('ispublic')
             }
@@ -346,10 +346,10 @@ export default {
           resourceType: 'Snapshot',
           component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
           show: () => { return 'listEvents' in store.getters.apis }
-        },
-        {
-          name: 'comments',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+        // },
+        // {
+        //   name: 'comments',
+        //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
         }
       ],
       searchFilters: () => {
@@ -457,65 +457,65 @@ export default {
           args: ['forced']
         }
       ]
-    },
-    {
-      name: 'buckets',
-      title: 'label.buckets',
-      icon: 'funnel-plot-outlined',
-      permission: ['listBuckets'],
-      columns: ['name', 'state', 'objectstore', 'size', 'account'],
-      details: ['id', 'name', 'state', 'objectstore', 'size', 'url', 'accesskey', 'usersecretkey', 'account', 'domain', 'created', 'quota', 'encryption', 'versioning', 'objectlocking', 'policy'],
-      tabs: [
-        {
-          name: 'details',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-        },
-        {
-          name: 'browser',
-          resourceType: 'Bucket',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/ObjectStoreBrowser.vue'))),
-          show: (record) => { return record.provider !== 'Simulator' }
-
-        },
-        {
-          name: 'events',
-          resourceType: 'Bucket',
-          component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
-          show: () => { return 'listEvents' in store.getters.apis }
-        }
-      ],
-      actions: [
-        {
-          api: 'createBucket',
-          icon: 'plus-outlined',
-          docHelp: 'installguide/configuration.html#create-bucket',
-          label: 'label.create.bucket',
-          listView: true,
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/storage/CreateBucket.vue')))
-        },
-        {
-          api: 'updateBucket',
-          icon: 'edit-outlined',
-          docHelp: 'adminguide/object_storage.html#update-bucket',
-          label: 'label.bucket.update',
-          dataView: true,
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/storage/UpdateBucket.vue'))),
-          show: (record) => { return record.state !== 'Destroyed' }
-        },
-        {
-          api: 'deleteBucket',
-          icon: 'delete-outlined',
-          label: 'label.bucket.delete',
-          message: 'message.bucket.delete',
-          dataView: true,
-          show: (record) => { return record.state !== 'Destroyed' },
-          groupAction: true,
-          popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-        }
-      ]
     }
+    // {
+    //   name: 'buckets',
+    //   title: 'label.buckets',
+    //   icon: 'funnel-plot-outlined',
+    //   permission: ['listBuckets'],
+    //   columns: ['name', 'state', 'objectstore', 'size', 'account'],
+    //   details: ['id', 'name', 'state', 'objectstore', 'size', 'url', 'accesskey', 'usersecretkey', 'account', 'domain', 'created', 'quota', 'encryption', 'versioning', 'objectlocking', 'policy'],
+    //   tabs: [
+    //     {
+    //       name: 'details',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
+    //     },
+    //     {
+    //       name: 'browser',
+    //       resourceType: 'Bucket',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/ObjectStoreBrowser.vue'))),
+    //       show: (record) => { return record.provider !== 'Simulator' }
+
+    //     },
+    //     {
+    //       name: 'events',
+    //       resourceType: 'Bucket',
+    //       component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
+    //       show: () => { return 'listEvents' in store.getters.apis }
+    //     }
+    //   ],
+    //   actions: [
+    //     {
+    //       api: 'createBucket',
+    //       icon: 'plus-outlined',
+    //       docHelp: 'installguide/configuration.html#create-bucket',
+    //       label: 'label.create.bucket',
+    //       listView: true,
+    //       popup: true,
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/storage/CreateBucket.vue')))
+    //     },
+    //     {
+    //       api: 'updateBucket',
+    //       icon: 'edit-outlined',
+    //       docHelp: 'adminguide/object_storage.html#update-bucket',
+    //       label: 'label.bucket.update',
+    //       dataView: true,
+    //       popup: true,
+    //       component: shallowRef(defineAsyncComponent(() => import('@/views/storage/UpdateBucket.vue'))),
+    //       show: (record) => { return record.state !== 'Destroyed' }
+    //     },
+    //     {
+    //       api: 'deleteBucket',
+    //       icon: 'delete-outlined',
+    //       label: 'label.bucket.delete',
+    //       message: 'message.bucket.delete',
+    //       dataView: true,
+    //       show: (record) => { return record.state !== 'Destroyed' },
+    //       groupAction: true,
+    //       popup: true,
+    //       groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    //     }
+    //   ]
+    // }
   ]
 }

@@ -130,7 +130,7 @@
             </a-select>
           </a-form-item>
         </div>
-        <a-form-item name="domainid" ref="domainid" v-if="'listDomains' in $store.getters.apis">
+        <!-- <a-form-item name="domainid" ref="domainid" v-if="'listDomains' in $store.getters.apis">
           <template #label>
             <tooltip-label :title="$t('label.domainid')" :tooltip="apiParams.domainid.description"/>
           </template>
@@ -152,8 +152,8 @@
               </span>
             </a-select-option>
           </a-select>
-        </a-form-item>
-        <a-form-item name="account" ref="account" v-if="domainid">
+        </a-form-item> -->
+        <!-- <a-form-item name="account" ref="account" v-if="domainid">
           <template #label>
             <tooltip-label :title="$t('label.account')" :tooltip="apiParams.account.description"/>
           </template>
@@ -170,7 +170,7 @@
               {{ acc.name }}
             </a-select-option>
           </a-select>
-        </a-form-item>
+        </a-form-item> -->
         <a-row :gutter="12">
           <a-col :md="24" :lg="12">
             <a-form-item ref="hypervisor" name="hypervisor">
@@ -214,7 +214,7 @@
             </a-form-item>
           </a-col>
         </a-row>
-        <a-row :gutter="12" v-if="allowed && (hyperKVMShow || hyperCustomShow) && currentForm === 'Create'">
+        <!-- <a-row :gutter="12" v-if="allowed && (hyperKVMShow || hyperCustomShow) && currentForm === 'Create'">
           <a-col :md="24" :lg="12">
             <a-form-item ref="directdownload" name="directdownload">
               <template #label>
@@ -233,7 +233,7 @@
                 :placeholder="apiParams.checksum.description" />
             </a-form-item>
           </a-col>
-        </a-row>
+        </a-row> -->
         <a-row :gutter="12" v-if="allowed && hyperXenServerShow">
           <a-form-item ref="xenserverToolsVersion61plus" name="xenserverToolsVersion61plus" v-if="hyperXenServerShow" :label="$t('label.xenservertoolsversion61plus')">
             <a-switch v-model:checked="form.xenserverToolsVersion61plus" />
@@ -250,7 +250,7 @@
             @change="val => deployasis = val"/>
         </a-form-item>
 
-        <a-row :gutter="12" v-if="hyperKVMShow || hyperVMWShow">
+        <!-- <a-row :gutter="12" v-if="hyperKVMShow || hyperVMWShow">
           <a-col :md="24" :lg="hyperKVMShow ? 24 : 12" v-if="hyperKVMShow || (hyperVMWShow && !deployasis)">
             <a-form-item ref="rootDiskControllerType" name="rootDiskControllerType" :label="$t('label.rootdiskcontrollertype')">
               <a-select
@@ -284,7 +284,7 @@
               </a-select>
             </a-form-item>
           </a-col>
-        </a-row>
+        </a-row> -->
         <a-form-item
           :label="$t('label.keyboardtype')"
           v-if="hyperVMWShow && !deployasis"
@@ -324,7 +324,7 @@
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item
+        <!-- <a-form-item
           name="templatetype"
           ref="templatetype">
           <template #label>
@@ -342,8 +342,8 @@
               {{ opt.name || opt.description }}
             </a-select-option>
           </a-select>
-        </a-form-item>
-        <a-form-item ref="templatetag" name="templatetag" v-if="isAdminRole">
+        </a-form-item> -->
+        <!-- <a-form-item ref="templatetag" name="templatetag" v-if="isAdminRole">
           <template #label>
             <tooltip-label :title="$t('label.templatetag')" :tooltip="apiParams.templatetag.description"/>
           </template>
@@ -351,8 +351,8 @@
             v-model:value="form.templatetag"
             :placeholder="apiParams.templatetag.description"
             v-focus="currentForm !== 'Create'"/>
-        </a-form-item>
-        <a-row :gutter="12">
+        </a-form-item> -->
+        <!-- <a-row :gutter="12">
           <a-col :md="24" :lg="12">
             <a-form-item
               name="userdataid"
@@ -394,7 +394,7 @@
               </a-select>
             </a-form-item>
           </a-col>
-        </a-row>
+        </a-row> -->
         <a-row :gutter="12">
           <a-col :md="24" :lg="24">
             <a-form-item ref="groupenabled" name="groupenabled">
@@ -683,11 +683,11 @@ export default {
         if (listResponse) {
           listhyperVisors = listhyperVisors.concat(listResponse)
         }
-        if (this.currentForm === 'Create') {
-          listhyperVisors.push({
-            name: 'Simulator'
-          })
-        }
+        // if (this.currentForm === 'Create') {
+        //   listhyperVisors.push({
+        //     name: 'Simulator'
+        //   })
+        // }
         this.hyperVisor.opts = listhyperVisors
       }).finally(() => {
         this.hyperVisor.loading = false
@@ -768,22 +768,22 @@ export default {
           id: '',
           description: ''
         })
-        controller.push({
-          id: 'ide',
-          description: 'ide'
-        })
+        // controller.push({
+        //   id: 'ide',
+        //   description: 'ide'
+        // })
         controller.push({
           id: 'osdefault',
           description: 'osdefault'
         })
-        controller.push({
-          id: 'scsi',
-          description: 'scsi'
-        })
-        controller.push({
-          id: 'virtio',
-          description: 'virtio'
-        })
+        // controller.push({
+        //   id: 'scsi',
+        //   description: 'scsi'
+        // })
+        // controller.push({
+        //   id: 'virtio',
+        //   description: 'virtio'
+        // })
       } else if (hyperVisor === 'VMware') {
         controller.push({
           id: '',
@@ -883,18 +883,18 @@ export default {
             id: 'QCOW2',
             description: 'QCOW2'
           })
-          format.push({
-            id: 'RAW',
-            description: 'RAW'
-          })
-          format.push({
-            id: 'VHD',
-            description: 'VHD'
-          })
-          format.push({
-            id: 'VMDK',
-            description: 'VMDK'
-          })
+          // format.push({
+          //   id: 'RAW',
+          //   description: 'RAW'
+          // })
+          // format.push({
+          //   id: 'VHD',
+          //   description: 'VHD'
+          // })
+          // format.push({
+          //   id: 'VMDK',
+          //   description: 'VMDK'
+          // })
           break
         case 'XenServer':
           this.hyperXenServerShow = true

@@ -1369,7 +1369,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         if (cmd instanceof ImportVmCmd) {
             ImportVmCmd importVmCmd = (ImportVmCmd) cmd;
             if (StringUtils.isBlank(importVmCmd.getImportSource())) {
-                throw new CloudRuntimeException("Please provide an import source for importing the VM");
+                throw new CloudRuntimeException("VM을 가져오기 위한 가져오기 소스를 제공하세요.");
             }
             String source = importVmCmd.getImportSource().toUpperCase();
             ImportSource importSource = Enum.valueOf(ImportSource.class, source);
@@ -1435,12 +1435,11 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         if (StringUtils.isEmpty(hostName)) {
             hostName = hypervisorType == Hypervisor.HypervisorType.VMware ? instanceName : displayName;
             if (!NetUtils.verifyDomainNameLabel(hostName, true)) {
-                throw new InvalidParameterValueException("Please provide a valid hostname for the VM. VM name contains unsupported characters that cannot be used as hostname.");
+                throw new InvalidParameterValueException("이름을 입력하세요. 이름에 호스트 이름으로 사용할 수 없는 문자가 포함되어 있습니다.");
             }
         }
         if (!NetUtils.verifyDomainNameLabel(hostName, true)) {
-            throw new InvalidParameterValueException("Invalid VM hostname. VM hostname can contain ASCII letters 'a' through 'z', the digits '0' through '9', "
-                    + "and the hyphen ('-'), must be between 1 and 63 characters long, and can't start or end with \"-\" and can't start with digit");
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
         }
         return hostName;
     }
@@ -2195,13 +2194,12 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         String hostName = cmd.getHostName();
         if (StringUtils.isEmpty(hostName)) {
             if (!NetUtils.verifyDomainNameLabel(instanceName, true)) {
-                throw new InvalidParameterValueException(String.format("Please provide hostname for the VM. VM name contains unsupported characters for it to be used as hostname"));
+                throw new InvalidParameterValueException(String.format("이름을 입력하세요. 이름에 호스트 이름으로 사용할 수 없는 문자가 포함되어 있습니다."));
             }
             hostName = instanceName;
         }
         if (!NetUtils.verifyDomainNameLabel(hostName, true)) {
-            throw new InvalidParameterValueException("Invalid VM hostname. VM hostname can contain ASCII letters 'a' through 'z', the digits '0' through '9', "
-                    + "and the hyphen ('-'), must be between 1 and 63 characters long, and can't start or end with \"-\" and can't start with digit");
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
         }
 
         final Map<String, Long> nicNetworkMap = cmd.getNicNetworkList();

@@ -43,7 +43,7 @@ public class UpdateTemplateCmd extends BaseUpdateTemplateOrIsoCmd implements Use
             description = "the type of the template. Valid options are: USER/VNF (for all users) and SYSTEM/ROUTING/BUILTIN (for admins only).")
     private String templateType;
 
-    @Parameter(name = ApiConstants.TEMPLATE_TAG, type = CommandType.STRING, description = "the tag for this template.", since = "4.20.0")
+    @Parameter(name = ApiConstants.TEMPLATE_TAG, type = CommandType.STRING, description = "템플릿의 태그", since = "4.20.0")
     private String templateTag;
 
     /////////////////////////////////////////////////////

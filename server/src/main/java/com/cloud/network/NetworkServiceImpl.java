@@ -16,9 +16,11 @@
 // under the License.
 package com.cloud.network;
 
+import java.io.UnsupportedEncodingException;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.security.InvalidParameterException;
 import java.sql.PreparedStatement;
@@ -1477,6 +1479,23 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         String ip6Dns1 = cmd.getIp6Dns1();
         String ip6Dns2 = cmd.getIp6Dns2();
 
+        // name parameter length check
+        if ((org.apache.commons.lang3.StringUtils.isBlank(name)
+                || !NetUtils.verifyDomainNameLabel(name, true))) {
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
+        // displayText parameter length check
+        if (displayText != null && !NetUtils.verifyDomainNameLabel(displayText, true)) {
+            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
+        // vlan/vni parameter lenght check
+        if (!NetUtils.verifyVlanLabel(vlanId)) {
+            throw new InvalidParameterValueException("VLAN은 untagged 또는 숫자 1~4자 사이여야 합니다.");
+        }
+
+
         // Validate network offering id
         NetworkOffering ntwkOff = getAndValidateNetworkOffering(networkOfferingId);
 
@@ -1494,7 +1513,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         ACLType aclType = getAclType(caller, cmd.getAclType(), ntwkOff);
 
         if (ntwkOff.getGuestType() != GuestType.Shared && (!StringUtils.isAllBlank(routerIPv4, routerIPv6))) {
-            throw new InvalidParameterValueException("Router IP can be specified only for Shared networks");
+            throw new InvalidParameterValueException("라우터 IP는 공유 네트워크에만 지정할 수 있습니다.");
         }
 
         if (ntwkOff.getGuestType() == GuestType.Shared && !_networkModel.isProviderForNetworkOffering(Provider.VirtualRouter, networkOfferingId)
@@ -1512,7 +1531,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         if (!AllowDuplicateNetworkName.valueIn(owner.getAccountId())) {
             List<NetworkVO> existingNetwork = _networksDao.listByAccountIdNetworkName(owner.getId(), name);
             if (!existingNetwork.isEmpty()) {
-                throw new InvalidParameterValueException("Another network with same name already exists within account: " + owner.getAccountName());
+                throw new InvalidParameterValueException("동일한 이름을 가진 다른 네트워크가 이미 계정 내에 존재합니다.: " + owner.getAccountName());
             }
         }
 
@@ -1536,7 +1555,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
                 }
             } catch (UnknownHostException e) {
                 logger.error("Unable to convert gateway IP to a InetAddress", e);
-                throw new InvalidParameterValueException("Gateway parameter is invalid");
+                throw new InvalidParameterValueException("게이트웨이 매개변수가 잘못되었습니다.");
             }
         }
 
@@ -1554,15 +1573,15 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
             // if end ip is not specified, default it to startIp
             if (startIP != null) {
                 if (!NetUtils.isValidIp4(startIP)) {
-                    throw new InvalidParameterValueException("Invalid format for the startIp parameter");
+                    throw new InvalidParameterValueException("startIp 매개변수의 형식이 잘못되었습니다.");
                 }
                 if (endIP == null) {
                     endIP = startIP;
                 } else if (!NetUtils.isValidIp4(endIP)) {
-                    throw new InvalidParameterValueException("Invalid format for the endIp parameter");
+                    throw new InvalidParameterValueException("endIP 매개변수의 형식이 잘못되었습니다.");
                 }
                 if (!(gateway != null && netmask != null)) {
-                    throw new InvalidParameterValueException("gateway and netmask should be defined when startIP/endIP are passed in");
+                    throw new InvalidParameterValueException("startIP/endIP가 전달될 때 게이트웨이 및 넷마스크를 정의해야 합니다.");
                 }
             }
             if (gateway != null && netmask != null) {
@@ -1570,14 +1589,14 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
                     if (logger.isDebugEnabled()) {
                         logger.debug("The gateway IP provided is " + gateway + " and netmask is " + netmask + ". The IP is either broadcast or network IP.");
                     }
-                    throw new InvalidParameterValueException("Invalid gateway IP provided. Either the IP is broadcast or network IP.");
+                    throw new InvalidParameterValueException("잘못된 게이트웨이 IP가 제공되었습니다. IP는 브로드캐스트 또는 네트워크 IP입니다.");
                 }
 
                 if (!NetUtils.isValidIp4(gateway)) {
-                    throw new InvalidParameterValueException("Invalid gateway");
+                    throw new InvalidParameterValueException("잘못된 게이트웨이");
                 }
                 if (!NetUtils.isValidIp4Netmask(netmask)) {
-                    throw new InvalidParameterValueException("Invalid netmask");
+                    throw new InvalidParameterValueException("잘못된 넷마스크");
                 }
 
                 cidr = NetUtils.ipAndNetMaskToCidr(gateway, netmask);
@@ -1621,13 +1640,13 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
 
         if (StringUtils.isNotBlank(isolatedPvlan)) {
             if (!_accountMgr.isRootAdmin(caller.getId())) {
-                throw new InvalidParameterValueException("Only ROOT admin is allowed to create Private VLAN network");
+                throw new InvalidParameterValueException("ROOT 관리자만 사설 VLAN 네트워크를 생성할 수 있습니다");
             }
             if (zone.getNetworkType() != NetworkType.Advanced || ntwkOff.getGuestType() == GuestType.Isolated) {
-                throw new InvalidParameterValueException("Can only support create Private VLAN network with advanced shared or L2 network!");
+                throw new InvalidParameterValueException("고급 공유 또는 L2 네트워크를 사용하여 전용 VLAN 네트워크 생성만 지원할 수 있습니다!");
             }
             if (ipv6) {
-                throw new InvalidParameterValueException("Can only support create Private VLAN network with IPv4!");
+                throw new InvalidParameterValueException("IPv4를 사용하여 전용 VLAN 네트워크 생성만 지원할 수 있습니다!");
             }
         }
 
@@ -1636,7 +1655,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         PVlanType privateVlanType = pvlanPair.second();
 
         if ((StringUtils.isNotBlank(secondaryVlanId) || privateVlanType != null) && StringUtils.isBlank(vlanId)) {
-            throw new InvalidParameterValueException("VLAN ID has to be set in order to configure a Private VLAN");
+            throw new InvalidParameterValueException("Private VLAN을 구성하려면 VLAN ID를 설정해야 합니다.");
         }
 
         performBasicPrivateVlanChecks(vlanId, secondaryVlanId, privateVlanType);
@@ -1647,12 +1666,12 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
 
         // Ignore vlanId if it is passed but specifyvlan=false in network offering
         if (ntwkOff.getGuestType() == GuestType.Shared && ! ntwkOff.isSpecifyVlan() && vlanId != null) {
-            throw new InvalidParameterValueException("Cannot specify vlanId when create a network from network offering with specifyvlan=false");
+            throw new InvalidParameterValueException("지정된 vlan=false를 사용하여 네트워크 제공에서 네트워크를 생성할 때 vlanId를 지정할 수 없습니다.");
         }
 
         // Don't allow to specify vlan if the caller is not ROOT admin
         if (!_accountMgr.isRootAdmin(caller.getId()) && (ntwkOff.isSpecifyVlan() || vlanId != null || bypassVlanOverlapCheck)) {
-            throw new InvalidParameterValueException("Only ROOT admin is allowed to specify vlanId or bypass vlan overlap check");
+            throw new InvalidParameterValueException("ROOT 관리자만 vlanId를 지정하거나 VLAN 중복 확인을 우회할 수 있습니다.");
         }
 
         if (ipv4) {
@@ -1663,18 +1682,18 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
                 int cidrSize = Integer.parseInt(cidrPair[1]);
 
                 if (cidrSize < _cidrLimit) {
-                    throw new InvalidParameterValueException("Cidr size can't be less than " + _cidrLimit);
+                    throw new InvalidParameterValueException("Cidr 크기는 " + _cidrLimit + "1보다 작을 수 없습니다.");
                 }
             }
         }
 
         Collection<String> ntwkProviders = _networkMgr.finalizeServicesAndProvidersForNetwork(ntwkOff, physicalNetworkId).values();
         if (ipv6 && providersConfiguredForExternalNetworking(ntwkProviders)) {
-            throw new InvalidParameterValueException("Cannot support IPv6 on network offering with external devices!");
+            throw new InvalidParameterValueException("외부 장치가 있는 네트워크에서는 IPv6를 지원할 수 없습니다!");
         }
 
         if (StringUtils.isNotBlank(secondaryVlanId) && providersConfiguredForExternalNetworking(ntwkProviders)) {
-            throw new InvalidParameterValueException("Cannot support private vlan on network offering with external devices!");
+            throw new InvalidParameterValueException("외부 장치를 사용하는 네트워크에서는 개인 VLAN을 지원할 수 없습니다!");
         }
 
         if (cidr != null && providersConfiguredForExternalNetworking(ntwkProviders)) {
@@ -1686,7 +1705,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
                 // cidr will not be null as it is generated from the super cidr of vpc.
                 // if cidr is not null and network is not part of vpc then throw the exception
                 if (vpcId == null) {
-                    throw new InvalidParameterValueException("Cannot specify CIDR when using network offering with external devices!");
+                    throw new InvalidParameterValueException("외부 장치와 함께 네트워크 제공을 사용하는 경우 CIDR을 지정할 수 없습니다!");
                 }
             }
         }
@@ -1705,7 +1724,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
 
         // Can add vlan range only to the network which allows it
         if (createVlan && !ntwkOff.isSpecifyIpRanges()) {
-            throwInvalidIdException("Network offering with specified id doesn't support adding multiple ip ranges", ntwkOff.getUuid(), NETWORK_OFFERING_ID);
+            throwInvalidIdException("지정된 ID를 가진 네트워크 오퍼링은 여러 IP 범위 추가를 지원하지 않습니다.", ntwkOff.getUuid(), NETWORK_OFFERING_ID);
         }
 
         Pair<Integer, Integer> interfaceMTUs = validateMtuConfig(publicMtu, privateMtu, zone.getId());
@@ -1714,10 +1733,10 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         Network associatedNetwork = null;
         if (associatedNetworkId != null) {
             if (vlanId != null) {
-                throw new InvalidParameterValueException("Associated network and vlanId are mutually exclusive");
+                throw new InvalidParameterValueException("연결된 네트워크와 vlanId는 상호 배타적입니다.");
             }
             if (!_networkMgr.isSharedNetworkWithoutSpecifyVlan(ntwkOff)) {
-                throw new InvalidParameterValueException("Can only create Shared network with associated network if specifyVlan is false");
+                throw new InvalidParameterValueException("지정Vlan이 false인 경우 연결된 네트워크와 공유 네트워크만 생성할 수 있습니다.");
             }
             associatedNetwork = implementAssociatedNetwork(associatedNetworkId, caller, owner, zone,
                     aclType == ACLType.Domain ? domainId : null,
@@ -1753,7 +1772,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         NsxProviderVO nsxProviderVO = nsxProviderDao.findByZoneId(zoneId);
         if (Objects.nonNull(nsxProviderVO) && List.of(GuestType.L2, GuestType.Shared).contains(guestType)) {
             throw new InvalidParameterValueException(
-                    String.format("Creation of %s networks is not supported in NSX enabled zone %s", guestType.name(), zoneName)
+                    String.format("NSX 지원 영역 %s에서는 %s 네트워크 생성이 지원되지 않습니다.", zoneName,  guestType.name())
             );
         }
     }
@@ -1882,7 +1901,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
     private void validateZoneAvailability(Account caller, DataCenter zone) {
         if (Grouping.AllocationState.Disabled == zone.getAllocationState() && !_accountMgr.isRootAdmin(caller.getId())) {
             // See DataCenterVO.java
-            PermissionDeniedException ex = new PermissionDeniedException("Cannot perform this operation since specified Zone is currently disabled");
+            PermissionDeniedException ex = new PermissionDeniedException("지정된 zone이 현재 비활성화되어 있으므로 이 작업을 수행할 수 없습니다.");
             ex.addProxyObject(zone.getUuid(), "zoneId");
             throw ex;
         }
@@ -2128,7 +2147,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
             try {
                 Integer.parseInt(secondaryVlanId);
             } catch (NumberFormatException e) {
-                throw new CloudRuntimeException("The secondary VLAN ID: " + secondaryVlanId + " is not in numeric format", e);
+                throw new CloudRuntimeException("보조 VLAN ID: \" + secondVlanId + \"는 숫자 형식이 아닙니다.", e);
             }
         }
 
@@ -2140,11 +2159,11 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
      */
     protected void performBasicPrivateVlanChecks(String vlanId, String secondaryVlanId, PVlanType privateVlanType) {
         if (StringUtils.isNotBlank(vlanId) && StringUtils.isBlank(secondaryVlanId) && privateVlanType != null && privateVlanType != PVlanType.Promiscuous) {
-            throw new InvalidParameterValueException("Private VLAN ID has not been set, therefore Promiscuous type is expected");
+            throw new InvalidParameterValueException("Private VLAN ID가 설정되지 않았으므로 Promiscuous 유형이 예상됩니다.");
         } else if (StringUtils.isNoneBlank(vlanId, secondaryVlanId) && !vlanId.equalsIgnoreCase(secondaryVlanId) && privateVlanType == PVlanType.Promiscuous) {
-            throw new InvalidParameterValueException("Private VLAN type is set to Promiscuous, but VLAN ID and Secondary VLAN ID differ");
+            throw new InvalidParameterValueException("Private VLAN 유형이 Promiscuous로 설정되어 있지만 VLAN ID와 보조 VLAN ID가 다릅니다.");
         } else if (StringUtils.isNoneBlank(vlanId, secondaryVlanId) && privateVlanType != null && privateVlanType != PVlanType.Promiscuous && vlanId.equalsIgnoreCase(secondaryVlanId)) {
-            throw new InvalidParameterValueException("Private VLAN type is set to " + privateVlanType + ", but VLAN ID and Secondary VLAN ID are equal");
+            throw new InvalidParameterValueException("Private VLAN 유형이 \" + privateVlanType + \"로 설정되어 있지만 VLAN ID와 Secondary VLAN ID가 동일합니다.");
         }
     }
 
@@ -4333,6 +4352,8 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
             });
 
             _physicalNetworkDao.releaseFromLockTable(network.getId());
+        } else {
+            throw new InvalidParameterValueException("유효한 VLAN 범위를 제공하십시오. VLAN 범위의 쉼표로 구분된 목록이어야 합니다. 예 500-500,600-601 ");
         }
     }
 
@@ -4361,43 +4382,43 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
                 // fail if zone already contains VNI, need to be unique per zone.
                 // since adding a range adds each VNI to the database, need only check min/max
                 for (String vnet : VnetRange) {
-                    logger.debug("Looking to see if VNI " + vnet + " already exists on another network in zone " + network.getDataCenterId());
+                    logger.debug("VNI " + vnet + "가 " + network.getDataCenterId() + " zone의 다른 네트워크에 이미 존재하는지 확인 중입니다.");
                     List<DataCenterVnetVO> vnis = _dcVnetDao.findVnet(network.getDataCenterId(), vnet);
                     if (vnis != null && !vnis.isEmpty()) {
                         for (DataCenterVnetVO vni : vnis) {
                             if (vni.getPhysicalNetworkId() != network.getId()) {
                                 logger.debug("VNI " + vnet + " already exists on another network in zone, please specify a unique range");
-                                throw new InvalidParameterValueException("VNI " + vnet + " already exists on another network in zone, please specify a unique range");
+                                throw new InvalidParameterValueException("VNI " + vnet + "가 영역의 다른 네트워크에 이미 존재합니다. 고유한 범위를 지정하십시오.");
                             }
                         }
                     }
                 }
             }
-            String rangeMessage = " between " + minVnet + " and " + maxVnet;
+            String rangeMessage = minVnet + " 와 " + maxVnet + " 사이";
             if (VnetRange.length == 1 && VnetRange[0].equals("")) {
                 return vlanTokens;
             }
             if (VnetRange.length < 2) {
-                throw new InvalidParameterValueException("Please provide valid vnet range. vnet range should be a comma separated list of vlan ranges. example 500-500,600-601" + rangeMessage);
+                throw new InvalidParameterValueException("유효한 vnet 범위를 제공하십시오. vnet 범위는 VLAN 범위의 쉼표로 구분된 목록이어야 합니다. 예 500-500,600-601 " + rangeMessage);
             }
 
             if (VnetRange[0] == null || VnetRange[1] == null) {
-                throw new InvalidParameterValueException("Please provide valid vnet range" + rangeMessage);
+                throw new InvalidParameterValueException("유효한 vnet 범위를 입력하세요. " + rangeMessage);
             }
 
             try {
                 StartVnet = Integer.parseInt(VnetRange[0]);
                 EndVnet = Integer.parseInt(VnetRange[1]);
             } catch (NumberFormatException e) {
-                logger.warn("Unable to parse vnet range:", e);
-                throw new InvalidParameterValueException("Please provide valid vnet range. The vnet range should be a comma separated list example 2001-2012,3000-3005." + rangeMessage);
+                logger.warn("Vnet 범위를 구문 분석할 수 없습니다.:", e);
+                throw new InvalidParameterValueException("유효한 vnet 범위를 제공하십시오. vnet 범위는 쉼표로 구분된 목록(예: 2001-2012,3000-3005)이어야 합니다." + rangeMessage);
             }
             if (StartVnet < minVnet || EndVnet > maxVnet) {
-                throw new InvalidParameterValueException("Vnet range has to be" + rangeMessage);
+                throw new InvalidParameterValueException("Vnet 범위는 다음과 같아야 합니다." + rangeMessage);
             }
 
             if (StartVnet > EndVnet) {
-                throw new InvalidParameterValueException("Vnet range has to be" + rangeMessage + " and start range should be lesser than or equal to stop range");
+                throw new InvalidParameterValueException("Vnet 범위는 " + rangeMessage + "여야 하며 시작 범위는 중지 범위보다 작거나 같아야 합니다.");
             }
             vlanTokens.add(new Pair<Integer, Integer>(StartVnet, EndVnet));
         }
@@ -5682,14 +5703,14 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
             // numeric vlan or vlan URI are ok for now
             // TODO make a test for any supported scheme
             if (!(tiep == BroadcastDomainType.Vlan || tiep == BroadcastDomainType.Lswitch)) {
-                throw new InvalidParameterValueException("unsupported type of broadcastUri specified: " + broadcastUriString);
+                throw new InvalidParameterValueException("지원되지 않는 BroadcastUri 유형이 지정되었습니다.: " + broadcastUriString);
             }
         } else if (associatedNetworkId != null) {
             DataCenter zone = _dcDao.findById(pNtwk.getDataCenterId());
             Network associatedNetwork = implementAssociatedNetwork(associatedNetworkId, caller, owner, zone, null, owner.getAccountId(), cidr, startIp, endIp);
             uriString = associatedNetwork.getBroadcastUri().toString();
         } else {
-            throw new InvalidParameterValueException("One of uri and associatedNetworkId must be passed");
+            throw new InvalidParameterValueException("uri 및 AssociatedNetworkId 중 하나를 전달해야 합니다.");
         }
 
         final NetworkOfferingVO ntwkOffFinal = ntwkOff;

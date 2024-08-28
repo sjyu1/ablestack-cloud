@@ -532,14 +532,14 @@
             <router-link :to="{ path: (resource.templateformat === 'ISO' ? '/iso/' : '/template/') + resource.templateid }">{{ resource.templatedisplaytext || resource.templatename || resource.templateid }} </router-link>
           </div>
         </div>
-        <div class="resource-detail-item" v-if="resource.isoid">
+        <!-- <div class="resource-detail-item" v-if="resource.isoid">
           <div class="resource-detail-item__label">{{ $t('label.isoname') }}</div>
           <div class="resource-detail-item__details">
             <resource-icon v-if="resource.icon" :image="getImage(resource.icon.base64image)" size="1x" style="margin-right: 5px"/>
             <UsbOutlined v-else />
               <router-link :to="{ path: '/iso/' + resource.isoid }">{{ resource.isodisplaytext || resource.isoname || resource.isoid }} </router-link>
           </div>
-        </div>
+        </div> -->
 
         <div class="resource-detail-item" v-if="resource.volumeId">
           <div class="resource-detail-item__label">{{ $t('label.gule.images') }}</div>
@@ -683,8 +683,9 @@
               <resource-icon :image="getImage(images.account)" size="1x" style="margin-right: 5px"/>
             </span>
             <user-outlined v-else />
-            <router-link v-if="!isStatic && $store.getters.userInfo.roletype !== 'User'" :to="{ path: '/account', query: { name: resource.account, domainid: resource.domainid } }">{{ resource.account }}</router-link>
-            <span v-else>{{ resource.account }}</span>
+            <!-- <router-link v-if="!isStatic && $store.getters.userInfo.roletype !== 'User'" :to="{ path: '/account', query: { name: resource.account, domainid: resource.domainid } }">{{ resource.account }}</router-link>
+            <span v-else>{{ resource.account }}</span> -->
+            <span>{{ resource.account }}</span>
           </div>
         </div>
         <div class="resource-detail-item" v-if="resource.roleid">
@@ -700,8 +701,9 @@
           <div class="resource-detail-item__details">
             <resource-icon v-if="images.domain" :image="getImage(images.domain)" size="1x" style="margin-right: 5px"/>
             <block-outlined v-else />
-            <router-link v-if="!isStatic && $store.getters.userInfo.roletype !== 'User'" :to="{ path: '/domain/' + resource.domainid, query: { tab: 'details'}  }">{{ resource.domain || resource.domainid }}</router-link>
-            <span v-else>{{ resource.domain || resource.domainid }}</span>
+            <!-- <router-link v-if="!isStatic && $store.getters.userInfo.roletype !== 'User'" :to="{ path: '/domain/' + resource.domainid, query: { tab: 'details'}  }">{{ resource.domain || resource.domainid }}</router-link> -->
+            <!-- <span v-else>{{ resource.domain || resource.domainid }}</span> -->
+            <span>{{ resource.domain || resource.domainid }}</span>
           </div>
         </div>
         <div class="resource-detail-item" v-if="resource.payloadurl">
@@ -796,7 +798,7 @@
         </div>
       </div>
 
-      <div class="account-center-tags" v-if="!isStatic && resourceType && tagsSupportingResourceTypes.includes(this.resourceType) && 'listTags' in $store.getters.apis">
+      <!-- <div class="account-center-tags" v-if="!isStatic && resourceType && tagsSupportingResourceTypes.includes(this.resourceType) && 'listTags' in $store.getters.apis">
         <a-divider/>
         <a-spin :spinning="loadingTags">
           <div class="title">{{ $t('label.tags') }}</div>
@@ -834,7 +836,7 @@
             </a-tag>
           </div>
         </a-spin>
-      </div>
+      </div> -->
     </a-card>
   </a-spin>
 </template>

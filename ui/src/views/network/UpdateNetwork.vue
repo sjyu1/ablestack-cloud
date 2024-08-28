@@ -80,7 +80,7 @@
             </a-col>
           </a-row>
         </div>
-        <a-form-item name="sourcenatipaddress" ref="sourcenatipaddress">
+        <!-- <a-form-item name="sourcenatipaddress" ref="sourcenatipaddress">
           <template #label>
             <tooltip-label :title="$t('label.sourcenatipaddress')" :tooltip="apiParams.sourcenatipaddress.description"/>
           </template>
@@ -97,7 +97,7 @@
             :placeholder="apiParams.sourcenatipaddress.description"
             v-focus="true"
             @change="sourcenatchange = form.sourcenatipaddress.length > 0"/>
-        </a-form-item>
+        </a-form-item> -->
         <a-form-item name="networkofferingid" ref="networkofferingid" v-if="isUpdatingIsolatedNetwork">
           <template #label>
             <tooltip-label :title="$t('label.networkofferingid')" :tooltip="apiParams.networkofferingid.description"/>
@@ -126,22 +126,21 @@
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item name="guestvmcidr" ref="guestvmcidr">
+        <!-- <a-form-item name="guestvmcidr" ref="guestvmcidr">
           <template #label>
             <tooltip-label :title="$t('label.guestvmcidr')" :tooltip="apiParams.guestvmcidr.description"/>
           </template>
           <a-input
             v-model:value="form.guestvmcidr"
-            :placeholder="apiParams.guestvmcidr.description"
-            @change="(e) => { cidrChanged = e.target.value !== resource.cidr }" />
+            :placeholder="apiParams.guestvmcidr.description" />
         </a-form-item>
         <a-form-item name="changecidr" ref="changecidr" v-if="cidrChanged">
           <template #label>
             <tooltip-label :title="$t('label.changecidr')" :tooltip="apiParams.changecidr.description"/>
           </template>
           <a-switch v-model:checked="form.changecidr" />
-        </a-form-item>
-        <a-form-item name="networkdomain" ref="networkdomain" v-if="isUpdatingIsolatedNetwork">
+        </a-form-item> -->
+        <!-- <a-form-item name="networkdomain" ref="networkdomain" v-if="isUpdatingIsolatedNetwork">
           <template #label>
             <tooltip-label :title="$t('label.networkdomain')" :tooltip="apiParams.guestvmcidr.description"/>
           </template>
@@ -149,7 +148,7 @@
             v-model:value="form.networkdomain"
             :placeholder="apiParams.networkdomain.description"
             v-focus="true" />
-        </a-form-item>
+        </a-form-item> -->
         <a-form-item name="updateinsequence" ref="updateinsequence" v-if="resource.redundantrouter">
           <template #label>
             <tooltip-label :title="$t('label.updateinsequence')" :tooltip="apiParams.updateinsequence.description"/>

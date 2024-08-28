@@ -53,31 +53,31 @@ export default {
     name: 'resources',
     component: shallowRef(defineAsyncComponent(() => import('@/views/infra/Resources.vue')))
   }, {
-    name: 'settings',
-    component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue')))
-  }, {
-    name: 'drs',
-    component: shallowRef(defineAsyncComponent(() => import('@/views/infra/ClusterDRSTab.vue')))
-  }, {
-    name: 'comments',
-    component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
-  },
-  {
+  //   name: 'settings',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue')))
+  // }, {
+  //   name: 'drs',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/ClusterDRSTab.vue')))
+  // }, {
+    // name: 'comments',
+    // component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+  // },
+  // {
     name: 'events',
     resourceType: 'Cluster',
     component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
     show: () => { return 'listEvents' in store.getters.apis }
   }],
   actions: [
-    {
-      api: 'addCluster',
-      icon: 'plus-outlined',
-      label: 'label.add.cluster',
-      docHelp: 'adminguide/installguide/configuration.html#adding-a-cluster',
-      listView: true,
-      popup: true,
-      component: shallowRef(defineAsyncComponent(() => import('@/views/infra/ClusterAdd.vue')))
-    },
+    // {
+    //   api: 'addCluster',
+    //   icon: 'plus-outlined',
+    //   label: 'label.add.cluster',
+    //   docHelp: 'adminguide/installguide/configuration.html#adding-a-cluster',
+    //   listView: true,
+    //   popup: true,
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/ClusterAdd.vue')))
+    // },
     {
       api: 'updateCluster',
       icon: 'edit-outlined',
@@ -105,34 +105,34 @@ export default {
       defaultArgs: { allocationstate: 'Disabled' },
       show: (record) => { return record.allocationstate === 'Enabled' }
     },
-    {
-      api: 'updateCluster',
-      icon: 'plus-square-outlined',
-      label: 'label.action.manage.cluster',
-      message: 'message.action.manage.cluster',
-      dataView: true,
-      defaultArgs: { managedstate: 'Managed' },
-      show: (record) => { return record.managedstate !== 'Managed' }
-    },
-    {
-      api: 'updateCluster',
-      icon: 'minus-square-outlined',
-      label: 'label.action.unmanage.cluster',
-      message: 'message.action.unmanage.cluster',
-      dataView: true,
-      defaultArgs: { managedstate: 'Unmanaged' },
-      show: (record) => { return record.managedstate === 'Managed' }
-    },
-    {
-      api: 'executeDRS',
-      icon: 'gold-outlined',
-      label: 'label.action.drs.cluster',
-      message: 'message.action.drs.cluster',
-      dataView: true,
-      defaultArgs: { iterations: null },
-      args: ['iterations'],
-      show: (record) => { return record.managedstate === 'Managed' }
-    },
+    // {
+    //   api: 'updateCluster',
+    //   icon: 'plus-square-outlined',
+    //   label: 'label.action.manage.cluster',
+    //   message: 'message.action.manage.cluster',
+    //   dataView: true,
+    //   defaultArgs: { managedstate: 'Managed' },
+    //   show: (record) => { return record.managedstate !== 'Managed' }
+    // },
+    // {
+    //   api: 'updateCluster',
+    //   icon: 'minus-square-outlined',
+    //   label: 'label.action.unmanage.cluster',
+    //   message: 'message.action.unmanage.cluster',
+    //   dataView: true,
+    //   defaultArgs: { managedstate: 'Unmanaged' },
+    //   show: (record) => { return record.managedstate === 'Managed' }
+    // },
+    // {
+    //   api: 'executeDRS',
+    //   icon: 'gold-outlined',
+    //   label: 'label.action.drs.cluster',
+    //   message: 'message.action.drs.cluster',
+    //   dataView: true,
+    //   defaultArgs: { iterations: null },
+    //   args: ['iterations'],
+    //   show: (record) => { return record.managedstate === 'Managed' }
+    // },
     {
       api: 'enableOutOfBandManagementForCluster',
       icon: 'plus-circle-outlined',
@@ -197,51 +197,51 @@ export default {
         }
       }
     },
-    {
-      api: 'startRollingMaintenance',
-      icon: 'setting-outlined',
-      label: 'label.start.rolling.maintenance',
-      message: 'label.start.rolling.maintenance',
-      dataView: true,
-      args: ['timeout', 'payload', 'forced', 'clusterids'],
-      mapping: {
-        clusterids: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'enableBalancingCluster',
-      icon: 'control-outlined',
-      label: 'label.action.enableBalancing.cluster',
-      message: 'message.action.enableBalancing.cluster',
-      dataView: true,
-      show: (record, store) => {
-        return store.features.balancingserviceenabled && (!record?.resourcedetails?.resourceBalancingEnabled || record?.resourcedetails?.resourceBalancingEnabled === 'false')
-      },
-      args: ['clusterid'],
-      mapping: {
-        clusterid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'disableBalancingCluster',
-      icon: 'control-outlined',
-      label: 'label.action.disableBalancing.cluster',
-      message: 'message.action.disableBalancing.cluster',
-      dataView: true,
-      show: (record, store) => {
-        return store.features.balancingserviceenabled && (record?.resourcedetails?.resourceBalancingEnabled && !(record?.resourcedetails?.resourceBalancingEnabled === 'false'))
-      },
-      args: ['clusterid'],
-      mapping: {
-        clusterid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
+    // {
+    //   api: 'startRollingMaintenance',
+    //   icon: 'setting-outlined',
+    //   label: 'label.start.rolling.maintenance',
+    //   message: 'label.start.rolling.maintenance',
+    //   dataView: true,
+    //   args: ['timeout', 'payload', 'forced', 'clusterids'],
+    //   mapping: {
+    //     clusterids: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'enableBalancingCluster',
+    //   icon: 'control-outlined',
+    //   label: 'label.action.enableBalancing.cluster',
+    //   message: 'message.action.enableBalancing.cluster',
+    //   dataView: true,
+    //   show: (record, store) => {
+    //     return store.features.balancingserviceenabled && (!record?.resourcedetails?.resourceBalancingEnabled || record?.resourcedetails?.resourceBalancingEnabled === 'false')
+    //   },
+    //   args: ['clusterid'],
+    //   mapping: {
+    //     clusterid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'disableBalancingCluster',
+    //   icon: 'control-outlined',
+    //   label: 'label.action.disableBalancing.cluster',
+    //   message: 'message.action.disableBalancing.cluster',
+    //   dataView: true,
+    //   show: (record, store) => {
+    //     return store.features.balancingserviceenabled && (record?.resourcedetails?.resourceBalancingEnabled && !(record?.resourcedetails?.resourceBalancingEnabled === 'false'))
+    //   },
+    //   args: ['clusterid'],
+    //   mapping: {
+    //     clusterid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
     {
       api: 'deleteCluster',
       icon: 'delete-outlined',

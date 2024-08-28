@@ -17,9 +17,9 @@
 
 <template>
   <a-spin :spinning="loading">
-    <div v-if="!isNormalUserOrProject">
+    <!-- <div v-if="!isNormalUserOrProject">
       <ownership-selection @fetch-owner="fetchOwnerOptions" />
-    </div>
+    </div> -->
     <a-form
       class="form"
       layout="vertical"
@@ -93,9 +93,7 @@
           <template #label>
             <tooltip-label :title="$t('label.sizegb')" :tooltip="apiParams.size.description"/>
           </template>
-          <a-input
-            v-model:value="form.size"
-            :placeholder="apiParams.size.description"/>
+          <a-input v-model:value="form.size" oninput="this.value=this.value.replace(/[^0-9.]/g,'')" maxlength="4" :placeholder="apiParams.size.description"/>
         </a-form-item>
       </span>
       <span v-if="isCustomizedDiskIOps">

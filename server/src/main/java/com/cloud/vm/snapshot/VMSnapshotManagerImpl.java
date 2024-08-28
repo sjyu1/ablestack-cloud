@@ -111,6 +111,7 @@ import com.cloud.utils.db.TransactionCallbackWithException;
 import com.cloud.utils.db.TransactionCallbackWithExceptionNoReturn;
 import com.cloud.utils.db.TransactionStatus;
 import com.cloud.utils.exception.CloudRuntimeException;
+import com.cloud.utils.net.NetUtils;
 import com.cloud.vm.UserVmDetailVO;
 import com.cloud.vm.UserVmManager;
 import com.cloud.vm.UserVmVO;
@@ -331,23 +332,25 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         // check if VM exists
         UserVmVO userVmVo = _userVMDao.findById(vmId);
         if (userVmVo == null) {
-            throw new InvalidParameterValueException("Creating VM snapshot failed due to VM:" + vmId + " is a system VM or does not exist");
+            throw new InvalidParameterValueException("VM으로 인해 VM 스냅샷 생성 실패: " + vmId + "는 시스템 VM이거나 존재하지 않습니다.");
         }
 
         // VM snapshot with memory is not supported for VGPU Vms
         if (snapshotMemory && _serviceOfferingDetailsDao.findDetail(userVmVo.getServiceOfferingId(), GPU.Keys.vgpuType.toString()) != null) {
-            throw new InvalidParameterValueException("VM snapshot with MEMORY is not supported for vGPU enabled VMs.");
+            throw new InvalidParameterValueException("vGPU 지원 VM에는 MEMORY가 포함된 VM 스냅샷이 지원되지 않습니다.");
         }
 
         // check hypervisor capabilities
         if (!_hypervisorCapabilitiesDao.isVmSnapshotEnabled(userVmVo.getHypervisorType(), "default"))
-            throw new InvalidParameterValueException("VM snapshot is not enabled for hypervisor type: " + userVmVo.getHypervisorType());
+            throw new InvalidParameterValueException("하이퍼바이저 유형에는 VM 스냅샷이 활성화되지 않았습니다.: " + userVmVo.getHypervisorType());
 
-        // parameter length check
-        if (vsDisplayName != null && vsDisplayName.length() > 255)
-            throw new InvalidParameterValueException("Creating VM snapshot failed due to length of VM snapshot vsDisplayName should not exceed 255");
-        if (vsDescription != null && vsDescription.length() > 255)
-            throw new InvalidParameterValueException("Creating VM snapshot failed due to length of VM snapshot vsDescription should not exceed 255");
+        // name, description parameter length check
+        if (vsDisplayName != null && !NetUtils.verifyDomainNameLabel(vsDisplayName, true)) {
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+        if (vsDescription != null && !NetUtils.verifyDomainNameLabel(vsDescription, true)) {
+            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
 
         // VM snapshot display name must be unique for a VM
         String timeString = DateUtil.getDateDisplayString(DateUtil.GMT_TIMEZONE, new Date(), DateUtil.YYYYMMDD_FORMAT);
@@ -356,27 +359,27 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             vsDisplayName = vmSnapshotName;
         }
         if (_vmSnapshotDao.findByName(vmId, vsDisplayName) != null) {
-            throw new InvalidParameterValueException("Creating VM snapshot failed due to VM snapshot with name" + vsDisplayName + "  already exists");
+            throw new InvalidParameterValueException("이름이 " + vsDisplayName + "인 VM 스냅샷이 이미 존재하므로 VM 스냅샷 생성에 실패했습니다.");
         }
 
         // check VM state
         if (userVmVo.getState() != VirtualMachine.State.Running && userVmVo.getState() != VirtualMachine.State.Stopped) {
-            throw new InvalidParameterValueException("Creating vm snapshot failed due to VM:" + vmId + " is not in the running or Stopped state");
+            throw new InvalidParameterValueException("VM으로 인해 vm 스냅샷 생성 실패: " + vmId + "가 실행 중 또는 중지됨 상태가 아닙니다.");
         }
 
         if(snapshotMemory && userVmVo.getState() != VirtualMachine.State.Running){
-            throw new InvalidParameterValueException("Can not snapshot memory when VM is not in Running state");
+            throw new InvalidParameterValueException("VM이 실행 중 상태가 아닌 경우 메모리 스냅샷을 작성할 수 없습니다.");
         }
 
         List<VolumeVO> rootVolumes = _volumeDao.findReadyRootVolumesByInstance(userVmVo.getId());
         if (rootVolumes == null || rootVolumes.isEmpty()) {
-            throw new CloudRuntimeException("Unable to find root volume for the user vm:" + userVmVo.getUuid());
+            throw new CloudRuntimeException("사용자 VM의 루트 볼륨을 찾을 수 없습니다.:" + userVmVo.getUuid());
         }
 
         VolumeVO rootVolume = rootVolumes.get(0);
         StoragePoolVO rootVolumePool = _storagePoolDao.findById(rootVolume.getPoolId());
         if (rootVolumePool == null) {
-            throw new CloudRuntimeException("Unable to find root volume storage pool for the user vm:" + userVmVo.getUuid());
+            throw new CloudRuntimeException("사용자 VM에 대한 루트 볼륨 스토리지 풀을 찾을 수 없습니다.:" + userVmVo.getUuid());
         }
 
         if (userVmVo.getHypervisorType() == HypervisorType.KVM) {
@@ -387,14 +390,14 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             VMSnapshotStrategy snapshotStrategy = storageStrategyFactory.getVmSnapshotStrategy(userVmVo.getId(), rootVolumePool.getId(), snapshotMemory);
 
             if (snapshotStrategy == null) {
-                String message = "KVM does not support the type of snapshot requested";
+                String message = "KVM은 요청된 스냅샷 유형을 지원하지 않습니다.";
                 logger.debug(message);
                 throw new CloudRuntimeException(message);
             }
 
             // disallow KVM snapshots for VMs if root volume is encrypted (Qemu crash)
             if (rootVolume.getPassphraseId() != null && userVmVo.getState() == VirtualMachine.State.Running && Boolean.TRUE.equals(snapshotMemory)) {
-                throw new UnsupportedOperationException("Cannot create VM memory snapshots on KVM from encrypted root volumes");
+                throw new UnsupportedOperationException("암호화된 루트 볼륨에서 KVM에 VM 메모리 스냅샷을 생성할 수 없습니다.");
             }
 
         }
@@ -404,7 +407,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
 
         // check max snapshot limit for per VM
         if (_vmSnapshotDao.findByVm(vmId).size() >= _vmSnapshotMax) {
-            throw new CloudRuntimeException("Creating vm snapshot failed due to a VM can just have : " + _vmSnapshotMax + " VM snapshots. Please delete old ones");
+            throw new CloudRuntimeException("VM에 " + _vmSnapshotMax + " VM 스냅샷이 있을 수 있기 때문에 VM 스냅샷 생성에 실패했습니다. 오래된 것을 삭제해주세요.");
         }
 
         // check if there are active volume snapshots tasks
@@ -413,17 +416,17 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             List<SnapshotVO> activeSnapshots =
                 _snapshotDao.listByInstanceId(volume.getInstanceId(), Snapshot.State.Creating, Snapshot.State.CreatedOnPrimary, Snapshot.State.BackingUp);
             if (activeSnapshots.size() > 0) {
-                throw new CloudRuntimeException("There is other active volume snapshot tasks on the instance to which the volume is attached, please try again later.");
+                throw new CloudRuntimeException("볼륨이 연결된 인스턴스에 다른 활성 볼륨 스냅샷 작업이 있습니다. 나중에 다시 시도하세요.");
             }
             DiskOffering offering = _diskOfferingDao.findById(volume.getDiskOfferingId());
             if (volume.getVolumeType() == Volume.Type.DATADISK && offering.getShareable()) {
-                throw new CloudRuntimeException("If it is a shared volume, you cannot create a VM snapshot.");
+                throw new CloudRuntimeException("공유 볼륨인 경우 VM 스냅샷을 생성할 수 없습니다.");
             }
         }
 
         // check if there are other active VM snapshot tasks
         if (hasActiveVMSnapshotTasks(vmId)) {
-            throw new CloudRuntimeException("There is other active vm snapshot tasks on the instance, please try again later");
+            throw new CloudRuntimeException("인스턴스에 다른 활성 VM 스냅샷 작업이 있습니다. 나중에 다시 시도해 주세요.");
         }
 
         VMSnapshot.Type vmSnapshotType = VMSnapshot.Type.Disk;
@@ -438,7 +441,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             return createAndPersistVMSnapshot(userVmVo, vsDescription, vmSnapshotName, vsDisplayName, vmSnapshotType);
         } catch (Exception e) {
             String msg = e.getMessage();
-            logger.error("Create vm snapshot record failed for vm: " + vmId + " due to: " + msg);
+            logger.error("vm에 대한 vm 스냅샷 레코드 생성 실패: " + vmId + " 원인: " + msg);
         }
         return null;
     }

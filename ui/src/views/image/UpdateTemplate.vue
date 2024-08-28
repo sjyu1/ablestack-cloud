@@ -49,7 +49,7 @@
           <a-switch v-model:checked="form.passwordenabled" />
         </a-form-item>
 
-        <a-row :gutter="12" v-if="['KVM', 'VMware'].includes(resource.hypervisor)">
+        <!-- <a-row :gutter="12" v-if="['KVM', 'VMware'].includes(resource.hypervisor)">
           <a-col :md="24" :lg="resource.hypervisor === 'KVM' ? 24 : 12" v-if="resource.hypervisor === 'KVM' || (resource.hypervisor === 'VMware' && !resource.deployasis)">
             <a-form-item name="rootDiskController" ref="rootDiskController" :label="$t('label.rootdiskcontrollertype')">
               <a-select
@@ -73,7 +73,7 @@
               </a-select>
             </a-form-item>
           </a-col>
-        </a-row>
+        </a-row> -->
         <a-row :gutter="12" v-if="resource.hypervisor !== 'VMware' || (resource.hypervisor === 'VMware' && !resource.deployasis)">
           <a-col :md="24" :lg="24">
             <a-form-item name="keyboard" ref="keyboard" v-if="resource.hypervisor === 'VMware' && !resource.deployasis" :label="$t('label.keyboardtype')">
@@ -97,14 +97,14 @@
                 v-model:value="form.ostypeid"
                 :loading="osTypes.loading"
                 :placeholder="apiParams.ostypeid.description">
-                <a-select-option v-for="opt in osTypes.opts" :key="opt.id" :label="opt.name || opt.description">
+                <a-select-option v-for="opt in osTypes.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="opt.id" :label="opt.name || opt.description">
                   {{ opt.name || opt.description }}
                 </a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
         </a-row>
-        <a-row :gutter="12">
+        <!-- <a-row :gutter="12">
           <a-col :md="24" :lg="12">
             <a-form-item
               name="userdataid"
@@ -144,14 +144,14 @@
               </a-select>
             </a-form-item>
           </a-col>
-        </a-row>
+        </a-row> -->
         <a-form-item name="isdynamicallyscalable" ref="isdynamicallyscalable">
           <template #label>
             <tooltip-label :title="$t('label.isdynamicallyscalable')" :tooltip="apiParams.isdynamicallyscalable.description"/>
           </template>
           <a-switch v-model:checked="form.isdynamicallyscalable" />
         </a-form-item>
-        <a-form-item name="templatetype" ref="templatetype" v-if="isAdmin">
+        <!-- <a-form-item name="templatetype" ref="templatetype" v-if="isAdmin">
           <template #label>
             <tooltip-label :title="$t('label.templatetype')" :tooltip="apiParams.templatetype.description"/>
           </template>
@@ -176,8 +176,8 @@
               {{ opt }}
             </a-select-option>
           </a-select>
-        </a-form-item>
-        <a-form-item ref="templatetag" name="templatetag" v-if="isAdmin">
+        </a-form-item> -->
+        <!-- <a-form-item ref="templatetag" name="templatetag" v-if="isAdmin">
           <template #label>
             <tooltip-label :title="$t('label.templatetag')" :tooltip="apiParams.templatetag.description"/>
           </template>
@@ -185,7 +185,7 @@
             v-model:value="form.templatetag"
             :placeholder="apiParams.templatetag.description"
             v-focus="currentForm !== 'Create'"/>
-        </a-form-item>
+        </a-form-item> -->
 
         <div :span="24" class="action-button">
           <a-button @click="closeAction">{{ $t('label.cancel') }}</a-button>

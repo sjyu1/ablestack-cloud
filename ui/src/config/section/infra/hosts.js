@@ -53,9 +53,9 @@ export default {
     resourceType: 'Host',
     component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
     show: () => { return 'listEvents' in store.getters.apis }
-  }, {
-    name: 'comments',
-    component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+  // }, {
+  //   name: 'comments',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
   }],
   related: [{
     name: 'vm',
@@ -63,15 +63,15 @@ export default {
     param: 'hostid'
   }],
   actions: [
-    {
-      api: 'addHost',
-      icon: 'plus-outlined',
-      label: 'label.add.host',
-      docHelp: 'adminguide/installguide/configuration.html#adding-a-host',
-      listView: true,
-      popup: true,
-      component: shallowRef(defineAsyncComponent(() => import('@/views/infra/HostAdd.vue')))
-    },
+    // {
+    //   api: 'addHost',
+    //   icon: 'plus-outlined',
+    //   label: 'label.add.host',
+    //   docHelp: 'adminguide/installguide/configuration.html#adding-a-host',
+    //   listView: true,
+    //   popup: true,
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/HostAdd.vue')))
+    // },
     {
       api: 'updateHost',
       icon: 'edit-outlined',
@@ -80,30 +80,30 @@ export default {
       popup: true,
       component: shallowRef(defineAsyncComponent(() => import('@/views/infra/HostUpdate')))
     },
-    {
-      api: 'provisionCertificate',
-      icon: 'safety-certificate-outlined',
-      label: 'label.action.secure.host',
-      message: 'message.action.secure.host',
-      dataView: true,
-      show: (record) => {
-        return record.hypervisor === 'KVM' || record.hypervisor === store.getters.customHypervisorName
-      },
-      args: ['hostid'],
-      mapping: {
-        hostid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'reconnectHost',
-      icon: 'forward-outlined',
-      label: 'label.action.force.reconnect',
-      message: 'message.confirm.action.force.reconnect',
-      dataView: true,
-      show: (record) => { return ['Disconnected', 'Up', 'Alert'].includes(record.state) }
-    },
+    // {
+    //   api: 'provisionCertificate',
+    //   icon: 'safety-certificate-outlined',
+    //   label: 'label.action.secure.host',
+    //   message: 'message.action.secure.host',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return record.hypervisor === 'KVM' || record.hypervisor === store.getters.customHypervisorName
+    //   },
+    //   args: ['hostid'],
+    //   mapping: {
+    //     hostid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'reconnectHost',
+    //   icon: 'forward-outlined',
+    //   label: 'label.action.force.reconnect',
+    //   message: 'message.confirm.action.force.reconnect',
+    //   dataView: true,
+    //   show: (record) => { return ['Disconnected', 'Up', 'Alert'].includes(record.state) }
+    // },
     {
       api: 'updateHost',
       icon: 'pause-circle-outlined',
@@ -213,27 +213,28 @@ export default {
           value: (record) => { return record.id }
         },
         action: {
-          options: ['ON', 'OFF', 'CYCLE', 'RESET', 'SOFT', 'STATUS']
+          // options: ['ON', 'OFF', 'CYCLE', 'RESET', 'SOFT', 'STATUS']
+          options: ['ON', 'OFF']
         }
       }
     },
-    {
-      api: 'changeOutOfBandManagementPassword',
-      icon: 'key-outlined',
-      label: 'label.outofbandmanagement.changepassword',
-      message: 'label.outofbandmanagement.changepassword',
-      docHelp: 'adminguide/hosts.html#out-of-band-management',
-      dataView: true,
-      show: (record) => {
-        return record?.outofbandmanagement?.enabled === true
-      },
-      args: ['hostid', 'password'],
-      mapping: {
-        hostid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
+    // {
+    //   api: 'changeOutOfBandManagementPassword',
+    //   icon: 'key-outlined',
+    //   label: 'label.outofbandmanagement.changepassword',
+    //   message: 'label.outofbandmanagement.changepassword',
+    //   docHelp: 'adminguide/hosts.html#out-of-band-management',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return record?.outofbandmanagement?.enabled === true
+    //   },
+    //   args: ['hostid', 'password'],
+    //   mapping: {
+    //     hostid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
     {
       api: 'configureHAForHost',
       icon: 'tool-outlined',
@@ -287,43 +288,43 @@ export default {
         }
       }
     },
-    {
-      api: 'startRollingMaintenance',
-      icon: 'control-outlined',
-      label: 'label.start.rolling.maintenance',
-      message: 'label.start.rolling.maintenance',
-      docHelp: 'adminguide/hosts.html#kvm-rolling-maintenance',
-      dataView: true,
-      show: (record) => {
-        return record.hypervisor === 'KVM' && (record.resourcestate === 'Enabled' || record.resourcestate === 'ErrorInMaintenance')
-      },
-      args: ['timeout', 'payload', 'forced', 'hostids'],
-      mapping: {
-        hostids: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'declareHostAsDegraded',
-      icon: 'exception-outlined',
-      label: 'label.declare.host.as.degraded',
-      message: 'label.declare.host.as.degraded',
-      dataView: true,
-      show: (record) => {
-        return record.resourcestate !== 'Degraded' && (record.state === 'Alert' || record.state === 'Disconnected')
-      }
-    },
-    {
-      api: 'cancelHostAsDegraded',
-      icon: 'file-done-outlined',
-      label: 'label.cancel.host.as.degraded',
-      message: 'label.cancel.host.as.degraded',
-      dataView: true,
-      show: (record) => {
-        return record.resourcestate === 'Degraded'
-      }
-    },
+    // {
+    //   api: 'startRollingMaintenance',
+    //   icon: 'control-outlined',
+    //   label: 'label.start.rolling.maintenance',
+    //   message: 'label.start.rolling.maintenance',
+    //   docHelp: 'adminguide/hosts.html#kvm-rolling-maintenance',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return record.hypervisor === 'KVM' && (record.resourcestate === 'Enabled' || record.resourcestate === 'ErrorInMaintenance')
+    //   },
+    //   args: ['timeout', 'payload', 'forced', 'hostids'],
+    //   mapping: {
+    //     hostids: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'declareHostAsDegraded',
+    //   icon: 'exception-outlined',
+    //   label: 'label.declare.host.as.degraded',
+    //   message: 'label.declare.host.as.degraded',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return record.resourcestate !== 'Degraded' && (record.state === 'Alert' || record.state === 'Disconnected')
+    //   }
+    // },
+    // {
+    //   api: 'cancelHostAsDegraded',
+    //   icon: 'file-done-outlined',
+    //   label: 'label.cancel.host.as.degraded',
+    //   message: 'label.cancel.host.as.degraded',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return record.resourcestate === 'Degraded'
+    //   }
+    // },
     {
       api: 'deleteHost',
       icon: 'delete-outlined',

@@ -101,7 +101,7 @@
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item name="checksum" ref="checksum">
+        <!-- <a-form-item name="checksum" ref="checksum">
           <template #label>
             <tooltip-label :title="$t('label.volumechecksum')" :tooltip="apiParams.checksum.description"/>
           </template>
@@ -146,7 +146,7 @@
               {{ acc.name }}
             </a-select-option>
           </a-select>
-        </a-form-item>
+        </a-form-item> -->
         <div :span="24" class="action-button">
           <a-button @click="closeAction">{{ $t('label.cancel') }}</a-button>
           <a-button :loading="loading" type="primary" ref="submit" @click="handleSubmit">{{ $t('label.ok') }}</a-button>
@@ -175,7 +175,8 @@ export default {
       zones: [],
       domainList: [],
       accountList: [],
-      formats: ['RAW', 'VHD', 'VHDX', 'OVA', 'QCOW2'],
+      // formats: ['RAW', 'VHD', 'VHDX', 'OVA', 'QCOW2'],
+      formats: ['QCOW2'],
       offerings: [],
       zoneSelected: '',
       selectedDiskOfferingId: null,

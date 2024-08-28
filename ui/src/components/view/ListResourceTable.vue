@@ -17,13 +17,13 @@
 
 <template>
   <div>
-    <a-input-search
+    <!-- <a-input-search
       v-if="showSearch"
       style="width: 25vw;float: right;margin-bottom: 10px; z-index: 8"
       :placeholder="$t('label.search')"
       v-model:value="filter"
       @search="handleSearch"
-      v-focus="true" />
+      v-focus="true" /> -->
 
     <a-table
       size="small"
