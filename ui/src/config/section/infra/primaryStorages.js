@@ -58,9 +58,9 @@ export default {
   tabs: [{
     name: 'details',
     component: shallowRef(defineAsyncComponent(() => import('@/components/view/DetailsTab.vue')))
-  }, {
-    name: 'settings',
-    component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue')))
+  // }, {
+  //   name: 'settings',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/SettingsTab.vue')))
   }, {
     name: 'browser',
     resourceType: 'PrimaryStorage',
@@ -70,20 +70,20 @@ export default {
     resourceType: 'StoragePool',
     component: shallowRef(defineAsyncComponent(() => import('@/components/view/EventsTab.vue'))),
     show: () => { return 'listEvents' in store.getters.apis }
-  }, {
-    name: 'comments',
-    component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
+  // }, {
+  //   name: 'comments',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/AnnotationsTab.vue')))
   }],
   actions: [
-    {
-      api: 'createStoragePool',
-      icon: 'plus-outlined',
-      docHelp: 'installguide/configuration.html#add-primary-storage',
-      label: 'label.add.primary.storage',
-      listView: true,
-      popup: true,
-      component: shallowRef(defineAsyncComponent(() => import('@/views/infra/AddPrimaryStorage.vue')))
-    },
+    // {
+    //   api: 'createStoragePool',
+    //   icon: 'plus-outlined',
+    //   docHelp: 'installguide/configuration.html#add-primary-storage',
+    //   label: 'label.add.primary.storage',
+    //   listView: true,
+    //   popup: true,
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/AddPrimaryStorage.vue')))
+    // },
     {
       api: 'updateStoragePool',
       icon: 'edit-outlined',

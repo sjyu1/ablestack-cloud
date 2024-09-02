@@ -16,6 +16,7 @@
 // under the License.
 package com.cloud.vm;
 
+import static com.cloud.configuration.ConfigurationManager.VM_USERDATA_MAX_LENGTH;
 import static com.cloud.configuration.ConfigurationManagerImpl.VM_USERDATA_MAX_LENGTH;
 import static com.cloud.utils.NumbersUtil.toHumanReadableSize;
 
@@ -3950,8 +3951,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
     public void checkNameForRFCCompliance(String name) {
         if (!NetUtils.verifyDomainNameLabel(name, true)) {
-            throw new InvalidParameterValueException("Invalid name. Vm name can contain ASCII letters 'a' through 'z', the digits '0' through '9', "
-                    + "and the hyphen ('-'), must be between 1 and 63 characters long, and can't start or end with \"-\" and can't start with digit");
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
         }
     }
 
@@ -3967,7 +3967,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         _accountMgr.checkAccess(caller, null, true, owner);
 
         if (owner.getState() == Account.State.DISABLED) {
-            throw new PermissionDeniedException("The owner of vm to deploy is disabled: " + owner);
+            throw new PermissionDeniedException("배포할 VM의 소유자가 비활성화되었습니다.: " + owner);
         }
         VMTemplateVO template = _templateDao.findById(tmplt.getId());
         if (template != null) {
@@ -3977,24 +3977,24 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         HypervisorType hypervisorType = null;
         if (template.getHypervisorType() == null || template.getHypervisorType() == HypervisorType.None) {
             if (hypervisor == null || hypervisor == HypervisorType.None) {
-                throw new InvalidParameterValueException("hypervisor parameter is needed to deploy VM or the hypervisor parameter value passed is invalid");
+                throw new InvalidParameterValueException("VM을 배포하려면 하이퍼바이저 매개변수가 필요하거나 전달된 하이퍼바이저 매개변수 값이 잘못되었습니다.");
             }
             hypervisorType = hypervisor;
         } else {
             if (hypervisor != null && hypervisor != HypervisorType.None && hypervisor != template.getHypervisorType()) {
-                throw new InvalidParameterValueException("Hypervisor passed to the deployVm call, is different from the hypervisor type of the template");
+                throw new InvalidParameterValueException("배포VM 호출에 전달된 하이퍼바이저가 템플릿의 하이퍼바이저 유형과 다릅니다.");
             }
             hypervisorType = template.getHypervisorType();
         }
 
         long accountId = owner.getId();
 
-        assert !(requestedIps != null && (defaultIps.getIp4Address() != null || defaultIps.getIp6Address() != null)) : "requestedIp list and defaultNetworkIp should never be specified together";
+        assert !(requestedIps != null && (defaultIps.getIp4Address() != null || defaultIps.getIp6Address() != null)) : "requestIp 목록과 defaultNetworkIp는 함께 지정하면 안 됩니다.";
 
         if (Grouping.AllocationState.Disabled == zone.getAllocationState()
                 && !_accountMgr.isRootAdmin(caller.getId())) {
             throw new PermissionDeniedException(
-                    "Cannot perform this operation, Zone is currently disabled: "
+                    "이 작업을 수행할 수 없습니다. zone이 현재 비활성화되어 있습니다.: "
                             + zone.getId());
         }
 
@@ -4003,7 +4003,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         if (dedicatedZone != null) {
             DomainVO domain = _domainDao.findById(dedicatedZone.getDomainId());
             if (domain == null) {
-                throw new CloudRuntimeException("Unable to find the domain " + zone.getDomainId() + " for the zone: " + zone);
+                throw new CloudRuntimeException("zone에 대한 " + zone.getDomainId() + " 도메인을 찾을 수 없습니다.: " + zone);
             }
             // check that caller can operate with domain
             _configMgr.checkZoneAccess(caller, zone);
@@ -4028,7 +4028,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             if (diskOfferingId == null) {
                 DiskOfferingVO diskOffering = _diskOfferingDao.findById(rootDiskOfferingId);
                 if (diskOffering.isComputeOnly()) {
-                    throw new InvalidParameterValueException("Installing from ISO requires a disk offering to be specified for the root disk.");
+                    throw new InvalidParameterValueException("ISO에서 설치하려면 루트 디스크에 대해 디스크 제공을 지정해야 합니다.");
                 }
             } else {
                 rootDiskOfferingId = diskOfferingId;
@@ -4046,7 +4046,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         long volumesSize = configureCustomRootDiskSize(customParameters, template, hypervisorType, rootdiskOffering);
 
         if (rootdiskOffering.getEncrypt() && hypervisorType != HypervisorType.KVM) {
-            throw new InvalidParameterValueException("Root volume encryption is not supported for hypervisor type " + hypervisorType);
+            throw new InvalidParameterValueException("하이퍼바이저 유형 " + hypervisorType + "에는 루트 볼륨 암호화가 지원되지 않습니다.");
         }
 
         if (!isIso && diskOfferingId != null) {
@@ -4110,24 +4110,24 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
                     if (dataDiskTemplate == null
                             || (!dataDiskTemplate.getTemplateType().equals(TemplateType.DATADISK)) && (dataDiskTemplate.getState().equals(VirtualMachineTemplate.State.Active))) {
-                        throw new InvalidParameterValueException("Invalid template id specified for Datadisk template" + datadiskTemplateToDiskOffering.getKey());
+                                throw new InvalidParameterValueException("Datadisk 템플릿에 잘못된 템플릿 ID가 지정되었습니다." + datadiskTemplateToDiskOffering.getKey());
                     }
                     long dataDiskTemplateId = datadiskTemplateToDiskOffering.getKey();
                     if (!dataDiskTemplate.getParentTemplateId().equals(template.getId())) {
-                        throw new InvalidParameterValueException("Invalid Datadisk template. Specified Datadisk template" + dataDiskTemplateId
-                                + " doesn't belong to template " + template.getId());
+                        throw new InvalidParameterValueException("데이터디스크 템플릿이 잘못되었습니다. 지정된 데이터디스크 템플릿" + dataDiskTemplateId
+                                + "는 템플릿에 속하지 않습니다." + template.getId());
                     }
                     if (dataDiskOffering == null) {
-                        throw new InvalidParameterValueException("Invalid disk offering id " + datadiskTemplateToDiskOffering.getValue().getId() +
-                                " specified for datadisk template " + dataDiskTemplateId);
+                        throw new InvalidParameterValueException("잘못된 디스크 오퍼링 ID " + datadiskTemplateToDiskOffering.getValue().getId() +
+                                " 데이터디스크 템플릿에 지정됨 " + dataDiskTemplateId);
                     }
                     if (dataDiskOffering.isCustomized()) {
-                        throw new InvalidParameterValueException("Invalid disk offering id " + dataDiskOffering.getId() + " specified for datadisk template " +
-                                dataDiskTemplateId + ". Custom Disk offerings are not supported for Datadisk templates");
+                        throw new InvalidParameterValueException("잘못된 디스크 오퍼링 ID " + dataDiskOffering.getId() + "가 데이터디스크 템플릿에 지정되었습니다. " +
+                                dataDiskTemplateId + ". Datadisk 템플릿에는 사용자 지정 디스크 오퍼링이 지원되지 않습니다.");
                     }
                     if (dataDiskOffering.getDiskSize() < dataDiskTemplate.getSize()) {
-                        throw new InvalidParameterValueException("Invalid disk offering id " + dataDiskOffering.getId() + " specified for datadisk template " +
-                                dataDiskTemplateId + ". Disk offering size should be greater than or equal to the template size");
+                        throw new InvalidParameterValueException("잘못된 디스크 오퍼링 ID " + dataDiskOffering.getId() + "가 데이터디스크 템플릿에 지정되었습니다. " +
+                                dataDiskTemplateId + ". 디스크 오퍼링 크기는 템플릿 크기보다 크거나 같아야 합니다.");
                     }
                     _templateDao.loadDetails(dataDiskTemplate);
                     _resourceLimitMgr.checkResourceLimit(owner, ResourceType.volume, 1);
@@ -4175,20 +4175,20 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 // check if we have available pools for vm deployment
                 long availablePools = _storagePoolDao.countPoolsByStatus(StoragePoolStatus.Up);
                 if (availablePools < 1) {
-                    throw new StorageUnavailableException("There are no available pools in the UP state for vm deployment", -1);
+                    new StorageUnavailableException("VM 배포에 대해 UP 상태에 사용 가능한 풀이 없습니다.", -1);
                 }
             }
 
             if (template.getTemplateType().equals(TemplateType.SYSTEM) && !CKS_NODE.equals(vmType)) {
-                throw new InvalidParameterValueException("Unable to use system template " + template.getId() + " to deploy a user vm");
+                throw new InvalidParameterValueException("시스템 템플릿 " + template.getId() + "를 사용하여 사용자 vm을 배포할 수 없습니다.");
             }
             List<VMTemplateZoneVO> listZoneTemplate = _templateZoneDao.listByZoneTemplate(zone.getId(), template.getId());
             if (listZoneTemplate == null || listZoneTemplate.isEmpty()) {
-                throw new InvalidParameterValueException("The template " + template.getId() + " is not available for use");
+                throw new InvalidParameterValueException(template.getId() + " 템플릿을 사용할 수 없습니다.");
             }
 
             if (isIso && !template.isBootable()) {
-                throw new InvalidParameterValueException("Installing from ISO requires an ISO that is bootable: " + template.getId());
+                throw new InvalidParameterValueException("ISO에서 설치하려면 부팅 가능한 ISO가 필요합니다.: " + template.getId());
             }
 
             // Check templates permissions
@@ -4219,8 +4219,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             for (NetworkVO network : networkList) {
                 if ((network.getDataCenterId() != zone.getId())) {
                     if (!network.isStrechedL2Network()) {
-                        throw new InvalidParameterValueException("Network id=" + network.getId() +
-                                " doesn't belong to zone " + zone.getId());
+                        throw new InvalidParameterValueException("네트워크 ID=" + network.getId() +
+                                " zone에 속하지 않습니다. " + zone.getId());
                     }
 
                     NetworkOffering ntwkOffering = _networkOfferingDao.findById(network.getNetworkOfferingId());
@@ -4228,8 +4228,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
                     String provider = _ntwkSrvcDao.getProviderForServiceInNetwork(network.getId(), Service.Connectivity);
                     if (!_networkModel.isProviderEnabledInPhysicalNetwork(physicalNetworkId, provider)) {
-                        throw new InvalidParameterValueException("Network in which is VM getting deployed could not be" +
-                                " streched to the zone, as we could not find a valid physical network");
+                        throw new InvalidParameterValueException("유효한 물리적 네트워크를 찾을 수 없으므로 VM이 배포되는 네트워크를 zone으로 확장할 수 없습니다.");
                     }
                 }
 
@@ -4261,15 +4260,15 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                     profile.setDefaultNic(true);
                     if (!_networkModel.areServicesSupportedInNetwork(network.getId(), new Service[]{Service.UserData})) {
                         if ((userData != null) && (!userData.isEmpty())) {
-                            throw new InvalidParameterValueException(String.format("Unable to deploy VM as UserData is provided while deploying the VM, but there is no support for %s service in the default network %s/%s.", Service.UserData.getName(), network.getName(), network.getUuid()));
+                            throw new InvalidParameterValueException(String.format("VM을 배포하는 동안 UserData가 제공되었으므로 VM을 배포할 수 없습니다. 그러나 기본 네트워크 %s/%s에서는 %s 서비스가 지원되지 않습니다.", network.getUuid(), Service.UserData.getName(), network.getName()));
                         }
 
                         if ((sshPublicKeys != null) && (!sshPublicKeys.isEmpty())) {
-                            throw new InvalidParameterValueException(String.format("Unable to deploy VM as SSH keypair is provided while deploying the VM, but there is no support for %s service in the default network %s/%s", Service.UserData.getName(), network.getName(), network.getUuid()));
+                            throw new InvalidParameterValueException(String.format("VM을 배포하는 동안 SSH 키 쌍이 제공되었으나 기본 네트워크 %s/%s에서는 %s 서비스가 지원되지 않으므로 VM을 배포할 수 없습니다.", network.getUuid(), Service.UserData.getName(), network.getName()));
                         }
 
                         if (template.isEnablePassword()) {
-                            throw new InvalidParameterValueException(String.format("Unable to deploy VM as template %s is password enabled, but there is no support for %s service in the default network %s/%s", template.getId(), Service.UserData.getName(), network.getName(), network.getUuid()));
+                            throw new InvalidParameterValueException(String.format("%s 템플릿이 암호를 사용하므로 VM을 배포할 수 없지만 기본 네트워크 %s/%s에서는 %s 서비스가 지원되지 않습니다.", template.getId(), network.getUuid(), Service.UserData.getName(), network.getName()));
                         }
                     }
                 }
@@ -4287,7 +4286,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             }
 
             if (securityGroupIdList != null && !securityGroupIdList.isEmpty() && !securityGroupEnabled) {
-                throw new InvalidParameterValueException("Unable to deploy vm with security groups as SecurityGroup service is not enabled for the vm's network");
+                throw new InvalidParameterValueException("vm의 네트워크에 대해 SecurityGroup 서비스가 활성화되지 않았기 때문에 보안 그룹을 사용하여 vm을 배포할 수 없습니다.");
             }
 
             // Verify network information - network default network has to be set;
@@ -4296,9 +4295,9 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             // by Agent Manager in order to configure default
             // gateway for the vm
             if (defaultNetworkNumber == 0) {
-                throw new InvalidParameterValueException("At least 1 default network has to be specified for the vm");
+                throw new InvalidParameterValueException("VM에 기본 네트워크를 1개 이상 지정해야 합니다.");
             } else if (defaultNetworkNumber > 1) {
-                throw new InvalidParameterValueException("Only 1 default network per vm is supported");
+                throw new InvalidParameterValueException("VM당 기본 네트워크 1개만 지원됩니다.");
             }
 
             long id = _vmDao.getNextInSequence(Long.class, "id");
@@ -4306,6 +4305,11 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             if (hostName != null) {
                 // Check is hostName is RFC compliant
                 checkNameForRFCCompliance(hostName);
+            }
+
+            if (displayName != null) {
+                // Check is displayName is RFC compliant
+                checkNameForRFCCompliance(displayName);
             }
 
             String instanceName = null;
@@ -4326,7 +4330,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 // In case of VMware since VM name must be unique within a DC, check if VM with the same hostname already exists in the zone.
                 VMInstanceVO vmByHostName = _vmInstanceDao.findVMByHostNameInZone(hostName, zone.getId());
                 if (vmByHostName != null && vmByHostName.getState() != State.Expunging) {
-                    throw new InvalidParameterValueException("There already exists a VM by the name: " + hostName + ".");
+                    throw new InvalidParameterValueException("해당 이름의 VM이 이미 존재합니다.: " + hostName + ".");
                 }
             } else {
                 if (hostName == null) {
@@ -4347,7 +4351,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             // Check if VM with instanceName already exists.
             VMInstanceVO vmObj = _vmInstanceDao.findVMByInstanceName(instanceName);
             if (vmObj != null && vmObj.getState() != State.Expunging) {
-                throw new InvalidParameterValueException("There already exists a VM by the display name supplied");
+                throw new InvalidParameterValueException("제공된 표시 이름의 VM이 이미 존재합니다.");
             }
 
             checkIfHostNameUniqueInNtwkDomain(hostName, networkList);

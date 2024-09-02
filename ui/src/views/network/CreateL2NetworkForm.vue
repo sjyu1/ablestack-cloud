@@ -68,7 +68,7 @@
               </a-select-option>
             </a-select>
           </a-form-item>
-          <a-form-item v-if="isAdminOrDomainAdmin()" name="domainid" ref="domainid">
+          <!-- <a-form-item v-if="isAdminOrDomainAdmin()" name="domainid" ref="domainid">
             <template #label>
               <tooltip-label :title="$t('label.domainid')" :tooltip="apiParams.domainid.description"/>
             </template>
@@ -109,7 +109,7 @@
                 {{ opt.name || opt.description }}
               </a-select-option>
             </a-select>
-          </a-form-item>
+          </a-form-item> -->
           <a-form-item name="networkofferingid" ref="networkofferingid">
             <template #label>
               <tooltip-label :title="$t('label.networkofferingid')" :tooltip="apiParams.networkofferingid.description"/>
@@ -141,7 +141,7 @@
               :placeholder="apiParams.vlan ? apiParams.vlan.description : $t('label.vlanid')"
               :maxlength="20"/>
           </a-form-item>
-          <a-form-item
+          <!-- <a-form-item
             v-if="!isObjectEmpty(selectedNetworkOffering) && selectedNetworkOffering.specifyvlan"
             name="bypassvlanoverlapcheck"
             ref="bypassvlanoverlapcheck">
@@ -186,7 +186,7 @@
               v-model:value="form.isolatedpvlan"
               :placeholder="apiParams.isolatedpvlan.description"
               :maxlength="20"/>
-          </a-form-item>
+          </a-form-item> -->
           <div :span="24" class="action-button">
             <a-button
               :loading="actionLoading"

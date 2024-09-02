@@ -59,14 +59,14 @@ public class UploadVolumeCmd extends BaseAsyncCmd implements UserCmd {
                description = "the format for the volume. Possible values include QCOW2, OVA, and VHD.")
     private String format;
 
-    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, required = true, description = "the name of the volume")
+    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, required = true, description = "볼륨의 이름")
     private String volumeName;
 
     @Parameter(name = ApiConstants.URL,
                type = CommandType.STRING,
                required = true,
                length = 2048,
-               description = "the URL of where the volume is hosted. Possible URL include http:// and https://")
+               description = "볼륨이 호스팅되는 URL입니다. 가능한 URL에는 http:// 및 https://가 포함됩니다.")
     private String url;
 
     @Parameter(name = ApiConstants.ZONE_ID,
@@ -94,7 +94,7 @@ public class UploadVolumeCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = ApiConstants.PROJECT_ID, type = CommandType.UUID, entityType = ProjectResponse.class, description = "Upload volume for the project")
     private Long projectId;
 
-    @Parameter(name = ApiConstants.DISK_OFFERING_ID, required = false, type = CommandType.UUID, entityType = DiskOfferingResponse.class, description = "the ID of the disk offering. This must be a custom sized offering since during uploadVolume volume size is unknown.")
+    @Parameter(name = ApiConstants.DISK_OFFERING_ID, required = false, type = CommandType.UUID, entityType = DiskOfferingResponse.class, description = "디스크 오퍼링의 아이디")
     private Long diskOfferingId;
 
     /////////////////////////////////////////////////////

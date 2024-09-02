@@ -177,7 +177,7 @@
           </div>
         </template>
         <div>
-          <div v-for="ctype in ['MEMORY', 'CPU', 'CPU_CORE', 'GPU']" :key="ctype" >
+          <div v-for="ctype in ['MEMORY', 'CPU', 'CPU_CORE']" :key="ctype" >
             <div v-if="statsMap[ctype]">
               <div>
                 <strong>{{ $t(ts[ctype]) }}</strong>
@@ -207,7 +207,7 @@
           </div>
         </template>
         <div>
-          <div v-for="ctype in ['STORAGE', 'STORAGE_ALLOCATED', 'LOCAL_STORAGE', 'SECONDARY_STORAGE']" :key="ctype" >
+          <div v-for="ctype in ['STORAGE', 'STORAGE_ALLOCATED', 'LOCAL_STORAGE']" :key="ctype" >
             <div v-if="statsMap[ctype]">
               <div>
                 <strong>{{ $t(ts[ctype]) }}</strong>

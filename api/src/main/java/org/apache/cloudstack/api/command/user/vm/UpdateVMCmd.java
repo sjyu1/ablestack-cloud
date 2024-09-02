@@ -107,7 +107,7 @@ public class UpdateVMCmd extends BaseCustomIdCmd implements SecurityGroupAction,
                description = "true if VM contains XS/VMWare tools inorder to support dynamic scaling of VM cpu/memory. This can be updated only when dynamic scaling is enabled on template, service offering and the corresponding global setting")
     protected Boolean isDynamicallyScalable;
 
-    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "new host name of the vm. The VM has to be stopped/started for this update to take affect", since = "4.4")
+    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, length = 32, description = "가상머신의 새 호스트 이름입니다. 이 업데이트를 적용하려면 가상머신을 중지/시작해야 합니다.", since = "4.4")
     private String name;
 
     @Parameter(name = ApiConstants.INSTANCE_NAME, type = CommandType.STRING, description = "instance name of the user vm", since = "4.4", authorized = {RoleType.Admin})

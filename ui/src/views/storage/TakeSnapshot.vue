@@ -38,7 +38,7 @@
             :placeholder="apiParams.name.description"
             v-focus="true" />
         </a-form-item>
-        <a-form-item ref="zoneids" name="zoneids">
+        <!-- <a-form-item ref="zoneids" name="zoneids">
           <template #label>
             <tooltip-label :title="$t('label.zones')" :tooltip="''"/>
           </template>
@@ -66,7 +66,7 @@
               </span>
             </a-select-option>
           </a-select>
-        </a-form-item>
+        </a-form-item> -->
         <a-form-item :label="$t('label.asyncbackup')" name="asyncbackup" ref="asyncbackup">
           <a-switch v-model:checked="form.asyncbackup" />
         </a-form-item>
@@ -74,7 +74,7 @@
           <a-switch v-model:checked="form.quiescevm" />
         </a-form-item>
         <a-divider/>
-        <div class="tagsTitle">{{ $t('label.tags') }}</div>
+        <!-- <div class="tagsTitle">{{ $t('label.tags') }}</div>
         <div>
           <div v-for="(tag, index) in tags" :key="index">
             <a-tag :key="index" :closable="true">
@@ -113,7 +113,7 @@
           <a-tag v-else @click="showInput" class="btn-add-tag" style="borderStyle: dashed;">
             <plus-outlined /> {{ $t('label.new.tag') }}
           </a-tag>
-        </div>
+        </div> -->
         <div :span="24" class="action-button">
           <a-button
             :loading="actionLoading"

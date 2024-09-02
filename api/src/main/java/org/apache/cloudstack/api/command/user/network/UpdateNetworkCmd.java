@@ -56,10 +56,10 @@ public class UpdateNetworkCmd extends BaseAsyncCustomIdCmd implements UserCmd {
             required=true, description="the ID of the network")
     protected Long id;
 
-    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "the new name for the network")
+    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "네트워크의 새 이름")
     private String name;
 
-    @Parameter(name = ApiConstants.DISPLAY_TEXT, type = CommandType.STRING, description = "the new display text for the network")
+    @Parameter(name = ApiConstants.DISPLAY_TEXT, type = CommandType.STRING, description = "네트워크의 새 설명")
     private String displayText;
 
     @Parameter(name = ApiConstants.NETWORK_DOMAIN, type = CommandType.STRING, description = "network domain")

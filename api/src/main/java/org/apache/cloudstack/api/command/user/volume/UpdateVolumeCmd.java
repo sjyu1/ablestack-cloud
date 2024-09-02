@@ -77,7 +77,7 @@ public class UpdateVolumeCmd extends BaseAsyncCustomIdCmd implements UserCmd {
  description = "an optional field, whether to the display the volume to the end user or not.", authorized = {RoleType.Admin})
     private Boolean displayVolume;
 
-    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "new name of the volume", since = "4.16")
+    @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "볼륨 이름", since = "4.16")
     private String name;
 
     /////////////////////////////////////////////////////

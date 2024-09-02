@@ -57,7 +57,7 @@
           }"
           :loading="osTypes.loading"
           v-model:value="form.ostypeid">
-          <a-select-option v-for="(ostype) in osTypes.opts" :key="ostype.id" :label="ostype.description">
+          <a-select-option v-for="(ostype) in osTypes.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="ostype.id" :label="ostype.description">
             {{ ostype.description }}
           </a-select-option>
         </a-select>
@@ -74,7 +74,7 @@
         </template>
         <a-switch v-model:checked="form.haenable" />
       </a-form-item>
-      <a-form-item name="group" ref="group">
+      <!-- <a-form-item name="group" ref="group">
         <template #label>
           <tooltip-label :title="$t('label.group')" :tooltip="apiParams.group.description"/>
         </template>
@@ -84,8 +84,8 @@
             return option.value.toLowerCase().indexOf(input.toLowerCase()) >= 0
           }"
           :options="groups.opts" />
-      </a-form-item>
-      <a-form-item>
+      </a-form-item> -->
+      <!-- <a-form-item>
         <template #label>
           <tooltip-label :title="$t('label.userdata')" :tooltip="apiParams.userdata.description"/>
         </template>
@@ -110,7 +110,7 @@
             </div>
           </a-select-option>
         </a-select>
-      </a-form-item>
+      </a-form-item> -->
 
       <div :span="24" class="action-button">
         <a-button :loading="loading" @click="onCloseAction">{{ $t('label.cancel') }}</a-button>

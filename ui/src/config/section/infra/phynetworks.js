@@ -31,12 +31,12 @@ export default {
   }, {
     name: 'traffic.types',
     component: shallowRef(defineAsyncComponent(() => import('@/views/infra/network/TrafficTypesTab.vue')))
-  }, {
-    name: 'network.service.providers',
-    component: shallowRef(defineAsyncComponent(() => import('@/views/infra/network/ServiceProvidersTab.vue')))
-  }, {
-    name: 'dedicated.vlan.vni.ranges',
-    component: shallowRef(defineAsyncComponent(() => import('@/views/infra/network/DedicatedVLANTab.vue')))
+  // }, {
+  //   name: 'network.service.providers',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/network/ServiceProvidersTab.vue')))
+  // }, {
+  //   name: 'dedicated.vlan.vni.ranges',
+  //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/network/DedicatedVLANTab.vue')))
   }],
   related: [{
     name: 'guestnetwork',
@@ -89,7 +89,8 @@ export default {
       icon: 'edit-outlined',
       label: 'label.update.physical.network',
       dataView: true,
-      args: ['vlan', 'tags']
+      // args: ['vlan', 'tags']
+      args: ['vlan']
     },
     {
       api: 'addTrafficType',
@@ -105,18 +106,19 @@ export default {
           value: (record) => { return record.id }
         },
         isolationmethod: {
-          options: ['', 'vlan', 'vxlan']
+          // options: ['', 'vlan', 'vxlan']
+          options: ['', 'vlan']
         }
       }
     },
-    {
-      api: 'updateTrafficType',
-      icon: 'branches-outlined',
-      label: 'label.update.traffic.label',
-      dataView: true,
-      popup: true,
-      component: shallowRef(defineAsyncComponent(() => import('@/views/infra/network/EditTrafficLabel.vue')))
-    },
+    // {
+    //   api: 'updateTrafficType',
+    //   icon: 'branches-outlined',
+    //   label: 'label.update.traffic.label',
+    //   dataView: true,
+    //   popup: true,
+    //   component: shallowRef(defineAsyncComponent(() => import('@/views/infra/network/EditTrafficLabel.vue')))
+    // },
     {
       api: 'deletePhysicalNetwork',
       icon: 'delete-outlined',

@@ -1171,6 +1171,11 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
             if(cluster.getHypervisorType() == HypervisorType.VMware) {
                 throw new InvalidParameterValueException("Renaming VMware cluster is not supported as it could cause problems if the updated  cluster name is not mapped on VCenter.");
             }
+
+            if (!NetUtils.verifyDomainNameLabel(name, true)) {
+                throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            }
+
             logger.debug("Updating Cluster name to: " + name);
             cluster.setName(name);
             doUpdate = true;
@@ -1978,6 +1983,9 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
         }
 
         if (StringUtils.isNotBlank(name)) {
+            if (!NetUtils.verifyDomainNameLabel(name, true)) {
+                throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            }
             updateHostName(host, name);
         }
 
