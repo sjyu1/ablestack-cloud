@@ -3574,14 +3574,14 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
         // name parameter length check
         if ((org.apache.commons.lang3.StringUtils.isBlank(name) || !NetUtils.verifyDomainNameLabel(name, true))) {
             throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
-        else {
+        } else {
             offering.setName(name);
         }
 
         // displayText parameter length check
         if (displayText != null && !NetUtils.verifyDomainNameLabel(displayText, true)) {
             throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
-        }else if (displayText != null) {
+        } else if (displayText != null) {
             offering.setDisplayText(displayText);
         }
 
@@ -4044,14 +4044,14 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
         // name parameter length check
         if ((org.apache.commons.lang3.StringUtils.isBlank(name) || !NetUtils.verifyDomainNameLabel(name, true))) {
             throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
-        else {
+        } else {
             diskOffering.setName(name);
         }
 
         // displayText parameter length check
         if (displayText != null && !NetUtils.verifyDomainNameLabel(displayText, true)) {
             throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
-        }else if (displayText != null) {
+        } else if (displayText != null) {
             diskOffering.setDisplayText(displayText);
         }
 
@@ -7124,14 +7124,14 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
             // name parameter length check
             if ((org.apache.commons.lang3.StringUtils.isBlank(name) || !NetUtils.verifyDomainNameLabel(name, true))) {
                 throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
-            else {
+            } else {
                 offering.setName(name);
             }
 
             // displayText parameter length check
             if (displayText != null && !NetUtils.verifyDomainNameLabel(displayText, true)) {
                 throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
-            }else if (displayText != null) {
+            } else if (displayText != null) {
                 offering.setDisplayText(displayText);
             }
 
