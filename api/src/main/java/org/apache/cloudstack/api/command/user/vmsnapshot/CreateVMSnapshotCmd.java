@@ -95,14 +95,14 @@ public class CreateVMSnapshotCmd extends BaseAsyncCreateCmd {
         try {
             vmsnapshot = _vmSnapshotService.allocVMSnapshot(getVmId(), getDisplayName(), getDescription(), snapshotMemory());
         } catch (CloudRuntimeException e) {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot: " + e.getMessage(), e);
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "가상머신 스냅샷을 생성하지 못했습니다.: " + e.getMessage(), e);
         }
 
         if (vmsnapshot != null) {
             setEntityId(vmsnapshot.getId());
             setEntityUuid(vmsnapshot.getUuid());
         } else {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "가상머신 스냅샷을 생성하지 못했습니다.");
         }
     }
 
@@ -125,7 +125,7 @@ public class CreateVMSnapshotCmd extends BaseAsyncCreateCmd {
             response.setResponseName(getCommandName());
             setResponseObject(response);
         } else {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot due to an internal error creating snapshot for vm " + getVmId());
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, getVmId() + " 가상머신에 대한 스냅샷을 생성하는 중 내부 오류로 인해 가상머신 스냅샷을 생성하지 못했습니다.");
         }
     }
 

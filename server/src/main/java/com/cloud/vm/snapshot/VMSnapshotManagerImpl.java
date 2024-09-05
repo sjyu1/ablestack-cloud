@@ -592,7 +592,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             VMSnapshot snapshot = strategy.takeVMSnapshot(vmSnapshot);
             return snapshot;
         } catch (Exception e) {
-            String errMsg = String.format("Failed to create vm snapshot: [%s] due to: %s", vmSnapshotId, e.getMessage());
+            String errMsg = String.format("가상머신 스냅샷을 생성하지 못했습니다. : [%s] 이유: %s", vmSnapshotId, e.getMessage());
             logger.debug(errMsg, e);
             throw new CloudRuntimeException(errMsg, e);
         }

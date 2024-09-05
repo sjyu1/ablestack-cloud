@@ -1245,7 +1245,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
             if (volume.getInstanceId() != null) {
                 // Check that VM to which this volume is attached does not have VM snapshots
                 if (_vmSnapshotDao.findByVm(volume.getInstanceId()).size() > 0) {
-                    throw new InvalidParameterValueException("A volume that is attached to a VM with any VM snapshots cannot be resized.");
+                    throw new InvalidParameterValueException("가상머신 스냅샷이 있는 가상머신에 연결된 볼륨은 크기를 조정할 수 없습니다.");
                 }
             }
 
@@ -1278,8 +1278,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
              * the actual disk size.
              */
             if (currentSize > newSize && !shrinkOk) {
-                throw new InvalidParameterValueException("Going from existing size of " + currentSize + " to size of " + newSize + " would shrink the volume."
-                        +  "Need to sign off by supplying the shrinkok parameter with value of true.");
+                throw new InvalidParameterValueException("기존 크기에서 작은 크기로 볼륨 사이즈를 변경할 수 없습니다.");
             }
 
             if (newSize > currentSize) {
@@ -2142,7 +2141,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
             if (volume.getInstanceId() != null) {
                 // Check that VM to which this volume is attached does not have VM snapshots
                 if (_vmSnapshotDao.findByVm(volume.getInstanceId()).size() > 0) {
-                    throw new InvalidParameterValueException("A volume that is attached to a VM with any VM snapshots cannot be resized.");
+                    throw new InvalidParameterValueException("가상머신 스냅샷이 있는 가상머신에 연결된 볼륨은 크기를 조정할 수 없습니다.");
                 }
             }
 
@@ -2182,8 +2181,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
                 }
             }
             if (currentSize > newSize && !shrinkOk) {
-                throw new InvalidParameterValueException("Going from existing size of " + currentSize + " to size of " + newSize + " would shrink the volume."
-                        + "Need to sign off by supplying the shrinkok parameter with value of true.");
+                throw new InvalidParameterValueException("기존 크기 " + currentSize + " 보다 작은 크기 " + newSize + " 로 볼륨 사이즈를 변경할 수 없습니다.");
             }
 
             if (newSize > currentSize) {
@@ -2429,7 +2427,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         // if target VM has associated VM snapshots
         List<VMSnapshotVO> vmSnapshots = _vmSnapshotDao.findByVm(vmId);
         if (vmSnapshots.size() > 0) {
-            throw new InvalidParameterValueException(String.format("Unable to attach volume to VM %s/%s, please specify a VM that does not have VM snapshots", vm.getName(), vm.getUuid()));
+            throw new InvalidParameterValueException(String.format("가상머신 %s/%s에 볼륨을 연결할 수 없습니다. 가상머신 스냅샷이 없는 가상머신을 지정하십시오.", vm.getName(), vm.getUuid()));
         }
 
         // if target VM has backups

@@ -4489,7 +4489,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 List<String> hostNames = _vmInstanceDao.listDistinctHostNames(ntwkId);
                 // * verify that there are no duplicates
                 if (hostNames.contains(hostName)) {
-                    throw new InvalidParameterValueException("The vm with hostName " + hostName + " already exists in the network domain: " + ntwkDomain.getKey() + "; network="
+                    throw new InvalidParameterValueException("호스트 이름이 " + hostName + "인 가상머신이 네트워크 도메인에 이미 존재합니다. : " + ntwkDomain.getKey() + "; 네트워크="
                             + ((_networkModel.getNetwork(ntwkId) != null) ? _networkModel.getNetwork(ntwkId).getName() : "<unknown>"));
                 }
             }
