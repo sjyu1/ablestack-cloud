@@ -202,29 +202,29 @@ export default {
           show: (record) => { return ['Allocated', 'Ready'].includes(record.state) },
           component: shallowRef(defineAsyncComponent(() => import('@/views/storage/ResizeVolume.vue')))
         },
-        {
-          api: 'migrateVolume',
-          permission: ['migrateVolume', 'findStoragePoolsForMigration', 'listStoragePools', 'listDiskOfferings'],
-          icon: 'drag-outlined',
-          docHelp: 'adminguide/storage.html#id2',
-          label: 'label.migrate.volume',
-          args: ['volumeid', 'storageid', 'livemigrate'],
-          dataView: true,
-          show: (record, store) => { return record.state === 'Ready' },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/storage/MigrateVolume.vue')))
-        },
-        {
-          api: 'changeOfferingForVolume',
-          icon: 'swap-outlined',
-          docHelp: 'adminguide/storage.html#id2',
-          label: 'label.change.offering.for.volume',
-          args: ['id', 'diskofferingid', 'size', 'miniops', 'maxiops', 'automigrate'],
-          dataView: true,
-          show: (record, store) => { return ['Allocated', 'Ready'].includes(record.state) && ['Admin'].includes(store.userInfo.roletype) },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/storage/ChangeOfferingForVolume.vue')))
-        },
+        // {
+        //   api: 'migrateVolume',
+        //   permission: ['migrateVolume', 'findStoragePoolsForMigration', 'listStoragePools', 'listDiskOfferings'],
+        //   icon: 'drag-outlined',
+        //   docHelp: 'adminguide/storage.html#id2',
+        //   label: 'label.migrate.volume',
+        //   args: ['volumeid', 'storageid', 'livemigrate'],
+        //   dataView: true,
+        //   show: (record, store) => { return record.state === 'Ready' },
+        //   popup: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/storage/MigrateVolume.vue')))
+        // },
+        // {
+        //   api: 'changeOfferingForVolume',
+        //   icon: 'swap-outlined',
+        //   docHelp: 'adminguide/storage.html#id2',
+        //   label: 'label.change.offering.for.volume',
+        //   args: ['id', 'diskofferingid', 'size', 'miniops', 'maxiops', 'automigrate'],
+        //   dataView: true,
+        //   show: (record, store) => { return ['Allocated', 'Ready'].includes(record.state) && ['Admin'].includes(store.userInfo.roletype) },
+        //   popup: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/storage/ChangeOfferingForVolume.vue')))
+        // },
         {
           api: 'extractVolume',
           icon: 'cloud-download-outlined',

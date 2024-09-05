@@ -352,40 +352,40 @@ export default {
         //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ChangeAffinity'))),
         //   popup: true
         // },
-        {
-          api: 'scaleVirtualMachine',
-          icon: 'arrows-alt-outlined',
-          label: 'label.scale.vm',
-          docHelp: 'adminguide/virtual_machines.html#how-to-dynamically-scale-cpu-and-ram',
-          dataView: true,
-          show: (record) => { return ['Stopped'].includes(record.state) || (['Running'].includes(record.state) && record.hypervisor !== 'LXC') },
-          disabled: (record) => { return record.state === 'Running' && !record.isdynamicallyscalable },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ScaleVM.vue')))
-        },
-        {
-          api: 'migrateVirtualMachine',
-          icon: 'drag-outlined',
-          label: 'label.migrate.instance.to.host',
-          docHelp: 'adminguide/virtual_machines.html#moving-vms-between-hosts-manual-live-migration',
-          dataView: true,
-          show: (record, store) => { return ['Running'].includes(record.state) && ['Admin'].includes(store.userInfo.roletype) },
-          disabled: (record) => { return record.hostcontrolstate === 'Offline' },
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/MigrateWizard.vue')))
-        },
-        {
-          api: 'migrateVirtualMachine',
-          icon: 'drag-outlined',
-          label: 'label.migrate.instance.to.ps',
-          message: 'message.migrate.instance.to.ps',
-          docHelp: 'adminguide/virtual_machines.html#moving-vms-between-hosts-manual-live-migration',
-          dataView: true,
-          show: (record, store) => { return ['Stopped'].includes(record.state) && ['Admin'].includes(store.userInfo.roletype) },
-          disabled: (record) => { return record.hostcontrolstate === 'Offline' },
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/MigrateVMStorage'))),
-          popup: true
-        },
+        // {
+        //   api: 'scaleVirtualMachine',
+        //   icon: 'arrows-alt-outlined',
+        //   label: 'label.scale.vm',
+        //   docHelp: 'adminguide/virtual_machines.html#how-to-dynamically-scale-cpu-and-ram',
+        //   dataView: true,
+        //   show: (record) => { return ['Stopped'].includes(record.state) || (['Running'].includes(record.state) && record.hypervisor !== 'LXC') },
+        //   disabled: (record) => { return record.state === 'Running' && !record.isdynamicallyscalable },
+        //   popup: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/ScaleVM.vue')))
+        // },
+        // {
+        //   api: 'migrateVirtualMachine',
+        //   icon: 'drag-outlined',
+        //   label: 'label.migrate.instance.to.host',
+        //   docHelp: 'adminguide/virtual_machines.html#moving-vms-between-hosts-manual-live-migration',
+        //   dataView: true,
+        //   show: (record, store) => { return ['Running'].includes(record.state) && ['Admin'].includes(store.userInfo.roletype) },
+        //   disabled: (record) => { return record.hostcontrolstate === 'Offline' },
+        //   popup: true,
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/MigrateWizard.vue')))
+        // },
+        // {
+        //   api: 'migrateVirtualMachine',
+        //   icon: 'drag-outlined',
+        //   label: 'label.migrate.instance.to.ps',
+        //   message: 'message.migrate.instance.to.ps',
+        //   docHelp: 'adminguide/virtual_machines.html#moving-vms-between-hosts-manual-live-migration',
+        //   dataView: true,
+        //   show: (record, store) => { return ['Stopped'].includes(record.state) && ['Admin'].includes(store.userInfo.roletype) },
+        //   disabled: (record) => { return record.hostcontrolstate === 'Offline' },
+        //   component: shallowRef(defineAsyncComponent(() => import('@/views/compute/MigrateVMStorage'))),
+        //   popup: true
+        // },
         {
           api: 'resetPasswordForVirtualMachine',
           icon: 'key-outlined',
