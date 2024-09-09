@@ -1059,7 +1059,7 @@ public class NetUtils {
     }
 
     public static boolean verifyVlanLabel(final String vlan) {
-        if (!vlan.toLowerCase().equals("untagged") || (vlan.matches("[0-9]+") && vlan.length() > 4)){
+        if (!vlan.toLowerCase().equals("untagged") || !(vlan.matches("[0-9]+") && vlan.length() < 5)){
             logger.warn("VLAN은 untagged 또는 숫자 1~4자 사이여야 합니다.");
             return false;
         }

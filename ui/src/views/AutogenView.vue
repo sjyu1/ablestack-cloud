@@ -1356,7 +1356,8 @@ export default {
             this.items = this.items.filter((row) => row.name !== 'baremetal-system-account')
           }
           if (this.apiName === 'listNetworkOfferings') {
-            this.items = this.items.filter((row) => !row.name.includes('쿠버네테스'))
+            this.items = this.items.filter((row) => row.name.includes('기본 L2 VLAN 네트워크오퍼링'))
+            this.items = this.items.filter((row) => !row.name.includes('with ConfigDrive'))
           }
         }
         for (let idx = 0; idx < this.items.length; idx++) {

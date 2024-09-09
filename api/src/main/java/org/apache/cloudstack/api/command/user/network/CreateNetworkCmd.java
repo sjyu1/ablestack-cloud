@@ -421,7 +421,7 @@ public class CreateNetworkCmd extends BaseCmd implements UserCmd {
             response.setResponseName(getCommandName());
             setResponseObject(response);
         } else {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create network");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "네트워크를 생성하지 못했습니다.");
         }
     }
 }

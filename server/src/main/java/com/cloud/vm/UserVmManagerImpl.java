@@ -2772,6 +2772,17 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         boolean cleanupDetails = cmd.isCleanupDetails();
         String extraConfig = cmd.getExtraConfig();
 
+        // name parameter length check
+        if ((org.apache.commons.lang3.StringUtils.isBlank(hostName)
+                || !NetUtils.verifyDomainNameLabel(hostName, true))) {
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
+        // displayText parameter length check
+        if (displayName != null && !NetUtils.verifyDomainNameLabel(displayName, true)) {
+            throw new InvalidParameterValueException("이름 표시가 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
         UserVmVO vmInstance = _vmDao.findById(cmd.getId());
         VMTemplateVO template = _templateDao.findById(vmInstance.getTemplateId());
         if (MapUtils.isNotEmpty(details) || cmd.isCleanupDetails()) {
@@ -3949,12 +3960,6 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         }
     }
 
-    public void checkNameForRFCCompliance(String name) {
-        if (!NetUtils.verifyDomainNameLabel(name, true)) {
-            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
-        }
-    }
-
     @DB
     private UserVm createVirtualMachine(DataCenter zone, ServiceOffering serviceOffering, VirtualMachineTemplate tmplt, String hostName, String displayName, Account owner,
                                         Long diskOfferingId, Long diskSize, List<NetworkVO> networkList, List<Long> securityGroupIdList, String group, HTTPMethod httpmethod, String userData,
@@ -4301,16 +4306,6 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             }
 
             long id = _vmDao.getNextInSequence(Long.class, "id");
-
-            if (hostName != null) {
-                // Check is hostName is RFC compliant
-                checkNameForRFCCompliance(hostName);
-            }
-
-            if (displayName != null) {
-                // Check is displayName is RFC compliant
-                checkNameForRFCCompliance(displayName);
-            }
 
             String instanceName = null;
             String instanceSuffix = _instance;
@@ -5230,7 +5225,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             if (!tmpVm.getState().equals(State.Running)) {
                 // Some other thread changed state of VM, possibly vmsync
                 logger.error("VM " + tmpVm + " unexpectedly went to " + tmpVm.getState() + " state");
-                throw new ConcurrentOperationException("Failed to deploy VM "+vm);
+                throw new ConcurrentOperationException("가상머신 배포에 실패했습니다. "+vm);
             }
 
             try {
@@ -5245,7 +5240,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 }
             }
             catch (Exception e) {
-                logger.fatal("Unable to resize the data disk for vm " + vm.getDisplayName() + " due to " + e.getMessage(), e);
+                logger.fatal(e.getMessage() + "로 인해 가상머신" + vm.getDisplayName() + "의 데이터 디스크 크기를 조정할 수 없습니다.", e);
+                // logger.fatal("Unable to resize the data disk for vm " + vm.getDisplayName() + " due to " + e.getMessage(), e);
             }
 
         } finally {
@@ -6324,10 +6320,16 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         Long hostId = cmd.getHostId();
         getDestinationHost(hostId, isRootAdmin, true);
 
+        String name = cmd.getName();
+        // name parameter length check
+        if ((org.apache.commons.lang3.StringUtils.isBlank(name)
+                && !NetUtils.verifyDomainNameLabel(name, true))) {
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+        }
+
         String ipAddress = cmd.getIpAddress();
         String ip6Address = cmd.getIp6Address();
         String macAddress = cmd.getMacAddress();
-        String name = cmd.getName();
         String displayName = cmd.getDisplayName();
         UserVm vm = null;
         IpAddresses addrs = new IpAddresses(ipAddress, ip6Address, macAddress);

@@ -299,10 +299,23 @@ export default {
         params.domainId = this.domainId
         this.loading = true
         api('uploadVolume', params).then(json => {
-          this.$notification.success({
-            message: this.$t('message.success.upload'),
-            description: this.$t('message.success.upload.volume.description')
+          this.$pollJob({
+            jobId: json.uploadvolumeresponse.jobid,
+            title: this.$t('message.success.create.volume'),
+            description: values.name,
+            successMessage: this.$t('message.success.create.volume'),
+            successMethod: (result) => {
+              this.closeModal()
+            },
+            errorMessage: this.$t('message.upload.volume.failed'),
+            loadingMessage: this.$t('message.volume.state.uploadinprogress'),
+            catchMessage: this.$t('error.fetching.async.job.result'),
+            catchMethod: () => this.$emit('refresh-data')
           })
+          // this.$notification.success({
+          //   message: this.$t('message.success.upload'),
+          //   description: this.$t('message.success.upload.volume.description')
+          // })
           this.closeAction()
           this.$emit('refresh-data')
         }).catch(error => {

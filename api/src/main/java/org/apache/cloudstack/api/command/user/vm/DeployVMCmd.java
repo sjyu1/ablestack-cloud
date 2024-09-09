@@ -839,7 +839,7 @@ public class DeployVMCmd extends BaseAsyncCreateCustomIdCmd implements SecurityG
             response.setResponseName(getCommandName());
             setResponseObject(response);
         } else {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to deploy vm uuid:"+getEntityUuid());
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "가상머신 배포에 실패했습니다. uuid:"+getEntityUuid());
         }
     }
 
@@ -853,7 +853,7 @@ public class DeployVMCmd extends BaseAsyncCreateCustomIdCmd implements SecurityG
                 setEntityId(vm.getId());
                 setEntityUuid(vm.getUuid());
             } else {
-                throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to deploy vm");
+                throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "가상머신 배포에 실패했습니다.");
             }
         } catch (InsufficientCapacityException ex) {
             logger.info(ex);

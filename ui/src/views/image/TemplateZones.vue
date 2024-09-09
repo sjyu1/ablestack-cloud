@@ -49,13 +49,13 @@
           <span v-else>{{ $t('label.no') }}</span>
         </template>
         <template v-if="column.key === 'actions'">
-          <tooltip-button
+          <!-- <tooltip-button
             style="margin-right: 5px"
             :disabled="!('copyTemplate' in $store.getters.apis && record.isready)"
             :title="$t('label.action.copy.template')"
             icon="copy-outlined"
             :loading="copyLoading"
-            @onClick="showCopyTemplate(record)" />
+            @onClick="showCopyTemplate(record)" /> -->
           <tooltip-button
             style="margin-right: 5px"
             :disabled="!('deleteTemplate' in $store.getters.apis)"
@@ -101,14 +101,14 @@
         </a-table>
       </template>
       <template #action="{ record }">
-        <tooltip-button
+        <!-- <tooltip-button
           style="margin-right: 5px"
           :dataSource="templates"
           :disabled="!('copyTemplate' in $store.getters.apis && record.isready) || templates.includes(record.id)"
           :title="$t('label.action.copy.template')"
           icon="copy-outlined"
           :loading="copyLoading || fetchLoading"
-          @onClick="showCopyTemplate(record)" />
+          @onClick="showCopyTemplate(record)" /> -->
         <tooltip-button
           style="margin-right: 5px"
           :dataSource="templates"

@@ -151,7 +151,7 @@ public class UploadVolumeCmd extends BaseAsyncCmd implements UserCmd {
                 response.setResponseName(getCommandName());
                 setResponseObject(response);
             } else {
-                throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to upload volume");
+                throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "볼륨 업로드에 실패했습니다.");
             }
     }
 
