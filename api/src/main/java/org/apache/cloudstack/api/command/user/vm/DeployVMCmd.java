@@ -785,15 +785,15 @@ public class DeployVMCmd extends BaseAsyncCreateCustomIdCmd implements SecurityG
 
     @Override
     public String getCreateEventDescription() {
-        return "creating Vm";
+        return "가상머신 생성중";
     }
 
     @Override
     public String getEventDescription() {
         if(getStartVm()) {
-            return "starting Vm. Vm Id: " + getEntityUuid();
+            return "가상머신 시작중. 가상머신 Id: " + getEntityUuid();
         }
-        return "deploying Vm. Vm Id: " + getEntityUuid();
+        return "가상머신 배포중. 가상머신 Id: " + getEntityUuid();
     }
 
     @Override
@@ -805,7 +805,7 @@ public class DeployVMCmd extends BaseAsyncCreateCustomIdCmd implements SecurityG
     public void execute() {
         UserVm result;
 
-        CallContext.current().setEventDetails("Vm Id: " + getEntityUuid());
+        CallContext.current().setEventDetails("가상머신 Id: " + getEntityUuid());
         if (getStartVm()) {
             try {
                 result = _userVmService.startVirtualMachine(this);

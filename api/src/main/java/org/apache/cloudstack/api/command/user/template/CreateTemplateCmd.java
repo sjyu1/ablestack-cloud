@@ -281,7 +281,7 @@ public class CreateTemplateCmd extends BaseAsyncCreateCmd implements UserCmd {
 
     @Override
     public String getEventDescription() {
-        return "creating template: " + getTemplateName();
+        return "템플릿 생성: " + getTemplateName();
     }
 
     @Override

@@ -4951,7 +4951,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_SERVICE_PROVIDER_UPDATE, eventDescription = "Updating physical network ServiceProvider", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_SERVICE_PROVIDER_UPDATE, eventDescription = "물리 네트워크 서비스 공급자 업데이트 중", async = true)
     public PhysicalNetworkServiceProvider updateNetworkServiceProvider(Long id, String stateStr, List<String> enabledServices) {
 
         PhysicalNetworkServiceProviderVO provider = _pNSPDao.findById(id);
@@ -5111,7 +5111,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
 
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_CREATE, eventDescription = "Creating Physical Network TrafficType", create = true)
+    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_CREATE, eventDescription = "물리 네트워크 트래픽 유형 생성", create = true)
     public PhysicalNetworkTrafficType addTrafficTypeToPhysicalNetwork(Long physicalNetworkId, String trafficTypeStr, String isolationMethod, String xenLabel, String kvmLabel, String vmwareLabel,
             String simulatorLabel, String vlan, String hypervLabel, String ovm3Label) {
 
@@ -5222,13 +5222,13 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_CREATE, eventDescription = "Creating Physical Network TrafficType", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_CREATE, eventDescription = "물리 네트워크 트래픽 유형 생성", async = true)
     public PhysicalNetworkTrafficType getPhysicalNetworkTrafficType(Long id) {
         return _pNTrafficTypeDao.findById(id);
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_UPDATE, eventDescription = "Updating physical network TrafficType", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_UPDATE, eventDescription = "물리 네트워크 트래픽 유형 업데이트", async = true)
     public PhysicalNetworkTrafficType updatePhysicalNetworkTrafficType(Long id, String xenLabel, String kvmLabel, String vmwareLabel, String hypervLabel, String ovm3Label) {
 
         PhysicalNetworkTrafficTypeVO trafficType = _pNTrafficTypeDao.findById(id);
@@ -5274,7 +5274,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_DELETE, eventDescription = "Deleting physical network TrafficType", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_TRAFFIC_TYPE_DELETE, eventDescription = "물리 네트워크 트래픽 유형 삭제", async = true)
     public boolean deletePhysicalNetworkTrafficType(Long id) {
         PhysicalNetworkTrafficTypeVO trafficType = _pNTrafficTypeDao.findById(id);
 

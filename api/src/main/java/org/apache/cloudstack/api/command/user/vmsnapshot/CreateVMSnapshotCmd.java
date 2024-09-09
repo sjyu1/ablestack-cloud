@@ -108,7 +108,7 @@ public class CreateVMSnapshotCmd extends BaseAsyncCreateCmd {
 
     @Override
     public String getEventDescription() {
-        return "creating snapshot for VM: " + this._uuidMgr.getUuid(VirtualMachine.class, getVmId());
+        return "가상머신 스냅샷 생성: " + this._uuidMgr.getUuid(VirtualMachine.class, getVmId());
     }
 
     @Override
@@ -118,7 +118,7 @@ public class CreateVMSnapshotCmd extends BaseAsyncCreateCmd {
 
     @Override
     public void execute() {
-        CallContext.current().setEventDetails("VM Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getVmId()));
+        CallContext.current().setEventDetails("가상머신 Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getVmId()));
         VMSnapshot result = _vmSnapshotService.createVMSnapshot(getVmId(), getEntityId(), getQuiescevm());
         if (result != null) {
             VMSnapshotResponse response = _responseGenerator.createVMSnapshotResponse(result);

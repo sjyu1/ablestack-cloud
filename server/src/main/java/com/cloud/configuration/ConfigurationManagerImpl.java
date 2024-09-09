@@ -654,13 +654,13 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
             if (localCidrs != null && localCidrs.length > 0) {
                 logger.warn("Management network CIDR is not configured originally. Set it default to " + localCidrs[0]);
 
-                _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "Management network CIDR is not configured originally. Set it default to "
+                _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0), "관리 네트워크 CIDR는 원래 구성되지 않았습니다. 기본값으로 설정 "
                         + localCidrs[0], "");
                 _configDao.update(Config.ManagementNetwork.key(), Config.ManagementNetwork.getCategory(), localCidrs[0]);
             } else {
                 logger.warn("Management network CIDR is not properly configured and we are not able to find a default setting");
                 _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_MANAGMENT_NODE, 0, new Long(0),
-                        "Management network CIDR is not properly configured and we are not able to find a default setting", "");
+                        "관리 네트워크 CIDR가 제대로 구성되지 않아 기본 설정을 찾을 수 없습니다.", "");
             }
         }
 
@@ -2304,7 +2304,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_POD_CREATE, eventDescription = "creating pod", async = false)
+    @ActionEvent(eventType = EventTypes.EVENT_POD_CREATE, eventDescription = "pod 생성", async = false)
     public Pod createPod(final long zoneId, final String name, final String startIp, final String endIp, final String gateway, final String netmask, String allocationState) {
         final DataCenterVO zone = _zoneDao.findById(zoneId);
         if (zone == null) {
@@ -2616,7 +2616,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
 
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_ZONE_EDIT, eventDescription = "editing zone", async = false)
+    @ActionEvent(eventType = EventTypes.EVENT_ZONE_EDIT, eventDescription = "zone 편집", async = false)
     public DataCenter editZone(final UpdateZoneCmd cmd) {
         // Parameter validation as from execute() method in V1
         final Long zoneId = cmd.getId();
@@ -3020,7 +3020,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_SERVICE_OFFERING_CREATE, eventDescription = "creating service offering")
+    @ActionEvent(eventType = EventTypes.EVENT_SERVICE_OFFERING_CREATE, eventDescription = "서비스 오퍼링 생성")
     public ServiceOffering createServiceOffering(final CreateServiceOfferingCmd cmd) {
         final Long userId = CallContext.current().getCallingUserId();
         final Map<String, String> details = cmd.getDetails();
@@ -4322,7 +4322,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
 
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_VLAN_IP_RANGE_CREATE, eventDescription = "creating vlan ip range", async = false)
+    @ActionEvent(eventType = EventTypes.EVENT_VLAN_IP_RANGE_CREATE, eventDescription = "VLAN IP 범위 생성", async = false)
     public Vlan createVlanAndPublicIpRange(final CreateVlanIpRangeCmd cmd) throws InsufficientCapacityException, ConcurrentOperationException, ResourceUnavailableException,
     ResourceAllocationException {
         Long zoneId = cmd.getZoneId();

@@ -1047,7 +1047,7 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
                 callContext.setEventResourceId(volumeIds.get(0));
             }
             String volumeUuids = volumeIds.stream().map(volumeId -> this._uuidMgr.getUuid(Volume.class, volumeId)).collect(Collectors.joining(", "));
-            callContext.setEventDetails("Volume Type: " + type + "Volume Id: " + volumeUuids + " Vm Id: " + this._uuidMgr.getUuid(VirtualMachine.class, vm.getId()));
+            callContext.setEventDetails("볼륨 타입: " + type + ", 볼륨 Id: " + volumeUuids + ", 가상머신 Id: " + this._uuidMgr.getUuid(VirtualMachine.class, vm.getId()));
         }
     }
 

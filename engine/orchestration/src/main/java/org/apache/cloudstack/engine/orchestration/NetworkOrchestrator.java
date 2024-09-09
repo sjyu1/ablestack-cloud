@@ -2948,7 +2948,7 @@ public class NetworkOrchestrator extends ManagerBase implements NetworkOrchestra
             }
         });
 
-        CallContext.current().setEventDetails("Network Id: " + network.getId());
+        CallContext.current().setEventDetails("네트워크 Id: " + network.getId());
         CallContext.current().putContextParameter(Network.class, network.getUuid());
         return network;
     }
@@ -4190,7 +4190,7 @@ public class NetworkOrchestrator extends ManagerBase implements NetworkOrchestra
 
         if (!answer.getResult()) {
             logger.warn("Unable to setup agent " + hostId + " due to " + answer.getDetails());
-            final String msg = "Incorrect Network setup on agent, Reinitialize agent after network names are setup, details : " + answer.getDetails();
+            final String msg = "에이전트의 잘못된 네트워크 설정, 네트워크 이름 설정 후 에이전트 다시 초기화, 세부정보 : " + answer.getDetails();
             _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_HOST, dcId, host.getPodId(), msg, msg);
             throw new ConnectionException(true, msg);
         } else {

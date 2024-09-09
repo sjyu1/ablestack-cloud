@@ -65,7 +65,7 @@ public class DeleteVMSnapshotCmd extends BaseAsyncCmd {
 
     @Override
     public void execute() {
-        CallContext.current().setEventDetails("vmsnapshot id: " + this._uuidMgr.getUuid(VMSnapshot.class, getId()));
+        CallContext.current().setEventDetails("가상머신 스냅샷 id: " + this._uuidMgr.getUuid(VMSnapshot.class, getId()));
         boolean result = _vmSnapshotService.deleteVMSnapshot(getId());
         if (result) {
             SuccessResponse response = new SuccessResponse(getCommandName());

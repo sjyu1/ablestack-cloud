@@ -1559,18 +1559,18 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             throw new InvalidParameterValueException("Unable to grant permission to account " + caller.getAccountName() + " as it is neither admin nor owner or the template");
         }
 
-        StringBuilder msg = new StringBuilder("Image update: ");
+        StringBuilder msg = new StringBuilder("템플릿 업데이트: ");
         msg.append("id = " + template.getId());
         VMTemplateVO updatedTemplate = _tmpltDao.createForUpdate();
 
         if (isPublic != null) {
             updatedTemplate.setPublicTemplate(isPublic.booleanValue());
-            msg.append("; isPublic = " + String.valueOf(isPublic));
+            msg.append("; 공개 = " + String.valueOf(isPublic));
         }
 
         if (isFeatured != null) {
             updatedTemplate.setFeatured(isFeatured.booleanValue());
-            msg.append("; isFeatured = " + String.valueOf(isFeatured));
+            msg.append("; 추천 = " + String.valueOf(isFeatured));
         }
 
         if (isExtractable != null) {
@@ -1580,7 +1580,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             } else {
                 // For Isos normal user can change it, as their are no derivatives.
                 updatedTemplate.setExtractable(isExtractable.booleanValue());
-                msg.append("; isExtractable = " + String.valueOf(isExtractable));
+                msg.append("; 추출 가능 = " + String.valueOf(isExtractable));
             }
         }
 
@@ -2062,7 +2062,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_TEMPLATE_CREATE, eventDescription = "creating template", create = true)
+    @ActionEvent(eventType = EventTypes.EVENT_TEMPLATE_CREATE, eventDescription = "템플릿 생성", create = true)
     public VMTemplateVO createPrivateTemplateRecord(CreateTemplateCmd cmd, Account templateOwner) throws ResourceAllocationException {
         Account caller = CallContext.current().getCallingAccount();
         boolean isAdmin = (_accountMgr.isAdmin(caller.getId()));

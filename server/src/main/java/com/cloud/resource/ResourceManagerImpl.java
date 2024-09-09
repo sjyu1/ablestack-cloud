@@ -426,7 +426,7 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
 
     @DB
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_CLUSTER_ADD, eventDescription = "adding cluster", async = false)
+    @ActionEvent(eventType = EventTypes.EVENT_CLUSTER_ADD, eventDescription = "클러스터 추가", async = false)
     public List<? extends Cluster> discoverCluster(final AddClusterCmd cmd) throws IllegalArgumentException, DiscoveryException, ResourceInUseException {
         final long dcId = cmd.getZoneId();
         final long podId = cmd.getPodId();

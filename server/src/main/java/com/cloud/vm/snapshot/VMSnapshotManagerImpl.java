@@ -715,7 +715,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VM_SNAPSHOT_REVERT, eventDescription = "revert to VM snapshot", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VM_SNAPSHOT_REVERT, eventDescription = "가상머신 스냅샷 복원", async = true)
     public UserVm revertToSnapshot(Long vmSnapshotId) throws InsufficientCapacityException, ResourceUnavailableException, ConcurrentOperationException {
 
         // check if VM snapshot exists in DB
@@ -742,20 +742,19 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         if (userVm.getState() != VirtualMachine.State.Running
                 && userVm.getState() != VirtualMachine.State.Stopped) {
             throw new InvalidParameterValueException(
-                    "VM Snapshot reverting failed due to vm is not in the state of Running or Stopped.");
+                    "가상머신이 실행 중 또는 중지됨 상태가 아니기 때문에 가상머신 스냅샷 되돌리기에 실패했습니다.");
         }
 
         if (userVm.getState() == VirtualMachine.State.Running && vmSnapshotVo.getType() == VMSnapshot.Type.Disk || userVm.getState() == VirtualMachine.State.Stopped
                 && vmSnapshotVo.getType() == VMSnapshot.Type.DiskAndMemory) {
             throw new InvalidParameterValueException(
-                    "VM Snapshot revert not allowed. This will result in VM state change. You can revert running VM to disk and memory type snapshot and stopped VM to disk type"
-                            + " snapshot");
+                    "가상머신 스냅샷 복원이 허용되지 않습니다. 이로 인해 가상머신 상태가 변경됩니다. 실행 중인 가상머신을 디스크 및 메모리 유형 스냅샷으로 되돌리고 중지된 가상머신을 디스크 유형으로 되돌릴 수 있습니다.");
         }
 
         // if snapshot is not created, error out
         if (vmSnapshotVo.getState() != VMSnapshot.State.Ready) {
             throw new InvalidParameterValueException(
-                    "VM Snapshot reverting failed due to vm snapshot is not in the state of Created.");
+                    "가상머신 스냅샷이 생성됨 상태가 아니기 때문에 가상머신 스냅샷 되돌리기에 실패했습니다.");
         }
 
         // serialize VM operation

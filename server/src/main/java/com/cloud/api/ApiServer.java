@@ -965,12 +965,12 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
                     Long domainId = 1L;
                     if (userId == null) {
                         ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_USER_REQUEST,
-                            "Bad request : reuse credentials or no signature.", new Long(0), null);
+                            "잘못된 요청: 자격 증명을 재사용하거나 서명이 없습니다.", new Long(0), null);
                     } else {
                         String accountName = "admin";
                         Account userAcct = ApiDBUtils.findAccountByNameDomain(accountName, domainId);
                         ActionEventUtils.onActionEvent(userAcct.getId(), userAcct.getAccountId(), domainId, EventTypes.EVENT_USER_REQUEST,
-                            "Bad request : reuse credentials or no signature.", userAcct.getId(), null);
+                            "잘못된 요청: 자격 증명을 재사용하거나 서명이 없습니다.", userAcct.getId(), null);
                     }
                 }
                 return false; // no signature, bad request

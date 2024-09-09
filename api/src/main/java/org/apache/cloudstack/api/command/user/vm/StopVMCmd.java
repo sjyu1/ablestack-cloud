@@ -124,7 +124,7 @@ public class StopVMCmd extends BaseAsyncCmd implements UserCmd {
 
     @Override
     public void execute() throws ServerApiException, ConcurrentOperationException {
-        CallContext.current().setEventDetails("Vm Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getId()));
+        CallContext.current().setEventDetails("가상머신 Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getId()));
         UserVm result;
         final boolean securityFeaturesEnabled = Boolean.parseBoolean(_configDao.getValue("security.features.enabled"));
         if (securityFeaturesEnabled && isForced()) {

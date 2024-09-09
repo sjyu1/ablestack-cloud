@@ -134,7 +134,7 @@ public class DestroyVMCmd extends BaseAsyncCmd implements UserCmd {
 
     @Override
     public void execute() throws ResourceUnavailableException, ConcurrentOperationException {
-        CallContext.current().setEventDetails("Vm Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getId()));
+        CallContext.current().setEventDetails("가상머신 Id: " + this._uuidMgr.getUuid(VirtualMachine.class, getId()));
         UserVm result = _userVmService.destroyVm(this);
 
         UserVmResponse response = new UserVmResponse();

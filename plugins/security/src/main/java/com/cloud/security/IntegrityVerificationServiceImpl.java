@@ -121,7 +121,7 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
 
         private void integrityVerification() {
             ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_INTEGRITY_VERIFICATION,
-                    "running periodic integrity verification on management server when running the product.", new Long(0), null, true, 0);
+                    "제품 실행 시 관리서버에서 주기적인 무결성 검증을 실행합니다.", new Long(0), null, true, 0);
             ManagementServerHostVO msHost = msHostDao.findByMsid(ManagementServerNode.getManagementServerId());
             List<String> verificationFailedList = new ArrayList<>();
             List<Boolean> verificationResults = new ArrayList<>();
@@ -359,7 +359,7 @@ public class IntegrityVerificationServiceImpl extends ManagerBase implements Plu
     @Override
     public boolean runIntegrityVerificationCommand(final RunIntegrityVerificationCmd cmd) {
         ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(), EventTypes.EVENT_INTEGRITY_VERIFICATION,
-                    "running manual integrity verification on management server when operating the product.", new Long(0), null, true, 0);
+                    "제품 운영 시 관리서버에서 수동 무결성 검증을 실행합니다.", new Long(0), null, true, 0);
         Long mshostId = cmd.getMsHostId();
         List<Boolean> verificationResults = new ArrayList<>();
         List<String> verificationFailedList = new ArrayList<>();

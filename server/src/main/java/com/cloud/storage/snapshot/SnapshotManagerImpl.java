@@ -1939,11 +1939,11 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         SnapshotVO snapshotVO = _snapshotDao.findById(snapshotId);
         long startEventId = ActionEventUtils.onStartedActionEvent(CallContext.current().getCallingUserId(),
                 CallContext.current().getCallingAccountId(), EventTypes.EVENT_SNAPSHOT_COPY,
-                String.format("Copying snapshot ID: %s", snapshotVO.getUuid()), snapshotId,
+                String.format("복사 중 스냅샷 ID: %s", snapshotVO.getUuid()), snapshotId,
                 ApiCommandResourceType.Snapshot.toString(), true, 0);
         DataStore dataStore = getSnapshotZoneImageStore(snapshotId, zoneId);
         String completedEventLevel = EventVO.LEVEL_ERROR;
-        String completedEventMsg = String.format("Copying snapshot ID: %s failed", snapshotVO.getUuid());
+        String completedEventMsg = String.format("복사 중 스냅샷 ID: %s 실패", snapshotVO.getUuid());
         if (dataStore == null) {
             logger.error(String.format("Unable to find an image store for zone ID: %d where snapshot %s is in Ready state", zoneId, snapshotVO));
             ActionEventUtils.onCompletedActionEvent(CallContext.current().getCallingUserId(),

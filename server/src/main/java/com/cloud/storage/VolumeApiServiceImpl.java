@@ -1590,19 +1590,19 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
             throw new InvalidParameterValueException("볼륨 ID가 존재하지 않습니다.");
         }
         if (!_snapshotMgr.canOperateOnVolume(volume)) {
-            throw new InvalidParameterValueException("There are snapshot operations in progress on the volume, unable to delete it");
+            throw new InvalidParameterValueException("볼륨에서 스냅샷 작업이 진행 중이므로 삭제할 수 없습니다.");
         }
         if (volume.getInstanceId() != null && _vmInstanceDao.findById(volume.getInstanceId()) != null && volume.getState() != Volume.State.Expunged) {
-            throw new InvalidParameterValueException("Please specify a volume that is not attached to any VM.");
+            throw new InvalidParameterValueException("어떤 가상머신에도 연결되지 않은 볼륨을 지정하세요.");
         }
         if (volume.getState() == Volume.State.UploadOp) {
             VolumeDataStoreVO volumeStore = _volumeStoreDao.findByVolume(volume.getId());
             if (volumeStore.getDownloadState() == VMTemplateStorageResourceAssoc.Status.DOWNLOAD_IN_PROGRESS) {
-                throw new InvalidParameterValueException("Please specify a volume that is not uploading");
+                throw new InvalidParameterValueException("업로드되지 않는 볼륨을 지정하십시오.");
             }
         }
         if (volume.getState() == Volume.State.NotUploaded || volume.getState() == Volume.State.UploadInProgress) {
-            throw new InvalidParameterValueException("The volume is either getting uploaded or it may be initiated shortly, please wait for it to be completed");
+            throw new InvalidParameterValueException("볼륨이 업로드 중이거나 곧 시작될 수 있습니다. 완료될 때까지 기다려 주십시오.");
         }
         _accountMgr.checkAccess(caller, null, true, volume);
         return volume;

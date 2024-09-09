@@ -177,7 +177,7 @@ export default {
               value: (record) => { return 'HTTP_DOWNLOAD' }
             }
           },
-          response: (result) => { return `Please click <a href="${result.template.url}" target="_blank">${result.template.url}</a> to download.` }
+          response: (result) => { return `다운로드하려면 <a href="${result.template.url}" target="_blank">${result.template.url}</a> 클릭하세요.` }
         // },
         // {
         //   api: 'updateTemplatePermissions',
