@@ -841,7 +841,7 @@ public class AlertManagerImpl extends ManagerBase implements AlertManager, Confi
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.ALERT_GENERATE, eventDescription = "generating alert", async = true)
+    @ActionEvent(eventType = EventTypes.ALERT_GENERATE, eventDescription = "경고 생성", async = true)
     public boolean generateAlert(AlertType alertType, long dataCenterId, Long podId, String msg) {
         try {
             sendAlert(alertType, dataCenterId, podId, msg, msg);

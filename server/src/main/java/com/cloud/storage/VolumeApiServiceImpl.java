@@ -395,7 +395,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
      */
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_UPLOAD, eventDescription = "uploading volume", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_UPLOAD, eventDescription = "업로드 볼륨", async = true)
     public VolumeVO uploadVolume(UploadVolumeCmd cmd) throws ResourceAllocationException {
         Account caller = CallContext.current().getCallingAccount();
         long ownerId = cmd.getEntityOwnerId();
@@ -438,7 +438,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_UPLOAD, eventDescription = "uploading volume for post upload", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_UPLOAD, eventDescription = "post 업로드를 위한 업로드 볼륨", async = true)
     public GetUploadParamsResponse uploadVolume(final GetUploadParamsForVolumeCmd cmd) throws ResourceAllocationException, MalformedURLException {
         Account caller = CallContext.current().getCallingAccount();
         long ownerId = cmd.getEntityOwnerId();
@@ -691,7 +691,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
      */
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_CREATE, eventDescription = "creating volume", create = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_CREATE, eventDescription = "볼륨 생성", create = true)
     public VolumeVO allocVolume(CreateVolumeCmd cmd) throws ResourceAllocationException {
         Account caller = CallContext.current().getCallingAccount();
 
@@ -1002,7 +1002,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
 
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_CREATE, eventDescription = "creating volume", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_CREATE, eventDescription = "볼륨 생성", async = true)
     public VolumeVO createVolume(CreateVolumeCmd cmd) {
         VolumeVO volume = _volsDao.findById(cmd.getEntityId());
         boolean created = true;
@@ -1074,7 +1074,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
 
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_RESIZE, eventDescription = "resizing volume", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_RESIZE, eventDescription = "볼륨 크기 조절", async = true)
     public VolumeVO resizeVolume(ResizeVolumeCmd cmd) throws ResourceAllocationException {
         Long newSize = cmd.getSize();
         Long newMinIops = cmd.getMinIops();
@@ -1549,7 +1549,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
 
     @DB
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DELETE, eventDescription = "deleting volume")
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DELETE, eventDescription = "볼륨 삭제")
     /**
      * Executes the removal of the volume. If the volume is only allocated we do not try to remove it from primary and secondary storage.
      * Otherwise, after the removal in the database, we will try to remove the volume from both primary and secondary storage.
@@ -1710,7 +1710,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DESTROY, eventDescription = "destroying a volume")
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DESTROY, eventDescription = "볼륨 파기")
     public Volume destroyVolume(long volumeId, Account caller, boolean expunge, boolean forceExpunge) {
         VolumeVO volume = retrieveAndValidateVolume(volumeId, caller);
 
@@ -1752,7 +1752,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DESTROY, eventDescription = "destroying a volume")
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DESTROY, eventDescription = "볼륨 파기")
     public void destroyVolume(long volumeId) {
         volService.destroyVolume(volumeId);
     }
@@ -2193,7 +2193,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_ATTACH, eventDescription = "attaching volume", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_ATTACH, eventDescription = "볼륨 연결", async = true)
     public Volume attachVolumeToVM(AttachVolumeCmd command) {
         return attachVolumeToVM(command.getVirtualMachineId(), command.getId(), command.getDeviceId());
     }
@@ -2567,7 +2567,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_UPDATE, eventDescription = "updating volume", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_UPDATE, eventDescription = "볼륨 업데이트", async = true)
     public Volume updateVolume(long volumeId, String path, String state, Long storageId, Boolean displayVolume,
                                String customId, long entityOwnerId, String chainInfo, String name) {
 
@@ -2686,7 +2686,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DETACH, eventDescription = "detaching volume", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DETACH, eventDescription = "볼륨 연결해제", async = true)
     public Volume detachVolumeFromVM(DetachVolumeCmd cmmd) {
         Account caller = CallContext.current().getCallingAccount();
         if ((cmmd.getId() == null && cmmd.getDeviceId() == null && cmmd.getVirtualMachineId() == null) || (cmmd.getId() != null && (cmmd.getDeviceId() != null || cmmd.getVirtualMachineId() != null))
@@ -2821,7 +2821,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         }
     }
 
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DETACH, eventDescription = "detaching volume")
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_DETACH, eventDescription = "볼륨 연결해제")
     public Volume detachVolumeViaDestroyVM(long vmId, long volumeId) {
         Account caller = CallContext.current().getCallingAccount();
         Volume volume = _volsDao.findById(volumeId);
@@ -3424,7 +3424,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_SNAPSHOT_CREATE, eventDescription = "taking snapshot", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_SNAPSHOT_CREATE, eventDescription = "스냅샷 생성", async = true)
     public Snapshot takeSnapshot(Long volumeId, Long policyId, Long snapshotId, Account account, boolean quiescevm,
          Snapshot.LocationType locationType, boolean asyncBackup, Map<String, String> tags, List<Long> zoneIds)
             throws ResourceAllocationException {
@@ -3577,7 +3577,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_SNAPSHOT_CREATE, eventDescription = "allocating snapshot", create = true)
+    @ActionEvent(eventType = EventTypes.EVENT_SNAPSHOT_CREATE, eventDescription = "스냅샷 생성", create = true)
     public Snapshot allocSnapshot(Long volumeId, Long policyId, String snapshotName, Snapshot.LocationType locationType, List<Long> zoneIds) throws ResourceAllocationException {
         Account caller = CallContext.current().getCallingAccount();
 
@@ -3727,7 +3727,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_EXTRACT, eventDescription = "extracting volume", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_VOLUME_EXTRACT, eventDescription = "볼륨 추출", async = true)
     public String extractVolume(ExtractVolumeCmd cmd) {
         Long volumeId = cmd.getId();
         Long zoneId = cmd.getZoneId();

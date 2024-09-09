@@ -1360,7 +1360,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
 
     @Override
     @DB
-    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_CREATE, eventDescription = "creating network")
+    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_CREATE, eventDescription = "네트워크 생성")
     public Network createGuestNetwork(CreateNetworkCmd cmd) throws InsufficientCapacityException, ConcurrentOperationException, ResourceAllocationException {
         Long networkOfferingId = cmd.getNetworkOfferingId();
         String gateway = cmd.getGateway();
@@ -2657,7 +2657,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_DELETE, eventDescription = "deleting network", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_DELETE, eventDescription = "네트워크 삭제", async = true)
     public boolean deleteNetwork(long networkId, boolean forced) {
 
         Account caller = CallContext.current().getCallingAccount();
@@ -2693,7 +2693,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_RESTART, eventDescription = "restarting network", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_RESTART, eventDescription = "네트워크 재시작", async = true)
     public boolean restartNetwork(Long networkId, boolean cleanup, boolean makeRedundant, boolean livePatch, User user) throws ConcurrentOperationException, ResourceUnavailableException, InsufficientCapacityException {
         NetworkVO network = getNetworkVO(networkId, "Network with specified id doesn't exist");
         return restartNetwork(network, cleanup, makeRedundant, livePatch, user);
@@ -2707,7 +2707,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         return network;
     }
 
-    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_RESTART, eventDescription = "restarting network", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_RESTART, eventDescription = "네트워크 재시작", async = true)
     public boolean restartNetwork(NetworkVO network, boolean cleanup, boolean makeRedundant, boolean livePatch, User user) throws ConcurrentOperationException, ResourceUnavailableException, InsufficientCapacityException {
 
         // Don't allow to restart network if it's not in Implemented/Setup state
@@ -2748,7 +2748,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_RESTART, eventDescription = "restarting network", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_RESTART, eventDescription = "네트워크 재시작", async = true)
     public boolean restartNetwork(RestartNetworkCmd cmd) throws ConcurrentOperationException, ResourceUnavailableException, InsufficientCapacityException {
         // This method restarts all network elements belonging to the network and re-applies all the rules
         NetworkVO network = getNetworkVO(cmd.getNetworkId(), "Network [%s] to restart was not found.");
@@ -2961,7 +2961,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
             if (!NetUtils.verifyDomainNameLabel(displayText, true)) {
                 throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
             }
-                
+
             network.setDisplayText(displayText);
         }
 

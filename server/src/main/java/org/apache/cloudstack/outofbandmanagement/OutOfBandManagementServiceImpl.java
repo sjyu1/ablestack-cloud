@@ -314,14 +314,14 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ENABLE, eventDescription = "enabling out-of-band management on a zone")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ENABLE, eventDescription = "zone에서 대역 외 관리(OOBM) 활성화")
     public OutOfBandManagementResponse enableOutOfBandManagement(final DataCenter zone) {
         dataCenterDetailsDao.persist(zone.getId(), OOBM_ENABLED_DETAIL, String.valueOf(true));
         return buildEnableDisableResponse(true);
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_DISABLE, eventDescription = "disabling out-of-band management on a zone")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_DISABLE, eventDescription = "zone에서 대역 외 관리(OOBM) 비활성화")
     public OutOfBandManagementResponse disableOutOfBandManagement(final DataCenter zone) {
         dataCenterDetailsDao.persist(zone.getId(), OOBM_ENABLED_DETAIL, String.valueOf(false));
         transitionPowerStateToDisabled(hostDao.findByDataCenterId(zone.getId()));
@@ -330,14 +330,14 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ENABLE, eventDescription = "enabling out-of-band management on a cluster")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ENABLE, eventDescription = "클러스터에서 대역 외 관리(OOBM) 활성화")
     public OutOfBandManagementResponse enableOutOfBandManagement(final Cluster cluster) {
         clusterDetailsDao.persist(cluster.getId(), OOBM_ENABLED_DETAIL, String.valueOf(true));
         return buildEnableDisableResponse(true);
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_DISABLE, eventDescription = "disabling out-of-band management on a cluster")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_DISABLE, eventDescription = "zone에서 대역 외 관리(OOBM) 비활성화")
     public OutOfBandManagementResponse disableOutOfBandManagement(final Cluster cluster) {
         clusterDetailsDao.persist(cluster.getId(), OOBM_ENABLED_DETAIL, String.valueOf(false));
         transitionPowerStateToDisabled(hostDao.findByClusterId(cluster.getId()));
@@ -353,7 +353,7 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ENABLE, eventDescription = "enabling out-of-band management on a host")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ENABLE, eventDescription = "호스트에서 대역 외 관리(OOBM) 활성화")
     public OutOfBandManagementResponse enableOutOfBandManagement(final Host host) {
         final OutOfBandManagement outOfBandManagementConfig = getConfigForHost(host);
         hostAlertCache.invalidate(host.getId());
@@ -366,7 +366,7 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_DISABLE, eventDescription = "disabling out-of-band management on a host")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_DISABLE, eventDescription = "호스트에서 대역 외 관리(OOBM) 비활성화")
     public OutOfBandManagementResponse disableOutOfBandManagement(final Host host) {
         final OutOfBandManagement outOfBandManagementConfig = getConfigForHost(host);
         hostAlertCache.invalidate(host.getId());
@@ -379,7 +379,7 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_CONFIGURE, eventDescription = "updating out-of-band management configuration")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_CONFIGURE, eventDescription = "대역 외 관리(OOBM) 구성 업데이트")
     public OutOfBandManagementResponse configure(final Host host, final ImmutableMap<OutOfBandManagement.Option, String> options) {
         OutOfBandManagement outOfBandManagementConfig = outOfBandManagementDao.findByHost(host.getId());
         if (outOfBandManagementConfig == null) {
@@ -430,7 +430,7 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ACTION, eventDescription = "issuing host out-of-band management action", async = true)
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_ACTION, eventDescription = "호스트 대역 외 관리(OOBM) 작업 발행", async = true)
     public OutOfBandManagementResponse executePowerOperation(final Host host, final OutOfBandManagement.PowerOperation powerOperation, final Long timeout) {
         checkOutOfBandManagementEnabledByZoneClusterHost(host);
         final OutOfBandManagement outOfBandManagementConfig = getConfigForHost(host);
@@ -475,7 +475,7 @@ public class OutOfBandManagementServiceImpl extends ManagerBase implements OutOf
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_CHANGE_PASSWORD, eventDescription = "updating out-of-band management password")
+    @ActionEvent(eventType = EventTypes.EVENT_HOST_OUTOFBAND_MANAGEMENT_CHANGE_PASSWORD, eventDescription = "대역 외 관리(OOBM) 비밀번호 업데이트")
     public OutOfBandManagementResponse changePassword(final Host host, final String newPassword) {
         checkOutOfBandManagementEnabledByZoneClusterHost(host);
         if (StringUtils.isEmpty(newPassword)) {
