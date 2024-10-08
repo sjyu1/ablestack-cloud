@@ -57,7 +57,7 @@
           }"
           :loading="osTypes.loading"
           v-model:value="form.ostypeid">
-          <a-select-option v-for="(ostype) in osTypes.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="ostype.id" :label="ostype.description">
+          <a-select-option v-for="(ostype) in osTypes.opts.filter((c) => (c.name === 'Windows 10 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="ostype.id" :label="ostype.description">
             {{ ostype.description }}
           </a-select-option>
         </a-select>

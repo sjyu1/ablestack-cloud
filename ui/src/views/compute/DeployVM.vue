@@ -131,7 +131,7 @@
                 </template>
               </a-step>
               <a-step
-                :title="$t('label.template')"
+                :title="$t('label.templateiso')"
                 :status="zoneSelected ? 'process' : 'wait'">
                 <template #description>
                   <div v-if="zoneSelected" style="margin-top: 15px">
@@ -411,14 +411,14 @@
                         @select-network-item="($event) => updateNetworks($event)"
                         @handle-search-filter="($event) => handleSearchFilter('networks', $event)"
                       ></network-selection>
-                      <!-- <network-configuration
+                      <network-configuration
                         v-if="networks.length > 0"
                         :items="networks"
                         :preFillContent="dataPreFill"
                         @update-network-config="($event) => updateNetworkConfig($event)"
                         @handler-error="($event) => hasError = $event"
                         @select-default-network-item="($event) => updateDefaultNetworks($event)"
-                      ></network-configuration> -->
+                      ></network-configuration>
                     </div>
                   </div>
                 </template>
@@ -436,7 +436,7 @@
                     @select-security-group-item="($event) => updateSecurityGroups($event)"></security-group-selection>
                 </template>
               </a-step>
-              <!-- <a-step
+              <a-step
                 v-if="isUserAllowedToListSshKeys"
                 :title="$t('label.sshkeypairs')"
                 :status="zoneSelected ? 'process' : 'wait'">
@@ -454,7 +454,7 @@
                     />
                   </div>
                 </template>
-              </a-step> -->
+              </a-step>
               <a-step
                 :title="$t('label.ovf.properties')"
                 :status="zoneSelected ? 'process' : 'wait'"
@@ -514,7 +514,7 @@
                   </div>
                 </template>
               </a-step>
-              <!-- <a-step
+              <!--<a-step
                 :title="$t('label.advanced.mode')"
                 :status="zoneSelected ? 'process' : 'wait'">
                 <template #description v-if="zoneSelected">
@@ -762,16 +762,16 @@
                 <template #description v-if="zoneSelected">
                   <div style="margin-top: 15px">
                     {{ $t('message.vm.review.launch') }}
-                    <a-form-item :label="$t('label.name')" name="name" ref="name">
+                    <a-form-item :label="$t('label.name.optional')" name="name" ref="name">
                       <a-input v-model:value="form.name" />
                     </a-form-item>
-                    <!-- <a-form-item :label="$t('label.group.optional')" name="group" ref="group">
+                    <a-form-item :label="$t('label.group.optional')" name="group" ref="group">
                       <a-auto-complete
                         v-model:value="form.group"
                         :filterOption="filterOption"
                         :options="options.instanceGroups" />
-                    </a-form-item> -->
-                    <!-- <a-form-item :label="$t('label.keyboard')" name="keyboard" ref="keyboard" v-if="!$store.getters.features.securityfeaturesenabled">
+                    </a-form-item>
+                    <a-form-item :label="$t('label.keyboard')" name="keyboard" ref="keyboard" v-if="!$store.getters.features.securityfeaturesenabled">
                       <a-select
                         v-model:value="form.keyboard"
                         :options="keyboardSelectOptions"
@@ -779,7 +779,7 @@
                         optionFilterProp="label"
                         :filterOption="filterOption"
                       ></a-select>
-                    </a-form-item> -->
+                    </a-form-item>
                     <a-form-item :label="$t('label.action.start.instance')" name="startvm" ref="startvm">
                       <a-switch v-model:checked="form.startvm" />
                     </a-form-item>
@@ -1285,19 +1285,19 @@ export default {
           key: 'templateid',
           tab: this.$t('label.templates')
         }]
-      // } else if (this.isoId) {
-      //   tabList = [{
-      //     key: 'isoid',
-      //     tab: this.$t('label.isos')
-      //   }]
+      } else if (this.isoId) {
+        tabList = [{
+          key: 'isoid',
+          tab: this.$t('label.isos')
+        }]
       } else {
         tabList = [{
           key: 'templateid',
           tab: this.$t('label.templates')
-        // },
-        // {
-        //   key: 'isoid',
-        //   tab: this.$t('label.isos')
+        },
+        {
+          key: 'isoid',
+          tab: this.$t('label.isos')
         }]
       }
 
@@ -1537,8 +1537,7 @@ export default {
       this.form = reactive({})
       this.rules = reactive({
         zoneid: [{ required: true, message: `${this.$t('message.error.select')}` }],
-        hypervisor: [{ required: true, message: `${this.$t('message.error.select')}` }],
-        name: [{ required: true, message: `${this.$t('message.error.name')}` }]
+        hypervisor: [{ required: true, message: `${this.$t('message.error.select')}` }]
       })
 
       if (this.zoneSelected) {

@@ -269,7 +269,7 @@
                   v-focus="fieldIndex === firstIndex"
                 >
                   <a-select-option key="">{{ }}</a-select-option>
-                  <a-select-option v-for="(opt, optIndex) in field.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="optIndex">
+                  <a-select-option v-for="(opt, optIndex) in field.opts.filter((c) => (c.name === 'Windows 10 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="optIndex">
                     {{ opt.name || opt.description || opt.traffictype || opt.publicip }}
                   </a-select-option>
                 </a-select>
@@ -286,7 +286,7 @@
                   v-focus="fieldIndex === firstIndex"
                 >
                   <a-select-option key="" label="">{{ }}</a-select-option>
-                  <a-select-option v-for="opt in field.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="opt.id" :label="opt.name || opt.description || opt.traffictype || opt.publicip">
+                  <a-select-option v-for="opt in field.opts.filter((c) => (c.name === 'Windows 10 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="opt.id" :label="opt.name || opt.description || opt.traffictype || opt.publicip">
                     <div>
                       <span v-if="(field.name.startsWith('template') || field.name.startsWith('iso'))">
                         <span v-if="opt.icon">
@@ -341,7 +341,7 @@
                     return option.children[0].children.toLowerCase().indexOf(input.toLowerCase()) >= 0
                   }"
                 >
-                  <a-select-option v-for="(opt, optIndex) in field.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="optIndex">
+                  <a-select-option v-for="(opt, optIndex) in field.opts.filter((c) => (c.name === 'Windows 10 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="optIndex">
                     {{ opt.name && opt.type ? opt.name + ' (' + opt.type + ')' : opt.name || opt.description }}
                   </a-select-option>
                 </a-select>
@@ -530,7 +530,7 @@
                   v-focus="fieldIndex === firstIndex"
                 >
                   <a-select-option key="" label="">{{ }}</a-select-option>
-                  <a-select-option v-for="opt in field.opts.filter((c) => (c.name === 'Windows 11 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="opt.id" :label="opt.name || opt.description || opt.traffictype || opt.publicip">
+                  <a-select-option v-for="opt in field.opts.filter((c) => (c.name === 'Windows 10 (64-bit)') || (c.name === 'Rocky Linux 9'))" :key="opt.id" :label="opt.name || opt.description || opt.traffictype || opt.publicip">
                     <div>
                       <span v-if="(field.name.startsWith('template') || field.name.startsWith('iso'))">
                         <span v-if="opt.icon">
