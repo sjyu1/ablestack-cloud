@@ -147,7 +147,7 @@ public class UpdateVolumeCmd extends BaseAsyncCustomIdCmd implements UserCmd {
 
     @Override
     public String getEventDescription() {
-        StringBuilder desc = new StringBuilder("Updating volume: ");
+        StringBuilder desc = new StringBuilder("볼륨 업데이트: ");
         desc.append(getId()).append(" with");
         if (getPath() != null) {
             desc.append(" path " + getPath());

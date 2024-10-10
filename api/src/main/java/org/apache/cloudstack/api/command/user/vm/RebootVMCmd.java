@@ -109,7 +109,7 @@ public class RebootVMCmd extends BaseAsyncCmd implements UserCmd {
 
     @Override
     public String getEventDescription() {
-        return  "rebooting user vm: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
+        return  "사용자 가상머신 재부팅중: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
     }
 
     @Override

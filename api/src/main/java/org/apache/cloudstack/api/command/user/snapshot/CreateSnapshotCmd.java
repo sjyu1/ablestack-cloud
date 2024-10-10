@@ -202,7 +202,7 @@ public class CreateSnapshotCmd extends BaseAsyncCreateCmd {
 
     @Override
     public String getEventDescription() {
-        return "creating snapshot for volume: " + getVolumeUuid();
+        return "볼륨에 대한 스냅샷 생성: " + getVolumeUuid();
     }
 
     @Override

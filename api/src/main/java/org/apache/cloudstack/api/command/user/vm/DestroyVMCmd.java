@@ -119,7 +119,7 @@ public class DestroyVMCmd extends BaseAsyncCmd implements UserCmd {
 
     @Override
     public String getEventDescription() {
-        return  "destroying vm: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
+        return  "가상머신 파기: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
     }
 
     @Override

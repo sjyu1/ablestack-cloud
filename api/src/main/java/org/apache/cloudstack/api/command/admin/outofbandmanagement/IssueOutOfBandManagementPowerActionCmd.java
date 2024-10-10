@@ -60,7 +60,7 @@ public class IssueOutOfBandManagementPowerActionCmd extends BaseAsyncCmd {
     private Long actionTimeout;
 
     @Parameter(name = ApiConstants.ACTION, type = CommandType.STRING, required = true,
-            description = "out-of-band management power actions, valid actions are: ON, OFF, CYCLE, RESET, SOFT, STATUS")
+            description = "대역 외 관리 전원 작업, 유효 작업: ON, OFF")
     private String powerAction;
 
     /////////////////////////////////////////////////////

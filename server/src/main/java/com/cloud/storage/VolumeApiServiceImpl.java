@@ -2810,7 +2810,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
             throw new InvalidParameterValueException("Root volume detach is not supported for hypervisor type " + vm.getHypervisorType());
         }
         if (!(vm.getState() == State.Stopped) || (vm.getState() == State.Destroyed)) {
-            throw new InvalidParameterValueException("Root volume detach can happen only when vm is in states: " + State.Stopped.toString() + " or " + State.Destroyed.toString());
+            throw new InvalidParameterValueException("루트 볼륨 분리는 가상머신이 중지됨 또는 삭제됨 상태일 때만 발생할 수 있습니다.: " + State.Stopped.toString() + " or " + State.Destroyed.toString());
         }
 
         if (volume.getPoolId() != null) {

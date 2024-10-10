@@ -748,7 +748,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         if (userVm.getState() == VirtualMachine.State.Running && vmSnapshotVo.getType() == VMSnapshot.Type.Disk || userVm.getState() == VirtualMachine.State.Stopped
                 && vmSnapshotVo.getType() == VMSnapshot.Type.DiskAndMemory) {
             throw new InvalidParameterValueException(
-                    "가상머신 스냅샷 복원이 허용되지 않습니다. 이로 인해 가상머신 상태가 변경됩니다. 실행 중인 가상머신을 디스크 및 메모리 유형 스냅샷으로 되돌리고 중지된 가상머신을 디스크 유형으로 되돌릴 수 있습니다.");
+                    "가상머신 스냅샷 복원이 허용되지 않습니다. 정지 상태의 가상머신에서 가능합니다.");
         }
 
         // if snapshot is not created, error out

@@ -362,7 +362,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         if (instanceId != null) {
             UserVmVO vm = _vmDao.findById(instanceId);
             if (vm.getState() != State.Stopped && vm.getState() != State.Shutdown) {
-                throw new InvalidParameterValueException("The VM the specified disk is attached to is not in the shutdown state.");
+                throw new InvalidParameterValueException("지정된 디스크가 연결된 가상머신이 정지 상태가 아닙니다.");
             }
             // If target VM has associated VM snapshots then don't allow to revert from snapshot
             List<VMSnapshotVO> vmSnapshots = _vmSnapshotDao.findByVm(instanceId);

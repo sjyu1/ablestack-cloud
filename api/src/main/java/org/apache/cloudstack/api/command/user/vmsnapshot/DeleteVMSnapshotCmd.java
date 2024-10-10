@@ -77,7 +77,7 @@ public class DeleteVMSnapshotCmd extends BaseAsyncCmd {
 
     @Override
     public String getEventDescription() {
-        return "Delete VM snapshot: " + this._uuidMgr.getUuid(VMSnapshot.class, getId());
+        return "가상머신 스냅샷 삭제: " + this._uuidMgr.getUuid(VMSnapshot.class, getId());
     }
 
     @Override

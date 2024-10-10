@@ -160,7 +160,7 @@ public class StartVMCmd extends BaseAsyncCmd implements UserCmd {
 
     @Override
     public String getEventDescription() {
-        return "starting user vm: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
+        return "사용자 가상머신 시작: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
     }
 
     @Override

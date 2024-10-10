@@ -105,7 +105,7 @@ public class StopVMCmd extends BaseAsyncCmd implements UserCmd {
 
     @Override
     public String getEventDescription() {
-        return "stopping user vm: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
+        return "사용자 가상머신 정지: " + this._uuidMgr.getUuid(VirtualMachine.class, getId());
     }
 
     @Override

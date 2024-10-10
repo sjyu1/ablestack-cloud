@@ -1058,6 +1058,26 @@ public class NetUtils {
         return true;
     }
 
+    public static boolean verifyOfferingNameLabel(final String hostName, final boolean isHostName) {
+        // must be between 1 and 63 characters long and may contain only the ASCII letters 'a' through 'z' (in a
+        // case-insensitive manner),
+        // the digits '0' through '9', and the hyphen ('-').
+        // Can not start with a hyphen and digit, and must not end with a hyphen
+
+        if (hostName.length() > 63 || hostName.length() < 1) {
+            logger.warn("이름은 1~63자 사이여야 합니다.");
+            return false;
+        } else if (!hostName.toLowerCase().matches("[a-z0-9-]*")) {
+            logger.warn("이름에는 ASCII 문자 'a'부터 'z'까지만 포함될 수 있습니다(대소문자를 구분하지 않음).");
+            return false;
+        } else if (hostName.startsWith("-") || hostName.endsWith("-")) {
+            logger.warn("이름은 하이픈으로 시작할 수 없으며 하이픈으로 끝나서는 안 됩니다.");
+            return false;
+        }
+
+        return true;
+    }
+
     public static boolean verifyVlanLabel(final String vlan) {
         if (!vlan.toLowerCase().equals("untagged") && !vlan.matches("[0-9]+")) {
             logger.warn("VLAN은 untagged 또는 숫자 1~4자 사이여야 합니다.");
