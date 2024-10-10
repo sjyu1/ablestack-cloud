@@ -514,7 +514,7 @@
                   </div>
                 </template>
               </a-step>
-              <!--<a-step
+              <!-- <a-step
                 :title="$t('label.advanced.mode')"
                 :status="zoneSelected ? 'process' : 'wait'">
                 <template #description v-if="zoneSelected">
@@ -755,7 +755,7 @@
                     </a-form-item>
                   </div>
                 </template>
-              </a-step> -->
+              </a-step>-->
               <a-step
                 :title="$t('label.details')"
                 :status="zoneSelected ? 'process' : 'wait'">
