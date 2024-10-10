@@ -101,7 +101,7 @@ export default {
           value: (record) => 'Disabled'
         }
       }
-    },
+    // },
     // {
     //   api: 'startRollingMaintenance',
     //   icon: 'setting-outlined',
@@ -115,12 +115,12 @@ export default {
     //     }
     //   }
     // },
-    {
-      api: 'deletePod',
-      icon: 'delete-outlined',
-      label: 'label.action.delete.pod',
-      message: 'message.action.delete.pod',
-      dataView: true
+    // {
+    //   api: 'deletePod',
+    //   icon: 'delete-outlined',
+    //   label: 'label.action.delete.pod',
+    //   message: 'message.action.delete.pod',
+    //   dataView: true
     }
   ]
 }

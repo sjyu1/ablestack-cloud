@@ -296,7 +296,7 @@ export default {
           value: (record) => { return record.id }
         }
       }
-    },
+    // },
     // {
     //   api: 'startRollingMaintenance',
     //   icon: 'setting-outlined',
@@ -314,14 +314,14 @@ export default {
     //     }
     //   }
     // },
-    {
-      api: 'deleteHost',
-      icon: 'delete-outlined',
-      label: 'label.action.remove.host',
-      docHelp: 'adminguide/hosts.html#removing-hosts',
-      dataView: true,
-      args: ['forced'],
-      show: (record) => { return ['Maintenance', 'Disabled', 'Down', 'Alert', 'Disconnected'].includes(record.resourcestate) }
+    // {
+    //   api: 'deleteHost',
+    //   icon: 'delete-outlined',
+    //   label: 'label.action.remove.host',
+    //   docHelp: 'adminguide/hosts.html#removing-hosts',
+    //   dataView: true,
+    //   args: ['forced'],
+    //   show: (record) => { return ['Maintenance', 'Disabled', 'Down', 'Alert', 'Disconnected'].includes(record.resourcestate) }
     }
   ]
 }

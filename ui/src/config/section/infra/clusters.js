@@ -195,7 +195,7 @@ export default {
           value: (record) => { return record.id }
         }
       }
-    },
+    // },
     // {
     //   api: 'startRollingMaintenance',
     //   icon: 'setting-outlined',
@@ -241,12 +241,12 @@ export default {
     //     }
     //   }
     // },
-    {
-      api: 'deleteCluster',
-      icon: 'delete-outlined',
-      label: 'label.action.delete.cluster',
-      message: 'message.action.delete.cluster',
-      dataView: true
+    // {
+    //   api: 'deleteCluster',
+    //   icon: 'delete-outlined',
+    //   label: 'label.action.delete.cluster',
+    //   message: 'message.action.delete.cluster',
+    //   dataView: true
     }
   ]
 }

@@ -199,7 +199,7 @@ export default {
           value: (record) => { return record.id }
         }
       }
-    },
+    // },
     // {
     //   api: 'addVmwareDc',
     //   icon: 'block-outlined',
@@ -255,12 +255,12 @@ export default {
     //     }
     //   }
     // },
-    {
-      api: 'deleteZone',
-      icon: 'delete-outlined',
-      label: 'label.action.delete.zone',
-      message: 'message.action.delete.zone',
-      dataView: true
+    // {
+    //   api: 'deleteZone',
+    //   icon: 'delete-outlined',
+    //   label: 'label.action.delete.zone',
+    //   message: 'message.action.delete.zone',
+    //   dataView: true
     }
   ]
 }

@@ -81,7 +81,7 @@ export default {
         docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
         dataView: true,
         args: ['name', 'displaytext']
-      }, {
+      // }, {
       //   api: 'updateServiceOffering',
       //   icon: 'lock-outlined',
       //   label: 'label.action.update.offering.access',
@@ -90,15 +90,15 @@ export default {
       //   popup: true,
       //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
       // }, {
-        api: 'deleteServiceOffering',
-        icon: 'delete-outlined',
-        label: 'label.action.delete.service.offering',
-        message: 'message.action.delete.service.offering',
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        dataView: true,
-        groupAction: true,
-        popup: true,
-        groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+        // api: 'deleteServiceOffering',
+        // icon: 'delete-outlined',
+        // label: 'label.action.delete.service.offering',
+        // message: 'message.action.delete.service.offering',
+        // docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+        // dataView: true,
+        // groupAction: true,
+        // popup: true,
+        // groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
       }]
     },
     // {
@@ -194,7 +194,7 @@ export default {
         docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
         dataView: true,
         args: ['name', 'displaytext']
-      }, {
+      // }, {
       //   api: 'updateDiskOffering',
       //   icon: 'lock-outlined',
       //   label: 'label.action.update.offering.access',
@@ -203,15 +203,15 @@ export default {
       //   popup: true,
       //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
       // }, {
-        api: 'deleteDiskOffering',
-        icon: 'delete-outlined',
-        label: 'label.action.delete.disk.offering',
-        message: 'message.action.delete.disk.offering',
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        dataView: true,
-        groupAction: true,
-        popup: true,
-        groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+        // api: 'deleteDiskOffering',
+        // icon: 'delete-outlined',
+        // label: 'label.action.delete.disk.offering',
+        // message: 'message.action.delete.disk.offering',
+        // docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+        // dataView: true,
+        // groupAction: true,
+        // popup: true,
+        // groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
       }]
     },
     // {
@@ -335,16 +335,16 @@ export default {
       //   dataView: true,
       //   popup: true,
       //   component: shallowRef(defineAsyncComponent(() => import('@/views/offering/UpdateOfferingAccess.vue')))
-      }, {
-        api: 'deleteNetworkOffering',
-        icon: 'delete-outlined',
-        label: 'label.remove.network.offering',
-        message: 'message.confirm.remove.network.offering',
-        docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
-        dataView: true,
-        groupAction: true,
-        popup: true,
-        groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+      // }, {
+      //   api: 'deleteNetworkOffering',
+      //   icon: 'delete-outlined',
+      //   label: 'label.remove.network.offering',
+      //   message: 'message.confirm.remove.network.offering',
+      //   docHelp: 'adminguide/service_offerings.html#modifying-or-deleting-a-service-offering',
+      //   dataView: true,
+      //   groupAction: true,
+      //   popup: true,
+      //   groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
       }]
     // },
     // {

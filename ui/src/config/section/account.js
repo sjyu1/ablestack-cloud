@@ -102,23 +102,23 @@ export default {
     //     }
     //   }
     // },
-    {
-      api: 'updateResourceCount',
-      icon: 'sync-outlined',
-      label: 'label.action.update.resource.count',
-      message: 'message.update.resource.count',
-      dataView: true,
-      show: (record, store) => { return ['Admin', 'DomainAdmin'].includes(store.userInfo.roletype) },
-      args: ['account', 'domainid'],
-      mapping: {
-        account: {
-          value: (record) => { return record.name }
-        },
-        domainid: {
-          value: (record) => { return record.domainid }
-        }
-      }
-    },
+    // {
+    //   api: 'updateResourceCount',
+    //   icon: 'sync-outlined',
+    //   label: 'label.action.update.resource.count',
+    //   message: 'message.update.resource.count',
+    //   dataView: true,
+    //   show: (record, store) => { return ['Admin', 'DomainAdmin'].includes(store.userInfo.roletype) },
+    //   args: ['account', 'domainid'],
+    //   mapping: {
+    //     account: {
+    //       value: (record) => { return record.name }
+    //     },
+    //     domainid: {
+    //       value: (record) => { return record.domainid }
+    //     }
+    //   }
+    // },
     {
       api: 'enableAccount',
       icon: 'play-circle-outlined',
@@ -176,7 +176,7 @@ export default {
       groupAction: true,
       popup: true,
       groupMap: (selection) => { return selection.map(x => { return { id: x, lock: true } }) }
-    },
+    // },
     // {
     //   api: 'uploadSslCert',
     //   icon: 'SafetyCertificateOutlined',
@@ -194,18 +194,18 @@ export default {
     //     }
     //   }
     // },
-    {
-      api: 'deleteAccount',
-      icon: 'delete-outlined',
-      label: 'label.action.delete.account',
-      message: 'message.delete.account',
-      dataView: true,
-      disabled: (record, store) => {
-        return record.id !== 'undefined' && store.userInfo.accountid === record.id
-      },
-      groupAction: true,
-      popup: true,
-      groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+    // {
+    //   api: 'deleteAccount',
+    //   icon: 'delete-outlined',
+    //   label: 'label.action.delete.account',
+    //   message: 'message.delete.account',
+    //   dataView: true,
+    //   disabled: (record, store) => {
+    //     return record.id !== 'undefined' && store.userInfo.accountid === record.id
+    //   },
+    //   groupAction: true,
+    //   popup: true,
+    //   groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
     }
   ]
 }
