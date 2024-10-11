@@ -1999,7 +1999,7 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
 
         final Account caller = CallContext.current().getCallingAccount();
         final Domain domain = _domainDao.findById(caller.getDomainId());
-        StringBuilder msg = new StringBuilder("Host update: ");
+        StringBuilder msg = new StringBuilder("호스트 업데이트: ");
         msg.append("id = " + host.getId());
         if (StringUtils.isNotBlank(name) && !beforeHostname.equalsIgnoreCase(name)) {
             msg.append("; hostname = from '" + beforeHostname + "' to '" + name+ "'");
