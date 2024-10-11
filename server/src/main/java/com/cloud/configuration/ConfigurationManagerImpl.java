@@ -3468,7 +3468,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_SERVICE_OFFERING_EDIT, eventDescription = "updating service offering")
+    @ActionEvent(eventType = EventTypes.EVENT_SERVICE_OFFERING_EDIT, eventDescription = "서비스 오퍼링 업데이트")
     public ServiceOffering updateServiceOffering(final UpdateServiceOfferingCmd cmd) {
         final String displayText = cmd.getDisplayText();
         final Long id = cmd.getId();
@@ -3921,7 +3921,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_DISK_OFFERING_EDIT, eventDescription = "updating disk offering")
+    @ActionEvent(eventType = EventTypes.EVENT_DISK_OFFERING_EDIT, eventDescription = "디스크 오퍼링 업데이트")
     public DiskOffering updateDiskOffering(final UpdateDiskOfferingCmd cmd) {
         final Long diskOfferingId = cmd.getId();
         final String name = cmd.getDiskOfferingName();
@@ -7056,7 +7056,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
     }
 
     @Override
-    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_OFFERING_EDIT, eventDescription = "updating network offering")
+    @ActionEvent(eventType = EventTypes.EVENT_NETWORK_OFFERING_EDIT, eventDescription = "네트워크 오퍼링 업데이트")
     public NetworkOffering updateNetworkOffering(final UpdateNetworkOfferingCmd cmd) {
         final String displayText = cmd.getDisplayText();
         final Long id = cmd.getId();
