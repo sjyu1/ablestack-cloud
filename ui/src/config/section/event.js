@@ -24,8 +24,8 @@ export default {
   docHelp: 'adminguide/events.html',
   permission: ['listEvents'],
   columns: () => {
-    const fields = ['level', 'type', 'state', 'description', 'resource', 'username', 'account', 'domain', 'created']
-    const securityFields = ['level', 'type', 'state', 'description', 'resource', 'username',
+    const fields = ['level', 'type', 'state', 'description', 'username', 'account', 'domain', 'created']
+    const securityFields = ['level', 'type', 'state', 'description', 'username',
       {
         account: (record) => {
           if (record.username === 'system') {

@@ -304,9 +304,9 @@
             :color="getEventColour(event)">
             <span :style="{ color: '#999' }"><small>{{ $toLocaleDate(event.created) }}</small></span>&nbsp;
             <span :style="{ color: '#666' }"><small><router-link :to="{ path: '/event/' + event.id }">{{ event.type }}</router-link></small></span><br/>
-            <span>
+            <!-- <span>
               <resource-label :resourceType="event.resourcetype" :resourceId="event.resourceid" :resourceName="event.resourcename" />
-            </span>
+            </span> -->
             <span :style="{ color: '#aaa' }">({{ event.username }}) {{ event.description }}</span>
           </a-timeline-item>
         </a-timeline>
