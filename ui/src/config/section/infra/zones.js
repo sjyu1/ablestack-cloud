@@ -167,38 +167,38 @@ export default {
           value: (record) => { return record.id }
         }
       }
-    },
-    {
-      api: 'enableHAForZone',
-      icon: 'eye-outlined',
-      label: 'label.ha.enable',
-      message: 'label.ha.enable',
-      dataView: true,
-      show: (record) => {
-        return record?.resourcedetails?.resourceHAEnabled === 'false'
-      },
-      args: ['zoneid'],
-      mapping: {
-        zoneid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'disableHAForZone',
-      icon: 'eye-invisible-outlined',
-      label: 'label.ha.disable',
-      message: 'label.ha.disable',
-      dataView: true,
-      show: (record) => {
-        return !(record?.resourcedetails?.resourceHAEnabled === 'false')
-      },
-      args: ['zoneid'],
-      mapping: {
-        zoneid: {
-          value: (record) => { return record.id }
-        }
-      }
+    // },
+    // {
+    //   api: 'enableHAForZone',
+    //   icon: 'eye-outlined',
+    //   label: 'label.ha.enable',
+    //   message: 'label.ha.enable',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return record?.resourcedetails?.resourceHAEnabled === 'false'
+    //   },
+    //   args: ['zoneid'],
+    //   mapping: {
+    //     zoneid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'disableHAForZone',
+    //   icon: 'eye-invisible-outlined',
+    //   label: 'label.ha.disable',
+    //   message: 'label.ha.disable',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return !(record?.resourcedetails?.resourceHAEnabled === 'false')
+    //   },
+    //   args: ['zoneid'],
+    //   mapping: {
+    //     zoneid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
     // },
     // {
     //   api: 'addVmwareDc',

@@ -226,7 +226,7 @@ export default {
           options: ['ON', 'OFF']
         }
       }
-    },
+    }
     // {
     //   api: 'changeOutOfBandManagementPassword',
     //   icon: 'key-outlined',
@@ -244,58 +244,58 @@ export default {
     //     }
     //   }
     // },
-    {
-      api: 'configureHAForHost',
-      icon: 'tool-outlined',
-      label: 'label.ha.configure',
-      message: 'label.ha.configure',
-      docHelp: 'adminguide/reliability.html#ha-for-hosts',
-      dataView: true,
-      show: (record) => { return ['KVM', 'Simulator'].includes(record.hypervisor) },
-      args: ['hostid', 'provider'],
-      mapping: {
-        hostid: {
-          value: (record) => { return record.id }
-        },
-        provider: {
-          options: ['KVMHAProvider']
-        }
-      }
-    },
-    {
-      api: 'enableHAForHost',
-      icon: 'eye-outlined',
-      label: 'label.ha.enable',
-      message: 'label.ha.enable',
-      docHelp: 'adminguide/reliability.html#ha-for-hosts',
-      dataView: true,
-      show: (record) => {
-        return !(record?.hostha?.haenable === true)
-      },
-      args: ['hostid'],
-      mapping: {
-        hostid: {
-          value: (record) => { return record.id }
-        }
-      }
-    },
-    {
-      api: 'disableHAForHost',
-      icon: 'eye-invisible-outlined',
-      label: 'label.ha.disable',
-      message: 'label.ha.disable',
-      docHelp: 'adminguide/reliability.html#ha-for-hosts',
-      dataView: true,
-      show: (record) => {
-        return record.hostha && record.hostha.haenable &&
-        record.hostha.haenable === true
-      },
-      args: ['hostid'],
-      mapping: {
-        hostid: {
-          value: (record) => { return record.id }
-        }
-      }
+    // {
+    //   api: 'configureHAForHost',
+    //   icon: 'tool-outlined',
+    //   label: 'label.ha.configure',
+    //   message: 'label.ha.configure',
+    //   docHelp: 'adminguide/reliability.html#ha-for-hosts',
+    //   dataView: true,
+    //   show: (record) => { return ['KVM', 'Simulator'].includes(record.hypervisor) },
+    //   args: ['hostid', 'provider'],
+    //   mapping: {
+    //     hostid: {
+    //       value: (record) => { return record.id }
+    //     },
+    //     provider: {
+    //       options: ['KVMHAProvider']
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'enableHAForHost',
+    //   icon: 'eye-outlined',
+    //   label: 'label.ha.enable',
+    //   message: 'label.ha.enable',
+    //   docHelp: 'adminguide/reliability.html#ha-for-hosts',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return !(record?.hostha?.haenable === true)
+    //   },
+    //   args: ['hostid'],
+    //   mapping: {
+    //     hostid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
+    // },
+    // {
+    //   api: 'disableHAForHost',
+    //   icon: 'eye-invisible-outlined',
+    //   label: 'label.ha.disable',
+    //   message: 'label.ha.disable',
+    //   docHelp: 'adminguide/reliability.html#ha-for-hosts',
+    //   dataView: true,
+    //   show: (record) => {
+    //     return record.hostha && record.hostha.haenable &&
+    //     record.hostha.haenable === true
+    //   },
+    //   args: ['hostid'],
+    //   mapping: {
+    //     hostid: {
+    //       value: (record) => { return record.id }
+    //     }
+    //   }
     // },
     // {
     //   api: 'startRollingMaintenance',
@@ -322,6 +322,6 @@ export default {
     //   dataView: true,
     //   args: ['forced'],
     //   show: (record) => { return ['Maintenance', 'Disabled', 'Down', 'Alert', 'Disconnected'].includes(record.resourcestate) }
-    }
+    // }
   ]
 }
