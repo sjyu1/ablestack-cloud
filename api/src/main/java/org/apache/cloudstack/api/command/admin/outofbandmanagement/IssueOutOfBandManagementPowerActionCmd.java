@@ -107,7 +107,7 @@ public class IssueOutOfBandManagementPowerActionCmd extends BaseAsyncCmd {
 
     @Override
     public String getEventDescription() {
-        return "issue out-out-band management power action: " + getPowerAction() + " on host: " + getHostId();
+        return "호스트 대역 외 관리(OOBM) 전원 동작 실행: " + getPowerAction() + " on host: " + getHostId();
     }
 
     @Override
