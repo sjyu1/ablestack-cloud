@@ -142,7 +142,7 @@
               </a-statistic>
             </router-link>
           </a-col>
-          <a-col :span="12">
+          <!-- <a-col :span="12">
             <router-link :to="{ path: '/router', query: { zoneid: zoneSelected.id } }">
               <a-statistic
                 :title="$t('label.virtual.routers')"
@@ -153,7 +153,7 @@
                 </template>
               </a-statistic>
             </router-link>
-          </a-col>
+          </a-col> -->
           <a-col :span="12">
             <router-link :to="{ path: '/vm', query: { zoneid: zoneSelected.id, projectid: '-1' } }">
               <a-statistic
@@ -237,7 +237,7 @@
           </div>
         </template>
         <div>
-          <div v-for="ctype in ['VLAN', 'VIRTUAL_NETWORK_PUBLIC_IP', 'VIRTUAL_NETWORK_IPV6_SUBNET', 'DIRECT_ATTACHED_PUBLIC_IP', 'PRIVATE_IP']" :key="ctype" >
+          <div v-for="ctype in ['VIRTUAL_NETWORK_PUBLIC_IP', 'VIRTUAL_NETWORK_IPV6_SUBNET', 'DIRECT_ATTACHED_PUBLIC_IP', 'PRIVATE_IP']" :key="ctype" >
             <div v-if="statsMap[ctype]">
               <div>
                 <strong>{{ $t(ts[ctype]) }}</strong>

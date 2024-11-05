@@ -35,7 +35,7 @@ export default {
       resourceType: 'Network',
       columns: () => {
         // var fields = ['name', 'state', 'type', 'vpcname', 'cidr', 'ip6cidr', 'broadcasturi', 'domainpath', 'account', 'zonename']
-        var fields = ['name', 'state', 'type', 'cidr', 'ip6cidr', 'broadcasturi', 'domainpath', 'account', 'zonename']
+        var fields = ['name', 'state', 'type', 'cidr', 'broadcasturi', 'account', 'zonename']
         if (!isAdmin()) {
           fields = fields.filter(function (e) { return e !== 'broadcasturi' })
         }

@@ -56,7 +56,7 @@ export default {
       details: () => {
         var fields = ['name', 'id', 'displaytext', 'checksum', 'hypervisor', 'format', 'ostypename', 'size', 'physicalsize', 'isready', 'passwordenabled',
           'crossZones', 'templatetype', 'directdownload', 'deployasis', 'ispublic', 'isfeatured', 'isextractable', 'isdynamicallyscalable', 'crosszones', 'type',
-          'account', 'domain', 'created', 'userdatadetails', 'userdatapolicy']
+          'account', 'created', 'userdatadetails', 'userdatapolicy']
         if (['Admin'].includes(store.getters.userInfo.roletype)) {
           fields.push('url')
         }

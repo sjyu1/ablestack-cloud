@@ -168,7 +168,7 @@
                           @update-disk-size="updateFieldValue"
                           style="margin-top: 10px;"/>
                       </div>
-                      <div v-else>
+                      <!-- <div v-else>
                         {{ $t('message.iso.desc') }}
                         <template-iso-selection
                           input-decorator="isoid"
@@ -188,7 +188,7 @@
                             optionFilterProp="label"
                             :filterOption="filterOption" />
                         </a-form-item>
-                      </div>
+                      </div> -->
                     </a-card>
                     <a-form-item class="form-item-hidden">
                       <a-input v-model:value="form.templateid" />
@@ -1285,19 +1285,19 @@ export default {
           key: 'templateid',
           tab: this.$t('label.templates')
         }]
-      } else if (this.isoId) {
-        tabList = [{
-          key: 'isoid',
-          tab: this.$t('label.isos')
-        }]
+      // } else if (this.isoId) {
+      //   tabList = [{
+      //     key: 'isoid',
+      //     tab: this.$t('label.isos')
+      //   }]
       } else {
         tabList = [{
           key: 'templateid',
           tab: this.$t('label.templates')
-        },
-        {
-          key: 'isoid',
-          tab: this.$t('label.isos')
+        // },
+        // {
+        //   key: 'isoid',
+        //   tab: this.$t('label.isos')
         }]
       }
 

@@ -313,12 +313,12 @@ export default {
         var fields = ['name', 'state', 'volumename', 'intervaltype', 'physicalsize', 'created']
         if (['Admin', 'DomainAdmin'].includes(store.getters.userInfo.roletype)) {
           fields.push('account')
-          fields.push('domain')
+          // fields.push('domain')
         }
         fields.push('zonename')
         return fields
       },
-      details: ['name', 'id', 'volumename', 'volumetype', 'snapshottype', 'intervaltype', 'physicalsize', 'virtualsize', 'account', 'domain', 'created'],
+      details: ['name', 'id', 'volumename', 'volumetype', 'snapshottype', 'intervaltype', 'physicalsize', 'virtualsize', 'account', 'created'],
       tabs: [
         {
           name: 'details',

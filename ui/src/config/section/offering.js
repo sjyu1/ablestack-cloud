@@ -36,7 +36,7 @@ export default {
         }
         return params
       },
-      columns: ['name', 'displaytext', 'cpunumber', 'cpuspeed', 'memory', 'domain', 'zone', 'order'],
+      columns: ['name', 'displaytext', 'cpunumber', 'cpuspeed', 'memory', 'zone', 'order'],
       details: () => {
         var fields = ['name', 'id', 'displaytext', 'offerha', 'provisioningtype', 'storagetype', 'iscustomized', 'iscustomizediops', 'limitcpuuse', 'cpunumber', 'cpuspeed', 'memory', 'hosttags', 'tags', 'storagetags', 'domain', 'zone', 'created', 'dynamicscalingenabled', 'diskofferingstrictness', 'encryptroot']
         if (store.getters.apis.createServiceOffering &&
@@ -153,7 +153,7 @@ export default {
         }
         return params
       },
-      columns: ['name', 'displaytext', 'disksize', 'domain', 'zone', 'order'],
+      columns: ['name', 'displaytext', 'disksize', 'zone', 'order'],
       details: () => {
         var fields = ['name', 'id', 'displaytext', 'disksize', 'provisioningtype', 'storagetype', 'iscustomized', 'disksizestrictness', 'iscustomizediops', 'tags', 'domain', 'zone', 'created', 'encrypt']
         if (store.getters.apis.createDiskOffering &&
@@ -261,7 +261,7 @@ export default {
       icon: 'wifi-outlined',
       docHelp: 'adminguide/networking.html#network-offerings',
       permission: ['listNetworkOfferings'],
-      columns: ['name', 'state', 'guestiptype', 'traffictype', 'networkrate', 'domain', 'zone', 'order'],
+      columns: ['name', 'state', 'guestiptype', 'traffictype', 'networkrate', 'zone', 'order'],
       details: ['name', 'id', 'displaytext', 'guestiptype', 'traffictype', 'internetprotocol', 'networkrate', 'ispersistent', 'egressdefaultpolicy', 'availability', 'conservemode', 'specifyvlan', 'specifyipranges', 'supportspublicaccess', 'supportsstrechedl2subnet', 'service', 'tags', 'domain', 'zone'],
       resourceType: 'NetworkOffering',
       tabs: [
