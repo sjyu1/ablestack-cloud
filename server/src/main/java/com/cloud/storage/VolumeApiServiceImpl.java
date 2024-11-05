@@ -3441,7 +3441,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         Account caller = CallContext.current().getCallingAccount();
         VolumeInfo volume = volFactory.getVolume(volumeId);
         if (volume == null) {
-            throw new InvalidParameterValueException("Creating snapshot failed due to volume:" + volumeId + " doesn't exist");
+            throw new InvalidParameterValueException("볼륨으로 인해 스냅샷을 생성하지 못했습니다.:" + volumeId + " doesn't exist");
         }
         if (policyId != null && policyId > 0) {
             if (CollectionUtils.isNotEmpty(zoneIds)) {
@@ -3539,7 +3539,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         VolumeInfo volume = volFactory.getVolume(volumeId);
 
         if (volume == null) {
-            throw new InvalidParameterValueException("Creating snapshot failed due to volume:" + volumeId + " doesn't exist");
+            throw new InvalidParameterValueException("볼륨으로 인해 스냅샷 생성 실패:" + volumeId + " 존재하지 않는다");
         }
 
         if (volume.getState() != Volume.State.Ready) {

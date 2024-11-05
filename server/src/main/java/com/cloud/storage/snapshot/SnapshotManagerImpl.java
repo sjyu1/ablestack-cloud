@@ -517,7 +517,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
 
         VolumeInfo volume = volFactory.getVolume(volumeId);
         if (volume == null) {
-            throw new InvalidParameterValueException("Creating snapshot failed due to volume:" + volumeId + " doesn't exist");
+            throw new InvalidParameterValueException("볼륨으로 인해 스냅샷 생성 실패:" + volumeId + " 존재하지 않는다");
         }
 
         if (volume.getState() != Volume.State.Ready) {
@@ -1351,8 +1351,8 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
             UserVmVO userVm = _vmDao.findById(volume.getInstanceId());
             if (userVm != null) {
                 if (userVm.getState().equals(State.Destroyed) || userVm.getState().equals(State.Expunging)) {
-                    throw new CloudRuntimeException("Creating snapshot failed due to volume:" + volume.getId() + " is associated with vm:" + userVm.getInstanceName() + " is in "
-                            + userVm.getState().toString() + " state");
+                    throw new CloudRuntimeException("볼륨으로 인해 스냅샷 생성 실패:" + volume.getId() + ", 연결된 가상머신:" + userVm.getInstanceName() + " 가상머신 상태:"
+                            + userVm.getState().toString());
                 }
 
                 if (userVm.getHypervisorType() == HypervisorType.VMware || userVm.getHypervisorType() == HypervisorType.KVM) {
