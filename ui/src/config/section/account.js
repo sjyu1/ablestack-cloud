@@ -44,11 +44,11 @@ export default {
       name: 'limits',
       component: shallowRef(defineAsyncComponent(() => import('@/components/view/ResourceCountUsage.vue')))
     },
-    {
-      name: 'limits.configure',
-      show: (record, route, user) => { return ['Admin', 'DomainAdmin'].includes(user.roletype) },
-      component: shallowRef(defineAsyncComponent(() => import('@/components/view/ResourceLimitTab.vue')))
-    },
+    // {
+    //   name: 'limits.configure',
+    //   show: (record, route, user) => { return ['Admin', 'DomainAdmin'].includes(user.roletype) },
+    //   component: shallowRef(defineAsyncComponent(() => import('@/components/view/ResourceLimitTab.vue')))
+    // },
     // {
     //   name: 'certificate',
     //   component: shallowRef(defineAsyncComponent(() => import('@/views/iam/SSLCertificateTab.vue')))

@@ -250,8 +250,7 @@ export default {
           dataView: true,
           show: (record) => {
             return !['Destroy', 'Destroyed', 'Expunging', 'Expunged', 'Migrating', 'Uploading', 'UploadError', 'Creating'].includes(record.state) &&
-            ((record.type === 'ROOT' && record.vmstate === 'Stopped') ||
-            (record.type !== 'ROOT' && !record.virtualmachineid && !['Allocated', 'Uploaded'].includes(record.state)))
+            ((record.type === 'ROOT' && record.vmstate === 'Stopped'))
           },
           args: ['volumeid', 'name', 'displaytext', 'ostypeid', 'ispublic', 'isfeatured', 'isdynamicallyscalable', 'requireshvm', 'passwordenabled'],
           mapping: {

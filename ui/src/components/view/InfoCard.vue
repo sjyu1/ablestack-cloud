@@ -78,9 +78,6 @@
               <a-tag v-if="resource.haenable">
                 {{ $t('label.haenable') }}
               </a-tag>
-              <a-tag v-if="resource.isdynamicallyscalable">
-                {{ $t('label.isdynamicallyscalable') }}
-              </a-tag>
               <a-tag v-if="resource.scope">
                 {{ resource.scope }}
               </a-tag>

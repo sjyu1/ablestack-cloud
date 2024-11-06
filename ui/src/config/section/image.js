@@ -54,8 +54,8 @@ export default {
         return fields
       },
       details: () => {
-        var fields = ['name', 'id', 'displaytext', 'checksum', 'hypervisor', 'format', 'ostypename', 'size', 'physicalsize', 'isready', 'passwordenabled',
-          'crossZones', 'templatetype', 'directdownload', 'deployasis', 'ispublic', 'isfeatured', 'isextractable', 'isdynamicallyscalable', 'crosszones', 'type',
+        var fields = ['name', 'id', 'displaytext', 'checksum', 'hypervisor', 'format', 'ostypename', 'size', 'physicalsize', 'isready',
+          'crossZones', 'templatetype', 'ispublic', 'isfeatured', 'crosszones', 'type',
           'account', 'created', 'userdatadetails', 'userdatapolicy']
         if (['Admin'].includes(store.getters.userInfo.roletype)) {
           fields.push('url')
@@ -139,7 +139,7 @@ export default {
           label: 'label.action.template.share',
           dataView: true,
           args: (record, store) => {
-            const fields = ['isfeatured', 'isextractable']
+            const fields = ['isfeatured']
             if (['Admin'].includes(store.userInfo.roletype) || store.features.userpublictemplateenabled) {
               fields.unshift('ispublic')
             }

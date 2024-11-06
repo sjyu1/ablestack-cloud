@@ -131,7 +131,7 @@
                 </template>
               </a-step>
               <a-step
-                :title="$t('label.templateiso')"
+                :title="$t('label.templates')"
                 :status="zoneSelected ? 'process' : 'wait'">
                 <template #description>
                   <div v-if="zoneSelected" style="margin-top: 15px">
@@ -764,12 +764,6 @@
                     {{ $t('message.vm.review.launch') }}
                     <a-form-item :label="$t('label.name.optional')" name="name" ref="name">
                       <a-input v-model:value="form.name" />
-                    </a-form-item>
-                    <a-form-item :label="$t('label.group.optional')" name="group" ref="group">
-                      <a-auto-complete
-                        v-model:value="form.group"
-                        :filterOption="filterOption"
-                        :options="options.instanceGroups" />
                     </a-form-item>
                     <a-form-item :label="$t('label.keyboard')" name="keyboard" ref="keyboard" v-if="!$store.getters.features.securityfeaturesenabled">
                       <a-select

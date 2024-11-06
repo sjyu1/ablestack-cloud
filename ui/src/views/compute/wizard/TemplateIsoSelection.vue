@@ -90,9 +90,9 @@ export default {
       }, {
         id: 'selfexecutable',
         name: this.selected === 'isoid' ? 'label.my.isos' : 'label.my.templates'
-      }, {
-        id: 'sharedexecutable',
-        name: 'label.sharedexecutable'
+      // }, {
+      //   id: 'sharedexecutable',
+      //   name: 'label.sharedexecutable'
       }],
       filterType: 'featured',
       pagination: false

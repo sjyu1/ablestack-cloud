@@ -129,7 +129,7 @@
               </a-select-option>
             </a-select>
           </a-form-item>
-          <a-form-item
+          <!-- <a-form-item
             v-if="!isObjectEmpty(selectedNetworkOffering) && selectedNetworkOffering.specifyvlan"
             name="vlanid"
             ref="vlanid">
@@ -140,7 +140,7 @@
               v-model:value="form.vlanid"
               :placeholder="apiParams.vlan ? apiParams.vlan.description : $t('label.vlanid')"
               :maxlength="20"/>
-          </a-form-item>
+          </a-form-item> -->
           <!-- <a-form-item
             v-if="!isObjectEmpty(selectedNetworkOffering) && selectedNetworkOffering.specifyvlan"
             name="bypassvlanoverlapcheck"
@@ -447,11 +447,12 @@ export default {
           zoneId: this.selectedZone.id,
           name: values.name,
           displayText: values.displaytext,
-          networkOfferingId: this.selectedNetworkOffering.id
+          networkOfferingId: this.selectedNetworkOffering.id,
+          vlan: 'untagged'
         }
-        if (this.isValidTextValueForKey(values, 'vlanid')) {
-          params.vlan = values.vlanid
-        }
+        // if (this.isValidTextValueForKey(values, 'vlanid')) {
+        //   params.vlan = values.vlanid
+        // }
         if (this.isValidValueForKey(values, 'bypassvlanoverlapcheck')) {
           params.bypassvlanoverlapcheck = values.bypassvlanoverlapcheck
         }

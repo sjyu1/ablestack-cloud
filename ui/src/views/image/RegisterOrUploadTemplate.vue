@@ -397,26 +397,6 @@
                 style="width: 100%;"
               >
                 <a-row>
-                  <a-col :span="12">
-                    <a-checkbox value="isextractable">
-                      {{ $t('label.isextractable') }}
-                    </a-checkbox>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-checkbox value="passwordenabled">
-                      {{ $t('label.passwordenabled') }}
-                    </a-checkbox>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-checkbox value="isdynamicallyscalable">
-                      {{ $t('label.isdynamicallyscalable') }}
-                    </a-checkbox>
-                  </a-col>
-                  <a-col :span="12">
-                    <a-checkbox value="requireshvm">
-                      {{ $t('label.requireshvm') }}
-                    </a-checkbox>
-                  </a-col>
                   <a-col :span="12" v-if="isAdminRole">
                     <a-checkbox value="isfeatured">
                       {{ $t('label.isfeatured') }}
@@ -645,10 +625,10 @@ export default {
 
       if (store.getters.userInfo.roletype === this.rootAdmin && this.currentForm === 'Create') {
         this.allowed = true
-        listZones.push({
-          id: this.$t('label.all.zone'),
-          name: this.$t('label.all.zone')
-        })
+        // listZones.push({
+        //   id: this.$t('label.all.zone'),
+        //   name: this.$t('label.all.zone')
+        // })
       }
 
       this.zones.loading = true
@@ -1071,9 +1051,9 @@ export default {
             }
           }
         }
-        if (!('requireshvm' in params)) { // handled as default true by API
-          params.requireshvm = false
-        }
+        // if (!('requireshvm' in params)) { // handled as default true by API
+        //   params.requireshvm = true
+        // }
         if (this.currentForm === 'Create') {
           this.loading = true
           api('registerTemplate', params).then(json => {

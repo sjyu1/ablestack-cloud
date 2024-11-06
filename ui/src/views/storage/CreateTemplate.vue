@@ -97,21 +97,6 @@
               style="width: 100%;"
             >
               <a-row>
-                <a-col :span="12">
-                  <a-checkbox value="passwordenabled">
-                    {{ $t('label.passwordenabled') }}
-                  </a-checkbox>
-                </a-col>
-                <a-col :span="12">
-                  <a-checkbox value="isdynamicallyscalable">
-                    {{ $t('label.isdynamicallyscalable') }}
-                  </a-checkbox>
-                </a-col>
-                <a-col :span="12">
-                  <a-checkbox value="requireshvm">
-                    {{ $t('label.requireshvm') }}
-                  </a-checkbox>
-                </a-col>
                 <a-col :span="12" v-if="isAdminRole">
                   <a-checkbox value="isfeatured">
                     {{ $t('label.isfeatured') }}

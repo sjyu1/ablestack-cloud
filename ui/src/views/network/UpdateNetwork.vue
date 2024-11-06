@@ -213,19 +213,6 @@
             </a-col>
           </a-row>
         </div>
-        <a-form-item name="displaynetwork" ref="displaynetwork" v-if="isAdmin()">
-          <template #label>
-            <tooltip-label :title="$t('label.displaynetwork')" :tooltip="apiParams.displaynetwork.description"/>
-          </template>
-          <a-switch v-model:checked="form.displaynetwork" />
-        </a-form-item>
-        <a-form-item name="forced" ref="forced" v-if="isAdmin()">
-          <template #label>
-            <tooltip-label :title="$t('label.forced')" :tooltip="apiParams.forced.description"/>
-          </template>
-          <a-switch v-model:checked="form.forced" />
-        </a-form-item>
-
         <div :span="24" class="action-button">
           <a-button @click="closeAction">{{ $t('label.cancel') }}</a-button>
           <a-button :loading="loading" ref="submit" type="primary" @click="handleSubmit">{{ $t('label.ok') }}</a-button>
