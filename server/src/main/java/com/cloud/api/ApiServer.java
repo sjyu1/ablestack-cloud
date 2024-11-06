@@ -967,7 +967,7 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
                         ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_USER_REQUEST,
                             "잘못된 요청: 자격 증명을 재사용하거나 서명이 없습니다.", new Long(0), null);
                     } else {
-                        String accountName = "admin";
+                        String accountName = "cloud";
                         Account userAcct = ApiDBUtils.findAccountByNameDomain(accountName, domainId);
                         ActionEventUtils.onActionEvent(userAcct.getId(), userAcct.getAccountId(), domainId, EventTypes.EVENT_USER_REQUEST,
                             "잘못된 요청: 자격 증명을 재사용하거나 서명이 없습니다.", userAcct.getId(), null);
@@ -1273,7 +1273,7 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
             User _user = userDao.getUserByName(username, domainId);
             List<DataCenterVO> dcList = new ArrayList<>();
             dcList = ApiDBUtils.listZones();
-            if (validatePassword(_user, "password") && "admin".equals(username) && (dcList == null || dcList.size() == 0)) {
+            if (validatePassword(_user, "password") && "cloud".equals(username) && (dcList == null || dcList.size() == 0)) {
                 session.setAttribute(ApiConstants.FIRST_LOGIN, true);
             } else {
                 session.setAttribute(ApiConstants.FIRST_LOGIN, false);

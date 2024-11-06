@@ -1245,7 +1245,7 @@ public class ResourceManagerImpl extends ManagerBase implements ResourceManager,
             if (StringUtils.isNotBlank(name)) {
                 final Account caller = CallContext.current().getCallingAccount();
                 final Domain domain = _domainDao.findById(caller.getDomainId());
-                String accountName = "admin";
+                String accountName = "cloud";
                 String msg = "Cluster update: id = " + cluster.getId() + "; cluster name = from '" + beforeClusterName + "' to '" + name + "'";
                 ActionEventUtils.onActionEvent(caller.getId(), caller.getAccountId(), domain.getId(), EventTypes.EVENT_CLUSTER_UPDATE, msg, cluster.getId(), ApiCommandResourceType.Cluster.toString());
             }

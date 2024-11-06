@@ -367,7 +367,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
             // If target VM has associated VM snapshots then don't allow to revert from snapshot
             List<VMSnapshotVO> vmSnapshots = _vmSnapshotDao.findByVm(instanceId);
             if (vmSnapshots.size() > 0 && !Type.GROUP.name().equals(snapshot.getTypeDescription())) {
-                throw new InvalidParameterValueException("Unable to revert snapshot for VM, please remove VM snapshots before reverting VM from snapshot");
+                throw new InvalidParameterValueException("가상머신의 스냅샷을 되돌릴 수 없습니다. 스냅샷에서 가상머신을 되돌리기 전에 가상머신 스냅샷을 제거하세요.");
             }
         }
 
