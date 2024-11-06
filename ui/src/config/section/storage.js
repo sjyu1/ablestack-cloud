@@ -252,7 +252,7 @@ export default {
             return !['Destroy', 'Destroyed', 'Expunging', 'Expunged', 'Migrating', 'Uploading', 'UploadError', 'Creating'].includes(record.state) &&
             ((record.type === 'ROOT' && record.vmstate === 'Stopped'))
           },
-          args: ['volumeid', 'name', 'displaytext', 'ostypeid', 'ispublic', 'isfeatured', 'isdynamicallyscalable', 'requireshvm', 'passwordenabled'],
+          args: ['volumeid', 'name', 'displaytext', 'ostypeid', 'ispublic', 'isfeatured'],
           mapping: {
             volumeid: {
               value: (record) => { return record.id }

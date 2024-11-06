@@ -67,9 +67,6 @@
             </a-select-option>
           </a-select>
         </a-form-item> -->
-        <a-form-item :label="$t('label.asyncbackup')" name="asyncbackup" ref="asyncbackup">
-          <a-switch v-model:checked="form.asyncbackup" />
-        </a-form-item>
         <a-form-item :label="$t('label.quiescevm')">
           <a-switch v-model:checked="form.quiescevm" />
         </a-form-item>

@@ -219,7 +219,7 @@ export default {
           label: 'label.action.vmsnapshot.create',
           docHelp: 'adminguide/virtual_machines.html#virtual-machine-snapshots',
           dataView: true,
-          args: ['virtualmachineid', 'name', 'description', 'snapshotmemory', 'quiescevm'],
+          args: ['virtualmachineid', 'name', 'description', 'quiescevm'],
           show: (record) => {
             return ((['Running'].includes(record.state) && record.hypervisor !== 'LXC') ||
               (['Stopped'].includes(record.state) && ((record.hypervisor !== 'KVM' && record.hypervisor !== 'LXC') ||
