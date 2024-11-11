@@ -33,7 +33,6 @@
       :columns="columns"
       :dataSource="dataSource"
       :pagination="false"
-      :rowSelection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange}"
       :rowKey="record => record.zoneid"
       :rowExpandable="(record) => record.downloaddetails.length > 0">
       <template #bodyCell="{ column, record }">
@@ -577,6 +576,9 @@ export default {
         this.$notifyError(error)
       }).finally(() => {
         this.deleteLoading = false
+        this.$emit('refresh-data')
+        this.onCloseModal()
+        this.fetchData()
       })
     },
     fetchZoneData () {

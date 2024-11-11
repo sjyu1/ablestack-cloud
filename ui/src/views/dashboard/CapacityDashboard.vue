@@ -500,9 +500,14 @@ export default {
           this.data.totalHosts = 0
         }
       })
-      api('listHosts', { zoneid: zone.id, listall: true, details: 'min', type: 'routing', state: 'alert', page: 1, pagesize: 1 }).then(json => {
+      api('listHosts', { zoneid: zone.id, listall: true, details: 'min', type: 'routing' }).then(json => {
         this.loading = false
-        this.data.alertHosts = json?.listhostsresponse?.count
+        this.data.alertHosts = 0
+        for (var i = 0; i < json?.listhostsresponse?.count; i++) {
+          if (json?.listhostsresponse?.host[i].state !== 'Up') {
+            this.data.alertHosts += 1
+          }
+        }
         if (!this.data.alertHosts) {
           this.data.alertHosts = 0
         }

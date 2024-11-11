@@ -30,7 +30,6 @@
           <tooltip-label :title="$t('label.name')" :tooltip="apiParams.name.description"/>
         </template>
         <a-input
-          :maxlength="20"
           v-model:value="form.name"
           v-focus="true" />
       </a-form-item>
@@ -38,7 +37,7 @@
         <template #label>
           <tooltip-label :title="$t('label.displayname')" :tooltip="apiParams.displayname.description"/>
         </template>
-        <a-input v-model:value="form.displayname" :maxlength="20" />
+        <a-input v-model:value="form.displayname" />
       </a-form-item>
       <a-form-item name="ostypeid" ref="ostypeid">
         <template #label>

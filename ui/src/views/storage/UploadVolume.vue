@@ -41,7 +41,6 @@
           </template>
           <a-input
             v-model:value="form.name"
-            :maxlength="20"
             :placeholder="$t('label.volumename')"
             v-focus="true" />
         </a-form-item>

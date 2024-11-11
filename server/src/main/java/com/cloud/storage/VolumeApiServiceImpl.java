@@ -541,7 +541,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
 
         // name parameter length check
         if (volumeName != null && !NetUtils.verifyDomainNameLabel(volumeName, true)) {
-            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 1~63자 입니다.");
         }
 
         //validating the url only when url is not null. url can be null incase of form based post upload
@@ -721,6 +721,11 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         Long maxIops = null;
         // Volume VO used for extracting the source template id
         VolumeVO parentVolume = null;
+
+        // name parameter length check
+        if (cmd.getVolumeName() != null && !NetUtils.verifyDomainNameLabel(cmd.getVolumeName(), true)) {
+            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 0~63자 입니다.");
+        }
 
         // validate input parameters before creating the volume
         if (cmd.getSnapshotId() == null && cmd.getDiskOfferingId() == null) {
@@ -1037,7 +1042,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
             created = false;
             VolumeInfo vol = volFactory.getVolume(cmd.getEntityId());
             vol.stateTransit(Volume.Event.DestroyRequested);
-            throw new CloudRuntimeException("Failed to create volume: " + volume.getId(), e);
+            throw new CloudRuntimeException("볼륨을 생성하지 못했습니다. 스토리지 용량을 확인해주세요. Volume ID: " + volume.getId(), e);
         } finally {
             if (!created) {
                 logger.trace("Decrementing volume resource count for account id=" + volume.getAccountId() + " as volume failed to create on the backend");
@@ -3583,7 +3588,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
 
         // parameter length check
         if (snapshotName != null && !NetUtils.verifyDomainNameLabel(snapshotName, true)) {
-            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 0~63자 입니다.");
         }
 
         VolumeInfo volume = volFactory.getVolume(volumeId);
@@ -3680,7 +3685,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
 
         // parameter length check
         if (!NetUtils.verifyDomainNameLabel(snapshotName, true)) {
-            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 1~63자 입니다.");
         }
 
         _accountMgr.checkAccess(caller, null, true, volume);

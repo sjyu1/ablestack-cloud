@@ -31,7 +31,6 @@
           </template>
           <a-input
             v-model:value="form.name"
-            :maxlength="20"
             :placeholder="apiParams.name.description"
             v-focus="true" />
         </a-form-item>
@@ -41,7 +40,6 @@
           </template>
           <a-input
             v-model:value="form.displaytext"
-            :maxlength="100"
             :placeholder="apiParams.displaytext.description"
             v-focus="true" />
         </a-form-item>

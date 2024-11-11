@@ -67,7 +67,6 @@
           <a-input
             v-model:value="form.name"
             :placeholder="apiParams.name.description"
-            :maxlength="20"
             v-focus="currentForm !== 'Create'"/>
         </a-form-item>
         <a-form-item ref="displaytext" name="displaytext">
@@ -76,8 +75,7 @@
           </template>
           <a-input
             v-model:value="form.displaytext"
-            :placeholder="apiParams.displaytext.description"
-            :maxlength="100" />
+            :placeholder="apiParams.displaytext.description"/>
         </a-form-item>
         <div v-if="currentForm === 'Create'">
           <a-form-item

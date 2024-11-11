@@ -53,7 +53,6 @@
           </template>
           <a-input
             v-model:value="form.name"
-            :maxlength="20"
             :placeholder="apiParams.name.description"/>
         </a-form-item>
         <a-form-item name="quiescevm" ref="quiescevm" v-if="isQuiesceVm">

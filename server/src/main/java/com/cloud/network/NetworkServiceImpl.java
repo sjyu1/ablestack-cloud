@@ -1403,12 +1403,12 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         // name parameter length check
         if ((org.apache.commons.lang3.StringUtils.isBlank(name)
                 || !NetUtils.verifyDomainNameLabel(name, true))) {
-                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 1~63자 입니다.");
         }
 
         // displayText parameter length check
         if (displayText != null && !NetUtils.verifyDomainNameLabel(displayText, true)) {
-            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 0~63자 입니다.");
         }
 
         // vlan/vni parameter lenght check
@@ -2950,7 +2950,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         if (name != null) {
             // name parameter length check
             if (!NetUtils.verifyDomainNameLabel(name, true)) {
-                throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+                throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 1~63자 입니다.");
             }
 
             network.setName(name);
@@ -2959,7 +2959,7 @@ public class NetworkServiceImpl extends ManagerBase implements NetworkService, C
         if (displayText != null) {
             // displayText parameter length check
             if (!NetUtils.verifyDomainNameLabel(displayText, true)) {
-                throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+                throw new InvalidParameterValueException("설명이 잘못되었습니다. 설명에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 1~63자 입니다.");
             }
 
             network.setDisplayText(displayText);

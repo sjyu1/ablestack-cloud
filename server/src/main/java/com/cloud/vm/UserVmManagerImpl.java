@@ -2775,12 +2775,12 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         // name parameter length check
         if ((org.apache.commons.lang3.StringUtils.isBlank(hostName)
                 || !NetUtils.verifyDomainNameLabel(hostName, true))) {
-                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 1~63자 입니다.");
         }
 
         // displayText parameter length check
         if (displayName != null && !NetUtils.verifyDomainNameLabel(displayName, true)) {
-            throw new InvalidParameterValueException("이름 표시가 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            throw new InvalidParameterValueException("이름 표시가 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 1~63자 입니다.");
         }
 
         UserVmVO vmInstance = _vmDao.findById(cmd.getId());
@@ -3092,7 +3092,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         List<? extends Nic> nics = _nicDao.listByVmId(vm.getId());
         if (hostName != null) {
             // Check is hostName is RFC compliant
-            checkNameForRFCCompliance(hostName);
+            // checkNameForRFCCompliance(hostName);
 
             if (vm.getHostName().equals(hostName)) {
                 logger.debug("Vm " + vm + " is already set with the hostName specified: " + hostName);
@@ -3962,7 +3962,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
     public void checkNameForRFCCompliance(String name) {
         if (!NetUtils.verifyDomainNameLabel(name, true)) {
-            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+            throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 0~63자 입니다.");
         }
     }
 
@@ -6330,7 +6330,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         // name parameter length check
         if (!org.apache.commons.lang3.StringUtils.isBlank(name)
         && !NetUtils.verifyDomainNameLabel(name, true)) {
-                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다.");
+                    throw new InvalidParameterValueException("이름이 잘못되었습니다. 이름에는 ASCII 문자 'a'~'z', 숫자 '0'~'9', 하이픈('-')이 포함될 수 있으며 하이픈('-')으로 시작하거나 끝날 수 없으며 숫자로 시작할 수도 없습니다. 문자수는 0~63자 입니다.");
         }
 
         String ipAddress = cmd.getIpAddress();

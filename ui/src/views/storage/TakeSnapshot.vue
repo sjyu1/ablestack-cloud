@@ -34,7 +34,6 @@
         <a-form-item :label="$t('label.name')" name="name" ref="name">
           <a-input
             v-model:value="form.name"
-            :maxlength="20"
             :placeholder="apiParams.name.description"
             v-focus="true" />
         </a-form-item>

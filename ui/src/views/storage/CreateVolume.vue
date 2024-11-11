@@ -33,7 +33,6 @@
         <a-input
           v-focus="true"
           v-model:value="form.name"
-          :maxlength="20"
           :placeholder="apiParams.name.description" />
       </a-form-item>
       <a-form-item ref="zoneid" name="zoneid" v-if="!createVolumeFromVM">

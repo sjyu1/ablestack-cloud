@@ -33,7 +33,6 @@
             <a-input
               v-model:value="form.name"
               :placeholder="apiParams.name.description"
-              :maxlength="20"
               v-focus="true"/>
           </a-form-item>
           <a-form-item name="displaytext" ref="displaytext">
@@ -42,8 +41,7 @@
             </template>
             <a-input
               v-model:value="form.displaytext"
-              :placeholder="apiParams.displaytext.description"
-              :maxlength="100"/>
+              :placeholder="apiParams.displaytext.description"/>
           </a-form-item>
           <a-form-item name="zoneid" ref="zoneid">
             <template #label>
