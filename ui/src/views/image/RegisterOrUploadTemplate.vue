@@ -40,7 +40,7 @@
               v-focus="currentForm === 'Create'"
               v-model:value="form.url"
               :placeholder="apiParams.url.description"
-              :maxlength="500" />
+              :maxlength="255" />
           </a-form-item>
         </div>
         <div v-if="currentForm === 'Upload'">

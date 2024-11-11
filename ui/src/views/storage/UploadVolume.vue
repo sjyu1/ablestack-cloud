@@ -32,7 +32,7 @@
         <a-form-item name="url" ref="url" :label="$t('label.url')">
           <a-input
             v-model:value="form.url"
-            :maxlength="500"
+            :maxlength="255"
             :placeholder="apiParams.url.description"/>
         </a-form-item>
         <a-form-item name="name" ref="name">
