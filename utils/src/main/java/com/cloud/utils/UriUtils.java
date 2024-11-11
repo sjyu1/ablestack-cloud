@@ -290,7 +290,7 @@ public class UriUtils {
                     throw new IllegalArgumentException("IPV6 addresses not supported (" + hostAddr.getHostAddress() + ")");
                 }
             } catch (UnknownHostException uhe) {
-                throw new IllegalArgumentException("해결할 수 없음: " + host);
+                throw new IllegalArgumentException("URL에 잘못된 호스트가 지정되었습니다.: " + host);
             }
 
             // verify format
@@ -300,7 +300,7 @@ public class UriUtils {
             }
             return new Pair<String, Integer>(host, port);
         } catch (URISyntaxException use) {
-            throw new IllegalArgumentException("잘못된: " + url);
+            throw new IllegalArgumentException("잘못된 URL: " + url);
         }
     }
 
@@ -462,7 +462,7 @@ public class UriUtils {
                                                                      .noneMatch(uriMatchesAnyExtension);
 
             if (unknownExtension) {
-                throw new IllegalArgumentException("유효한 것을 지정하십시오. " + format.toLowerCase());
+                throw new IllegalArgumentException("URL 파일 형식이 QCOW2 타입이어야합니다. 유효한 파일 형식: " + format.toLowerCase());
             }
 
             throw new IllegalArgumentException("유효한 URL을 지정하세요. "

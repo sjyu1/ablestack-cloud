@@ -66,7 +66,7 @@ public class UploadVolumeCmd extends BaseAsyncCmd implements UserCmd {
                type = CommandType.STRING,
                required = true,
                length = 2048,
-               description = "볼륨이 호스팅되는 URL입니다. 가능한 URL에는 http:// 및 https://가 포함된 URL 형식에 따릅니다.")
+               description = "볼륨이 호스팅되는 URL입니다. http:// 및 https://가 포함된 URL 형식에 따릅니다.")
     private String url;
 
     @Parameter(name = ApiConstants.ZONE_ID,
