@@ -267,10 +267,14 @@ public class UriUtils {
 
     public static Pair<String, Integer> validateUrl(String format, String url, boolean skipIpv6Check) throws IllegalArgumentException {
         try {
+            if (url.length() > 255) {
+                throw new IllegalArgumentException("URL은 255자 이내여야 합니다.");
+            }
+
             URI uri = new URI(url);
             if ((uri.getScheme() == null) ||
                     (!uri.getScheme().equalsIgnoreCase("http") && !uri.getScheme().equalsIgnoreCase("https") && !uri.getScheme().equalsIgnoreCase("file"))) {
-                throw new IllegalArgumentException("url에 대해 지원되지 않는 형식: " + url);
+                throw new IllegalArgumentException("URL에 대해 지원되지 않는 형식(http:// 및 https://가 포함되어야함): " + url);
             }
 
             int port = uri.getPort();
