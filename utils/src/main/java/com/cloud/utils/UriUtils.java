@@ -284,12 +284,6 @@ public class UriUtils {
                 port = 80;
             }
 
-            // verify format
-            if (format != null) {
-                String uripath = uri.getPath();
-                checkFormat(format, uripath);
-            }
-
             String host = uri.getHost();
             try {
                 InetAddress hostAddr = InetAddress.getByName(host);
@@ -301,6 +295,12 @@ public class UriUtils {
                 }
             } catch (UnknownHostException uhe) {
                 throw new IllegalArgumentException("URL에 잘못된 호스트가 지정되었습니다.(http:// 및 https://가 포함되어야하며, 파일 형식이 qcow2 타입이어야합니다.): " + host);
+            }
+
+            // verify format
+            if (format != null) {
+                String uripath = uri.getPath();
+                checkFormat(format, uripath);
             }
 
             return new Pair<String, Integer>(host, port);
