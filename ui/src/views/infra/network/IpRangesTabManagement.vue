@@ -183,15 +183,15 @@ export default {
           key: 'endip',
           title: this.$t('label.endip'),
           dataIndex: 'endip'
-        },
-        {
-          key: 'forsystemvms',
-          title: this.$t('label.system.vms'),
-          dataIndex: 'forsystemvms'
-        },
-        {
-          key: 'actions',
-          title: this.$t('label.actions')
+        // },
+        // {
+        //   key: 'forsystemvms',
+        //   title: this.$t('label.system.vms'),
+        //   dataIndex: 'forsystemvms'
+        // },
+        // {
+        //   key: 'actions',
+        //   title: this.$t('label.actions')
         }
       ]
     }

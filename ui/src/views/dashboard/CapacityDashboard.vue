@@ -131,7 +131,7 @@
             </router-link>
           </a-col>
           <a-col :span="12">
-            <router-link :to="{ path: '/systemvm', query: { zoneid: zoneSelected.id } }">
+            <!-- <router-link :to="{ path: '/systemvm', query: { zoneid: zoneSelected.id } }"> -->
               <a-statistic
                 :title="$t('label.system.vms')"
                 :value="data.systemvms"
@@ -140,7 +140,7 @@
                   <thunderbolt-outlined/>&nbsp;
                 </template>
               </a-statistic>
-            </router-link>
+            <!-- </router-link> -->
           </a-col>
           <!-- <a-col :span="12">
             <router-link :to="{ path: '/router', query: { zoneid: zoneSelected.id } }">

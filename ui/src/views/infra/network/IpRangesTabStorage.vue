@@ -175,10 +175,10 @@ export default {
         {
           title: this.$t('label.endip'),
           dataIndex: 'endip'
-        },
-        {
-          key: 'actions',
-          title: this.$t('label.actions')
+        // },
+        // {
+        //   key: 'actions',
+        //   title: this.$t('label.actions')
         }
       ],
       page: 1,

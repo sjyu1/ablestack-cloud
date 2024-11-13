@@ -54,14 +54,14 @@
     <br>
     <br>
 
-    <a-button
+    <!-- <a-button
       :disabled="!('createNetwork' in $store.getters.apis)"
       type="dashed"
       style="margin-bottom: 20px; width: 100%"
       @click="handleOpenShowCreateForm">
       <template #icon><plus-outlined /></template>
       {{ $t('label.add.guest.network') }}
-    </a-button>
+    </a-button> -->
 
     <a-table
       size="small"

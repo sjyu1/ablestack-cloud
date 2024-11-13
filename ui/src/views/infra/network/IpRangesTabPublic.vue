@@ -399,10 +399,10 @@ export default {
         {
           key: 'endip',
           title: this.$t('label.endip')
-        },
-        {
-          key: 'actions',
-          title: this.$t('label.actions')
+        // },
+        // {
+        //   key: 'actions',
+        //   title: this.$t('label.actions')
         }
       ]
     }

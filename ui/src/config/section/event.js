@@ -51,11 +51,6 @@ export default {
       return filters
     }
   },
-  related: [{
-    name: 'event',
-    title: 'label.event.timeline',
-    param: 'startid'
-  }],
   filters: () => {
     return ['active', 'archived']
   },
