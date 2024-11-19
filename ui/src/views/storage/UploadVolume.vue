@@ -80,28 +80,6 @@
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item name="diskofferingid" ref="diskofferingid">
-          <template #label>
-            <tooltip-label :title="$t('label.diskofferingid')" :tooltip="apiParams.diskofferingid.description || $t('label.diskoffering')"/>
-          </template>
-          <a-select
-            v-model:value="form.diskofferingid"
-            :loading="loading"
-            @change="id => onChangeDiskOffering(id)"
-            showSearch
-            optionFilterProp="label"
-            :filterOption="(input, option) => {
-              return option.label.toLowerCase().indexOf(input.toLowerCase()) >= 0
-            }" >
-            <a-select-option
-              v-for="(offering, index) in offerings"
-              :value="offering.id"
-              :key="index"
-              :label="offering.displaytext || offering.name">
-              {{ offering.displaytext || offering.name }}
-            </a-select-option>
-          </a-select>
-        </a-form-item>
         <!-- <a-form-item name="checksum" ref="checksum">
           <template #label>
             <tooltip-label :title="$t('label.volumechecksum')" :tooltip="apiParams.checksum.description"/>
