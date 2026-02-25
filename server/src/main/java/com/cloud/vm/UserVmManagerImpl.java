@@ -10709,14 +10709,16 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             logger.info("4444-1UserVmManagerImpl.java");
             cmd.setName(orgName + (countOfCloneVM > 1 ? Integer.toString(cnt) : ""));
             for (VMSnapshotDetailsVO vmSnapshotDetailsVO : listSnapshots) {
+                logger.info("4444-11UserVmManagerImpl.java vmSnapshotDetailsVO" + vmSnapshotDetailsVO.getValue());
                 SnapshotVO snapVO = _snapshotDao.findById(Long.parseLong(vmSnapshotDetailsVO.getValue()));
-                logger.info("4444-11UserVmManagerImpl.java");
+                logger.info("4444-11UserVmManagerImpl.java snapVO" + snapVO);
                 if (snapVO == null) {
                     logger.info("4444-2UserVmManagerImpl.java");
                     throw new CloudRuntimeException("Could not find snapshot for VM snapshot");
                 }
 
                 VolumeVO parentRootVolume = _volsDao.findByIdIncludingRemoved(snapVO.getVolumeId());
+                logger.info("4444-3UserVmManagerImpl.java parentRootVolume" + parentRootVolume);
                 long diskOfferingId = snapVO.getDiskOfferingId();
                 DiskOfferingVO diskOffering = _diskOfferingDao.findById(diskOfferingId);
                 Long minIops = snapVO.getMinIops();
