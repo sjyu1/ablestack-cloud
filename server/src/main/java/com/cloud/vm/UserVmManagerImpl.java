@@ -10681,15 +10681,17 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         VMSnapshot vmSnapshot = null;
         try {
             vmSnapshot = _vmSnapshotMgr.allocVMSnapshot(curVm.getId(), null, null, false);
+            logger.info("UserVmManagerImpl.java vmSnapshot :" + vmSnapshot);
             if (vmSnapshot == null) {
                 throw new CloudRuntimeException("Failed to create vm snapshot");
             }
             vmSnapshot = _vmSnapshotMgr.createVMSnapshot(curVm.getId(), vmSnapshot.getId(), false);
+            logger.info("UserVmManagerImpl.java vmSnapshot :" + vmSnapshot);
             if (vmSnapshot == null) {
                 throw new CloudRuntimeException("Failed to create vm snapshot due to an internal error creating snapshot for vm " + curVm.getId());
             }
-
         } catch (CloudRuntimeException e) {
+            logger.info("UserVmManagerImpl.java CloudRuntimeException vmSnapshot :" + vmSnapshot);
             if(vmSnapshot != null){
                 _vmSnapshotMgr.deleteVMSnapshot(vmSnapshot.getId());
             }
