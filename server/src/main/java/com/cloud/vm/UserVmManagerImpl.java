@@ -73,7 +73,6 @@ import org.apache.cloudstack.annotation.AnnotationService;
 import org.apache.cloudstack.annotation.dao.AnnotationDao;
 import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.api.ApiConstants;
-import org.apache.cloudstack.api.ApiErrorCode;
 import org.apache.cloudstack.api.command.admin.vm.DeployVMVolumeCmdByAdmin;
 import org.apache.cloudstack.api.BaseCmd;
 import org.apache.cloudstack.api.BaseCmd.HTTPMethod;
