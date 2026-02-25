@@ -10702,6 +10702,9 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         logger.info("4444UserVmManagerImpl.java");
 
         List<VMSnapshotDetailsVO> listSnapshots = vmSnapshotDetailsDao.findDetails(vmSnapshot.getId(), "kvmStorageSnapshot");
+        if (volume.getPoolType().equals(Storage.StoragePoolType.SharedMountPoint)) {
+            listSnapshots = vmSnapshotDetailsDao.findDetails(vmSnapshot.getId(), "kvmFileBasedStorageSnapshot");
+        }
         logger.info("4444UserVmManagerImpl.java listSnapshots" + listSnapshots);
         Integer countOfCloneVM = cmd.getCount();
         logger.info("4444UserVmManagerImpl.java countOfCloneVM start" + countOfCloneVM);
