@@ -77,7 +77,6 @@ import org.apache.cloudstack.api.ApiErrorCode;
 import org.apache.cloudstack.api.command.admin.vm.DeployVMVolumeCmdByAdmin;
 import org.apache.cloudstack.api.BaseCmd;
 import org.apache.cloudstack.api.BaseCmd.HTTPMethod;
-import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.admin.vm.AssignVMCmd;
 import org.apache.cloudstack.api.command.admin.vm.CreateVMFromBackupCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.vm.DeployVMCmdByAdmin;
@@ -10684,18 +10683,18 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         try {
             vmSnapshot = _vmSnapshotMgr.allocVMSnapshot(curVm.getId(), null, null, false);
             if (vmSnapshot == null) {
-                throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot");
+                throw new CloudRuntimeException("Failed to create vm snapshot");
             }
             vmSnapshot = _vmSnapshotMgr.createVMSnapshot(curVm.getId(), vmSnapshot.getId(), false);
             if (vmSnapshot == null) {
-                throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot due to an internal error creating snapshot for vm " + curVm.getId());
+                throw new CloudRuntimeException("Failed to create vm snapshot due to an internal error creating snapshot for vm " + curVm.getId());
             }
 
         } catch (CloudRuntimeException e) {
             if(vmSnapshot != null){
                 _vmSnapshotMgr.deleteVMSnapshot(vmSnapshot.getId());
             }
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot: " + e.getMessage(), e);
+            throw new CloudRuntimeException("Failed to create vm snapshot: " + e.getMessage(), e);
         }
 
         List<VMSnapshotDetailsVO> listSnapshots = vmSnapshotDetailsDao.findDetails(vmSnapshot.getId(), "kvmStorageSnapshot");
