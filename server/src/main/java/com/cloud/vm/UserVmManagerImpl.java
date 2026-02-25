@@ -10702,13 +10702,15 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         logger.info("4444UserVmManagerImpl.java");
 
         List<VMSnapshotDetailsVO> listSnapshots = vmSnapshotDetailsDao.findDetails(vmSnapshot.getId(), "kvmStorageSnapshot");
-
+        logger.info("4444UserVmManagerImpl.java listSnapshots" + listSnapshots);
         Integer countOfCloneVM = cmd.getCount();
+        logger.info("4444UserVmManagerImpl.java countOfCloneVM start" + countOfCloneVM);
         for (int cnt = 1; cnt <= countOfCloneVM; cnt++) {
+            logger.info("4444-1UserVmManagerImpl.java");
             cmd.setName(orgName + (countOfCloneVM > 1 ? Integer.toString(cnt) : ""));
             for (VMSnapshotDetailsVO vmSnapshotDetailsVO : listSnapshots) {
                 SnapshotVO snapVO = _snapshotDao.findById(Long.parseLong(vmSnapshotDetailsVO.getValue()));
-                logger.info("4444-1UserVmManagerImpl.java");
+                logger.info("4444-11UserVmManagerImpl.java");
                 if (snapVO == null) {
                     logger.info("4444-2UserVmManagerImpl.java");
                     throw new CloudRuntimeException("Could not find snapshot for VM snapshot");
@@ -10825,6 +10827,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 }
             }
         }
+        logger.info("4444UserVmManagerImpl.java countOfCloneVM end" + countOfCloneVM);
         return null;
     }
 
