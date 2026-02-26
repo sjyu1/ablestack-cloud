@@ -2684,7 +2684,6 @@ public class KVMStorageProcessor implements StorageProcessor {
         final DataTO srcData = cmd.getSrcTO();
         final SnapshotObjectTO snapshot = (SnapshotObjectTO)srcData;
         final VolumeObjectTO volume = snapshot.getVolume();
-        logger.info("KVMStorageProcessor.java createVolumeFromSnapshot snapshotFullPath"+ snapshot.getPath());
         try {
             final DataTO destData = cmd.getDestTO();
             final PrimaryDataStoreTO pool = (PrimaryDataStoreTO)destData.getDataStore();
@@ -2695,12 +2694,9 @@ public class KVMStorageProcessor implements StorageProcessor {
             }
 
             final String snapshotFullPath = snapshot.getPath();
-            logger.info("KVMStorageProcessor.java createVolumeFromSnapshot snapshotFullPath"+ snapshotFullPath);
             final int index = snapshotFullPath.lastIndexOf("/");
             final String snapshotPath = snapshotFullPath.substring(0, index);
             final String snapshotName = snapshotFullPath.substring(index + 1);
-            logger.info("KVMStorageProcessor.java createVolumeFromSnapshot snapshotPath"+ snapshotPath);
-            logger.info("KVMStorageProcessor.java createVolumeFromSnapshot snapshotName"+ snapshotName);
             KVMPhysicalDisk disk = null;
             if (imageStore instanceof NfsTO) {
                 disk = createVolumeFromSnapshotOnNFS(cmd, pool, imageStore, volume, snapshotPath, snapshotName);

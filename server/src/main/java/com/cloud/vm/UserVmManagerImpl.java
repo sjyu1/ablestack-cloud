@@ -10681,47 +10681,34 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         VMSnapshot vmSnapshot = null;
         try {
             vmSnapshot = _vmSnapshotMgr.allocVMSnapshot(curVm.getId(), null, null, false);
-            logger.info("1111UserVmManagerImpl.java vmSnapshot :" + vmSnapshot);
             if (vmSnapshot == null) {
                 throw new CloudRuntimeException("Failed to create vm snapshot");
             }
             vmSnapshot = _vmSnapshotMgr.createVMSnapshot(curVm.getId(), vmSnapshot.getId(), false);
-            logger.info("2222UserVmManagerImpl.java vmSnapshot :" + vmSnapshot);
             if (vmSnapshot == null) {
                 throw new CloudRuntimeException("Failed to create vm snapshot due to an internal error creating snapshot for vm " + curVm.getId());
             }
         } catch (CloudRuntimeException e) {
-            logger.info("UserVmManagerImpl.java CloudRuntimeException vmSnapshot :" + vmSnapshot);
-            logger.info("3333UserVmManagerImpl.java CloudRuntimeException vmSnapshot :" + vmSnapshot);
             if(vmSnapshot != null){
                 _vmSnapshotMgr.deleteVMSnapshot(vmSnapshot.getId());
             }
             throw new CloudRuntimeException("Failed to create vm snapshot: " + e.getMessage(), e);
         }
 
-        logger.info("4444UserVmManagerImpl.java");
-
         List<VMSnapshotDetailsVO> listSnapshots = vmSnapshotDetailsDao.findDetails(vmSnapshot.getId(), "kvmStorageSnapshot");
         if (volume.getPoolType().equals(Storage.StoragePoolType.SharedMountPoint)) {
             listSnapshots = vmSnapshotDetailsDao.findDetails(vmSnapshot.getId(), "kvmFileBasedStorageSnapshot");
         }
-        logger.info("4444UserVmManagerImpl.java listSnapshots" + listSnapshots);
         Integer countOfCloneVM = cmd.getCount();
-        logger.info("4444UserVmManagerImpl.java countOfCloneVM start" + countOfCloneVM);
         for (int cnt = 1; cnt <= countOfCloneVM; cnt++) {
-            logger.info("4444-1UserVmManagerImpl.java");
             cmd.setName(orgName + (countOfCloneVM > 1 ? Integer.toString(cnt) : ""));
             for (VMSnapshotDetailsVO vmSnapshotDetailsVO : listSnapshots) {
-                logger.info("4444-11UserVmManagerImpl.java vmSnapshotDetailsVO" + vmSnapshotDetailsVO.getValue());
                 SnapshotVO snapVO = _snapshotDao.findById(Long.parseLong(vmSnapshotDetailsVO.getValue()));
-                logger.info("4444-11UserVmManagerImpl.java snapVO" + snapVO);
                 if (snapVO == null) {
-                    logger.info("4444-2UserVmManagerImpl.java");
                     throw new CloudRuntimeException("Could not find snapshot for VM snapshot");
                 }
 
                 VolumeVO parentRootVolume = _volsDao.findByIdIncludingRemoved(snapVO.getVolumeId());
-                logger.info("4444-3UserVmManagerImpl.java parentRootVolume" + parentRootVolume);
                 long diskOfferingId = snapVO.getDiskOfferingId();
                 DiskOfferingVO diskOffering = _diskOfferingDao.findById(diskOfferingId);
                 Long minIops = snapVO.getMinIops();
@@ -10730,20 +10717,16 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 Storage.ProvisioningType provisioningType = diskOffering.getProvisioningType();
                 String rootVolumeName = cmd.getName() + "-" + parentRootVolume.getName();
                 if (parentRootVolume.getVolumeType() == Volume.Type.ROOT) {
-                    logger.info("4444-3UserVmManagerImpl.java");
                     if (StringUtils.isNotBlank(clone_type)){
                         snapVO.setCloneType(clone_type);
                         _snapshotDao.update(snapVO.getId(), snapVO);
                     }
-                    logger.info("4444-4UserVmManagerImpl.java");
                     VolumeVO newVol = cloneVolumeFromSnapToDB(curVmAccount, true, zoneId, diskOfferingId, provisioningType, size, minIops, maxIops, parentRootVolume, rootVolumeName,
                                                                         _uuidMgr.generateUuid(Volume.class, null), new HashMap<>(), Volume.Type.ROOT, 0L);
-                    logger.info("4444-5UserVmManagerImpl.java");
                     VolumeVO rootVolume = (VolumeVO) _volumeService.cloneVolumeFromSnapshot(newVol, snapVO.getId(), curVm.getId());
                     if (rootVolume == null) {
                         throw new CloudRuntimeException("Creation of root volume is not queried. The virtual machine cannot be cloned!");
                     }
-                    logger.info("4444-6UserVmManagerImpl.java");
                     UserVm cloneVM = createCloneVM(cmd, rootVolume.getId());
                     if (cloneVM == null) {
                         throw new CloudRuntimeException("Unable to record the VM to DB!");
@@ -10757,7 +10740,6 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                     break;
                 }
             }
-            logger.info("5555UserVmManagerImpl.java");
 
 
             List<VolumeVO> createdVolumes = new ArrayList<>();
