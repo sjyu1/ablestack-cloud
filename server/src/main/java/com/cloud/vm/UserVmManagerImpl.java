@@ -10690,6 +10690,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             if (vmSnapshot == null) {
                 throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot due to an internal error creating snapshot for vm " + curVm.getId());
             }
+
         } catch (CloudRuntimeException e) {
             if(vmSnapshot != null){
                 _vmSnapshotMgr.deleteVMSnapshot(vmSnapshot.getId());
@@ -10698,6 +10699,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         }
 
         List<VMSnapshotDetailsVO> listSnapshots = vmSnapshotDetailsDao.findDetails(vmSnapshot.getId(), "kvmStorageSnapshot");
+
         Integer countOfCloneVM = cmd.getCount();
         for (int cnt = 1; cnt <= countOfCloneVM; cnt++) {
             cmd.setName(orgName + (countOfCloneVM > 1 ? Integer.toString(cnt) : ""));
