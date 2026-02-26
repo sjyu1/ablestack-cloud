@@ -2684,6 +2684,7 @@ public class KVMStorageProcessor implements StorageProcessor {
         final DataTO srcData = cmd.getSrcTO();
         final SnapshotObjectTO snapshot = (SnapshotObjectTO)srcData;
         final VolumeObjectTO volume = snapshot.getVolume();
+        logger.info("KVMStorageProcessor.java createVolumeFromSnapshot snapshotFullPath"+ snapshot.getPath());
         try {
             final DataTO destData = cmd.getDestTO();
             final PrimaryDataStoreTO pool = (PrimaryDataStoreTO)destData.getDataStore();
