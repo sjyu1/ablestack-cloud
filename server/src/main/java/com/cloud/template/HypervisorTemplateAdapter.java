@@ -419,7 +419,6 @@ public class HypervisorTemplateAdapter extends TemplateAdapterBase {
             if (tmplt.isPublicTemplate()) {
                 _messageBus.publish(_name, TemplateManager.MESSAGE_REGISTER_PUBLIC_TEMPLATE_EVENT, PublishScope.LOCAL, tmplt.getId());
             }
-            long accountId = tmplt.getAccountId();
             if (template.getSize() != null) {
                 // publish usage event
                 String etype = EventTypes.EVENT_TEMPLATE_CREATE;
@@ -448,7 +447,6 @@ public class HypervisorTemplateAdapter extends TemplateAdapterBase {
                     UsageEventUtils.publishUsageEvent(etype, template.getAccountId(), -1, template.getId(), template.getName(), null, null, physicalSize,
                         template.getSize(), VirtualMachineTemplate.class.getName(), template.getUuid());
                 }
-                _resourceLimitMgr.incrementResourceCount(accountId, ResourceType.secondary_storage, template.getSize());
             }
         }
         if (tmplt != null) {
