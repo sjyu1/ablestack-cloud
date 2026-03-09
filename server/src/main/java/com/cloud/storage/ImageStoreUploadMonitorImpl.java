@@ -42,6 +42,7 @@ import org.apache.cloudstack.engine.subsystem.api.storage.TemplateService;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.Configurable;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
+import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.storage.command.UploadStatusAnswer;
 import org.apache.cloudstack.storage.command.UploadStatusAnswer.UploadStatus;
 import org.apache.cloudstack.storage.command.UploadStatusCommand;
@@ -60,6 +61,7 @@ import com.cloud.agent.api.AgentControlCommand;
 import com.cloud.agent.api.Answer;
 import com.cloud.agent.api.Command;
 import com.cloud.agent.api.StartupCommand;
+import com.cloud.agent.api.to.OVFInformationTO;
 import com.cloud.alert.AlertManager;
 import com.cloud.api.query.dao.TemplateJoinDao;
 import com.cloud.api.query.vo.TemplateJoinVO;
@@ -70,12 +72,16 @@ import com.cloud.exception.ConnectionException;
 import com.cloud.host.Host;
 import com.cloud.host.Status;
 import com.cloud.host.dao.HostDao;
+import com.cloud.resourcelimit.CheckedReservation;
 import com.cloud.storage.Volume.Event;
 import com.cloud.storage.dao.VMTemplateDao;
 import com.cloud.storage.dao.VMTemplateZoneDao;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.template.VirtualMachineTemplate;
+import com.cloud.user.Account;
+import com.cloud.user.AccountManager;
 import com.cloud.user.ResourceLimitService;
+import com.cloud.user.dao.AccountDao;
 import com.cloud.utils.component.ManagerBase;
 import com.cloud.utils.concurrency.NamedThreadFactory;
 import com.cloud.utils.db.Transaction;
@@ -123,11 +129,11 @@ public class ImageStoreUploadMonitorImpl extends ManagerBase implements ImageSto
     @Inject
     private DeployAsIsHelper deployAsIsHelper;
     @Inject
-    private ReservationDao reservationDao;
-    @Inject
     private AccountDao accountDao;
     @Inject
     private AccountManager _accountMgr;
+    @Inject
+    private ReservationDao reservationDao;
 
     private long _nodeId;
     private ScheduledExecutorService _executor = null;
@@ -360,7 +366,11 @@ public class ImageStoreUploadMonitorImpl extends ManagerBase implements ImageSto
             boolean success = true;
             Long currentSize = answer.getVirtualSize() != 0 ? answer.getVirtualSize() : answer.getPhysicalSize();
             Long lastSize = volume.getSize() != null ? volume.getSize() : 0L;
+<<<<<<< HEAD
             if (!checkAndUpdateSecondaryStorageResourceLimit(volume.getAccountId(), lastSize, currentSize)) {
+=======
+            if (!checkAndUpdateSecondaryStorageResourceLimit(volume.getAccountId(), volume.getSize(), currentSize)) {
+>>>>>>> d722415105 ([22.0] secondary storage resource limit for upload)
                 volumeDataStore.setDownloadState(VMTemplateStorageResourceAssoc.Status.DOWNLOAD_ERROR);
                 volumeDataStore.setState(State.Failed);
                 volumeDataStore.setErrorString("Storage Limit Reached");
