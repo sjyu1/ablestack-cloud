@@ -33,6 +33,8 @@ import java.util.List;
 
 import javax.inject.Inject;
 
+import com.cloud.upgrade.dao.Upgrade42020to42030;
+import com.cloud.utils.FileUtil;
 import org.apache.cloudstack.utils.CloudStackVersion;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -121,7 +123,6 @@ import com.cloud.upgrade.dao.VersionDao;
 import com.cloud.upgrade.dao.VersionDaoImpl;
 import com.cloud.upgrade.dao.VersionVO;
 import com.cloud.upgrade.dao.VersionVO.Step;
-import com.cloud.utils.FileUtil;
 import com.cloud.utils.component.SystemIntegrityChecker;
 import com.cloud.utils.crypt.DBEncryptionUtil;
 import com.cloud.utils.db.GlobalLock;
@@ -240,6 +241,7 @@ public class DatabaseUpgradeChecker implements SystemIntegrityChecker {
                 .next("4.19.1.0", new Upgrade41910to42000())
                 .next("4.20.0.0", new Upgrade42000to42010())
                 .next("4.20.1.0", new Upgrade42010to42100())
+                .next("4.20.2.0", new Upgrade42020to42030())
                 .next("4.21.0.0", new Upgrade42100to42200())
                 .next("4.22.0.0", new Upgrade42200to42210())
                 .build();

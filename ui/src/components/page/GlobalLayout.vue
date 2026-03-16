@@ -1,93 +1,107 @@
 <template>
   <div>
-    <announcement-banner />
-    <a-affix v-if="this.$store.getters.maintenanceInitiated" >
-      <a-alert :message="$t('message.maintenance.initiated')" type="error" banner :showIcon="false" class="maintenanceHeader" />
-    </a-affix>
-    <a-affix v-else-if="this.$store.getters.shutdownTriggered" >
-      <a-alert :message="$t('message.shutdown.triggered')" type="error" banner :showIcon="false" class="shutdownHeader" />
-    </a-affix>
     <announcement-banner ref="announceRef" />
     <AutoAlertBanner ref="autoRef" />
+
+    <a-affix v-if="isShutdown" :offsetTop="0">
+      <a-alert
+        :message="$t('message.shutdown.triggered')"
+        type="error"
+        banner
+        :showIcon="false"
+        class="shutdownHeader"
+        ref="shutdownRef"
+      />
+    </a-affix>
 
     <div class="banner-spacer" :style="{ height: combinedBannerHeight + 'px' }" aria-hidden="true"></div>
 
     <a-layout class="layout" :class="[device]">
-      <a-affix style="z-index: 200" :offsetTop="this.$store.getters.maintenanceInitiated || this.$store.getters.shutdownTriggered ? 25 : 0">
-        <div class="sticky-sidebar">
-          <template v-if="isSideMenu()">
-            <a-drawer
-              v-if="isMobile()"
-              :wrapClassName="'drawer-sider ' + navTheme"
-              :closable="false"
-              :visible="collapsed"
-              placement="left"
-              @close="() => (collapsed = false)"
-            >
-              <side-menu
-                :menus="menus"
-                :theme="navTheme"
-                :collapsed="false"
-                :collapsible="true"
-                mode="inline"
-                :style="{ paddingBottom: isSidebarVisible ? '300px' : '0' }"
-                @menuSelect="menuSelect"
-              />
-            </a-drawer>
-
+      <div class="sticky-sidebar">
+        <template v-if="isSideMenu()">
+          <a-drawer
+            v-if="isMobile()"
+            :wrapClassName="'drawer-sider ' + navTheme"
+            :closable="false"
+            :visible="collapsed"
+            placement="left"
+            @close="() => (collapsed = false)"
+          >
             <side-menu
-              v-else
-              mode="inline"
               :menus="menus"
               :theme="navTheme"
-              :collapsed="collapsed"
+              :collapsed="false"
               :collapsible="true"
+              mode="inline"
               :style="{ paddingBottom: isSidebarVisible ? '300px' : '0' }"
+              @menuSelect="menuSelect"
             />
-          </template>
+          </a-drawer>
 
-          <template v-else>
-            <a-drawer
-              v-if="isMobile()"
-              :wrapClassName="'drawer-sider ' + navTheme"
-              placement="left"
-              @close="() => (collapsed = false)"
-              :closable="false"
-              :visible="collapsed"
+          <side-menu
+            v-else
+            mode="inline"
+            :menus="menus"
+            :theme="navTheme"
+            :collapsed="collapsed"
+            :collapsible="true"
+            :style="{ paddingBottom: isSidebarVisible ? '300px' : '0' }"
+          />
+        </template>
+
+        <template v-else>
+          <a-drawer
+            v-if="isMobile()"
+            :wrapClassName="'drawer-sider ' + navTheme"
+            placement="left"
+            @close="() => (collapsed = false)"
+            :closable="false"
+            :visible="collapsed"
+          >
+            <side-menu
+              :menus="menus"
+              :theme="navTheme"
+              :collapsed="false"
+              :collapsible="true"
+              mode="inline"
+              :style="{ paddingBottom: isSidebarVisible ? '300px' : '0' }"
+              @menuSelect="menuSelect"
+            />
+          </a-drawer>
+        </template>
+
+        <drawer
+          :visible="showSetting"
+          placement="right"
+          v-if="isAdmin && (isDevelopmentMode || allowSettingTheme)"
+        >
+          <template #handler>
+            <div
+              style="position: absolute; bottom: 55px; display: flex; flex-direction: column; gap: 0; align-items: flex-end; z-index: 1001; pointer-events: auto;"
             >
-              <side-menu
-                :menus="menus"
-                :theme="navTheme"
-                :collapsed="false"
-                :collapsible="true"
-                mode="inline"
-                :style="{ paddingBottom: isSidebarVisible ? '300px' : '0' }"
-                @menuSelect="menuSelect"
-              />
-            </a-drawer>
-          </template>
-
-          <drawer :visible="showSetting" placement="right" v-if="isAdmin && (isDevelopmentMode || allowSettingTheme)">
-            <template #handler>
-              <a-button type="primary" size="large">
+              <a-button
+                v-show="!showSetting"
+                type="primary"
+                @click.stop="toggleSidebar"
+                style="width: 40px; height: 40px; padding: 0; background: #aaa; border: none; color: #fff; border-radius: 4px 4px 0 0; display: flex; align-items: center; justify-content: center; cursor: pointer;"
+              >
+                <ScheduleOutlined />
+              </a-button>
+              <a-button
+                type="primary"
+                size="large"
+                @click.stop="toggleSetting(!showSetting)"
+                style="width: 40px; height: 40px; border-radius: 0 0 4px 4px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
+              >
                 <close-outlined v-if="showSetting" />
                 <setting-outlined v-else />
               </a-button>
-            </template>
-            <template #drawer>
-              <setting :visible="showSetting" />
-            </template>
-          </drawer>
-        </div>
-      </a-affix>
-      <div style="position: fixed; bottom: 45px; right: 0; z-index: 100;">
-        <a-button
-          type="primary"
-          @click="toggleSidebar"
-          style="width: 40px; height: 40px; padding: 0; background: #aaa; border: none; color: #fff;"
-        >
-          <ScheduleOutlined />
-        </a-button>
+            </div>
+          </template>
+          <template #drawer>
+            <setting :visible="showSetting" />
+          </template>
+        </drawer>
       </div>
 
       <event-sidebar
@@ -102,7 +116,6 @@
       >
         <div class="sticky-header">
           <global-header
-            :style="this.$store.getters.maintenanceInitiated || this.$store.getters.shutdownTriggered ? 'margin-top: 25px;' : null"
             :mode="layoutMode"
             :menus="menus"
             :theme="navTheme"
@@ -200,6 +213,7 @@ export default {
       if (this.sidebarOpened) return '256px'
       return '80px'
     },
+    isShutdown () { return this.$store.getters.shutdownTriggered },
     headerHeight () { return this.fixedHeader ? HEADER_FIXED_PX : 0 }
   },
   watch: {
@@ -219,14 +233,19 @@ export default {
   },
   mounted () {
     try {
+      /*
       const bootH = Number(localStorage.getItem('autoAlertBanner.lastHeight') || 0)
       if (!Number.isNaN(bootH) && bootH >= 0) {
         this.autoBannerHeight = bootH
         document.documentElement.style.setProperty('--autoBannerHeight', bootH + 'px')
-        // ✅ 추가: 첫 프레임부터 --affixTopHeader를 맞춰 메뉴/헤더 정렬
+        // 추가: 첫 프레임부터 --affixTopHeader를 맞춰 메뉴/헤더 정렬
         this.updateAffixTopVars() // ← 이 한 줄을 debouncedRecalc() 이전에 호출
         this.debouncedRecalc && this.debouncedRecalc()
       }
+      */
+      this.autoBannerHeight = 0
+      document.documentElement.style.setProperty('--autoBannerHeight', '0px')
+      this.updateAffixTopVars()
     } catch (_) {}
     window.addEventListener('auto-alert-banner:height', this.onAutoBannerHeight)
     window.addEventListener('resize', this.onResize)
@@ -363,9 +382,11 @@ export default {
     },
     checkShutdown () {
       if (!this.$store.getters.features.securityfeaturesenabled) {
-        getAPI('readyForShutdown', { managementserverid: this.$store.getters.msId }).then(json => {
-          this.$store.dispatch('SetShutdownTriggered', json.readyforshutdownresponse.readyforshutdown.shutdowntriggered || false)
-          this.$store.dispatch('SetMaintenanceInitiated', json.readyforshutdownresponse.readyforshutdown.maintenanceinitiated || false)
+        getAPI('readyForShutdown', {}).then(json => {
+          this.$store.dispatch(
+            'SetShutdownTriggered',
+            json.readyforshutdownresponse.readyforshutdown.shutdowntriggered || false
+          )
         })
       }
     }
@@ -379,6 +400,25 @@ export default {
   width: 100%;
   transition: height 0.18s ease;
   will-change: height;
+}
+
+banner-spacer::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* 배너가 들어올 자리(높이)만큼 완벽하게 덮어줍니다 */
+  height: var(--affixTopHeader, 0px);
+  /* 시스템 배경색으로 칠해서 스크롤되는 본문을 가려줍니다 */
+  background-color: var(--layout-bg, #f0f2f5);
+  z-index: 1490; /* 헤더(1500) 바로 밑, 본문보다는 위에 배치 */
+  pointer-events: none; /* 클릭 방해 금지 */
+}
+
+/* 다크모드가 켜졌을 때 가림막 색상 보정 */
+body.dark-mode .banner-spacer::before {
+  background-color: #141414;
 }
 
 /* 고정 헤더 사용 시 컨텐츠 상단 여백 */
@@ -407,16 +447,7 @@ export default {
   .ant-drawer-body { padding: 0; }
 }
 
-.maintenanceHeader {
-  font-weight: bold;
-  height: 25px;
-  text-align: center;
-  padding: 0px;
-  margin: 0px;
-  width: 100vw;
-  position: absolute;
-}
-
+/* 셧다운 알림 배너 */
 .shutdownHeader {
   font-weight: bold;
   height: 25px;
@@ -479,5 +510,55 @@ export default {
 .sticky-sidebar :deep(.ant-menu-root) {
   max-height: 100%;
   overflow-y: auto;
+}
+/* Ant Design 알림창(Notification) 위치 및 높이 제어 */
+.ant-notification {
+  /* 1. 배너(z-index: ~21억)보다 무조건 위에 오도록 설정 */
+  z-index: 2147483655 !important;
+
+  /* 2. 위치 동적 계산: 기본 24px + 배너 높이만큼 아래로 이동
+        배너가 없으면(--autoBannerHeight: 0px) 자동으로 24px이 됨 */
+  top: calc(24px + var(--autoBannerHeight, 0px)) !important;
+}
+.ant-message {
+  /* 배너(z-index: ~21억)보다 위로 노출 */
+  z-index: 2147483655 !important;
+
+  /* 배너 높이만큼 밑으로 내려서 겹치지 않게 처리 */
+  top: calc(24px + var(--autoBannerHeight, 0px)) !important;
+}
+@media (max-width: 768px) {
+  /* 1. 사이드바를 공중에 띄워서 공간 차지를 못하게 만듦 */
+  .ant-layout.layout.mobile .sticky-sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: visible; /* 삐져나온 버튼(핸들러)은 보여야 함 */
+    z-index: 900;      /* 내용물보다는 위에, 배너보다는 아래 */
+  }
+  /* 1. 사용자 메뉴 배경 투명화 */
+  .user-menu {
+    background-color: transparent;
+    z-index: 999;
+  }
+
+  /* 2. 텍스트 숨기기 (부모 요소) */
+  .user-menu .action {
+    font-size: 0; /* 글자 크기 0으로 숨김 */
+  }
+
+  /* 3. ★ 아이콘 심폐소생술 (여기가 중요!) ★ */
+  /* .anticon: 번역 아이콘 등 / .ant-avatar: 사용자 프로필 */
+  .user-menu .action .anticon,
+  .user-menu .action .ant-avatar {
+    font-size: 16px;      /* 아이콘 크기 강제 복구 */
+    display: inline-flex; /* 가려지지 않게 표시 */
+    vertical-align: middle;
+    color: rgba(0, 0, 0, 0.65);      /* (선택) 아이콘 색상이 흐리다면 추가 */
+  }
 }
 </style>

@@ -105,6 +105,7 @@ import com.cloud.storage.Volume;
 import com.cloud.storage.VolumeApiService;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
+import com.cloud.storage.dao.StoragePoolTagsDao;
 import com.cloud.storage.dao.GuestOSDao;
 import com.cloud.storage.dao.GuestOSHypervisorDao;
 import com.cloud.storage.dao.SnapshotDao;
@@ -209,7 +210,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
 
     private static final List<Storage.StoragePoolType> forceConvertToPoolAllowedTypes =
             Arrays.asList(Storage.StoragePoolType.NetworkFilesystem, Storage.StoragePoolType.Filesystem,
-                    Storage.StoragePoolType.SharedMountPoint);
+                    Storage.StoragePoolType.SharedMountPoint, Storage.StoragePoolType.RBD);
 
     ConfigKey<Boolean> ConvertVmwareInstanceToKvmExtraParamsAllowed = new ConfigKey<>(Boolean.class,
             "convert.vmware.instance.to.kvm.extra.params.allowed",
@@ -249,6 +250,8 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
     private ServiceOfferingDao serviceOfferingDao;
     @Inject
     private DiskOfferingDao diskOfferingDao;
+    @Inject
+    private StoragePoolTagsDao storagePoolTagsDao;
     @Inject
     private ResourceManager resourceManager;
     @Inject
@@ -1564,11 +1567,12 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
     protected VMTemplateVO getTemplateForImportInstance(Long templateId, Hypervisor.HypervisorType hypervisorType) {
         VMTemplateVO template;
         if (templateId == null) {
-            template = templateDao.findByName(VM_IMPORT_DEFAULT_TEMPLATE_NAME);
+            String templateName = (Hypervisor.HypervisorType.KVM.equals(hypervisorType)) ? KVM_VM_IMPORT_DEFAULT_TEMPLATE_NAME : VM_IMPORT_DEFAULT_TEMPLATE_NAME;
+            template = templateDao.findByName(templateName);
             if (template == null) {
                 template = createDefaultDummyVmImportTemplate(Hypervisor.HypervisorType.KVM == hypervisorType);
                 if (template == null) {
-                    throw new InvalidParameterValueException(String.format("Default VM import template with unique name: %s for hypervisor: %s cannot be created. Please use templateid parameter for import", VM_IMPORT_DEFAULT_TEMPLATE_NAME, hypervisorType.toString()));
+                    throw new InvalidParameterValueException(String.format("Default VM import template with unique name: %s for hypervisor: %s cannot be created. Please use templateid parameter for import", templateName, hypervisorType.toString()));
                 }
             }
         } else {
@@ -2201,16 +2205,43 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             Cluster destinationCluster, ServiceOfferingVO serviceOffering,
             Map<String, Long> dataDiskOfferingMap,
             DataStoreTO temporaryConvertLocation, boolean forceConvertToPool) {
-        List<StoragePoolVO> poolsList;
+        List<StoragePoolVO> poolsList = new ArrayList<>();
         if (!forceConvertToPool) {
-            Set<StoragePoolVO> pools = new HashSet<>(primaryDataStoreDao.findClusterWideStoragePoolsByHypervisorAndPoolType(destinationCluster.getId(), Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem));
-            pools.addAll(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisorAndPoolType(destinationCluster.getDataCenterId(), Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem));
-            if (pools.isEmpty()) {
-                String msg = String.format("Cannot find suitable storage pools in the cluster %s for the conversion", destinationCluster.getName());
-                logger.error(msg);
-                throw new CloudRuntimeException(msg);
+            // Try to find pools based on disk offering tags
+            Set<Long> candidatePoolIds = new HashSet<>();
+            if (serviceOffering.getDiskOfferingId() != null) {
+                DiskOfferingVO diskOffering = diskOfferingDao.findById(serviceOffering.getDiskOfferingId());
+                if (diskOffering != null && StringUtils.isNotBlank(diskOffering.getTags())) {
+                    String tag = diskOffering.getTags();
+                    List<Long> ids = storagePoolTagsDao.listPoolIdsByTag(tag);
+                    if (ids != null) {
+                        candidatePoolIds.addAll(ids);
+                    }
+                }
             }
-            poolsList = new ArrayList<>(pools);
+
+            if (!candidatePoolIds.isEmpty()) {
+                for (Long poolid : candidatePoolIds) {
+                    StoragePoolVO pool = primaryDataStoreDao.findById(poolid);
+                    if (pool == null) {
+                        continue;
+                    }
+                    poolsList.add(pool);
+                }
+            }
+            logger.info("find poolsList : " + poolsList);
+
+            // Fallback to previous behavior if no tagged pools found
+            if (poolsList.isEmpty()) {
+                Set<StoragePoolVO> pools = new HashSet<>(primaryDataStoreDao.listPoolsByCluster(destinationCluster.getId()));
+                pools.addAll(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisor(destinationCluster.getDataCenterId(), Hypervisor.HypervisorType.KVM));
+                if (pools.isEmpty()) {
+                    String msg = String.format("Cannot find suitable storage pools in the cluster %s for the conversion", destinationCluster.getName());
+                    logger.error(msg);
+                    throw new CloudRuntimeException(msg);
+                }
+                poolsList.addAll(pools);
+            }
         } else {
             DataStore dataStore = dataStoreManager.getDataStore(temporaryConvertLocation.getUuid(), temporaryConvertLocation.getRole());
             poolsList = Collections.singletonList(primaryDataStoreDao.findById(dataStore.getId()));

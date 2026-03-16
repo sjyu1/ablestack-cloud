@@ -100,7 +100,6 @@
       <a-form-item ref="securitygroupids" name="securitygroupids" :label="$t('label.security.groups')" v-if="securityGroupsEnabled">
         <a-select
           mode="multiple"
-          :placeholder="$t('label.select.security.groups')"
           v-model:value="form.securitygroupids"
           showSearch
           optionFilterProp="label"
@@ -360,6 +359,14 @@ export default {
       const decodedData = Buffer.from(userdata, 'base64')
       return decodedData.toString('utf-8')
     },
+    normalizeSecurityGroupIds (securityGroupIds = []) {
+      return [...new Set(securityGroupIds)].sort()
+    },
+    hasSecurityGroupsChanged (currentSecurityGroupIds = []) {
+      const initialSecurityGroupIds = this.normalizeSecurityGroupIds((this.resource.securitygroup || []).map(x => x.id))
+      const currentIds = this.normalizeSecurityGroupIds(currentSecurityGroupIds)
+      return initialSecurityGroupIds.join(',') !== currentIds.join(',')
+    },
     fetchUserData () {
       let networkId
       this.resource.nic.forEach(nic => {
@@ -399,8 +406,10 @@ export default {
         params.name = values.name
         params.displayname = values.displayname
         params.ostypeid = values.ostypeid
-        if (this.securityGroupsEnabled && Array.isArray(values.securitygroupids) && values.securitygroupids.length > 0) {
-          params.securitygroupids = values.securitygroupids
+        if (this.securityGroupNetworkProviderUseThisVM) {
+          if (this.hasSecurityGroupsChanged(values.securitygroupids || [])) {
+            params.securitygroupids = values.securitygroupids || []
+          }
         }
         if (values.isdynamicallyscalable !== undefined) {
           params.isdynamicallyscalable = values.isdynamicallyscalable

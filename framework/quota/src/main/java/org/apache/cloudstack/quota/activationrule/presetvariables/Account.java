@@ -22,6 +22,8 @@ import com.cloud.utils.DateUtil;
 import java.util.Date;
 import java.util.TimeZone;
 
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
+
 public class Account extends GenericPresetVariable {
     @PresetVariableDefinition(description = "Role of the account. This field will not exist if the account is a project.")
 
@@ -36,7 +38,6 @@ public class Account extends GenericPresetVariable {
 
     public void setRole(Role role) {
         this.role = role;
-        fieldNamesToIncludeInToString.add("role");
     }
 
     public String getCreated() {
@@ -45,6 +46,6 @@ public class Account extends GenericPresetVariable {
 
     public void setCreated(Date created) {
         this.created = DateUtil.displayDateInTimezone(TimeZone.getTimeZone("GMT"), created);
-        fieldNamesToIncludeInToString.add("created");
+        ReflectionToStringBuilder.toString("created");
     }
 }

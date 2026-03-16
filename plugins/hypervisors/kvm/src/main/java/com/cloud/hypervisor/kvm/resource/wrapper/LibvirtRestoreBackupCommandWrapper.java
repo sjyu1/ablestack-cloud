@@ -41,7 +41,6 @@ import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.libvirt.LibvirtException;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -72,26 +71,28 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         List<String> backedVolumeUUIDs = command.getBackupVolumesUUIDs();
         List<PrimaryDataStoreTO> restoreVolumePools = command.getRestoreVolumePools();
         List<String> restoreVolumePaths = command.getRestoreVolumePaths();
-        String restoreVolumeUuid = command.getRestoreVolumeUUID();
+        // String restoreVolumeUuid = command.getRestoreVolumeUUID();
         Integer mountTimeout = command.getMountTimeout() * 1000;
         int timeout = command.getWait();
         String cacheMode = command.getCacheMode();
         KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();
+        List<String> volumePaths = command.getVolumePaths();
+        List<String> backupFiles = command.getBackupFiles();
 
         String newVolumeId = null;
         try {
             String mountDirectory = mountBackupDirectory(backupRepoAddress, backupRepoType, mountOptions, mountTimeout);
             if (Objects.isNull(vmExists)) {
-                PrimaryDataStoreTO volumePool = restoreVolumePools.get(0);
-                String volumePath = restoreVolumePaths.get(0);
+                String volumePath = volumePaths.get(0);
+                String backupFile = backupFiles.get(0);
                 int lastIndex = volumePath.lastIndexOf("/");
                 newVolumeId = volumePath.substring(lastIndex + 1);
-                restoreVolume(storagePoolMgr, backupPath, volumePool, volumePath, diskType, restoreVolumeUuid,
-                        new Pair<>(vmName, command.getVmState()), mountDirectory, timeout, cacheMode);
+                restoreVolume(backupPath, backupRepoType, backupRepoAddress, volumePath, diskType, backupFile,
+                        new Pair<>(vmName, command.getVmState()), mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools.get(0), cacheMode);
             } else if (Boolean.TRUE.equals(vmExists)) {
-                restoreVolumesOfExistingVM(storagePoolMgr, restoreVolumePools, restoreVolumePaths, backedVolumeUUIDs, backupPath, mountDirectory, timeout);
+                restoreVolumesOfExistingVM(volumePaths, backupPath, backupFiles, backupRepoType, backupRepoAddress, mountOptions, mountDirectory, timeout, storagePoolMgr, restoreVolumePools.get(0));
             } else {
-                restoreVolumesOfDestroyedVMs(storagePoolMgr, restoreVolumePools, restoreVolumePaths, vmName, backupPath, mountDirectory, timeout);
+                restoreVolumesOfDestroyedVMs(volumePaths, vmName, backupPath, backupFiles, backupRepoType, backupRepoAddress, mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools.get(0), timeout);
             }
         } catch (CloudRuntimeException e) {
             String errorMessage = e.getMessage() != null ? e.getMessage() : "";
@@ -101,28 +102,17 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         return new BackupAnswer(command, true, newVolumeId);
     }
 
-    private void verifyBackupFile(String backupPath, String volUuid) {
-        if (!checkBackupPathExists(backupPath)) {
-            throw new CloudRuntimeException(String.format("Backup file for the volume [%s] does not exist.", volUuid));
-        }
-        if (!checkBackupFileImage(backupPath)) {
-            throw new CloudRuntimeException(String.format("Backup qcow2 file for the volume [%s] is corrupt.", volUuid));
-        }
-    }
-
-    private void restoreVolumesOfExistingVM(KVMStoragePoolManager storagePoolMgr, List<PrimaryDataStoreTO> restoreVolumePools, List<String> restoreVolumePaths, List<String> backedVolumesUUIDs,
-                                            String backupPath, String mountDirectory, int timeout) {
+    private void restoreVolumesOfExistingVM(List<String> volumePaths, String backupPath, List<String> backupFiles,
+                                             String backupRepoType, String backupRepoAddress, String mountOptions, String mountDirectory, Integer timeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool) {
         String diskType = "root";
         try {
-            for (int idx = 0; idx < restoreVolumePaths.size(); idx++) {
-                PrimaryDataStoreTO restoreVolumePool = restoreVolumePools.get(idx);
-                String restoreVolumePath = restoreVolumePaths.get(idx);
-                String backupVolumeUuid = backedVolumesUUIDs.get(idx);
-                Pair<String, String> bkpPathAndVolUuid = getBackupPath(mountDirectory, null, backupPath, diskType, backupVolumeUuid);
+            for (int idx = 0; idx < volumePaths.size(); idx++) {
+                String volumePath = volumePaths.get(idx);
+                String backupFile = backupFiles.get(idx);
+                String bkpPath = getBackupPath(mountDirectory, backupPath, backupFile, diskType);
                 diskType = "datadisk";
-                verifyBackupFile(bkpPathAndVolUuid.first(), bkpPathAndVolUuid.second());
-                if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, restoreVolumePath, bkpPathAndVolUuid.first(), timeout)) {
-                    throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", bkpPathAndVolUuid.second()));
+                if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, bkpPath, timeout)) {
+                    throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
                 }
             }
         } finally {
@@ -131,17 +121,18 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
     }
 
-    private void restoreVolumesOfDestroyedVMs(KVMStoragePoolManager storagePoolMgr, List<PrimaryDataStoreTO> volumePools, List<String> volumePaths, String vmName, String backupPath, String mountDirectory, int timeout) {
+    private void restoreVolumesOfDestroyedVMs(List<String> volumePaths, String vmName, String backupPath, List<String> backupFiles,
+                                              String backupRepoType, String backupRepoAddress, String mountOptions, Integer mountTimeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool, Integer timeout) {
+        String mountDirectory = mountBackupDirectory(backupRepoAddress, backupRepoType, mountOptions, mountTimeout);
         String diskType = "root";
         try {
-            for (int i = 0; i < volumePaths.size(); i++) {
-                PrimaryDataStoreTO volumePool = volumePools.get(i);
-                String volumePath = volumePaths.get(i);
-                Pair<String, String> bkpPathAndVolUuid = getBackupPath(mountDirectory, volumePath, backupPath, diskType, null);
+            for (int idx = 0; idx < volumePaths.size(); idx++) {
+                String volumePath = volumePaths.get(idx);
+                String backupFile = backupFiles.get(idx);
+                String bkpPath = getBackupPath(mountDirectory, backupPath, backupFile, diskType);
                 diskType = "datadisk";
-                verifyBackupFile(bkpPathAndVolUuid.first(), bkpPathAndVolUuid.second());
-                if (!replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, bkpPathAndVolUuid.first(), timeout)) {
-                    throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", bkpPathAndVolUuid.second()));
+                if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, bkpPath, timeout)) {
+                    throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
                 }
             }
         } finally {
@@ -150,17 +141,17 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
     }
 
-    private void restoreVolume(KVMStoragePoolManager storagePoolMgr, String backupPath, PrimaryDataStoreTO volumePool, String volumePath, String diskType, String volumeUUID,
-                               Pair<String, VirtualMachine.State> vmNameAndState, String mountDirectory, int timeout, String cacheMode) {
-        Pair<String, String> bkpPathAndVolUuid;
+    private void restoreVolume(String backupPath, String backupRepoType, String backupRepoAddress, String volumePath,
+                               String diskType, String backupFile, Pair<String, VirtualMachine.State> vmNameAndState, String mountOptions, Integer mountTimeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool, String cacheMode) {
+        String mountDirectory = mountBackupDirectory(backupRepoAddress, backupRepoType, mountOptions, mountTimeout);
+        String bkpPath;
         try {
-            bkpPathAndVolUuid = getBackupPath(mountDirectory, volumePath, backupPath, diskType, volumeUUID);
-            verifyBackupFile(bkpPathAndVolUuid.first(), bkpPathAndVolUuid.second());
-            if (!replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, bkpPathAndVolUuid.first(), timeout, true)) {
-                throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", bkpPathAndVolUuid.second()));
+            bkpPath = getBackupPath(mountDirectory, backupPath, backupFile, diskType);
+            if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, bkpPath, mountTimeout)) {
+                throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
             }
             if (VirtualMachine.State.Running.equals(vmNameAndState.second())) {
-                if (!attachVolumeToVm(storagePoolMgr, vmNameAndState.first(), volumePool, volumePath, cacheMode)) {
+                if (!attachVolumeToVm(storagePoolMgr, vmNameAndState.first(), restoreVolumePool, volumePath, cacheMode)) {
                     throw new CloudRuntimeException(String.format("Failed to attach volume to VM: %s", vmNameAndState.first()));
                 }
             }
@@ -220,12 +211,11 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
     }
 
-    private Pair<String, String> getBackupPath(String mountDirectory, String volumePath, String backupPath, String diskType, String volumeUuid) {
+    private String getBackupPath(String mountDirectory, String backupPath, String backupFile, String diskType) {
         String bkpPath = String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath);
-        String volUuid = Objects.isNull(volumeUuid) ? volumePath.substring(volumePath.lastIndexOf(File.separator) + 1) : volumeUuid;
-        String backupFileName = String.format("%s.%s.qcow2", diskType.toLowerCase(Locale.ROOT), volUuid);
+        String backupFileName = String.format("%s.%s.qcow2", diskType.toLowerCase(Locale.ROOT), backupFile);
         bkpPath = String.format(FILE_PATH_PLACEHOLDER, bkpPath, backupFileName);
-        return new Pair<>(bkpPath, volUuid);
+        return bkpPath;
     }
 
     private boolean checkBackupFileImage(String backupPath) {
