@@ -156,6 +156,12 @@ public class CreateVPCOfferingCmd extends BaseAsyncCreateCmd {
             description = "the routing mode for the VPC offering. Supported types are: Static or Dynamic.")
     private String routingMode;
 
+    @Parameter(name = ApiConstants.CONSERVE_MODE, type = CommandType.BOOLEAN,
+            since = "4.23.0",
+            description = "True if the VPC offering is IP conserve mode enabled, allowing public IPs to be used across multiple VPC tiers. Default value is false")
+    private Boolean conserveMode;
+
+
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
     /////////////////////////////////////////////////////
@@ -302,6 +308,10 @@ public class CreateVPCOfferingCmd extends BaseAsyncCreateCmd {
 
     public String getRoutingMode() {
         return routingMode;
+    }
+
+    public boolean isConserveMode() {
+        return BooleanUtils.toBoolean(conserveMode);
     }
 
     @Override
