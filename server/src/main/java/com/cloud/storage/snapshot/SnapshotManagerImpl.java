@@ -2138,17 +2138,27 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
             hypervisorType = volume.getHypervisorType();
         }
 
-        SnapshotVO snapshotVO = new SnapshotVO(volume.getDataCenterId(), volume.getAccountId(), volume.getDomainId(), volume.getId(), volume.getDiskOfferingId(), snapshotName,
-                (short)snapshotType.ordinal(), snapshotType.name(), volume.getSize(), volume.getMinIops(), volume.getMaxIops(), hypervisorType, locationType);
+        try (CheckedReservation volumeSnapshotReservation = new CheckedReservation(owner, ResourceType.snapshot, null, null, 1L, reservationDao, _resourceLimitMgr);
+             CheckedReservation storageReservation = new CheckedReservation(owner, storeResourceType, null, null, volume.getSize(), reservationDao, _resourceLimitMgr)) {
+            SnapshotVO snapshotVO = new SnapshotVO(volume.getDataCenterId(), volume.getAccountId(), volume.getDomainId(), volume.getId(), volume.getDiskOfferingId(), snapshotName,
+                    (short)snapshotType.ordinal(), snapshotType.name(), volume.getSize(), volume.getMinIops(), volume.getMaxIops(), hypervisorType, locationType);
 
-        SnapshotVO snapshot = _snapshotDao.persist(snapshotVO);
-        if (snapshot == null) {
-            throw new CloudRuntimeException(String.format("Failed to create snapshot for volume: %s", volume));
+            SnapshotVO snapshot = _snapshotDao.persist(snapshotVO);
+            if (snapshot == null) {
+                throw new CloudRuntimeException(String.format("Failed to create snapshot for volume: %s", volume));
+            }
+            CallContext.current().putContextParameter(Snapshot.class, snapshot.getUuid());
+            _resourceLimitMgr.incrementResourceCount(volume.getAccountId(), ResourceType.snapshot);
+            _resourceLimitMgr.incrementResourceCount(volume.getAccountId(), storeResourceType, volume.getSize());
+            return snapshot;
+        } catch (ResourceAllocationException e) {
+            if (snapshotType != Type.MANUAL) {
+                String msg = String.format("Snapshot resource limit exceeded for account id : %s. Failed to create recurring snapshots", owner.getId());
+                logger.warn(msg);
+                _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_UPDATE_RESOURCE_COUNT, 0L, 0L, msg, msg + ". Please, use updateResourceLimit to increase the limit");
+            }
+            throw e;
         }
-        CallContext.current().putContextParameter(Snapshot.class, snapshot.getUuid());
-        _resourceLimitMgr.incrementResourceCount(volume.getAccountId(), ResourceType.snapshot);
-        _resourceLimitMgr.incrementResourceCount(volume.getAccountId(), ResourceType.secondary_storage, new Long(volume.getSize()));
-        return snapshot;
     }
 
     @Override
