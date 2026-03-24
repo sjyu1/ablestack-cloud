@@ -542,6 +542,7 @@
             :tmppath="this.values?.tmppath || ''"
             :diskpath="this.values?.diskpath || ''"
             :isOpen="showUnmanageForm"
+            :loadingGuestOsMappings="loadingGuestOsMappings"
             :selectedVmwareVcenter="selectedVmwareVcenter"
             @refresh-data="fetchInstances"
             @close-action="closeImportUnmanagedInstanceForm"
@@ -776,7 +777,8 @@ export default {
       importVmTasks: [],
       selectedImportVmTask: null,
       importVmTasksFilter: 'all',
-      importVmTasksAutoRefreshTimer: null
+      importVmTasksAutoRefreshTimer: null,
+      loadingGuestOsMappings: false
     }
   },
   created () {
@@ -1443,8 +1445,21 @@ export default {
         this.fetchInstances()
       }
     },
+    async fetchGuestOsMappings (osIdentifier, hypervisorVersion) {
+      const params = {}
+      params.hypervisor = 'VMware'
+      params.hypervisorversion = hypervisorVersion
+      params.osnameforhypervisor = osIdentifier
+      return await getAPI('listGuestOsMapping', params).then(json => {
+        return json.listguestosmappingresponse?.guestosmapping || []
+      }).catch(error => {
+        this.$notifyError(error)
+        return []
+      })
+    },
     fetchVmwareInstanceForKVMMigration (vmname, hostname) {
       const params = {}
+      this.loadingGuestOsMappings = true
       if (this.isMigrateFromVmware && this.selectedVmwareVcenter) {
         if (this.selectedVmwareVcenter.vcenter) {
           params.datacentername = this.selectedVmwareVcenter.datacentername
@@ -1457,15 +1472,17 @@ export default {
         params.instancename = vmname
         params.hostname = hostname
       }
-      getAPI('listVmwareDcVms', params).then(json => {
+      getAPI('listVmwareDcVms', params).then(async json => {
         const response = json.listvmwaredcvmsresponse
         this.selectedUnmanagedInstance = response.unmanagedinstance[0]
         this.selectedUnmanagedInstance.ostypename = this.selectedUnmanagedInstance.osdisplayname
         this.selectedUnmanagedInstance.state = this.selectedUnmanagedInstance.powerstate
+        this.selectedUnmanagedInstance.guestOsMappings = await this.fetchGuestOsMappings(this.selectedUnmanagedInstance.osid, this.selectedUnmanagedInstance.hypervisorversion)
       }).catch(error => {
         this.$notifyError(error)
       }).finally(() => {
         this.loading = false
+        this.loadingGuestOsMappings = false
       })
     },
     onManageInstanceAction () {
