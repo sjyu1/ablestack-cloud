@@ -45,6 +45,7 @@ import org.apache.cloudstack.engine.subsystem.api.storage.EndPoint;
 import org.apache.cloudstack.engine.subsystem.api.storage.EndPointSelector;
 import org.apache.cloudstack.engine.subsystem.api.storage.TemplateDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.TemplateInfo;
+import org.apache.cloudstack.engine.subsystem.api.storage.ZoneScope;
 import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.secstorage.heuristics.HeuristicType;
 import org.apache.cloudstack.storage.command.TemplateOrVolumePostUploadCommand;
@@ -186,6 +187,11 @@ public abstract class TemplateAdapterBase extends AdapterBase implements Templat
             return false;
         }
 
+        if (!isWritableImageStore(imageStore, zoneId)) {
+            logger.info("Image store [{}] is readonly. Skip downloading template to this image store.", imageStore);
+            return false;
+        }
+
         if (!_statsCollector.imageStoreHasEnoughCapacity(imageStore)) {
             logger.info("Image store doesn't have enough capacity. Skip downloading template to this image store [{}].", imageStore);
             return false;
@@ -206,6 +212,17 @@ public abstract class TemplateAdapterBase extends AdapterBase implements Templat
         zoneSet.add(zoneId);
         return true;
     }
+
+    protected boolean isWritableImageStore(DataStore imageStore, Long zoneId) {
+        if (imageStore == null || zoneId == null) {
+            return false;
+        }
+
+        List<DataStore> writableImageStores = storeMgr.getImageStoresByScopeExcludingReadOnly(new ZoneScope(zoneId));
+        return CollectionUtils.isNotEmpty(writableImageStores) &&
+                writableImageStores.stream().anyMatch(store -> store.getId() == imageStore.getId());
+    }
+
 
     /**
      * If the template/ISO is marked as private, then it is allocated to a random secondary storage; otherwise, allocates to every storage pool in every zone given by the
