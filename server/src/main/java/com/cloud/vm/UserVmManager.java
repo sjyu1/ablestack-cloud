@@ -204,4 +204,9 @@ public interface UserVmManager extends UserVmService {
 
     Boolean getDestroyRootVolumeOnVmDestruction(Long domainId);
 
+    /**
+     * @return true if the VM is part of a CKS cluster, false otherwise.
+     */
+    boolean isVMPartOfAnyCKSCluster(VMInstanceVO vm);
+
 }

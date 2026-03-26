@@ -64,6 +64,7 @@ import java.util.UUID;
 import com.cloud.storage.StorageManager;
 import com.cloud.network.NetworkService;
 import com.cloud.domain.Domain;
+import com.cloud.kubernetes.cluster.KubernetesServiceHelper;
 import com.cloud.storage.dao.SnapshotPolicyDao;
 import com.cloud.utils.fsm.NoTransitionException;
 import org.apache.cloudstack.acl.ControlledEntity;
@@ -1522,6 +1523,9 @@ public class UserVmManagerImplTest {
         when(cmd.getVmId()).thenReturn(vmId);
         when(cmd.getTemplateId()).thenReturn(2L);
         when(userVmDao.findById(vmId)).thenReturn(userVmVoMock);
+        KubernetesServiceHelper helper = mock(KubernetesServiceHelper.class);
+        when(helper.findByVmId(anyLong())).thenReturn(null);
+        userVmManagerImpl.setKubernetesServiceHelpers(Collections.singletonList(helper));
 
         userVmManagerImpl.restoreVM(cmd);
     }
