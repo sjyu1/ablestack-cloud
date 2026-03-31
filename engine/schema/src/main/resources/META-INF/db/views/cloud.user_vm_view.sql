@@ -145,6 +145,7 @@ SELECT
     `nics`.`broadcast_uri` AS `broadcast_uri`,
     `nics`.`isolation_uri` AS `isolation_uri`,
     `nics`.`link_state` AS `link_state`,
+    `nics`.`enabled` AS `is_nic_enabled`,
     `vpc`.`id` AS `vpc_id`,
     `vpc`.`uuid` AS `vpc_uuid`,
     `networks`.`uuid` AS `network_uuid`,

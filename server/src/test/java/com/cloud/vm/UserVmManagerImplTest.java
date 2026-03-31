@@ -82,6 +82,7 @@ import org.apache.cloudstack.api.command.user.vm.ResetVMSSHKeyCmd;
 import org.apache.cloudstack.api.command.user.vm.ResetVMUserDataCmd;
 import org.apache.cloudstack.api.command.user.vm.RestoreVMCmd;
 import org.apache.cloudstack.api.command.user.vm.UpdateVMCmd;
+import org.apache.cloudstack.api.command.user.vm.UpdateVmNicCmd;
 import org.apache.cloudstack.api.command.user.volume.ResizeVolumeCmd;
 import org.apache.cloudstack.backup.BackupManager;
 import org.apache.cloudstack.backup.BackupVO;
@@ -250,6 +251,9 @@ public class UserVmManagerImplTest {
     private UpdateVMCmd updateVmCommand;
 
     @Mock
+    private UpdateVmNicCmd updateVmNicCmd;
+
+    @Mock
     private AccountManager accountManager;
 
     @Mock
@@ -275,6 +279,9 @@ public class UserVmManagerImplTest {
 
     @Mock
     private UserVO callerUser;
+
+    @Mock
+    private NicVO nicMock;
 
     @Mock
     private VMTemplateDao templateDao;
@@ -466,6 +473,8 @@ public class UserVmManagerImplTest {
     private static final long vmId = 1l;
     private static final long zoneId = 2L;
     private static final long accountId = 3L;
+    private static final long nicId = 4L;
+    private static final long networkId = 5L;
     private static final long serviceOfferingId = 10L;
     private static final long templateId = 11L;
     private static final long volumeId = 1L;
@@ -4351,6 +4360,61 @@ public class UserVmManagerImplTest {
         InvalidParameterValueException ex = Assert.assertThrows(InvalidParameterValueException.class, () ->
                 userVmManagerImpl.verifyVmLimits(userVmVoMock, customParameters));
         Assert.assertTrue(ex.getMessage().startsWith("The CPU speed of this offering"));
+    }
+
+    @Test(expected = InvalidParameterValueException.class)
+    public void updateVirtualMachineNicTestInvalidNicThrowInvalidParameterValueException() {
+        Long invalidId = -1L;
+        Mockito.doReturn(invalidId).when(updateVmNicCmd).getNicId();
+
+        userVmManagerImpl.updateVirtualMachineNic(updateVmNicCmd);
+    }
+
+    @Test(expected = InvalidParameterValueException.class)
+    public void updateVirtualMachineNicTestInvalidNicUserVmThrowInvalidParameterValueException() {
+        Mockito.doReturn(nicId).when(updateVmNicCmd).getNicId();
+        Mockito.doReturn(nicMock).when(nicDao).findById(nicId);
+
+        userVmManagerImpl.updateVirtualMachineNic(updateVmNicCmd);
+    }
+
+    @Test(expected = InvalidParameterValueException.class)
+    public void updateVirtualMachineNicTestInvalidNicNetworkThrowInvalidParameterValueException() {
+        Mockito.doReturn(nicId).when(updateVmNicCmd).getNicId();
+        Mockito.doReturn(true).when(updateVmNicCmd).isEnabled();
+        Mockito.doReturn(nicMock).when(nicDao).findById(nicId);
+        Mockito.doReturn(vmId).when(nicMock).getInstanceId();
+        Mockito.doReturn(userVmVoMock).when(userVmDao).findById(vmId);
+
+        userVmManagerImpl.updateVirtualMachineNic(updateVmNicCmd);
+    }
+
+    @Test(expected = CloudRuntimeException.class)
+    public void updateVirtualMachineNicTestInvalidNicNetworkThrowCloudRuntimeException() {
+        Mockito.doReturn(nicId).when(updateVmNicCmd).getNicId();
+        Mockito.doReturn(true).when(updateVmNicCmd).isEnabled();
+        Mockito.doReturn(nicMock).when(nicDao).findById(nicId);
+        Mockito.doReturn(vmId).when(nicMock).getInstanceId();
+        Mockito.doReturn(userVmVoMock).when(userVmDao).findById(vmId);
+
+        userVmManagerImpl.updateVirtualMachineNic(updateVmNicCmd);
+    }
+
+    @Test
+    public void updateVirtualMachineNicTestValidInputReturnNicUserVm() throws ResourceUnavailableException {
+        Mockito.doReturn(nicId).when(updateVmNicCmd).getNicId();
+        Mockito.doReturn(true).when(updateVmNicCmd).isEnabled();
+        Mockito.doReturn(nicMock).when(nicDao).findById(nicId);
+        Mockito.doReturn(vmId).when(nicMock).getInstanceId();
+        Mockito.doReturn(userVmVoMock).when(userVmDao).findById(vmId);
+        Mockito.doReturn(Hypervisor.HypervisorType.KVM).when(userVmVoMock).getHypervisorType();
+        Mockito.doReturn(networkId).when(nicMock).getNetworkId();
+        Mockito.doReturn(networkMock).when(_networkDao).findById(networkId);
+        Mockito.doReturn(true).when(virtualMachineManager).updateVmNic(Mockito.any(), Mockito.any(), Mockito.any());
+
+        UserVm result = userVmManagerImpl.updateVirtualMachineNic(updateVmNicCmd);
+
+        Assert.assertNotNull(result);
     }
 
     @Test
