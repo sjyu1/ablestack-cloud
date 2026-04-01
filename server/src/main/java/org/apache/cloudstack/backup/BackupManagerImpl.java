@@ -975,6 +975,36 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 message, message + " Please, use the 'updateResourceLimit' API to increase the backup limit.");
     }
 
+    public List<BackupSchedule> listBackupSchedules(ListBackupScheduleCmd cmd) {
+        Account caller = CallContext.current().getCallingAccount();
+        Long id = cmd.getId();
+        Long vmId = cmd.getVmId();
+
+        if (vmId != null) {
+            final VMInstanceVO vm = findVmById(vmId);
+            validateBackupForZone(vm.getDataCenterId());
+            accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
+        }
+
+        Filter searchFilter = new Filter(BackupScheduleVO.class, "id", true, null, null);
+        SearchBuilder<BackupScheduleVO> searchBuilder = backupScheduleDao.createSearchBuilder();
+        searchBuilder.and("id", searchBuilder.entity().getId(), SearchCriteria.Op.EQ);
+        if (vmId != null) {
+            searchBuilder.and("vmId", searchBuilder.entity().getVmId(), SearchCriteria.Op.EQ);
+        }
+
+        SearchCriteria<BackupScheduleVO> sc = searchBuilder.create();
+        if (id != null) {
+            sc.setParameters("id", id);
+        }
+        if (vmId != null) {
+            sc.setParameters("vmId", vmId);
+        }
+
+        Pair<List<BackupScheduleVO>, Integer> result = backupScheduleDao.searchAndCount(sc, searchFilter);
+        return new ArrayList<>(result.first());
+    }
+
     /**
      * Gets the backup schedule ID from the async job's payload.
      *

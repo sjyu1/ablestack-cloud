@@ -57,6 +57,7 @@
 
 <script>
 import { getAPI } from '@/api'
+import { nextTick } from 'vue'
 import BackupScheduleWizard from '@/views/compute/BackupScheduleWizard'
 
 export default {
@@ -69,7 +70,13 @@ export default {
       vms: [],
       vmsLoading: false,
       selectedVMId: null,
-      selectedVM: null
+      selectedVM: null,
+      wizardResetSeq: 0
+    }
+  },
+  computed: {
+    wizardRenderKey () {
+      return `${this.selectedVM?.id || 'none'}-${this.wizardResetSeq}`
     }
   },
   created () {
@@ -91,12 +98,13 @@ export default {
         this.vmsLoading = false
       }
     },
-    onVMChange (vmId) {
+    async onVMChange (vmId) {
       const vm = this.vms.find(v => v.id === vmId)
-      if (vm) {
-        this.selectedVM = vm
-        this.selectedVMId = vmId
-      }
+      this.selectedVM = null
+      this.selectedVMId = vmId
+      this.wizardResetSeq++
+      await nextTick()
+      this.selectedVM = vm ? { ...vm } : null
     },
     closeAction () {
       this.$emit('refresh')
