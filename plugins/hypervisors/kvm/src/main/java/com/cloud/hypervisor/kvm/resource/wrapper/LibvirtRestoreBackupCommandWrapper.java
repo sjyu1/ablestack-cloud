@@ -44,8 +44,10 @@ import org.libvirt.LibvirtException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 @ResourceWrapper(handles = RestoreBackupCommand.class)
@@ -57,8 +59,6 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
     private static final String ATTACH_QCOW2_DISK_COMMAND = " virsh attach-disk %s %s %s --driver qemu --subdriver qcow2 --cache none";
     private static final String ATTACH_RBD_DISK_XML_COMMAND = " virsh attach-device %s /dev/stdin <<EOF%sEOF";
     private static final String CURRRENT_DEVICE = "virsh domblklist --domain %s | tail -n 3 | head -n 1 | awk '{print $1}'";
-    private static final String RSYNC_COMMAND = "rsync -az %s %s";
-
     @Override
     public Answer execute(RestoreBackupCommand command, LibvirtComputingResource serverResource) {
         String vmName = command.getVmName();
@@ -78,6 +78,7 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();
         List<String> volumePaths = command.getVolumePaths();
         List<String> backupFiles = command.getBackupFiles();
+        List<String> backupFileChains = command.getBackupFileChains();
 
         String newVolumeId = null;
         try {
@@ -85,14 +86,15 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
             if (Objects.isNull(vmExists)) {
                 String volumePath = volumePaths.get(0);
                 String backupFile = backupFiles.get(0);
+                String backupFileChain = backupFileChains != null && !backupFileChains.isEmpty() ? backupFileChains.get(0) : null;
                 int lastIndex = volumePath.lastIndexOf("/");
                 newVolumeId = volumePath.substring(lastIndex + 1);
-                restoreVolume(backupPath, backupRepoType, backupRepoAddress, volumePath, diskType, backupFile,
+                restoreVolume(backupPath, backupRepoType, backupRepoAddress, volumePath, backupFile, backupFileChain,
                         new Pair<>(vmName, command.getVmState()), mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools.get(0), cacheMode);
             } else if (Boolean.TRUE.equals(vmExists)) {
-                restoreVolumesOfExistingVM(volumePaths, backupPath, backupFiles, backupRepoType, backupRepoAddress, mountOptions, mountDirectory, timeout, storagePoolMgr, restoreVolumePools.get(0));
+                restoreVolumesOfExistingVM(volumePaths, backupPath, backupFiles, backupFileChains, mountDirectory, timeout, storagePoolMgr, restoreVolumePools.get(0));
             } else {
-                restoreVolumesOfDestroyedVMs(volumePaths, vmName, backupPath, backupFiles, backupRepoType, backupRepoAddress, mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools.get(0), timeout);
+                restoreVolumesOfDestroyedVMs(volumePaths, backupPath, backupFiles, backupFileChains, backupRepoAddress, backupRepoType, mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools.get(0), timeout);
             }
         } catch (CloudRuntimeException e) {
             String errorMessage = e.getMessage() != null ? e.getMessage() : "";
@@ -102,16 +104,15 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         return new BackupAnswer(command, true, newVolumeId);
     }
 
-    private void restoreVolumesOfExistingVM(List<String> volumePaths, String backupPath, List<String> backupFiles,
-                                             String backupRepoType, String backupRepoAddress, String mountOptions, String mountDirectory, Integer timeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool) {
-        String diskType = "root";
+    private void restoreVolumesOfExistingVM(List<String> volumePaths, String backupPath, List<String> backupFiles, List<String> backupFileChains,
+                                            String mountDirectory, Integer timeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool) {
         try {
             for (int idx = 0; idx < volumePaths.size(); idx++) {
                 String volumePath = volumePaths.get(idx);
                 String backupFile = backupFiles.get(idx);
-                String bkpPath = getBackupPath(mountDirectory, backupPath, backupFile, diskType);
-                diskType = "datadisk";
-                if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, bkpPath, timeout)) {
+                String backupFileChain = backupFileChains != null && backupFileChains.size() > idx ? backupFileChains.get(idx) : null;
+                List<String> mountedBackupPaths = getMountedBackupPaths(mountDirectory, backupPath, backupFile, backupFileChain);
+                if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, mountedBackupPaths, timeout)) {
                     throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
                 }
             }
@@ -121,17 +122,16 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
     }
 
-    private void restoreVolumesOfDestroyedVMs(List<String> volumePaths, String vmName, String backupPath, List<String> backupFiles,
-                                              String backupRepoType, String backupRepoAddress, String mountOptions, Integer mountTimeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool, Integer timeout) {
+    private void restoreVolumesOfDestroyedVMs(List<String> volumePaths, String backupPath, List<String> backupFiles, List<String> backupFileChains,
+                                              String backupRepoAddress, String backupRepoType, String mountOptions, Integer mountTimeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool, Integer timeout) {
         String mountDirectory = mountBackupDirectory(backupRepoAddress, backupRepoType, mountOptions, mountTimeout);
-        String diskType = "root";
         try {
             for (int idx = 0; idx < volumePaths.size(); idx++) {
                 String volumePath = volumePaths.get(idx);
                 String backupFile = backupFiles.get(idx);
-                String bkpPath = getBackupPath(mountDirectory, backupPath, backupFile, diskType);
-                diskType = "datadisk";
-                if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, bkpPath, timeout)) {
+                String backupFileChain = backupFileChains != null && backupFileChains.size() > idx ? backupFileChains.get(idx) : null;
+                List<String> mountedBackupPaths = getMountedBackupPaths(mountDirectory, backupPath, backupFile, backupFileChain);
+                if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, mountedBackupPaths, timeout)) {
                     throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
                 }
             }
@@ -141,13 +141,12 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
     }
 
-    private void restoreVolume(String backupPath, String backupRepoType, String backupRepoAddress, String volumePath,
-                               String diskType, String backupFile, Pair<String, VirtualMachine.State> vmNameAndState, String mountOptions, Integer mountTimeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool, String cacheMode) {
+    private void restoreVolume(String backupPath, String backupRepoType, String backupRepoAddress, String volumePath, String backupFile, String backupFileChain,
+                               Pair<String, VirtualMachine.State> vmNameAndState, String mountOptions, Integer mountTimeout, KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO restoreVolumePool, String cacheMode) {
         String mountDirectory = mountBackupDirectory(backupRepoAddress, backupRepoType, mountOptions, mountTimeout);
-        String bkpPath;
         try {
-            bkpPath = getBackupPath(mountDirectory, backupPath, backupFile, diskType);
-            if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, bkpPath, mountTimeout)) {
+            List<String> mountedBackupPaths = getMountedBackupPaths(mountDirectory, backupPath, backupFile, backupFileChain);
+            if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, mountedBackupPaths, mountTimeout)) {
                 throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
             }
             if (VirtualMachine.State.Running.equals(vmNameAndState.second())) {
@@ -211,11 +210,25 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
     }
 
-    private String getBackupPath(String mountDirectory, String backupPath, String backupFile, String diskType) {
-        String bkpPath = String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath);
-        String backupFileName = String.format("%s.%s.qcow2", diskType.toLowerCase(Locale.ROOT), backupFile);
-        bkpPath = String.format(FILE_PATH_PLACEHOLDER, bkpPath, backupFileName);
-        return bkpPath;
+    private List<String> getMountedBackupPaths(String mountDirectory, String backupPath, String backupFile, String backupFileChain) {
+        List<String> mountedPaths = new ArrayList<>();
+        if (StringUtils.isNotBlank(backupFileChain)) {
+            for (String chainPath : backupFileChain.split(";")) {
+                if (StringUtils.isBlank(chainPath)) {
+                    continue;
+                }
+                String normalizedPath = chainPath.startsWith("/") ? chainPath.substring(1) : chainPath;
+                if (!normalizedPath.contains("/") && StringUtils.isNotBlank(backupPath)) {
+                    mountedPaths.add(String.format(FILE_PATH_PLACEHOLDER, String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath), normalizedPath));
+                } else {
+                    mountedPaths.add(String.format(FILE_PATH_PLACEHOLDER, mountDirectory, normalizedPath));
+                }
+            }
+        }
+        if (mountedPaths.isEmpty() && StringUtils.isNotBlank(backupFile)) {
+            mountedPaths.add(String.format(FILE_PATH_PLACEHOLDER, String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath), backupFile));
+        }
+        return mountedPaths;
     }
 
     private boolean checkBackupFileImage(String backupPath) {
@@ -228,20 +241,80 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         return exitValue == 0;
     }
 
-    private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, String backupPath, int timeout) {
-        return replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPath, timeout, false);
+    private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout) {
+        return replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, false);
     }
 
-    private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, String backupPath, int timeout, boolean createTargetVolume) {
+    private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout, boolean createTargetVolume) {
+        if (backupPaths == null || backupPaths.isEmpty()) {
+            return false;
+        }
         if (volumePool.getPoolType() != Storage.StoragePoolType.RBD) {
-            int exitValue = Script.runSimpleBashScriptForExitValue(String.format(RSYNC_COMMAND, backupPath, volumePath));
-            return exitValue == 0;
+            if (backupPaths.size() > 1 && backupPaths.stream().anyMatch(path -> path.endsWith(".rbdiff"))) {
+                throw new CloudRuntimeException("Incremental RBD backup chains can only be restored to RBD storage pools");
+            }
+            return replaceFileVolumeWithBackup(volumePath, getFirstExistingBackupPath(backupPaths), timeout);
         }
 
-        return replaceRbdVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPath, timeout, createTargetVolume);
+        return replaceRbdVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, createTargetVolume);
     }
 
-    private boolean replaceRbdVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, String backupPath, int timeout, boolean createTargetVolume) {
+    private String getFirstExistingBackupPath(List<String> backupPaths) {
+        for (String backupPath : backupPaths) {
+            if (StringUtils.isNotBlank(backupPath) && Files.exists(Paths.get(backupPath))) {
+                return backupPath;
+            }
+        }
+        return backupPaths.get(0);
+    }
+
+    private boolean replaceFileVolumeWithBackup(String volumePath, String backupPath, int timeout) {
+        QemuImgFile srcBackupFile = null;
+        QemuImgFile destVolumeFile = null;
+        try {
+            QemuImg qemu = new QemuImg(timeout * 1000, true, false);
+            srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
+            destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
+            qemu.convert(srcBackupFile, destVolumeFile);
+            return true;
+        } catch (QemuImgException | LibvirtException e) {
+            String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
+            String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
+            logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
+            return false;
+        }
+    }
+
+    private QemuImg.PhysicalDiskFormat getBackupFileFormat(String backupPath) {
+        if (backupPath.endsWith(".raw")) {
+            return QemuImg.PhysicalDiskFormat.RAW;
+        }
+        return QemuImg.PhysicalDiskFormat.QCOW2;
+    }
+
+    private QemuImg.PhysicalDiskFormat getFileVolumeFormat(String volumePath) {
+        if (!Files.exists(Paths.get(volumePath))) {
+            return QemuImg.PhysicalDiskFormat.QCOW2;
+        }
+        try {
+            QemuImg qemu = new QemuImg(0);
+            Map<String, String> info = qemu.info(new QemuImgFile(volumePath));
+            String format = info.get("file_format");
+            if (StringUtils.isNotBlank(format)) {
+                return QemuImg.PhysicalDiskFormat.valueOf(format.toUpperCase(Locale.ROOT));
+            }
+        } catch (QemuImgException | LibvirtException | IllegalArgumentException e) {
+            logger.warn("Failed to detect file volume format for path {}. Falling back to qcow2.", volumePath, e);
+        }
+        return QemuImg.PhysicalDiskFormat.QCOW2;
+    }
+
+    private boolean replaceRbdVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout, boolean createTargetVolume) {
+        if (backupPaths.stream().anyMatch(path -> path.endsWith(".rbdiff"))) {
+            return restoreIncrementalRbdBackupChain(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, createTargetVolume);
+        }
+
+        String backupPath = getFirstExistingBackupPath(backupPaths);
         KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
         QemuImg qemu;
         try {
@@ -258,7 +331,7 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         QemuImgFile srcBackupFile = null;
         QemuImgFile destVolumeFile = null;
         try {
-            srcBackupFile = new QemuImgFile(backupPath, QemuImg.PhysicalDiskFormat.QCOW2);
+            srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             String rbdDestVolumeFile = KVMPhysicalDisk.RBDStringBuilder(volumeStoragePool, volumePath);
             destVolumeFile = new QemuImgFile(rbdDestVolumeFile, QemuImg.PhysicalDiskFormat.RAW);
 
@@ -273,6 +346,59 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
 
         return true;
+    }
+
+    private boolean restoreIncrementalRbdBackupChain(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths,
+                                                     int timeout, boolean createTargetVolume) {
+        if (backupPaths.isEmpty() || !backupPaths.get(0).endsWith(".raw")) {
+            throw new CloudRuntimeException("Incremental RBD backup chain is missing the base full backup");
+        }
+
+        if (!replaceRbdVolumeWithBackup(storagePoolMgr, volumePool, volumePath, List.of(backupPaths.get(0)), timeout, createTargetVolume)) {
+            return false;
+        }
+
+        KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
+        for (int index = 1; index < backupPaths.size(); index++) {
+            String backupPath = backupPaths.get(index);
+            if (!backupPath.endsWith(".rbdiff")) {
+                continue;
+            }
+            String importDiffCommand = buildRbdImportDiffCommand(volumeStoragePool, backupPath, volumePath);
+            if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
+                logger.error("Failed to import RBD diff {} into volume {}", backupPath, volumePath);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String buildRbdImportDiffCommand(KVMStoragePool storagePool, String backupPath, String volumePath) {
+        StringBuilder command = new StringBuilder("rbd");
+        if (StringUtils.isNotBlank(storagePool.getSourceHost())) {
+            command.append(" -m ").append(formatRbdMonHosts(storagePool.getSourceHost(), storagePool.getSourcePort()));
+        }
+        if (StringUtils.isNotBlank(storagePool.getAuthUserName())) {
+            command.append(" --id ").append(storagePool.getAuthUserName());
+        }
+        if (StringUtils.isNotBlank(storagePool.getAuthSecret())) {
+            command.append(" --key ").append(storagePool.getAuthSecret());
+        }
+        command.append(" import-diff ").append(backupPath).append(" ").append(volumePath);
+        return command.toString();
+    }
+
+    private String formatRbdMonHosts(String hosts, int port) {
+        String[] hostValues = hosts.split(",");
+        List<String> formattedHosts = new ArrayList<>();
+        for (String host : hostValues) {
+            String normalizedHost = host.replace("[", "").replace("]", "").trim();
+            if (StringUtils.isBlank(normalizedHost)) {
+                continue;
+            }
+            formattedHosts.add(port > 0 ? normalizedHost + ":" + port : normalizedHost);
+        }
+        return String.join(",", formattedHosts);
     }
 
     private boolean attachVolumeToVm(KVMStoragePoolManager storagePoolMgr, String vmName, PrimaryDataStoreTO volumePool, String volumePath, String cacheMode) {

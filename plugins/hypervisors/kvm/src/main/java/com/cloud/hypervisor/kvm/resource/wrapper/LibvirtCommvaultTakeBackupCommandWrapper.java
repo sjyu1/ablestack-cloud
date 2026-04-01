@@ -44,6 +44,12 @@ public class LibvirtCommvaultTakeBackupCommandWrapper extends CommandWrapper<Com
     public Answer execute(CommvaultTakeBackupCommand command, LibvirtComputingResource libvirtComputingResource) {
         final String vmName = command.getVmName();
         final String backupPath = command.getBackupPath();
+        final String backupType = command.getBackupType();
+        final String checkpointName = command.getCheckpointName();
+        final String parentBackupPath = command.getParentBackupPath();
+        final String parentCheckpointName = command.getParentCheckpointName();
+        final String parentCheckpointPath = command.getParentCheckpointPath();
+        final List<String> backupFiles = command.getBackupFiles();
         List<PrimaryDataStoreTO> volumePools = command.getVolumePools();
         final List<String> volumePaths = command.getVolumePaths();
         KVMStoragePoolManager storagePoolMgr = libvirtComputingResource.getStoragePoolMgr();
@@ -69,6 +75,12 @@ public class LibvirtCommvaultTakeBackupCommandWrapper extends CommandWrapper<Com
                 "-o", "backup",
                 "-v", vmName,
                 "-p", backupPath,
+                "-b", Objects.nonNull(backupType) ? backupType : "",
+                "-c", Objects.nonNull(checkpointName) ? checkpointName : "",
+                "-r", Objects.nonNull(parentBackupPath) ? parentBackupPath : "",
+                "-i", Objects.nonNull(parentCheckpointName) ? parentCheckpointName : "",
+                "-j", Objects.nonNull(parentCheckpointPath) ? parentCheckpointPath : "",
+                "-f", backupFiles == null || backupFiles.isEmpty() ? "" : String.join(",", backupFiles),
                 "-q", command.getQuiesce() != null && command.getQuiesce() ? "true" : "false",
                 "-d", diskPaths.isEmpty() ? "" : String.join(",", diskPaths)
         });

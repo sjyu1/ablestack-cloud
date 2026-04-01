@@ -964,8 +964,14 @@ public class CommvaultClient {
     // POST https://<commserveIp>/commandcenter/api/subclient/<subclientId>/action/backup 테스트 시 Incremental 백업으로 반환되어 사용 x
     // POST https://<commserveIp>/commandcenter/api/createtask
     // 백업 실행 API
-    public String createBackup(String subclientId, String storagePolicyId, String displayName, String commCellName, String clientId, String companyId, String companyName, String instanceName, String appName, String applicationId, String clientName, String backupsetId, String instanceId, String subclientGUID, String subclientName, String csGUID, String backupsetName) {
+    public String createBackup(String subclientId, String storagePolicyId, String displayName, String commCellName, String clientId, String companyId, String companyName, String instanceName,
+            String appName, String applicationId, String clientName, String backupsetId, String instanceId, String subclientGUID, String subclientName, String csGUID,
+            String backupsetName, String backupType) {
         HttpURLConnection connection = null;
+        final boolean incrementalBackup = "INCREMENTAL".equalsIgnoreCase(backupType);
+        final String backupLevel = incrementalBackup ? "INCREMENTAL" : "FULL";
+        final String runIncrementalBackup = incrementalBackup ? "true" : "false";
+        final String forceFullBackup = incrementalBackup ? "false" : "true";
         String postUrl = apiURI.toString() + "/createtask";
         try {
             URL url = new URL(postUrl);
@@ -1012,9 +1018,9 @@ public class CommvaultClient {
                             "}," +
                             "\"options\":{" +
                                 "\"backupOpts\":{" +
-                                    "\"backupLevel\":\"FULL\"," +
-                                    "\"runIncrementalBackup\":false," +
-                                    "\"forceFullBackup\":true" +
+                                    "\"backupLevel\":\"%s\"," +
+                                    "\"runIncrementalBackup\":%s," +
+                                    "\"forceFullBackup\":%s" +
                                 "}," +
                                 "\"commonOpts\":{" +
                                     "\"overrideStoragePolicySettings\":true," +
@@ -1027,7 +1033,8 @@ public class CommvaultClient {
                 Integer.parseInt(subclientId), Integer.parseInt(storagePolicyId), displayName, commCellName,
                 Integer.parseInt(clientId), Integer.parseInt(companyId), companyName, instanceName, appName,
                 Integer.parseInt(applicationId), clientName, Integer.parseInt(backupsetId),
-                Integer.parseInt(instanceId), subclientGUID, subclientName, csGUID, backupsetName
+                Integer.parseInt(instanceId), subclientGUID, subclientName, csGUID, backupsetName,
+                backupLevel, runIncrementalBackup, forceFullBackup
             );
             try (OutputStream os = connection.getOutputStream()) {
                 byte[] input = jsonBody.getBytes(StandardCharsets.UTF_8);

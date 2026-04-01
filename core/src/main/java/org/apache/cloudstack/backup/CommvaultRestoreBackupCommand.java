@@ -30,6 +30,8 @@ public class CommvaultRestoreBackupCommand extends Command  {
     private String vmName;
     private String backupPath;
     private List<String> backupVolumesUUIDs;
+    private List<String> backupFiles;
+    private List<String> backupFileChains;
     private List<PrimaryDataStoreTO> restoreVolumePools;
     private List<String> restoreVolumePaths;
     private String diskType;
@@ -122,6 +124,22 @@ public class CommvaultRestoreBackupCommand extends Command  {
 
     public void setBackupVolumesUUIDs(List<String> backupVolumesUUIDs) {
         this.backupVolumesUUIDs = backupVolumesUUIDs;
+    }
+
+    public List<String> getBackupFiles() {
+        return backupFiles;
+    }
+
+    public void setBackupFiles(List<String> backupFiles) {
+        this.backupFiles = backupFiles;
+    }
+
+    public List<String> getBackupFileChains() {
+        return backupFileChains;
+    }
+
+    public void setBackupFileChains(List<String> backupFileChains) {
+        this.backupFileChains = backupFileChains;
     }
 
     public Integer getTimeout() {

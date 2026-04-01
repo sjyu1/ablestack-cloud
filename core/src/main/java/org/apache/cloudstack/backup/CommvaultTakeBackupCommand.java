@@ -30,6 +30,12 @@ public class CommvaultTakeBackupCommand extends Command {
     private List<PrimaryDataStoreTO> volumePools;
     private List<String> volumePaths;
     private Boolean quiesce;
+    private String backupType;
+    private String checkpointName;
+    private String parentBackupPath;
+    private String parentCheckpointName;
+    private String parentCheckpointPath;
+    private List<String> backupFiles;
 
     public CommvaultTakeBackupCommand(String vmName, String backupPath) {
         super();
@@ -75,6 +81,54 @@ public class CommvaultTakeBackupCommand extends Command {
 
     public void setQuiesce(Boolean quiesce) {
         this.quiesce = quiesce;
+    }
+
+    public String getBackupType() {
+        return backupType;
+    }
+
+    public void setBackupType(String backupType) {
+        this.backupType = backupType;
+    }
+
+    public String getCheckpointName() {
+        return checkpointName;
+    }
+
+    public void setCheckpointName(String checkpointName) {
+        this.checkpointName = checkpointName;
+    }
+
+    public String getParentBackupPath() {
+        return parentBackupPath;
+    }
+
+    public void setParentBackupPath(String parentBackupPath) {
+        this.parentBackupPath = parentBackupPath;
+    }
+
+    public String getParentCheckpointName() {
+        return parentCheckpointName;
+    }
+
+    public void setParentCheckpointName(String parentCheckpointName) {
+        this.parentCheckpointName = parentCheckpointName;
+    }
+
+    public String getParentCheckpointPath() {
+        return parentCheckpointPath;
+    }
+
+    public void setParentCheckpointPath(String parentCheckpointPath) {
+        this.parentCheckpointPath = parentCheckpointPath;
+    }
+
+    public List<String> getBackupFiles() {
+        return backupFiles;
+    }
+
+    public void setBackupFiles(List<String> backupFiles) {
+        this.backupFiles = backupFiles;
     }
 
     @Override

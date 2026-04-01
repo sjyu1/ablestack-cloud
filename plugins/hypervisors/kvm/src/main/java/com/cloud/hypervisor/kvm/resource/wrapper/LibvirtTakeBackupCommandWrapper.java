@@ -46,11 +46,17 @@ public class LibvirtTakeBackupCommandWrapper extends CommandWrapper<TakeBackupCo
     public Answer execute(TakeBackupCommand command, LibvirtComputingResource libvirtComputingResource) {
         final String vmName = command.getVmName();
         final String backupPath = command.getBackupPath();
+        final String backupType = command.getBackupType();
+        final String checkpointName = command.getCheckpointName();
+        final String parentBackupPath = command.getParentBackupPath();
+        final String parentCheckpointName = command.getParentCheckpointName();
+        final String parentCheckpointPath = command.getParentCheckpointPath();
         final String backupRepoType = command.getBackupRepoType();
         final String backupRepoAddress = command.getBackupRepoAddress();
         final String mountOptions = command.getMountOptions();
         List<PrimaryDataStoreTO> volumePools = command.getVolumePools();
         final List<String> volumePaths = command.getVolumePaths();
+        final List<String> backupFiles = command.getBackupFiles();
         KVMStoragePoolManager storagePoolMgr = libvirtComputingResource.getStoragePoolMgr();
 
         List<String> diskPaths = new ArrayList<>();
@@ -77,7 +83,13 @@ public class LibvirtTakeBackupCommandWrapper extends CommandWrapper<TakeBackupCo
                 "-s", backupRepoAddress,
                 "-m", Objects.nonNull(mountOptions) ? mountOptions : "",
                 "-p", backupPath,
+                "-b", Objects.nonNull(backupType) ? backupType : "",
+                "-c", Objects.nonNull(checkpointName) ? checkpointName : "",
+                "-r", Objects.nonNull(parentBackupPath) ? parentBackupPath : "",
+                "-i", Objects.nonNull(parentCheckpointName) ? parentCheckpointName : "",
+                "-j", Objects.nonNull(parentCheckpointPath) ? parentCheckpointPath : "",
                 "-q", command.getQuiesce() != null && command.getQuiesce() ? "true" : "false",
+                "-f", CollectionUtils.isNullOrEmpty(backupFiles) ? "" : String.join(",", backupFiles),
                 "-d", diskPaths.isEmpty() ? "" : String.join(",", diskPaths)
         });
 

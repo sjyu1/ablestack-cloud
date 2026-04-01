@@ -94,10 +94,23 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
+import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
 public class CommvaultBackupProvider extends AdapterBase implements BackupProvider, Configurable {
 
     private static final Logger LOG = LogManager.getLogger(CommvaultBackupProvider.class);
+    private static final String BACKUP_TYPE_FULL = "FULL";
+    private static final String BACKUP_TYPE_INCREMENTAL = "INCREMENTAL";
+    private static final String BACKUP_ENGINE_QCOW2 = "QCOW2";
+    private static final String BACKUP_ENGINE_RBD_DIFF = "RBD_DIFF";
+    private static final String DETAIL_CHECKPOINT_NAME = "commvault.checkpoint.name";
+    private static final String DETAIL_CHECKPOINT_PATH = "commvault.checkpoint.path";
+    private static final String DETAIL_PARENT_BACKUP_UUID = "commvault.parent.backup.uuid";
+    private static final String DETAIL_PARENT_BACKUP_PATH = "commvault.parent.backup.path";
+    private static final String DETAIL_PARENT_CHECKPOINT_NAME = "commvault.parent.checkpoint.name";
+    private static final String DETAIL_PARENT_CHECKPOINT_PATH = "commvault.parent.checkpoint.path";
+    private static final String DETAIL_BACKUP_ENGINE = "commvault.backup.engine";
+    private static final String DETAIL_STAGE_HOST = "commvault.stage.host";
     private static final String RM_COMMAND = "rm -rf %s";
     private static final int BASE_MAJOR = 11;
     private static final int BASE_FR = 32;
@@ -294,17 +307,30 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         final Date creationDate = new Date();
         final String backupPath = String.format("%s/%s/%s", COMMVAULT_DIRECTORY, vm.getInstanceName(),
                 new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(creationDate));
+        List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
+        vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
+        Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
+        validateVolumePoolTypes(volumePoolsAndPaths.first());
+        final Backup latestBackup = getLatestBackedUpBackup(vm);
+        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost);
+        final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
+        final String checkpointName = String.format("backup.%s", UUID.randomUUID());
+        final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
+        final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
+        final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup, incrementalBackup, vmHost.getName());
 
-        BackupVO backupVO = createBackupObject(vm, backupPath);
+        BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         CommvaultTakeBackupCommand command = new CommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
         command.setQuiesce(quiesceVM);
-
-        if (VirtualMachine.State.Stopped.equals(vm.getState())) {
-            List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
-            vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
-            Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
-            command.setVolumePools(volumePoolsAndPaths.first());
-            command.setVolumePaths(volumePoolsAndPaths.second());
+        command.setVolumePools(volumePoolsAndPaths.first());
+        command.setVolumePaths(volumePoolsAndPaths.second());
+        command.setBackupType(requestedBackupType);
+        command.setCheckpointName(checkpointName);
+        command.setBackupFiles(backupFiles);
+        if (incrementalBackup) {
+            command.setParentBackupPath(getBackupDetail(latestBackup, DETAIL_PARENT_BACKUP_PATH, latestBackup.getExternalId().substring(0, latestBackup.getExternalId().lastIndexOf(','))));
+            command.setParentCheckpointName(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
+            command.setParentCheckpointPath(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
         }
 
         BackupAnswer answer;
@@ -356,7 +382,8 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                         LOG.error("Failed to take backup for VM " + vm.getInstanceName() + " to get storage policy id commvault api");
                     } else {
                         // 백업 실행
-                        String jobId = client.createBackup(subclientId, storagePolicyId, displayName, commCellName, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, subclientGUID, subclientName, csGUID, backupsetName);
+                        String jobId = client.createBackup(subclientId, storagePolicyId, displayName, commCellName, clientId, companyId, companyName, instanceName, appName, applicationId,
+                                clientName, backupsetId, instanceId, subclientGUID, subclientName, csGUID, backupsetName, requestedBackupType);
                         if (jobId != null) {
                             String jobStatus = client.getJobStatus(jobId);
                             String externalId = backupPath + "," + jobId;
@@ -382,13 +409,11 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                                     }
                                     backupVO.setSize(Long.parseLong(size));
                                     backupVO.setStatus(Backup.Status.BackedUp);
-                                    List<Volume> vols = new ArrayList<>(volumeDao.findByInstance(vm.getId()));
-                                    backupVO.setBackedUpVolumes(backupManager.createVolumeInfoFromVolumes(vols));
+                                    backupVO.setDetails(backupDetails);
+                                    backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
                                     if (backupDao.update(backupVO.getId(), backupVO)) {
-                                        executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
                                         return new Pair<>(true, backupVO);
                                     } else {
-                                        executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
                                         throw new CloudRuntimeException("Failed to update backup");
                                     }
                                 } else {
@@ -425,11 +450,38 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
     }
 
-    private BackupVO createBackupObject(VirtualMachine vm, String backupPath) {
+    private Backup getLatestBackedUpBackup(VirtualMachine vm) {
+        List<Backup> backups = backupDao.listByVmId(null, vm.getId());
+        return backups.stream()
+                .filter(Objects::nonNull)
+                .filter(b -> Backup.Status.BackedUp.equals(b.getStatus()))
+                .max(Comparator.comparing(Backup::getDate))
+                .orElse(null);
+    }
+
+    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, Host vmHost) {
+        if (latestBackup == null) {
+            return false;
+        }
+
+        Long clusterId = getClusterIdFromRootVolume(vm);
+        if (clusterId == null) {
+            return false;
+        }
+
+        if (!Boolean.TRUE.equals(KvmIncrementalBackup.valueIn(clusterId))) {
+            return false;
+        }
+
+        String stageHost = getBackupDetail(latestBackup, DETAIL_STAGE_HOST);
+        return Objects.equals(stageHost, vmHost.getName());
+    }
+
+    private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, Map<String, String> details) {
         BackupVO backup = new BackupVO();
         backup.setVmId(vm.getId());
         backup.setExternalId(backupPath);
-        backup.setType("FULL");
+        backup.setType(backupType);
         backup.setDate(new Date());
         long virtualSize = 0L;
         for (final Volume volume: volumeDao.findByInstance(vm.getId())) {
@@ -444,10 +496,119 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         backup.setDomainId(vm.getDomainId());
         backup.setZoneId(vm.getDataCenterId());
         backup.setName(backupManager.getBackupNameFromVM(vm));
-        Map<String, String> details = backupManager.getBackupDetailsFromVM(vm);
         backup.setDetails(details);
 
         return backupDao.persist(backup);
+    }
+
+    private Map<String, String> getBackupDetails(VirtualMachine vm, String backupPath, String checkpointName, String backupEngine, Backup latestBackup,
+                                                 boolean incrementalBackup, String stageHost) {
+        Map<String, String> details = backupManager.getBackupDetailsFromVM(vm);
+        details.put(DETAIL_BACKUP_ENGINE, backupEngine);
+        details.put(DETAIL_STAGE_HOST, stageHost);
+        if (!incrementalBackup) {
+            return details;
+        }
+
+        details.put(DETAIL_CHECKPOINT_NAME, checkpointName);
+        details.put(DETAIL_CHECKPOINT_PATH, String.format("%s/checkpoints/%s.xml", backupPath, checkpointName));
+        details.put(DETAIL_PARENT_BACKUP_UUID, latestBackup.getUuid());
+        details.put(DETAIL_PARENT_BACKUP_PATH, latestBackup.getExternalId().substring(0, latestBackup.getExternalId().lastIndexOf(',')));
+        details.put(DETAIL_PARENT_CHECKPOINT_NAME, getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
+        details.put(DETAIL_PARENT_CHECKPOINT_PATH, getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
+        return details;
+    }
+
+    private String getBackupDetail(Backup backup, String key) {
+        return backup == null ? null : backup.getDetail(key);
+    }
+
+    private String getBackupDetail(Backup backup, String key, String defaultValue) {
+        String value = getBackupDetail(backup, key);
+        return value == null ? defaultValue : value;
+    }
+
+    private void validateVolumePoolTypes(List<PrimaryDataStoreTO> volumePools) {
+        boolean hasRbd = volumePools.stream().anyMatch(pool -> pool.getPoolType() == Storage.StoragePoolType.RBD);
+        boolean hasNonRbd = volumePools.stream().anyMatch(pool -> pool.getPoolType() != Storage.StoragePoolType.RBD);
+        if (hasRbd && hasNonRbd) {
+            throw new CloudRuntimeException("Commvault incremental backup does not support VMs with mixed RBD and non-RBD volumes");
+        }
+    }
+
+    private boolean areAllVolumesOnRbdPool(List<PrimaryDataStoreTO> volumePools) {
+        return volumePools.stream().allMatch(pool -> pool.getPoolType() == Storage.StoragePoolType.RBD);
+    }
+
+    private List<String> buildBackupFileNames(List<VolumeVO> volumes, String backupEngine, boolean incrementalBackup) {
+        List<String> backupFiles = new ArrayList<>();
+        for (VolumeVO volume : volumes) {
+            String suffix;
+            if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+                suffix = incrementalBackup ? ".rbdiff" : ".raw";
+            } else {
+                suffix = ".qcow2";
+            }
+            backupFiles.add(String.format("volume-%s%s", volume.getUuid(), suffix));
+        }
+        return backupFiles;
+    }
+
+    private String createVolumeInfoFromVolumes(List<VolumeVO> volumes, List<String> backupFiles) {
+        List<Backup.VolumeInfo> infoList = new ArrayList<>();
+        for (int i = 0; i < volumes.size(); i++) {
+            VolumeVO vol = volumes.get(i);
+            DiskOffering diskOffering = diskOfferingDao.findById(vol.getDiskOfferingId());
+            String diskOfferingUuid = diskOffering != null ? diskOffering.getUuid() : null;
+            infoList.add(new Backup.VolumeInfo(vol.getUuid(), backupFiles.get(i), vol.getVolumeType(), vol.getSize(),
+                    vol.getDeviceId(), diskOfferingUuid, vol.getMinIops(), vol.getMaxIops()));
+        }
+        return new com.google.gson.Gson().toJson(infoList.toArray(), Backup.VolumeInfo[].class);
+    }
+
+    private List<String> getBackupFileChains(List<Backup.VolumeInfo> backupVolumes, Backup backup) {
+        return backupVolumes.stream()
+                .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                .map(volume -> getBackupFileChain(volume, backup))
+                .collect(Collectors.toList());
+    }
+
+    private String getBackupFileChain(Backup.VolumeInfo backupVolume, Backup backup) {
+        List<String> chain = getBackupChain(backupVolume, backup);
+        return String.join(";", chain);
+    }
+
+    private List<String> getBackupChain(Backup.VolumeInfo backupVolume, Backup backup) {
+        List<String> chain = new ArrayList<>();
+        Backup current = backup;
+        while (current != null) {
+            Backup.VolumeInfo currentVolumeInfo = current.getBackedUpVolumes().stream()
+                    .filter(volume -> Objects.equals(volume.getUuid(), backupVolume.getUuid()))
+                    .findFirst()
+                    .orElse(null);
+            if (currentVolumeInfo == null) {
+                break;
+            }
+            chain.add(0, currentVolumeInfo.getPath());
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (parentBackupUuid == null) {
+                break;
+            }
+            current = backupDao.findByUuid(parentBackupUuid);
+        }
+        if (chain.isEmpty()) {
+            chain.add(backupVolume.getPath());
+        }
+        return chain;
+    }
+
+    private boolean isLegacyBackup(Backup backup) {
+        return getBackupDetail(backup, DETAIL_BACKUP_ENGINE) == null;
+    }
+
+    private String getLegacyBackupFileName(Backup.VolumeInfo backupVolumeInfo) {
+        String diskType = Volume.Type.ROOT.equals(backupVolumeInfo.getType()) ? "root" : "datadisk";
+        return String.format("%s.%s.qcow2", diskType, backupVolumeInfo.getUuid());
     }
 
     // 백업에서 새 인스턴스 생성
@@ -522,6 +683,18 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setBackupPath(path);
                 restoreCommand.setVmName(vm.getName());
                 restoreCommand.setBackupVolumesUUIDs(backedVolumesUUIDs);
+                if (isLegacyBackup(backup)) {
+                    restoreCommand.setBackupFiles(backup.getBackedUpVolumes().stream()
+                            .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                            .map(this::getLegacyBackupFileName)
+                            .collect(Collectors.toList()));
+                } else {
+                    restoreCommand.setBackupFiles(backup.getBackedUpVolumes().stream()
+                            .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                            .map(Backup.VolumeInfo::getPath)
+                            .collect(Collectors.toList()));
+                    restoreCommand.setBackupFileChains(getBackupFileChains(backup.getBackedUpVolumes(), backup));
+                }
                 Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(restoreVolumes);
                 restoreCommand.setRestoreVolumePools(volumePoolsAndPaths.first());
                 restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
@@ -679,6 +852,10 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 CommvaultRestoreBackupCommand restoreCommand = new CommvaultRestoreBackupCommand();
                 restoreCommand.setBackupPath(path);
                 restoreCommand.setVmName(vmNameAndState.first());
+                restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(backupVolumeInfo) : backupVolumeInfo.getPath()));
+                if (!isLegacyBackup(backup)) {
+                    restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(backupVolumeInfo, backup)));
+                }
                 restoreCommand.setRestoreVolumePaths(Collections.singletonList(String.format("%s/%s", getVolumePathPrefix(pool), volumeUUID)));
                 DataStore dataStore = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
                 restoreCommand.setRestoreVolumePools(Collections.singletonList(dataStore != null ? (PrimaryDataStoreTO)dataStore.getTO() : null));
