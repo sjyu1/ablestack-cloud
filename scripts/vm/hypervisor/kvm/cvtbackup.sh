@@ -270,6 +270,24 @@ build_rbd_cmd() {
   fi
 }
 
+write_rbd_backup_metadata() {
+  local backup_type="$1"
+  local checkpoint_name="$2"
+  local parent_checkpoint_name="$3"
+
+  cat > "$dest/rbd-backup.meta" <<EOF
+vm_name=$VM
+backup_type=$backup_type
+checkpoint_name=$checkpoint_name
+parent_checkpoint_name=$parent_checkpoint_name
+disk_paths=$DISK_PATHS
+backup_files=$BACKUP_FILES
+backup_dir=$BACKUP_DIR
+EOF
+
+  log -ne "Wrote RBD backup metadata to [$dest/rbd-backup.meta]"
+}
+
 backup_running_vm() {
   mkdir -p "$dest/checkpoints" || { echo "Failed to create backup directory $dest"; exit 1; }
   local parent_checkpoint_file=""
@@ -328,10 +346,10 @@ backup_running_vm() {
   done
 
   if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_BACKUP_DIR" ]]; then
-    split_csv "$BACKUP_FILES"
-    for backup_file in "${SPLIT_CSV_RESULT[@]}"; do
+    while IFS= read -r backup_file; do
+      [[ -z "$backup_file" ]] && continue
       qemu-img rebase -u -F qcow2 -b "$PARENT_BACKUP_DIR/$backup_file" "$dest/$backup_file" > /dev/null 2>&1 || true
-    done
+    done < <(split_csv "$BACKUP_FILES")
   fi
 
   dump_checkpoint_xml "$VM"
@@ -372,10 +390,10 @@ backup_stopped_vm() {
   done
 
   if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_BACKUP_DIR" ]]; then
-    split_csv "$BACKUP_FILES"
-    for backup_file in "${SPLIT_CSV_RESULT[@]}"; do
+    while IFS= read -r backup_file; do
+      [[ -z "$backup_file" ]] && continue
       qemu-img rebase -u -F qcow2 -b "$PARENT_BACKUP_DIR/$backup_file" "$dest/$backup_file" > /dev/null 2>&1 || true
-    done
+    done < <(split_csv "$BACKUP_FILES")
   fi
 
   dump_checkpoint_xml "$dummy_vm"
@@ -426,6 +444,8 @@ backup_rbd_volumes() {
     log -ne "Finished exporting backup file [$output_file] size=[$(stat -c %s "$output_file" 2>/dev/null)]"
     index=$((index + 1))
   done < <(split_csv "$DISK_PATHS")
+
+  write_rbd_backup_metadata "$BACKUP_TYPE" "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
 }
 
 usage() {

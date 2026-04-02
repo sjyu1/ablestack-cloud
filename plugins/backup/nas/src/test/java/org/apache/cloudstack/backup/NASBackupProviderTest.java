@@ -18,7 +18,6 @@ package org.apache.cloudstack.backup;
 
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.argThat;
 
 import java.util.Collections;
 import java.util.List;
@@ -121,8 +120,7 @@ public class NASBackupProviderTest {
 
         boolean result = nasBackupProvider.deleteBackup(backup, true);
         Assert.assertTrue(result);
-        Mockito.verify(agentManager).send(anyLong(), argThat(command -> command instanceof DeleteBackupCommand &&
-                ((DeleteBackupCommand) command).isForced()));
+        Mockito.verify(agentManager).send(anyLong(), Mockito.<DeleteBackupCommand>argThat(DeleteBackupCommand::isForced));
     }
 
     @Test
