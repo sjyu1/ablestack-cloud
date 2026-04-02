@@ -271,13 +271,16 @@ backup_stopped_vm() {
 }
 
 backup_rbd_volumes() {
+  log -ne "Entered backup_rbd_volumes with DISK_PATHS=[$DISK_PATHS], BACKUP_FILES=[$BACKUP_FILES], BACKUP_DIR=[$BACKUP_DIR]"
   mount_operation
   mkdir -p "$dest" || { echo "Failed to create backup directory $dest"; exit 1; }
 
   local index=0
   while IFS= read -r disk; do
+    log -ne "Loop disk raw value=[$disk]"
     [[ -z "$disk" ]] && continue
     parse_rbd_uri "$disk"
+    log -ne "Parsed disk [$disk] -> RBD_IMAGE=[$RBD_IMAGE], MON=[$RBD_MON_HOST], USER=[$RBD_USER]"
     if [[ -z "$RBD_IMAGE" ]]; then
       echo "Unable to parse RBD disk path: $disk"
       cleanup
@@ -494,6 +497,7 @@ create_backup_xml_for_dummy_vm() {
 
 parse_rbd_uri() {
   local uri="$1"
+  log -ne "parse_rbd_uri called with uri=[$uri]"
   RBD_IMAGE="${uri#rbd:}"
   RBD_IMAGE="${RBD_IMAGE%%:*}"
   RBD_MON_HOST=""
