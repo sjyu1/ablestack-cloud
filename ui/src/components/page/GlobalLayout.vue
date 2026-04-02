@@ -551,7 +551,7 @@ body.dark-mode .banner-spacer::before {
     font-size: 0; /* 글자 크기 0으로 숨김 */
   }
 
-  /* 3. ★ 아이콘 심폐소생술 (여기가 중요!) ★ */
+  /* 3. ★ 아이콘 조정 */
   /* .anticon: 번역 아이콘 등 / .ant-avatar: 사용자 프로필 */
   .user-menu .action .anticon,
   .user-menu .action .ant-avatar {
