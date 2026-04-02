@@ -328,10 +328,12 @@ backup_rbd_volumes() {
     index=$((index + 1))
   done < <(split_csv "$DISK_PATHS")
 
+  write_rbd_backup_metadata "$BACKUP_TYPE" "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
+
   sync
-  log -ne "RBD backup completed for BACKUP_DIR=[$BACKUP_DIR]"
-  umount "$mount_point" || { echo "Failed to unmount $mount_point"; exit 1; }
-  rmdir "$mount_point" || { echo "Failed to remove mount point $mount_point"; exit 1; }
+  log -ne "RBD backup completed checkpoint=[$CHECKPOINT_NAME] parent=[$PARENT_CHECKPOINT_NAME]"
+  umount "$mount_point"
+  rmdir "$mount_point"
 }
 
 backup_domain_information() {
@@ -366,8 +368,54 @@ EOF
   fi
 }
 
+has_child_backup() {
+  local checkpoint_name="$1"
+
+  [[ -z "$checkpoint_name" ]] && return 1
+
+  grep -R -q "^parent_checkpoint_name=$checkpoint_name$" "$mount_point"/*/rbd-backup.meta 2>/dev/null
+}
+
+delete_rbd_snapshot_if_unreferenced() {
+  local disk_paths="$1"
+  local checkpoint_name="$2"
+
+  [[ -z "$checkpoint_name" ]] && return 0
+
+  if has_child_backup "$checkpoint_name"; then
+    log -ne "Skip snapshot delete [$checkpoint_name] (child exists)"
+    return 0
+  fi
+
+  while IFS= read -r disk; do
+    [[ -z "$disk" ]] && continue
+    parse_rbd_uri "$disk"
+    build_rbd_cmd
+
+    if [[ -n "$RBD_IMAGE" ]]; then
+      log -ne "Deleting snapshot [${RBD_IMAGE}@${checkpoint_name}]"
+      "${RBD_CMD[@]}" snap rm "${RBD_IMAGE}@${checkpoint_name}" >> "$logFile" 2>&1 || true
+    fi
+  done < <(split_csv "$disk_paths")
+}
+
 delete_backup() {
   mount_operation
+
+  if [[ -f "$dest/rbd-backup.meta" ]]; then
+    source "$dest/rbd-backup.meta"
+
+    log -ne "Deleting backup with metadata [$dest]"
+
+    if has_child_backup "$checkpoint_name"; then
+      echo "Cannot delete backup [$backup_dir]: child backup exists"
+      umount "$mount_point"
+      rmdir "$mount_point"
+      exit 1
+    fi
+
+    delete_rbd_snapshot_if_unreferenced "$disk_paths" "$checkpoint_name"
+  fi
 
   rm -frv $dest
   sync
@@ -590,6 +638,24 @@ build_rbd_cmd() {
   if [[ -n "$RBD_KEY" ]]; then
     RBD_CMD+=(--key "$RBD_KEY")
   fi
+}
+
+write_rbd_backup_metadata() {
+  local backup_type="$1"
+  local checkpoint_name="$2"
+  local parent_checkpoint_name="$3"
+
+  cat > "$dest/rbd-backup.meta" <<EOF
+vm_name=$VM
+backup_type=$backup_type
+checkpoint_name=$checkpoint_name
+parent_checkpoint_name=$parent_checkpoint_name
+disk_paths=$DISK_PATHS
+backup_files=$BACKUP_FILES
+backup_dir=$BACKUP_DIR
+EOF
+
+  log -ne "Wrote RBD backup metadata to [$dest/rbd-backup.meta]"
 }
 
 function usage {
