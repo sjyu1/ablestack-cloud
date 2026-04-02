@@ -267,7 +267,6 @@ export default {
       this.formRef = ref()
       this.form = reactive({
         intervaltype: 'hourly',
-        intervaltype: 'hourly',
         time: null,
         timeSelect: null,
         'day-of-week': null,
