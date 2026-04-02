@@ -51,7 +51,6 @@ import com.cloud.event.EventTypes;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine;
 import com.cloud.vm.dao.VMInstanceDao;
-import com.cloud.vm.snapshot.VMSnapshot;
 import com.cloud.vm.snapshot.dao.VMSnapshotDao;
 import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
