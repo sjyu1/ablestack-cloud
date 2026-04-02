@@ -1857,6 +1857,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 BackupSyncPollingInterval,
                 BackupEnableAttachDetachVolumes,
                 KvmIncrementalBackup,
+                BackupDeltaMax,
                 DefaultMaxAccountBackups,
                 DefaultMaxAccountBackupStorage,
                 DefaultMaxProjectBackups,

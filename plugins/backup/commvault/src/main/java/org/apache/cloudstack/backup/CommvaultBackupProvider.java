@@ -93,6 +93,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
 
+import static org.apache.cloudstack.backup.BackupManager.BackupDeltaMax;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
@@ -272,11 +273,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     public Pair<Boolean, Backup> takeBackup(VirtualMachine vm, Boolean quiesceVM) {
         final Host vmHost = getVMHypervisorHostForBackup(vm);
         final HostVO vmHostVO = hostDao.findById(vmHost.getId());
-        if (CollectionUtils.isNotEmpty(vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.DiskAndMemory))) {
-            LOG.debug("Commvault backup provider cannot take backups of a VM [{}] with disk-and-memory VM snapshots. Restoring the backup will corrupt any newer disk-and-memory " +
-                    "VM snapshots.", vm);
-            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has disk-and-memory VM snapshots.", vm.getUuid()));
-        }
+        validateNoVmSnapshots(vm);
 
         try {
             String commvaultServer = getUrlDomain(CommvaultUrl.value());
@@ -304,158 +301,32 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             }
         }
 
-        final Date creationDate = new Date();
-        final String backupPath = String.format("%s/%s/%s", COMMVAULT_DIRECTORY, vm.getInstanceName(),
-                new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(creationDate));
+        final String backupPath = buildBackupPath(vm);
         List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final Backup latestBackup = getLatestBackedUpBackup(vm);
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost);
-        final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
-        final String checkpointName = String.format("backup.%s", UUID.randomUUID());
-        final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
-        final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
-        final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup, incrementalBackup, vmHost.getName());
-
-        BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
-        CommvaultTakeBackupCommand command = new CommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
-        command.setQuiesce(quiesceVM);
-        command.setVolumePools(volumePoolsAndPaths.first());
-        command.setVolumePaths(volumePoolsAndPaths.second());
-        command.setBackupType(requestedBackupType);
-        command.setCheckpointName(checkpointName);
-        command.setBackupFiles(backupFiles);
-        if (incrementalBackup) {
-            command.setParentBackupPath(getBackupDetail(latestBackup, DETAIL_PARENT_BACKUP_PATH, latestBackup.getExternalId().substring(0, latestBackup.getExternalId().lastIndexOf(','))));
-            command.setParentCheckpointName(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
-            command.setParentCheckpointPath(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
+        Pair<Boolean, Backup> result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, vmVolumes, volumePoolsAndPaths,
+                latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
+        if (!result.first() && incrementalBackup && vmVolumes.size() > 1) {
+            LOG.warn("Incremental backup failed for multi-disk VM [{}]. Retrying as full backup to preserve disk consistency.", vm);
+            String fallbackBackupPath = buildBackupPath(vm);
+            return executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, fallbackBackupPath, vmVolumes, volumePoolsAndPaths,
+                    null, false, false);
         }
-
-        BackupAnswer answer;
-        try {
-            answer = (BackupAnswer) agentManager.send(vmHost.getId(), command);
-        } catch (AgentUnavailableException e) {
-            LOG.error("Unable to contact backend control plane to initiate backup for VM {}", vm.getInstanceName());
-            backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
-            throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
-        } catch (OperationTimedoutException e) {
-            LOG.error("Operation to initiate backup timed out for VM {}", vm.getInstanceName());
-            backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
-            throw new CloudRuntimeException("Operation to initiate backup timed out, please try again");
-        }
-
-        if (answer != null && answer.getResult()) {
-            int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-            Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
-            String cmd = String.format(RM_COMMAND, backupPath);
-            // 생성된 백업 폴더 경로로 해당 백업 세트의 백업 콘텐츠 경로 업데이트
-            String clientId = client.getClientId(vmHost.getName());
-            String subClientEntity = client.getSubclient(clientId, vm.getInstanceName());
-            if (subClientEntity == null) {
-                LOG.error("Failed to take backup for VM " + vm.getInstanceName() + " to get subclient info commvault api");
-            } else {
-                JSONObject jsonObject = new JSONObject(subClientEntity);
-                String subclientId = String.valueOf(jsonObject.get("subclientId"));
-                String applicationId = String.valueOf(jsonObject.get("applicationId"));
-                String backupsetId = String.valueOf(jsonObject.get("backupsetId"));
-                String instanceId = String.valueOf(jsonObject.get("instanceId"));
-                String backupsetName = String.valueOf(jsonObject.get("backupsetName"));
-                String displayName = String.valueOf(jsonObject.get("displayName"));
-                String commCellName = String.valueOf(jsonObject.get("commCellName"));
-                String companyId = String.valueOf(jsonObject.getJSONObject("entityInfo").get("companyId"));
-                String companyName = String.valueOf(jsonObject.getJSONObject("entityInfo").get("companyName"));
-                String instanceName = String.valueOf(jsonObject.get("instanceName"));
-                String appName = String.valueOf(jsonObject.get("appName"));
-                String clientName = String.valueOf(jsonObject.get("clientName"));
-                String subclientGUID = String.valueOf(jsonObject.get("subclientGUID"));
-                String subclientName = String.valueOf(jsonObject.get("subclientName"));
-                String csGUID = String.valueOf(jsonObject.get("csGUID"));
-                boolean upResult = client.updateBackupSet(backupPath, subclientId, clientId, planId, applicationId, backupsetId, instanceId, subclientName, backupsetName);
-                if (upResult) {
-                    String planName = client.getPlanName(planId);
-                    String storagePolicyId = client.getStoragePolicyId(planName);
-                    if (planName == null || storagePolicyId == null) {
-                        LOG.error("Failed to take backup for VM " + vm.getInstanceName() + " to get storage policy id commvault api");
-                    } else {
-                        // 백업 실행
-                        String jobId = client.createBackup(subclientId, storagePolicyId, displayName, commCellName, clientId, companyId, companyName, instanceName, appName, applicationId,
-                                clientName, backupsetId, instanceId, subclientGUID, subclientName, csGUID, backupsetName, requestedBackupType);
-                        if (jobId != null) {
-                            String jobStatus = client.getJobStatus(jobId);
-                            String externalId = backupPath + "," + jobId;
-                            if (jobStatus.equalsIgnoreCase("Completed")) {
-                                String jobDetails = client.getJobDetails(jobId);
-                                if (jobDetails != null) {
-                                    JSONObject jsonObject2 = new JSONObject(jobDetails);
-                                    String endTime = String.valueOf(jsonObject2.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("detailInfo").get("endTime"));
-                                    long timestamp = Long.parseLong(endTime) * 1000L;
-                                    Date endDate = new Date(timestamp);
-                                    SimpleDateFormat formatterDateTime = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-                                    String formattedString = formatterDateTime.format(endDate);
-                                    String size = String.valueOf(jsonObject2.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("detailInfo").get("sizeOfApplication"));
-                                    String type = String.valueOf(jsonObject2.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").get("backupType"));
-                                    backupVO.setExternalId(externalId);
-                                    backupVO.setType(type.toUpperCase());
-                                    try {
-                                        backupVO.setDate(formatterDateTime.parse(formattedString));
-                                    } catch (ParseException e) {
-                                        String msg = String.format("Unable to parse date [%s].", endTime);
-                                        LOG.error(msg, e);
-                                        throw new CloudRuntimeException(msg, e);
-                                    }
-                                    backupVO.setSize(Long.parseLong(size));
-                                    backupVO.setStatus(Backup.Status.BackedUp);
-                                    backupVO.setDetails(backupDetails);
-                                    backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
-                                    if (backupDao.update(backupVO.getId(), backupVO)) {
-                                        return new Pair<>(true, backupVO);
-                                    } else {
-                                        throw new CloudRuntimeException("Failed to update backup");
-                                    }
-                                } else {
-                                    backupVO.setExternalId(externalId);
-                                    LOG.error("Failed to take backup for VM " + vm.getInstanceName() + " to get details job commvault api");
-                                }
-                            } else {
-                                backupVO.setExternalId(externalId);
-                                LOG.error("Failed to take backup for VM " + vm.getInstanceName() + " to create backup job status is " + jobStatus);
-                            }
-                        } else {
-                            LOG.error("Failed to take backup for VM " + vm.getInstanceName() + " to create backup job commvault api");
-                        }
-                    }
-                } else {
-                    LOG.error("Failed to take backup for VM " + vm.getInstanceName() + " to update backupset content path commvault api");
-                }
-            }
-            backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
-            executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
-            return new Pair<>(false, null);
-        } else {
-            LOG.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), answer != null ? answer.getDetails() : "No answer received");
-            if (answer.getNeedsCleanup()) {
-                LOG.error("Backup cleanup failed for VM {}. Leaving the backup in Error state.", vm.getInstanceName());
-                backupVO.setStatus(Backup.Status.Error);
-                backupDao.update(backupVO.getId(), backupVO);
-            } else {
-                backupVO.setStatus(Backup.Status.Failed);
-                backupDao.remove(backupVO.getId());
-            }
-            return new Pair<>(false, null);
-        }
+        return result;
     }
 
     private Backup getLatestBackedUpBackup(VirtualMachine vm) {
         List<Backup> backups = backupDao.listByVmId(null, vm.getId());
         return backups.stream()
-                .filter(Objects::nonNull)
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
                 .filter(b -> Backup.Status.BackedUp.equals(b.getStatus()))
-                .max(Comparator.comparing(Backup::getDate))
+                .peek(backupDao::loadDetails)
+                .max(Comparator.comparing(BackupVO::getDate))
                 .orElse(null);
     }
 
@@ -474,7 +345,30 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
 
         String stageHost = getBackupDetail(latestBackup, DETAIL_STAGE_HOST);
-        return Objects.equals(stageHost, vmHost.getName());
+        return Objects.equals(stageHost, vmHost.getName()) && getBackupChainSize(vm, latestBackup) < BackupDeltaMax.value();
+    }
+
+    private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {
+        List<BackupVO> backups = backupDao.listByVmId(null, vm.getId()).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
+                .peek(backupDao::loadDetails)
+                .collect(Collectors.toList());
+        Map<String, BackupVO> backupsByUuid = backups.stream().collect(Collectors.toMap(BackupVO::getUuid, backup -> backup, (left, right) -> left));
+        int chainSize = 1;
+        Backup current = latestBackup;
+        while (current != null) {
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (parentBackupUuid == null) {
+                break;
+            }
+            current = backupsByUuid.get(parentBackupUuid);
+            if (current != null) {
+                chainSize++;
+            }
+        }
+        return chainSize;
     }
 
     private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, Map<String, String> details) {
@@ -526,6 +420,159 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     private String getBackupDetail(Backup backup, String key, String defaultValue) {
         String value = getBackupDetail(backup, key);
         return value == null ? defaultValue : value;
+    }
+
+    private void validateNoVmSnapshots(VirtualMachine vm) {
+        if (CollectionUtils.isNotEmpty(vmSnapshotDao.findByVm(vm.getId()))) {
+            LOG.debug("Commvault backup provider cannot take backups of a VM [{}] with VM snapshots.", vm);
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has VM snapshots.", vm.getUuid()));
+        }
+    }
+
+    private Pair<Boolean, Backup> executeBackup(VirtualMachine vm, Boolean quiesceVM, Host vmHost, HostVO vmHostVO, CommvaultClient client,
+                                                String planId, String backupPath, List<VolumeVO> vmVolumes,
+                                                Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths, Backup latestBackup,
+                                                boolean incrementalBackup, boolean retryAsFullOnFailure) {
+        final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
+        final String checkpointName = String.format("backup.%s", UUID.randomUUID());
+        final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
+        final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
+        final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup, incrementalBackup, vmHost.getName());
+
+        BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
+        CommvaultTakeBackupCommand command = new CommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
+        command.setQuiesce(quiesceVM);
+        command.setVolumePools(volumePoolsAndPaths.first());
+        command.setVolumePaths(volumePoolsAndPaths.second());
+        command.setBackupType(requestedBackupType);
+        command.setCheckpointName(checkpointName);
+        command.setBackupFiles(backupFiles);
+        if (incrementalBackup && latestBackup != null) {
+            command.setParentBackupPath(getBackupDetail(latestBackup, DETAIL_PARENT_BACKUP_PATH,
+                    latestBackup.getExternalId().substring(0, latestBackup.getExternalId().lastIndexOf(','))));
+            command.setParentCheckpointName(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
+            command.setParentCheckpointPath(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
+        }
+
+        BackupAnswer answer;
+        try {
+            answer = (BackupAnswer) agentManager.send(vmHost.getId(), command);
+        } catch (AgentUnavailableException e) {
+            LOG.error("Unable to contact backend control plane to initiate backup for VM {}", vm.getInstanceName());
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.remove(backupVO.getId());
+            throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
+        } catch (OperationTimedoutException e) {
+            LOG.error("Operation to initiate backup timed out for VM {}", vm.getInstanceName());
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.remove(backupVO.getId());
+            throw new CloudRuntimeException("Operation to initiate backup timed out, please try again");
+        }
+
+        if (answer != null && answer.getResult()) {
+            int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
+            Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
+            String cmd = String.format(RM_COMMAND, backupPath);
+            String clientId = client.getClientId(vmHost.getName());
+            String subClientEntity = client.getSubclient(clientId, vm.getInstanceName());
+            if (subClientEntity == null) {
+                LOG.error("Failed to take backup for VM {} to get subclient info commvault api", vm.getInstanceName());
+            } else {
+                JSONObject jsonObject = new JSONObject(subClientEntity);
+                String subclientId = String.valueOf(jsonObject.get("subclientId"));
+                String applicationId = String.valueOf(jsonObject.get("applicationId"));
+                String backupsetId = String.valueOf(jsonObject.get("backupsetId"));
+                String instanceId = String.valueOf(jsonObject.get("instanceId"));
+                String backupsetName = String.valueOf(jsonObject.get("backupsetName"));
+                String displayName = String.valueOf(jsonObject.get("displayName"));
+                String commCellName = String.valueOf(jsonObject.get("commCellName"));
+                String companyId = String.valueOf(jsonObject.getJSONObject("entityInfo").get("companyId"));
+                String companyName = String.valueOf(jsonObject.getJSONObject("entityInfo").get("companyName"));
+                String instanceName = String.valueOf(jsonObject.get("instanceName"));
+                String appName = String.valueOf(jsonObject.get("appName"));
+                String clientName = String.valueOf(jsonObject.get("clientName"));
+                String subclientGUID = String.valueOf(jsonObject.get("subclientGUID"));
+                String subclientName = String.valueOf(jsonObject.get("subclientName"));
+                String csGUID = String.valueOf(jsonObject.get("csGUID"));
+                boolean upResult = client.updateBackupSet(backupPath, subclientId, clientId, planId, applicationId, backupsetId, instanceId, subclientName, backupsetName);
+                if (upResult) {
+                    String planName = client.getPlanName(planId);
+                    String storagePolicyId = client.getStoragePolicyId(planName);
+                    if (planName == null || storagePolicyId == null) {
+                        LOG.error("Failed to take backup for VM {} to get storage policy id commvault api", vm.getInstanceName());
+                    } else {
+                        String jobId = client.createBackup(subclientId, storagePolicyId, displayName, commCellName, clientId, companyId, companyName, instanceName, appName,
+                                applicationId, clientName, backupsetId, instanceId, subclientGUID, subclientName, csGUID, backupsetName, requestedBackupType);
+                        if (jobId != null) {
+                            String jobStatus = client.getJobStatus(jobId);
+                            String externalId = backupPath + "," + jobId;
+                            if (jobStatus.equalsIgnoreCase("Completed")) {
+                                String jobDetails = client.getJobDetails(jobId);
+                                if (jobDetails != null) {
+                                    JSONObject jsonObject2 = new JSONObject(jobDetails);
+                                    String endTime = String.valueOf(jsonObject2.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("detailInfo").get("endTime"));
+                                    long timestamp = Long.parseLong(endTime) * 1000L;
+                                    Date endDate = new Date(timestamp);
+                                    SimpleDateFormat formatterDateTime = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+                                    String formattedString = formatterDateTime.format(endDate);
+                                    String size = String.valueOf(jsonObject2.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("detailInfo").get("sizeOfApplication"));
+                                    String type = String.valueOf(jsonObject2.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").get("backupType"));
+                                    backupVO.setExternalId(externalId);
+                                    backupVO.setType(type.toUpperCase());
+                                    try {
+                                        backupVO.setDate(formatterDateTime.parse(formattedString));
+                                    } catch (ParseException e) {
+                                        String msg = String.format("Unable to parse date [%s].", endTime);
+                                        LOG.error(msg, e);
+                                        throw new CloudRuntimeException(msg, e);
+                                    }
+                                    backupVO.setSize(Long.parseLong(size));
+                                    backupVO.setStatus(Backup.Status.BackedUp);
+                                    backupVO.setDetails(backupDetails);
+                                    backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
+                                    if (backupDao.update(backupVO.getId(), backupVO)) {
+                                        return new Pair<>(true, backupVO);
+                                    }
+                                    throw new CloudRuntimeException("Failed to update backup");
+                                }
+                                backupVO.setExternalId(externalId);
+                                LOG.error("Failed to take backup for VM {} to get details job commvault api", vm.getInstanceName());
+                            } else {
+                                backupVO.setExternalId(externalId);
+                                LOG.error("Failed to take backup for VM {} to create backup job status is {}", vm.getInstanceName(), jobStatus);
+                            }
+                        } else {
+                            LOG.error("Failed to take backup for VM {} to create backup job commvault api", vm.getInstanceName());
+                        }
+                    }
+                } else {
+                    LOG.error("Failed to take backup for VM {} to update backupset content path commvault api", vm.getInstanceName());
+                }
+            }
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.remove(backupVO.getId());
+            executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
+            return new Pair<>(false, null);
+        }
+
+        LOG.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), answer != null ? answer.getDetails() : "No answer received");
+        if (retryAsFullOnFailure) {
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.remove(backupVO.getId());
+        } else if (answer != null && answer.getNeedsCleanup()) {
+            LOG.error("Backup cleanup failed for VM {}. Leaving the backup in Error state.", vm.getInstanceName());
+            backupVO.setStatus(Backup.Status.Error);
+            backupDao.update(backupVO.getId(), backupVO);
+        } else {
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.remove(backupVO.getId());
+        }
+        return new Pair<>(false, null);
+    }
+
+    private String buildBackupPath(VirtualMachine vm) {
+        return String.format("%s/%s/%s", COMMVAULT_DIRECTORY, vm.getInstanceName(),
+                new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date()));
     }
 
     private void validateVolumePoolTypes(List<PrimaryDataStoreTO> volumePools) {
