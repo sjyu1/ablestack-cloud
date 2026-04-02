@@ -81,14 +81,30 @@ cleanup_dummy_vm() {
 }
 
 split_csv() {
-  local csv="$1"
-  IFS=',' read -r -a SPLIT_CSV_RESULT <<< "$csv"
+  tr ',' '\n' <<< "$1"
+}
+
+is_rbd_disk_path() {
+  local disk_path="$1"
+  [[ "$disk_path" == rbd:* || "$disk_path" == rbd/* ]]
 }
 
 get_backup_file_by_index() {
   local index="$1"
-  split_csv "$BACKUP_FILES"
-  echo "${SPLIT_CSV_RESULT[$index]}"
+  local fallback="$2"
+  if [[ -z "$BACKUP_FILES" ]]; then
+    echo "$fallback"
+    return
+  fi
+  local current=0
+  while IFS= read -r value; do
+    if [[ "$current" -eq "$index" ]]; then
+      echo "$value"
+      return
+    fi
+    current=$((current + 1))
+  done < <(split_csv "$BACKUP_FILES")
+  echo "$fallback"
 }
 
 dump_checkpoint_xml() {
@@ -127,9 +143,9 @@ create_dummy_vm_xml() {
     echo "    <emulator>/usr/bin/qemu-system-x86_64</emulator>"
   } > "$xml_file"
 
-  split_csv "$DISK_PATHS"
-  for index in "${!SPLIT_CSV_RESULT[@]}"; do
-    local disk_path="${SPLIT_CSV_RESULT[$index]}"
+  local index=0
+  while IFS= read -r disk_path; do
+    [[ -z "$disk_path" ]] && continue
     local disk_name
     disk_name=$(printf "\\$(printf '%03o' $((97 + index)))")
     if [[ "$disk_path" == rbd:* ]]; then
@@ -158,7 +174,8 @@ create_dummy_vm_xml() {
         echo "    </disk>"
       } >> "$xml_file"
     fi
-  done
+    index=$((index + 1))
+  done < <(split_csv "$DISK_PATHS")
 
   {
     echo "    <console type='pty'/>"
@@ -172,41 +189,85 @@ create_backup_xml_for_dummy_vm() {
   local checkpoint_xml="$2"
 
   echo "<domainbackup mode='push'><disks>" > "$backup_xml"
-  split_csv "$DISK_PATHS"
-  for index in "${!SPLIT_CSV_RESULT[@]}"; do
+  local index=0
+  while IFS= read -r disk_path; do
+    [[ -z "$disk_path" ]] && continue
     local disk_name
     disk_name=$(printf "\\$(printf '%03o' $((97 + index)))")
-    local target_file="$dest/$(get_backup_file_by_index "$index")"
+    local target_file="$dest/$(get_backup_file_by_index "$index" "volume-${index}.qcow2")"
     echo "<disk name='vd$disk_name' backup='yes' type='file' backupmode='full'><driver type='qcow2'/><target file='$target_file'/>" >> "$backup_xml"
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
       echo "<incremental>$PARENT_CHECKPOINT_NAME</incremental>" >> "$backup_xml"
     fi
     echo "</disk>" >> "$backup_xml"
-  done
+    index=$((index + 1))
+  done < <(split_csv "$DISK_PATHS")
   echo "</disks></domainbackup>" >> "$backup_xml"
 
   echo "<domaincheckpoint><name>$CHECKPOINT_NAME</name><disks>" > "$checkpoint_xml"
-  for index in "${!SPLIT_CSV_RESULT[@]}"; do
+  index=0
+  while IFS= read -r disk_path; do
+    [[ -z "$disk_path" ]] && continue
     local disk_name
     disk_name=$(printf "\\$(printf '%03o' $((97 + index)))")
     echo "<disk name='vd$disk_name' checkpoint='bitmap'/>" >> "$checkpoint_xml"
-  done
+    index=$((index + 1))
+  done < <(split_csv "$DISK_PATHS")
   echo "</disks></domaincheckpoint>" >> "$checkpoint_xml"
 }
 
 parse_rbd_uri() {
   local uri="$1"
-  RBD_IMAGE="${uri#rbd:}"
-  RBD_IMAGE="${RBD_IMAGE%%:mon_host=*}"
-  local remainder="${uri#*:mon_host=}"
-  RBD_MON_HOSTS="${remainder%%:*}"
+  log -ne "parse_rbd_uri called with uri=[$uri]"
+
+  RBD_IMAGE=""
+  RBD_MON_HOST=""
+  RBD_USER=""
+  RBD_KEY=""
+
+  if [[ "$uri" == rbd:* ]]; then
+    local payload="${uri#rbd:}"
+    RBD_IMAGE="${payload%%:*}"
+
+    if [[ "$uri" =~ :mon_host=([^:]*) ]]; then
+      RBD_MON_HOST="${BASH_REMATCH[1]}"
+      RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
+      RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
+    fi
+
+    if [[ "$uri" =~ :id=([^:]*) ]]; then
+      RBD_USER="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ "$uri" =~ :key=([^:]*) ]]; then
+      RBD_KEY="${BASH_REMATCH[1]}"
+    fi
+  elif [[ "$uri" == rbd/* ]]; then
+    RBD_IMAGE="$uri"
+  else
+    echo "Invalid RBD disk path: $uri"
+    cleanup
+  fi
+
+  if [[ -z "$RBD_IMAGE" ]]; then
+    echo "Failed to parse RBD image from uri: $uri"
+    cleanup
+  fi
+
+  log -ne "Parsed RBD uri -> IMAGE=[$RBD_IMAGE], MON=[$RBD_MON_HOST], USER=[$RBD_USER]"
 }
 
-rbd_cli() {
-  local mon_hosts="$1"
-  shift
-  local mon_arg="${mon_hosts//;/,}"
-  rbd -m "$mon_arg" "$@"
+build_rbd_cmd() {
+  RBD_CMD=(rbd)
+  if [[ -n "$RBD_MON_HOST" ]]; then
+    RBD_CMD+=(-m "$RBD_MON_HOST")
+  fi
+  if [[ -n "$RBD_USER" ]]; then
+    RBD_CMD+=(--id "$RBD_USER")
+  fi
+  if [[ -n "$RBD_KEY" ]]; then
+    RBD_CMD+=(--key "$RBD_KEY")
+  fi
 }
 
 backup_running_vm() {
@@ -325,18 +386,46 @@ backup_stopped_vm() {
 
 backup_rbd_volumes() {
   mkdir -p "$dest/checkpoints" || { echo "Failed to create backup directory $dest"; exit 1; }
-  split_csv "$DISK_PATHS"
-  for index in "${!SPLIT_CSV_RESULT[@]}"; do
-    local disk_path="${SPLIT_CSV_RESULT[$index]}"
+  local index=0
+  while IFS= read -r disk_path; do
+    [[ -z "$disk_path" ]] && continue
+    local created_snapshot=""
+    log -ne "Loop disk raw value=[$disk_path]"
     parse_rbd_uri "$disk_path"
-    local output_file="$dest/$(get_backup_file_by_index "$index")"
-    rbd_cli "$RBD_MON_HOSTS" snap create "${RBD_IMAGE}@${CHECKPOINT_NAME}"
-    if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
-      rbd_cli "$RBD_MON_HOSTS" export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${CHECKPOINT_NAME}" "$output_file"
-    else
-      rbd_cli "$RBD_MON_HOSTS" export "${RBD_IMAGE}@${CHECKPOINT_NAME}" "$output_file"
+    build_rbd_cmd
+    log -ne "Built RBD command: ${RBD_CMD[*]}"
+
+    local output_file="$dest/$(get_backup_file_by_index "$index" "${RBD_IMAGE##*/}.raw")"
+    log -ne "Starting RBD backup for disk path [$disk_path], resolved image [$RBD_IMAGE], output [$output_file]"
+
+    if ! timeout 30s "${RBD_CMD[@]}" info "$RBD_IMAGE" >> "$logFile" 2>&1; then
+      echo "Failed to access RBD image $RBD_IMAGE"
+      cleanup
     fi
-  done
+
+    if ! timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${CHECKPOINT_NAME}" >> "$logFile" 2>&1; then
+      echo "Failed to create RBD snapshot ${RBD_IMAGE}@${CHECKPOINT_NAME}"
+      cleanup
+    fi
+    created_snapshot="${RBD_IMAGE}@${CHECKPOINT_NAME}"
+
+    if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
+      if ! timeout 6h "${RBD_CMD[@]}" export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${CHECKPOINT_NAME}" "$output_file" >> "$logFile" 2>&1; then
+        echo "Failed to export incremental RBD diff for ${RBD_IMAGE}@${CHECKPOINT_NAME}"
+        [[ -n "$created_snapshot" ]] && "${RBD_CMD[@]}" snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
+        cleanup
+      fi
+    else
+      if ! timeout 6h "${RBD_CMD[@]}" export "${RBD_IMAGE}@${CHECKPOINT_NAME}" "$output_file" >> "$logFile" 2>&1; then
+        echo "Failed to export full RBD snapshot ${RBD_IMAGE}@${CHECKPOINT_NAME}"
+        [[ -n "$created_snapshot" ]] && "${RBD_CMD[@]}" snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
+        cleanup
+      fi
+    fi
+
+    log -ne "Finished exporting backup file [$output_file] size=[$(stat -c %s "$output_file" 2>/dev/null)]"
+    index=$((index + 1))
+  done < <(split_csv "$DISK_PATHS")
 }
 
 usage() {
@@ -377,7 +466,7 @@ if [[ "$OP" != "backup" ]]; then
   exit 1
 fi
 
-if [[ "$DISK_PATHS" == rbd:* || "$DISK_PATHS" == *",rbd:"* ]]; then
+if is_rbd_disk_path "$DISK_PATHS"; then
   backup_rbd_volumes
   exit 0
 fi

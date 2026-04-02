@@ -72,7 +72,7 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
         List<PrimaryDataStoreTO> restoreVolumePools = command.getRestoreVolumePools();
         List<String> restoreVolumePaths = command.getRestoreVolumePaths();
         String restoreVolumeUuid = command.getRestoreVolumeUUID();
-        int timeout = command.getWait();
+        int timeout = command.getTimeout();
         String cacheMode = command.getCacheMode();
         String hostName = command.getHostName();
         KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();

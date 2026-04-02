@@ -725,7 +725,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         }
 
         DeleteBackupCommand command = new DeleteBackupCommand(backup.getExternalId(), backupRepository.getType(),
-                backupRepository.getAddress(), backupRepository.getMountOptions());
+                backupRepository.getAddress(), backupRepository.getMountOptions(), forced);
 
         BackupAnswer answer;
         try {

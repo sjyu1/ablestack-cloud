@@ -39,6 +39,7 @@ public class LibvirtDeleteBackupCommandWrapper extends CommandWrapper<DeleteBack
         final String backupRepoType = command.getBackupRepoType();
         final String backupRepoAddress = command.getBackupRepoAddress();
         final String mountOptions = command.getMountOptions();
+        final boolean forced = command.isForced();
 
         List<String[]> commands = new ArrayList<>();
         commands.add(new String[]{
@@ -47,7 +48,8 @@ public class LibvirtDeleteBackupCommandWrapper extends CommandWrapper<DeleteBack
                 "-t", backupRepoType,
                 "-s", backupRepoAddress,
                 "-m", mountOptions,
-                "-p", backupPath
+                "-p", backupPath,
+                "-x", Boolean.toString(forced)
         });
 
         Pair<Integer, String> result = Script.executePipedCommands(commands, libvirtComputingResource.getCmdsTimeout());

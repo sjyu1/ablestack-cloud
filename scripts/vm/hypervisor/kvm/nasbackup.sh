@@ -40,6 +40,7 @@ BACKUP_FILES=""
 DISK_PATHS=""
 QUIESCE=""
 DUMMY_VM=""
+FORCED="false"
 logFile="/var/log/cloudstack/agent/agent.log"
 
 EXIT_CLEANUP_FAILED=20
@@ -407,7 +408,7 @@ delete_backup() {
 
     log -ne "Deleting backup with metadata [$dest]"
 
-    if has_child_backup "$checkpoint_name"; then
+    if [[ "$FORCED" != "true" ]] && has_child_backup "$checkpoint_name"; then
       echo "Cannot delete backup [$backup_dir]: child backup exists"
       umount "$mount_point"
       rmdir "$mount_point"
@@ -660,7 +661,7 @@ EOF
 
 function usage {
   echo ""
-  echo "Usage: $0 -o <operation> -v|--vm <domain name> -t <storage type> -s <storage address> -m <mount options> -p <backup path> -b <FULL|INCREMENTAL> -c <checkpoint name> -r <parent backup path> -i <parent checkpoint name> -j <parent checkpoint path> -f <backup files> -d <disks path> -q|--quiesce <true|false>"
+  echo "Usage: $0 -o <operation> -v|--vm <domain name> -t <storage type> -s <storage address> -m <mount options> -p <backup path> -b <FULL|INCREMENTAL> -c <checkpoint name> -r <parent backup path> -i <parent checkpoint name> -j <parent checkpoint path> -f <backup files> -d <disks path> -q|--quiesce <true|false> -x|--forced <true|false>"
   echo ""
   exit 1
 }
@@ -729,6 +730,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     -q|--quiesce)
       QUIESCE="$2"
+      shift
+      shift
+      ;;
+    -x|--forced)
+      FORCED="$2"
       shift
       shift
       ;;

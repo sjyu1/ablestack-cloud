@@ -18,6 +18,7 @@ package org.apache.cloudstack.backup;
 
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.argThat;
 
 import java.util.Collections;
 import java.util.List;
@@ -115,11 +116,13 @@ public class NASBackupProviderTest {
         Mockito.when(hostDao.findById(hostId)).thenReturn(host);
         Mockito.when(backupRepositoryDao.findByBackupOfferingId(1L)).thenReturn(backupRepository);
         Mockito.when(vmInstanceDao.findByIdIncludingRemoved(1L)).thenReturn(vm);
-        Mockito.when(agentManager.send(anyLong(), Mockito.any(DeleteBackupCommand.class))).thenReturn(new BackupAnswer(new DeleteBackupCommand(null, null, null, null), true, "details"));
+        Mockito.when(agentManager.send(anyLong(), Mockito.any(DeleteBackupCommand.class))).thenReturn(new BackupAnswer(new DeleteBackupCommand(null, null, null, null, true), true, "details"));
         Mockito.when(backupDao.remove(1L)).thenReturn(true);
 
         boolean result = nasBackupProvider.deleteBackup(backup, true);
         Assert.assertTrue(result);
+        Mockito.verify(agentManager).send(anyLong(), argThat(command -> command instanceof DeleteBackupCommand &&
+                ((DeleteBackupCommand) command).isForced()));
     }
 
     @Test

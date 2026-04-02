@@ -26,15 +26,17 @@ public class DeleteBackupCommand extends Command {
     private String backupPath;
     private String backupRepoType;
     private String backupRepoAddress;
+    private boolean forced;
     @LogLevel(LogLevel.Log4jLevel.Off)
     private String mountOptions;
 
-    public DeleteBackupCommand(String backupPath, String backupRepoType, String backupRepoAddress, String mountOptions) {
+    public DeleteBackupCommand(String backupPath, String backupRepoType, String backupRepoAddress, String mountOptions, boolean forced) {
         super();
         this.backupPath = backupPath;
         this.backupRepoType = backupRepoType;
         this.backupRepoAddress = backupRepoAddress;
         this.mountOptions = mountOptions;
+        this.forced = forced;
     }
 
     public String getBackupPath() {
@@ -67,6 +69,14 @@ public class DeleteBackupCommand extends Command {
 
     public void setMountOptions(String mountOptions) {
         this.mountOptions = mountOptions;
+    }
+
+    public boolean isForced() {
+        return forced;
+    }
+
+    public void setForced(boolean forced) {
+        this.forced = forced;
     }
 
     @Override
