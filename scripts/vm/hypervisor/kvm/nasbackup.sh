@@ -289,6 +289,9 @@ backup_rbd_volumes() {
       cleanup
     fi
 
+    build_rbd_cmd
+    log -ne "Built RBD command: ${RBD_CMD[*]}"
+
     local backup_file
     backup_file=$(get_backup_file_by_index "$index" "${RBD_IMAGE##*/}.raw")
     local output="$dest/$backup_file"
@@ -297,27 +300,27 @@ backup_rbd_volumes() {
     log -ne "Resolved backup file [$backup_file], destination [$output]"
     log -ne "Starting RBD backup for disk path [$disk], resolved image [$RBD_IMAGE], output [$output]"
 
-    if ! timeout 30s rbd_cli info "$RBD_IMAGE" >> "$logFile" 2>&1; then
+    if ! timeout 30s "${RBD_CMD[@]}" info "$RBD_IMAGE" >> "$logFile" 2>&1; then
       echo "Failed to access RBD image $RBD_IMAGE"
       cleanup
     fi
 
-    if ! timeout 30s rbd_cli snap create "${RBD_IMAGE}@${current_snapshot}" >> "$logFile" 2>&1; then
+    if ! timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${current_snapshot}" >> "$logFile" 2>&1; then
       echo "Failed to create RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
       cleanup
     fi
     created_snapshot="${RBD_IMAGE}@${current_snapshot}"
 
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
-      if ! timeout 6h rbd_cli export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
+      if ! timeout 6h "${RBD_CMD[@]}" export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
         echo "Failed to export incremental RBD diff for ${RBD_IMAGE}@${current_snapshot}"
-        [[ -n "$created_snapshot" ]] && rbd_cli snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
+        [[ -n "$created_snapshot" ]] && "${RBD_CMD[@]}" snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
         cleanup
       fi
     else
-      if ! timeout 6h rbd_cli export "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
+      if ! timeout 6h "${RBD_CMD[@]}" export "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
         echo "Failed to export full RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
-        [[ -n "$created_snapshot" ]] && rbd_cli snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
+        [[ -n "$created_snapshot" ]] && "${RBD_CMD[@]}" snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
         cleanup
       fi
     fi
@@ -329,8 +332,8 @@ backup_rbd_volumes() {
 
   sync
   log -ne "RBD backup completed for BACKUP_DIR=[$BACKUP_DIR]"
-  umount "$mount_point"
-  rmdir "$mount_point"
+  umount "$mount_point" || { echo "Failed to unmount $mount_point"; exit 1; }
+  rmdir "$mount_point" || { echo "Failed to remove mount point $mount_point"; exit 1; }
 }
 
 delete_backup() {
@@ -546,21 +549,17 @@ parse_rbd_uri() {
   log -ne "Parsed RBD uri -> IMAGE=[$RBD_IMAGE], MON=[$RBD_MON_HOST], USER=[$RBD_USER]"
 }
 
-rbd_cli() {
-  local cmd=(rbd)
-
+build_rbd_cmd() {
+  RBD_CMD=(rbd)
   if [[ -n "$RBD_MON_HOST" ]]; then
-    cmd+=(-m "$RBD_MON_HOST")
+    RBD_CMD+=(-m "$RBD_MON_HOST")
   fi
   if [[ -n "$RBD_USER" ]]; then
-    cmd+=(--id "$RBD_USER")
+    RBD_CMD+=(--id "$RBD_USER")
   fi
   if [[ -n "$RBD_KEY" ]]; then
-    cmd+=(--key "$RBD_KEY")
+    RBD_CMD+=(--key "$RBD_KEY")
   fi
-
-  log -ne "Executing RBD command: ${cmd[*]} $*"
-  "${cmd[@]}" "$@"
 }
 
 function usage {
