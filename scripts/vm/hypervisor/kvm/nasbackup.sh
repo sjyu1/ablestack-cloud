@@ -277,10 +277,13 @@ backup_rbd_volumes() {
 
   local index=0
   while IFS= read -r disk; do
+    local created_snapshot=""
     log -ne "Loop disk raw value=[$disk]"
     [[ -z "$disk" ]] && continue
+
     parse_rbd_uri "$disk"
     log -ne "Parsed disk [$disk] -> RBD_IMAGE=[$RBD_IMAGE], MON=[$RBD_MON_HOST], USER=[$RBD_USER]"
+
     if [[ -z "$RBD_IMAGE" ]]; then
       echo "Unable to parse RBD disk path: $disk"
       cleanup
@@ -291,34 +294,41 @@ backup_rbd_volumes() {
     local output="$dest/$backup_file"
     local current_snapshot="${CHECKPOINT_NAME}"
 
+    log -ne "Resolved backup file [$backup_file], destination [$output]"
     log -ne "Starting RBD backup for disk path [$disk], resolved image [$RBD_IMAGE], output [$output]"
-    if ! rbd_cli info "$RBD_IMAGE" >> "$logFile" 2>&1; then
+
+    if ! timeout 30s rbd_cli info "$RBD_IMAGE" >> "$logFile" 2>&1; then
       echo "Failed to access RBD image $RBD_IMAGE"
       cleanup
     fi
 
-    if ! rbd_cli snap create "${RBD_IMAGE}@${current_snapshot}" >> "$logFile" 2>&1; then
+    if ! timeout 30s rbd_cli snap create "${RBD_IMAGE}@${current_snapshot}" >> "$logFile" 2>&1; then
       echo "Failed to create RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
       cleanup
     fi
+    created_snapshot="${RBD_IMAGE}@${current_snapshot}"
 
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
-      if ! rbd_cli export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
+      if ! timeout 6h rbd_cli export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
         echo "Failed to export incremental RBD diff for ${RBD_IMAGE}@${current_snapshot}"
+        [[ -n "$created_snapshot" ]] && rbd_cli snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
         cleanup
       fi
     else
-      if ! rbd_cli export "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
+      if ! timeout 6h rbd_cli export "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
         echo "Failed to export full RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
+        [[ -n "$created_snapshot" ]] && rbd_cli snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
         cleanup
       fi
     fi
 
+    log -ne "Finished exporting backup file [$output] size=[$(stat -c %s "$output" 2>/dev/null)]"
     stat -c %s "$output"
     index=$((index + 1))
   done < <(split_csv "$DISK_PATHS")
 
   sync
+  log -ne "RBD backup completed for BACKUP_DIR=[$BACKUP_DIR]"
   umount "$mount_point"
   rmdir "$mount_point"
 }
@@ -498,40 +508,47 @@ create_backup_xml_for_dummy_vm() {
 parse_rbd_uri() {
   local uri="$1"
   log -ne "parse_rbd_uri called with uri=[$uri]"
-  RBD_IMAGE="${uri#rbd:}"
-  RBD_IMAGE="${RBD_IMAGE%%:*}"
+
+  RBD_IMAGE=""
   RBD_MON_HOST=""
   RBD_USER=""
   RBD_KEY=""
 
-  local remainder="${uri#rbd:${RBD_IMAGE}}"
-  while [[ -n "$remainder" ]]; do
-    remainder="${remainder#:}"
-    [[ -z "$remainder" ]] && break
-    local token="${remainder%%:*}"
-    if [[ "$remainder" == "$token" ]]; then
-      remainder=""
-    else
-      remainder="${remainder#${token}}"
+  if [[ "$uri" == rbd:* ]]; then
+    local payload="${uri#rbd:}"
+    RBD_IMAGE="${payload%%:*}"
+
+    if [[ "$uri" =~ :mon_host=([^:]*) ]]; then
+      RBD_MON_HOST="${BASH_REMATCH[1]}"
+      RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
+      RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
     fi
-    case "$token" in
-      mon_host=*)
-        RBD_MON_HOST="${token#mon_host=}"
-        RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
-        RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
-        ;;
-      id=*)
-        RBD_USER="${token#id=}"
-        ;;
-      key=*)
-        RBD_KEY="${token#key=}"
-        ;;
-    esac
-  done
+
+    if [[ "$uri" =~ :id=([^:]*) ]]; then
+      RBD_USER="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ "$uri" =~ :key=([^:]*) ]]; then
+      RBD_KEY="${BASH_REMATCH[1]}"
+    fi
+  elif [[ "$uri" == rbd/* ]]; then
+    RBD_IMAGE="$uri"
+  else
+    echo "Invalid RBD disk path: $uri"
+    cleanup
+  fi
+
+  if [[ -z "$RBD_IMAGE" ]]; then
+    echo "Failed to parse RBD image from uri: $uri"
+    cleanup
+  fi
+
+  log -ne "Parsed RBD uri -> IMAGE=[$RBD_IMAGE], MON=[$RBD_MON_HOST], USER=[$RBD_USER]"
 }
 
 rbd_cli() {
   local cmd=(rbd)
+
   if [[ -n "$RBD_MON_HOST" ]]; then
     cmd+=(-m "$RBD_MON_HOST")
   fi
@@ -541,6 +558,8 @@ rbd_cli() {
   if [[ -n "$RBD_KEY" ]]; then
     cmd+=(--key "$RBD_KEY")
   fi
+
+  log -ne "Executing RBD command: ${cmd[*]} $*"
   "${cmd[@]}" "$@"
 }
 
