@@ -73,7 +73,7 @@ public interface BackupManager extends BackupService, Configurable, PluggableSer
             "false",
             "Enable KVM incremental backups for supported backup providers.",
             false,
-            ConfigKey.Scope.Zone,
+            ConfigKey.Scope.Cluster,
             null);
 
     ConfigKey<Long> DefaultMaxAccountBackups = new ConfigKey<Long>("Account Defaults", Long.class,
