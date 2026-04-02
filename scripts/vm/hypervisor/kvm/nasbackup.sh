@@ -200,7 +200,7 @@ backup_running_vm() {
 }
 
 backup_stopped_vm() {
-  if echo "$DISK_PATHS" | grep -q '^rbd:'; then
+  if is_rbd_disk_path "$DISK_PATHS"; then
     backup_rbd_volumes
     return
   fi
@@ -278,23 +278,34 @@ backup_rbd_volumes() {
   while IFS= read -r disk; do
     [[ -z "$disk" ]] && continue
     parse_rbd_uri "$disk"
+    if [[ -z "$RBD_IMAGE" ]]; then
+      echo "Unable to parse RBD disk path: $disk"
+      cleanup
+    fi
+
     local backup_file
     backup_file=$(get_backup_file_by_index "$index" "${RBD_IMAGE##*/}.raw")
     local output="$dest/$backup_file"
     local current_snapshot="${CHECKPOINT_NAME}"
 
-    if ! rbd_cli snap create "${RBD_IMAGE}@${current_snapshot}" > /dev/null 2>&1; then
+    log -ne "Starting RBD backup for disk path [$disk], resolved image [$RBD_IMAGE], output [$output]"
+    if ! rbd_cli info "$RBD_IMAGE" >> "$logFile" 2>&1; then
+      echo "Failed to access RBD image $RBD_IMAGE"
+      cleanup
+    fi
+
+    if ! rbd_cli snap create "${RBD_IMAGE}@${current_snapshot}" >> "$logFile" 2>&1; then
       echo "Failed to create RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
       cleanup
     fi
 
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
-      if ! rbd_cli export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${current_snapshot}" "$output" > /dev/null 2>&1; then
+      if ! rbd_cli export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
         echo "Failed to export incremental RBD diff for ${RBD_IMAGE}@${current_snapshot}"
         cleanup
       fi
     else
-      if ! rbd_cli export "${RBD_IMAGE}@${current_snapshot}" "$output" > /dev/null 2>&1; then
+      if ! rbd_cli export "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
         echo "Failed to export full RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
         cleanup
       fi
@@ -365,6 +376,11 @@ cleanup_dummy_vm() {
 
 split_csv() {
   tr ',' '\n' <<< "$1"
+}
+
+is_rbd_disk_path() {
+  local disk_path="$1"
+  [[ "$disk_path" == rbd:* || "$disk_path" == rbd/* ]]
 }
 
 get_backup_file_by_index() {
@@ -618,7 +634,7 @@ done
 sanity_checks
 
 if [ "$OP" = "backup" ]; then
-  if echo "$DISK_PATHS" | grep -q '^rbd:'; then
+  if is_rbd_disk_path "$DISK_PATHS"; then
     backup_rbd_volumes
   else
     STATE=$(virsh -c qemu:///system list | awk -v vm="$VM" '$2 == vm {print $3}')
