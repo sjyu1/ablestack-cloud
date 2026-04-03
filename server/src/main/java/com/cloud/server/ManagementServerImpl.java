@@ -6540,9 +6540,11 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(UpdateHostPasswordCmd.class);
         cmdList.add(AddNetworkDeviceCmd.class);
         cmdList.add(AddNetworkServiceProviderCmd.class);
+        cmdList.add(CreateManagementNetworkIpRangeCmd.class);
         cmdList.add(CreateNetworkOfferingCmd.class);
         cmdList.add(CreatePhysicalNetworkCmd.class);
         cmdList.add(CreateStorageNetworkIpRangeCmd.class);
+        cmdList.add(DeleteManagementNetworkIpRangeCmd.class);
         cmdList.add(DeleteNetworkDeviceCmd.class);
         cmdList.add(DeleteNetworkOfferingCmd.class);
         cmdList.add(DeleteNetworkServiceProviderCmd.class);
