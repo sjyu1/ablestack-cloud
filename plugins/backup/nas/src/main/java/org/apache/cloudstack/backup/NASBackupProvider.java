@@ -691,7 +691,13 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             }
         }
         final StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
+        if (pool == null) {
+            pool = primaryDataStoreDao.findByName(dataStoreUuid);
+        }
         final HostVO hostVO = hostDao.findByIp(hostIp);
+        if (hostVO == null) {
+            hostVO = hostDao.findByName(hostIp);
+        }
 
         Backup.VolumeInfo matchingVolume = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), volume.getUuid());
         if (matchingVolume == null) {
