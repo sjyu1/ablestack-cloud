@@ -93,9 +93,9 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
                 restoreVolume(backupPath, backupRepoType, backupRepoAddress, volumePath, backupFile, backupFileChain,
                         new Pair<>(vmName, command.getVmState()), mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools.get(0), cacheMode);
             } else if (Boolean.TRUE.equals(vmExists)) {
-                restoreVolumesOfExistingVM(volumePaths, backupPath, backupFiles, backupFileChains, mountDirectory, timeout, storagePoolMgr, restoreVolumePools);
+                restoreVolumesOfExistingVM(restoreVolumePaths, backupPath, backupFiles, backupFileChains, mountDirectory, timeout, storagePoolMgr, restoreVolumePools);
             } else {
-                restoreVolumesOfDestroyedVMs(volumePaths, backupPath, backupFiles, backupFileChains, backupRepoAddress, backupRepoType, mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools, timeout);
+                restoreVolumesOfDestroyedVMs(restoreVolumePaths, backupPath, backupFiles, backupFileChains, backupRepoAddress, backupRepoType, mountOptions, mountTimeout, storagePoolMgr, restoreVolumePools, timeout);
             }
         } catch (CloudRuntimeException e) {
             String errorMessage = e.getMessage() != null ? e.getMessage() : "";
