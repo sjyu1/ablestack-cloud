@@ -335,15 +335,16 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
 
         String backupPath = getFirstExistingBackupPath(backupPaths);
         KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
+        String normalizedVolumePath = normalizeRbdVolumePath(volumePath, volumeStoragePool);
         if (getBackupFileFormat(backupPath) == QemuImg.PhysicalDiskFormat.RAW) {
-            return importRawBackupToRbd(volumeStoragePool, volumePath, backupPath, timeout, createTargetVolume);
+            return importRawBackupToRbd(volumeStoragePool, normalizedVolumePath, backupPath, timeout, createTargetVolume);
         }
 
         QemuImg qemu;
         try {
             qemu = new QemuImg(timeout * 1000, true, false);
             if (!createTargetVolume) {
-                KVMPhysicalDisk rdbDisk = volumeStoragePool.getPhysicalDisk(volumePath);
+                KVMPhysicalDisk rdbDisk = volumeStoragePool.getPhysicalDisk(normalizedVolumePath);
                 logger.debug("Restoring RBD volume: {}", rdbDisk.toString());
                 qemu.setSkipTargetVolumeCreation(true);
             }
@@ -355,12 +356,12 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
         QemuImgFile destVolumeFile = null;
         try {
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
-            String rbdDestVolumeFile = KVMPhysicalDisk.RBDStringBuilder(volumeStoragePool, volumePath);
+            String rbdDestVolumeFile = KVMPhysicalDisk.RBDStringBuilder(volumeStoragePool, normalizedVolumePath);
             destVolumeFile = new QemuImgFile(rbdDestVolumeFile, QemuImg.PhysicalDiskFormat.RAW);
 
-            logger.debug("Starting convert backup  {} to RBD volume  {}", backupPath, volumePath);
+            logger.debug("Starting convert backup  {} to RBD volume  {}", backupPath, normalizedVolumePath);
             qemu.convert(srcBackupFile, destVolumeFile);
-            logger.debug("Successfully converted backup {} to RBD volume  {}", backupPath, volumePath);
+            logger.debug("Successfully converted backup {} to RBD volume  {}", backupPath, normalizedVolumePath);
         } catch (QemuImgException | LibvirtException e) {
             String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
             String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
@@ -391,7 +392,8 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
             throw new CloudRuntimeException("Incremental RBD backup chain is missing the base full backup");
         }
 
-        if (!replaceRbdVolumeWithBackup(storagePoolMgr, volumePool, volumePath, List.of(backupPaths.get(0)), timeout, createTargetVolume)) {
+        String normalizedVolumePath = normalizeRbdVolumePath(volumePath, storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid()));
+        if (!replaceRbdVolumeWithBackup(storagePoolMgr, volumePool, normalizedVolumePath, List.of(backupPaths.get(0)), timeout, createTargetVolume)) {
             return false;
         }
 
@@ -401,13 +403,31 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
             if (!backupPath.endsWith(".rbdiff")) {
                 continue;
             }
-            String importDiffCommand = buildRbdImportDiffCommand(volumeStoragePool, backupPath, volumePath);
+            String importDiffCommand = buildRbdImportDiffCommand(volumeStoragePool, backupPath, normalizedVolumePath);
             if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
-                logger.error("Failed to import RBD diff {} into volume {}", backupPath, volumePath);
+                logger.error("Failed to import RBD diff {} into volume {}", backupPath, normalizedVolumePath);
                 return false;
             }
         }
         return true;
+    }
+
+    private String normalizeRbdVolumePath(String volumePath, KVMStoragePool storagePool) {
+        if (StringUtils.isBlank(volumePath)) {
+            return volumePath;
+        }
+        String normalized = volumePath;
+        String poolPath = storagePool.getSourceDir();
+        if (StringUtils.isNotBlank(poolPath)) {
+            String poolPrefix = poolPath + "/";
+            if (normalized.startsWith(poolPrefix)) {
+                normalized = normalized.substring(poolPrefix.length());
+            }
+        }
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(normalized.lastIndexOf('/') + 1);
+        }
+        return normalized;
     }
 
     private String buildRbdImportDiffCommand(KVMStoragePool storagePool, String backupPath, String volumePath) {
