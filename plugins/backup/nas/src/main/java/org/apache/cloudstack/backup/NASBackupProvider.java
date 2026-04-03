@@ -577,21 +577,38 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     }
 
     private String getLegacyBackupFileName(Backup.VolumeInfo volumeInfo) {
+        String volumePath = volumeInfo.getPath();
+        if (StringUtils.isNotBlank(volumePath) &&
+                (volumePath.endsWith(".qcow2") || volumePath.endsWith(".raw") || volumePath.endsWith(".rbdiff"))) {
+            return volumePath;
+        }
         String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
         return String.format("%s.%s.qcow2", diskPrefix, volumeInfo.getPath());
     }
 
     private List<String> getLegacyBackupFileCandidates(Backup.VolumeInfo volumeInfo) {
         List<String> candidates = new ArrayList<>();
-        String legacyFileName = getLegacyBackupFileName(volumeInfo);
-        candidates.add(legacyFileName);
-
         String volumePath = volumeInfo.getPath();
+        if (StringUtils.isNotBlank(volumePath)) {
+            candidates.add(volumePath);
+            if (volumePath.contains("/")) {
+                String baseName = volumePath.substring(volumePath.lastIndexOf('/') + 1);
+                if (!Objects.equals(volumePath, baseName)) {
+                    candidates.add(baseName);
+                }
+            }
+        }
+
+        String legacyFileName = getLegacyBackupFileName(volumeInfo);
+        if (!candidates.contains(legacyFileName)) {
+            candidates.add(legacyFileName);
+        }
+
         if (volumePath != null && volumePath.contains("/")) {
             String baseName = volumePath.substring(volumePath.lastIndexOf('/') + 1);
             String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
             String baseNameLegacyFile = String.format("%s.%s.qcow2", diskPrefix, baseName);
-            if (!Objects.equals(legacyFileName, baseNameLegacyFile)) {
+            if (!candidates.contains(baseNameLegacyFile)) {
                 candidates.add(baseNameLegacyFile);
             }
         }

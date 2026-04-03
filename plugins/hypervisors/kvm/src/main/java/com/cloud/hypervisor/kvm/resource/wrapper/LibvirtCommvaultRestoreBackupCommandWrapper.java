@@ -350,7 +350,7 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
         QemuImgFile srcBackupFile = null;
         QemuImgFile destVolumeFile = null;
         try {
-            srcBackupFile = new QemuImgFile(backupPath, QemuImg.PhysicalDiskFormat.QCOW2);
+            srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             String rbdDestVolumeFile = KVMPhysicalDisk.RBDStringBuilder(volumeStoragePool, volumePath);
             destVolumeFile = new QemuImgFile(rbdDestVolumeFile, QemuImg.PhysicalDiskFormat.RAW);
 
