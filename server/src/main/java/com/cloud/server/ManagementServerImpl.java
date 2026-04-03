@@ -139,11 +139,13 @@ import org.apache.cloudstack.api.command.admin.loadbalancer.ListLoadBalancerRule
 import org.apache.cloudstack.api.command.admin.management.ListMgmtsCmd;
 import org.apache.cloudstack.api.command.admin.network.AddNetworkDeviceCmd;
 import org.apache.cloudstack.api.command.admin.network.AddNetworkServiceProviderCmd;
+import org.apache.cloudstack.api.command.admin.network.CreateManagementNetworkIpRangeCmd;
 import org.apache.cloudstack.api.command.admin.network.CreateNetworkCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.network.CreateNetworkOfferingCmd;
 import org.apache.cloudstack.api.command.admin.network.CreatePhysicalNetworkCmd;
 import org.apache.cloudstack.api.command.admin.network.CreateStorageNetworkIpRangeCmd;
 import org.apache.cloudstack.api.command.admin.network.DedicateGuestVlanRangeCmd;
+import org.apache.cloudstack.api.command.admin.network.DeleteManagementNetworkIpRangeCmd;
 import org.apache.cloudstack.api.command.admin.network.DeleteNetworkDeviceCmd;
 import org.apache.cloudstack.api.command.admin.network.DeleteNetworkOfferingCmd;
 import org.apache.cloudstack.api.command.admin.network.DeleteNetworkServiceProviderCmd;
@@ -6289,9 +6291,11 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(UpdateHostPasswordCmd.class);
         cmdList.add(AddNetworkDeviceCmd.class);
         cmdList.add(AddNetworkServiceProviderCmd.class);
+        cmdList.add(CreateManagementNetworkIpRangeCmd.class);
         cmdList.add(CreateNetworkOfferingCmd.class);
         cmdList.add(CreatePhysicalNetworkCmd.class);
         cmdList.add(CreateStorageNetworkIpRangeCmd.class);
+        cmdList.add(DeleteManagementNetworkIpRangeCmd.class);
         cmdList.add(DeleteNetworkDeviceCmd.class);
         cmdList.add(DeleteNetworkOfferingCmd.class);
         cmdList.add(DeleteNetworkServiceProviderCmd.class);
