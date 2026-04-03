@@ -335,6 +335,10 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
 
         String backupPath = getFirstExistingBackupPath(backupPaths);
         KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
+        if (getBackupFileFormat(backupPath) == QemuImg.PhysicalDiskFormat.RAW) {
+            return importRawBackupToRbd(volumeStoragePool, volumePath, backupPath, timeout, createTargetVolume);
+        }
+
         QemuImg qemu;
         try {
             qemu = new QemuImg(timeout * 1000, true, false);
@@ -364,6 +368,20 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
             return false;
         }
 
+        return true;
+    }
+
+    private boolean importRawBackupToRbd(KVMStoragePool volumeStoragePool, String volumePath, String backupPath, int timeout, boolean createTargetVolume) {
+        if (!createTargetVolume && !volumeStoragePool.deletePhysicalDisk(volumePath, Storage.ImageFormat.RAW)) {
+            logger.error("Failed to delete existing RBD volume {} before raw import", volumePath);
+            return false;
+        }
+
+        String importCommand = buildRbdImportCommand(volumeStoragePool, backupPath, volumePath);
+        if (Script.runSimpleBashScriptForExitValue(importCommand, timeout * 1000, false) != 0) {
+            logger.error("Failed to import raw backup {} into volume {}", backupPath, volumePath);
+            return false;
+        }
         return true;
     }
 
@@ -404,6 +422,21 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
             command.append(" --key ").append(storagePool.getAuthSecret());
         }
         command.append(" import-diff ").append(backupPath).append(" ").append(volumePath);
+        return command.toString();
+    }
+
+    private String buildRbdImportCommand(KVMStoragePool storagePool, String backupPath, String volumePath) {
+        StringBuilder command = new StringBuilder("rbd");
+        if (StringUtils.isNotBlank(storagePool.getSourceHost())) {
+            command.append(" -m ").append(formatRbdMonHosts(storagePool.getSourceHost(), storagePool.getSourcePort()));
+        }
+        if (StringUtils.isNotBlank(storagePool.getAuthUserName())) {
+            command.append(" --id ").append(storagePool.getAuthUserName());
+        }
+        if (StringUtils.isNotBlank(storagePool.getAuthSecret())) {
+            command.append(" --key ").append(storagePool.getAuthSecret());
+        }
+        command.append(" import ").append(backupPath).append(" ").append(volumePath);
         return command.toString();
     }
 
