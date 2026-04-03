@@ -527,6 +527,13 @@ body.dark-mode .banner-spacer::before {
   /* 배너 높이만큼 밑으로 내려서 겹치지 않게 처리 */
   top: calc(24px + var(--autoBannerHeight, 0px)) !important;
 }
+
+/* 일반 모달은 최상단 경고 배너보다 항상 위에 렌더링 */
+.ant-modal-root,
+.ant-modal-mask,
+.ant-modal-wrap {
+  z-index: 2147483655 !important;
+}
 @media (max-width: 768px) {
   /* 1. 사이드바를 공중에 띄워서 공간 차지를 못하게 만듦 */
   .ant-layout.layout.mobile .sticky-sidebar {
