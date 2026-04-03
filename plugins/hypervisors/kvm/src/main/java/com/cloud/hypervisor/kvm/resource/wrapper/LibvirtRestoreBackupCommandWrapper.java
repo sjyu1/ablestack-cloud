@@ -154,7 +154,7 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         try {
             List<String> mountedBackupPaths = getMountedBackupPaths(mountDirectory, backupPath, backupFile, backupFileChain);
             if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, volumePath, mountedBackupPaths, timeout,
-                    String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath), 0)) {
+                    String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath), 0, true)) {
                 throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
             }
             if (VirtualMachine.State.Running.equals(vmNameAndState.second())) {
