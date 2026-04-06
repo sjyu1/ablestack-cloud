@@ -33,9 +33,15 @@ import java.util.List;
 public class LibvirtTakeBackupCommandWrapper extends CommandWrapper<TakeBackupCommand, Answer, LibvirtComputingResource> {
     @Override
     public Answer execute(TakeBackupCommand command, LibvirtComputingResource libvirtComputingResource) {
+        logger.info("LibvirtTakeBackupCommandWrapper entering execute for vm=[{}], backupPath=[{}], backupType=[{}]",
+                command.getVmName(), command.getBackupPath(), command.getBackupType());
         LibvirtNasBackupHelper backupHelper = new LibvirtNasBackupHelper(libvirtComputingResource);
         List<String> diskPaths = backupHelper.resolveDiskPaths(command.getVolumePools(), command.getVolumePaths());
+        logger.info("LibvirtTakeBackupCommandWrapper invoking helper for vm=[{}], diskPaths=[{}]",
+                command.getVmName(), diskPaths);
         Pair<Integer, String> result = backupHelper.executeBackup(command);
+        logger.info("LibvirtTakeBackupCommandWrapper helper returned for vm=[{}], resultCode=[{}], details=[{}]",
+                command.getVmName(), result.first(), result.second());
 
         if (result.first() != 0) {
             logger.debug("Failed to take VM backup: " + result.second());
