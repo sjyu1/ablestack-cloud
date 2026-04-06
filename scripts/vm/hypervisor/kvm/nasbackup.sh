@@ -460,8 +460,6 @@ redefine_checkpoint_if_needed() {
   fi
 }
 
-}
-
 parse_rbd_uri() {
   local uri="$1"
   log -ne "parse_rbd_uri called with uri=[$uri]"
