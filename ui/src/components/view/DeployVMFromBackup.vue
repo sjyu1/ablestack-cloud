@@ -475,6 +475,7 @@
                     </div>
                     <div v-show="!(vm.templateid && templateNics && templateNics.length > 0)" >
                       <network-selection
+                        :key="`network-selection-${zoneId}-${tabKey}-${form.templateid || 'no-template'}-${form.isoid || 'no-iso'}-${networkOfferingIds.join(',')}`"
                         :items="options.networks"
                         :row-count="rowCount.networks"
                         :value="networkOfferingIds"
@@ -486,7 +487,9 @@
                       ></network-selection>
                       <network-configuration
                         v-if="networks.length > 0"
+                        :key="`network-config-${zoneId}-${tabKey}-${defaultnetworkid}-${networkOfferingIds.join(',')}`"
                         :items="networks"
+                        :value="defaultnetworkid"
                         :preFillContent="dataPreFill"
                         @update-network-config="($event) => updateNetworkConfig($event)"
                         @handler-error="($event) => hasError = $event"
@@ -945,6 +948,7 @@ export default {
       ],
       initDataConfig: {},
       defaultnetworkid: '',
+      hasInitializedDefaultNetworkSelection: false,
       networkConfig: [],
       dataNetworkCreated: [],
       dataPreFill: {},
@@ -1660,6 +1664,12 @@ export default {
       const param = this.params.networks
       this.fetchOptions(param, 'networks')
     },
+    resetDefaultNetworkSelectionState () {
+      this.defaultnetworkid = ''
+      this.hasInitializedDefaultNetworkSelection = false
+      this.networkConfig = []
+      this.form.defaultnetworkid = undefined
+    },
     resetData () {
       this.vm = {
         name: null,
@@ -1681,11 +1691,13 @@ export default {
         disksize: null
       }
       this.zoneSelected = false
+      this.hasInitializedDefaultNetworkSelection = false
       this.formRef.value.resetFields()
       this.fetchData()
     },
     updateFieldValue (name, value) {
       if (name === 'templateid') {
+        this.resetDefaultNetworkSelectionState()
         this.tabKey = 'templateid'
         this.form.templateid = value
         this.form.isoid = null
@@ -1723,6 +1735,7 @@ export default {
           }
         }
       } else if (name === 'isoid') {
+        this.resetDefaultNetworkSelectionState()
         this.templateConfigurations = []
         this.selectedTemplateConfiguration = {}
         this.templateNics = []
@@ -1776,10 +1789,36 @@ export default {
     },
     updateNetworks (ids) {
       this.form.networkids = ids
+      this.networks = this.getSelectedNetworksWithExistingConfig(
+        _.filter(this.options.networks, (option) => _.includes(ids, option.id))
+      )
+      if (!this.hasInitializedDefaultNetworkSelection && ids && ids.length > 0 && !this.defaultnetworkid) {
+        this.hasInitializedDefaultNetworkSelection = true
+        this.updateDefaultNetworks(ids[0])
+        return
+      }
+      if (!ids || ids.length === 0 || !ids.includes(this.defaultnetworkid)) {
+        this.updateDefaultNetworks('')
+      }
     },
     updateDefaultNetworks (id) {
       this.defaultnetworkid = id
       this.form.defaultnetworkid = id
+
+      if (!id) {
+        return
+      }
+
+      const existingIds = Array.isArray(this.form.networkids) ? [...this.form.networkids] : []
+
+      if (!existingIds.includes(id)) {
+        existingIds.unshift(id)
+        this.form.networkids = existingIds
+      }
+
+      this.networks = this.getSelectedNetworksWithExistingConfig(
+        _.filter(this.options.networks, option => _.includes(this.form.networkids, option.id))
+      )
     },
     updateNetworkConfig (networks) {
       this.networkConfig = networks
@@ -2289,8 +2328,16 @@ export default {
     },
     onTabChange (key, type) {
       this[type] = key
+      this.resetDefaultNetworkSelectionState()
+
       if (key === 'isoid') {
         this.fetchAllIsos()
+      } else if (key === 'templateid') {
+        this.fetchAllTemplates()
+      }
+
+      if (this.form.networkids && this.form.networkids.length > 0) {
+        this.updateNetworks(this.form.networkids)
       }
     },
     fetchIsos (isoFilter, params) {
