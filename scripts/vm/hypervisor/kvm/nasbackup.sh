@@ -73,14 +73,31 @@ vercomp() {
 }
 
 sanity_checks() {
-  log -ne "sanity_checks entered"
-  log -ne "before hvVersion"
-  hvVersion=$(virsh version | grep hypervisor | awk '{print $(NF)}')
-  log -ne "before libvVersion"
-  libvVersion=$(virsh version | grep libvirt | awk '{print $(NF)}' | tail -n 1)
-  log -ne "before apiVersion"
-  apiVersion=$(virsh version | grep API | awk '{print $(NF)}')
-  log -ne "versions resolved hv=[$hvVersion] libvirt=[$libvVersion] api=[$apiVersion]"
+  log -ne "sanity_checks entered"; builtin echo "sanity_checks entered"
+  log -ne "before virsh version"; builtin echo "before virsh version"
+  local virsh_version_output
+  virsh_version_output=$(virsh version 2>&1) || {
+    echo "Failed to execute 'virsh version': $virsh_version_output"
+    exit 1
+  }
+  log -ne "virsh version output=[$virsh_version_output]"; builtin echo "virsh version output=[$virsh_version_output]"
+
+  log -ne "before hvVersion parse"; builtin echo "before hvVersion parse"
+  hvVersion=$(printf '%s\n' "$virsh_version_output" | grep hypervisor | awk '{print $(NF)}') || {
+    echo "Failed to parse hypervisor version from virsh output"
+    exit 1
+  }
+  log -ne "before libvVersion parse"; builtin echo "before libvVersion parse"
+  libvVersion=$(printf '%s\n' "$virsh_version_output" | grep libvirt | awk '{print $(NF)}' | tail -n 1) || {
+    echo "Failed to parse libvirt version from virsh output"
+    exit 1
+  }
+  log -ne "before apiVersion parse"; builtin echo "before apiVersion parse"
+  apiVersion=$(printf '%s\n' "$virsh_version_output" | grep API | awk '{print $(NF)}') || {
+    echo "Failed to parse API version from virsh output"
+    exit 1
+  }
+  log -ne "versions resolved hv=[$hvVersion] libvirt=[$libvVersion] api=[$apiVersion]"; builtin echo "versions resolved hv=[$hvVersion] libvirt=[$libvVersion] api=[$apiVersion]"
 
   # Compare qemu version (hvVersion >= 4.2.0)
   vercomp "$hvVersion" ">=" "4.2.0"
