@@ -73,9 +73,14 @@ vercomp() {
 }
 
 sanity_checks() {
+  log -ne "sanity_checks entered"
+  log -ne "before hvVersion"
   hvVersion=$(virsh version | grep hypervisor | awk '{print $(NF)}')
+  log -ne "before libvVersion"
   libvVersion=$(virsh version | grep libvirt | awk '{print $(NF)}' | tail -n 1)
+  log -ne "before apiVersion"
   apiVersion=$(virsh version | grep API | awk '{print $(NF)}')
+  log -ne "versions resolved hv=[$hvVersion] libvirt=[$libvVersion] api=[$apiVersion]"
 
   # Compare qemu version (hvVersion >= 4.2.0)
   vercomp "$hvVersion" ">=" "4.2.0"
