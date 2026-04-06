@@ -481,21 +481,11 @@ fi
 dest="$BACKUP_DIR"
 sanity_checks
 
-if [[ "$OP" != "backup" ]]; then
+if [[ "$OP" == "backup-running" ]]; then
+  backup_running_vm
+elif [[ "$OP" == "backup-rbd" ]]; then
+  backup_rbd_volumes
+else
   echo "Unsupported operation: $OP"
   exit 1
 fi
-
-if is_rbd_disk_path "$DISK_PATHS"; then
-  backup_rbd_volumes
-  exit 0
-fi
-
-STATE=$(virsh -c qemu:///system list | awk -v vm="$VM" '$2 == vm {print $3}')
-if [[ -n "$STATE" && "$STATE" == "running" ]]; then
-  backup_running_vm
-else
-  backup_stopped_vm
-fi
-
-exit 0

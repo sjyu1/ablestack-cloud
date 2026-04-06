@@ -757,17 +757,10 @@ done
 # Perform Initial sanity checks
 sanity_checks
 
-if [ "$OP" = "backup" ]; then
-  if is_rbd_disk_path "$DISK_PATHS"; then
-    backup_rbd_volumes
-  else
-    STATE=$(virsh -c qemu:///system list | awk -v vm="$VM" '$2 == vm {print $3}')
-    if [ -n "$STATE" ] && [ "$STATE" = "running" ]; then
-      backup_running_vm
-    else
-      backup_stopped_vm
-    fi
-  fi
+if [ "$OP" = "backup-running" ]; then
+  backup_running_vm
+elif [ "$OP" = "backup-rbd" ]; then
+  backup_rbd_volumes
 elif [ "$OP" = "delete" ]; then
   delete_backup
 elif [ "$OP" = "stats" ]; then
