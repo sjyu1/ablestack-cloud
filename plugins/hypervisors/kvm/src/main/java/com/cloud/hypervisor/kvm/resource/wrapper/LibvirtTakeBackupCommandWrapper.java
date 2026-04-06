@@ -19,105 +19,35 @@
 
 package com.cloud.hypervisor.kvm.resource.wrapper;
 
-import com.amazonaws.util.CollectionUtils;
 import com.cloud.agent.api.Answer;
 import com.cloud.hypervisor.kvm.resource.LibvirtComputingResource;
-import com.cloud.hypervisor.kvm.storage.KVMPhysicalDisk;
-import com.cloud.hypervisor.kvm.storage.KVMStoragePool;
-import com.cloud.hypervisor.kvm.storage.KVMStoragePoolManager;
 import com.cloud.resource.CommandWrapper;
 import com.cloud.resource.ResourceWrapper;
-import com.cloud.storage.Storage;
 import com.cloud.utils.Pair;
-import com.cloud.utils.script.Script;
 import org.apache.cloudstack.backup.BackupAnswer;
 import org.apache.cloudstack.backup.TakeBackupCommand;
-import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 
 @ResourceWrapper(handles = TakeBackupCommand.class)
 public class LibvirtTakeBackupCommandWrapper extends CommandWrapper<TakeBackupCommand, Answer, LibvirtComputingResource> {
-    private static final Integer EXIT_CLEANUP_FAILED = 20;
     @Override
     public Answer execute(TakeBackupCommand command, LibvirtComputingResource libvirtComputingResource) {
-        final String vmName = command.getVmName();
-        final String backupPath = command.getBackupPath();
-        final String backupType = command.getBackupType();
-        final String checkpointName = command.getCheckpointName();
-        final String parentBackupPath = command.getParentBackupPath();
-        final String parentCheckpointName = command.getParentCheckpointName();
-        final String parentCheckpointPath = command.getParentCheckpointPath();
-        final String backupRepoType = command.getBackupRepoType();
-        final String backupRepoAddress = command.getBackupRepoAddress();
-        final String mountOptions = command.getMountOptions();
-        List<PrimaryDataStoreTO> volumePools = command.getVolumePools();
-        final List<String> volumePaths = command.getVolumePaths();
-        final List<String> backupFiles = command.getBackupFiles();
-        KVMStoragePoolManager storagePoolMgr = libvirtComputingResource.getStoragePoolMgr();
-
-        List<String> diskPaths = new ArrayList<>();
-        if (Objects.nonNull(volumePaths)) {
-            for (int idx = 0; idx < volumePaths.size(); idx++) {
-                PrimaryDataStoreTO volumePool = volumePools.get(idx);
-                String volumePath = volumePaths.get(idx);
-                if (volumePool.getPoolType() != Storage.StoragePoolType.RBD) {
-                    diskPaths.add(volumePath);
-                } else {
-                    KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
-                    String rbdDestVolumeFile = KVMPhysicalDisk.RBDStringBuilder(volumeStoragePool, volumePath);
-                    diskPaths.add(rbdDestVolumeFile);
-                }
-            }
-        }
-
-        List<String[]> commands = new ArrayList<>();
-        commands.add(new String[]{
-                libvirtComputingResource.getNasBackupPath(),
-                "-o", "backup",
-                "-v", vmName,
-                "-t", backupRepoType,
-                "-s", backupRepoAddress,
-                "-m", Objects.nonNull(mountOptions) ? mountOptions : "",
-                "-p", backupPath,
-                "-b", Objects.nonNull(backupType) ? backupType : "",
-                "-c", Objects.nonNull(checkpointName) ? checkpointName : "",
-                "-r", Objects.nonNull(parentBackupPath) ? parentBackupPath : "",
-                "-i", Objects.nonNull(parentCheckpointName) ? parentCheckpointName : "",
-                "-j", Objects.nonNull(parentCheckpointPath) ? parentCheckpointPath : "",
-                "-q", command.getQuiesce() != null && command.getQuiesce() ? "true" : "false",
-                "-f", CollectionUtils.isNullOrEmpty(backupFiles) ? "" : String.join(",", backupFiles),
-                "-d", diskPaths.isEmpty() ? "" : String.join(",", diskPaths)
-        });
-
-        Pair<Integer, String> result = Script.executePipedCommands(commands, libvirtComputingResource.getCmdsTimeout());
+        LibvirtNasBackupHelper backupHelper = new LibvirtNasBackupHelper(libvirtComputingResource);
+        List<String> diskPaths = backupHelper.resolveDiskPaths(command.getVolumePools(), command.getVolumePaths());
+        Pair<Integer, String> result = backupHelper.executeBackup(command);
 
         if (result.first() != 0) {
             logger.debug("Failed to take VM backup: " + result.second());
             BackupAnswer answer = new BackupAnswer(command, false, result.second().trim());
-            if (result.first() == EXIT_CLEANUP_FAILED) {
+            if (result.first() == LibvirtNasBackupHelper.EXIT_CLEANUP_FAILED) {
                 logger.debug("Backup cleanup failed");
                 answer.setNeedsCleanup(true);
             }
             return answer;
         }
 
-        long backupSize = 0L;
-        if (CollectionUtils.isNullOrEmpty(diskPaths)) {
-            List<String> outputLines = Arrays.asList(result.second().trim().split("\n"));
-            if (!outputLines.isEmpty()) {
-                backupSize = Long.parseLong(outputLines.get(outputLines.size() - 1).trim());
-            }
-        } else {
-            String[] outputLines = result.second().trim().split("\n");
-            for(String line : outputLines) {
-                backupSize = backupSize + Long.parseLong(line.split(" ")[0].trim());
-            }
-        }
-
+        long backupSize = backupHelper.parseBackupSize(result.second(), diskPaths);
         BackupAnswer answer = new BackupAnswer(command, true, result.second().trim());
         answer.setSize(backupSize);
         return answer;
