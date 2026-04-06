@@ -17,7 +17,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set -Eeo pipefail
+set -eo pipefail
 
 # CloudStack B&R NAS Backup and Recovery Tool for KVM
 
@@ -43,19 +43,6 @@ FORCED="false"
 logFile="/var/log/cloudstack/agent/agent.log"
 
 EXIT_CLEANUP_FAILED=20
-
-err_report() {
-  local exit_code="$1"
-  local line_no="$2"
-  local command="$3"
-  local function_name="${4:-main}"
-  local message="nasbackup.sh failed at line ${line_no} in ${function_name}: [${command}] (exit=${exit_code})"
-  log -ne "$message"
-  builtin echo "$message"
-  builtin echo "$message" >&2
-}
-
-trap 'err_report "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[1]:-main}"' ERR
 
 log() {
   [[ "$verb" -eq 1 ]] && builtin echo "$@"
@@ -622,6 +609,8 @@ done
 
 # Perform Initial sanity checks
 sanity_checks
+
+log -ne "nasbackup.sh start op=[$OP] vm=[$VM] backupDir=[$BACKUP_DIR] backupType=[$BACKUP_TYPE] checkpoint=[$CHECKPOINT_NAME] parentBackup=[$PARENT_BACKUP_DIR] parentCheckpoint=[$PARENT_CHECKPOINT_NAME] diskPaths=[$DISK_PATHS] backupFiles=[$BACKUP_FILES]"
 
 if [ "$OP" = "backup-running" ]; then
   backup_running_vm

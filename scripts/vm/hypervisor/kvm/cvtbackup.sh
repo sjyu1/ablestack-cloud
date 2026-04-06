@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-set -Eeo pipefail
+set -eo pipefail
 
 OP=""
 VM=""
@@ -16,19 +16,6 @@ BACKUP_FILES=""
 logFile="/var/log/cloudstack/agent/agent.log"
 
 EXIT_CLEANUP_FAILED=20
-
-err_report() {
-  local exit_code="$1"
-  local line_no="$2"
-  local command="$3"
-  local function_name="${4:-main}"
-  local message="cvtbackup.sh failed at line ${line_no} in ${function_name}: [${command}] (exit=${exit_code})"
-  log -ne "$message"
-  builtin echo "$message"
-  builtin echo "$message" >&2
-}
-
-trap 'err_report "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[1]:-main}"' ERR
 
 log() {
   [[ "$verb" -eq 1 ]] && builtin echo "$@"
@@ -351,6 +338,8 @@ fi
 
 dest="$BACKUP_DIR"
 sanity_checks
+
+log -ne "cvtbackup.sh start op=[$OP] vm=[$VM] backupDir=[$BACKUP_DIR] backupType=[$BACKUP_TYPE] checkpoint=[$CHECKPOINT_NAME] parentBackup=[$PARENT_BACKUP_DIR] parentCheckpoint=[$PARENT_CHECKPOINT_NAME] diskPaths=[$DISK_PATHS] backupFiles=[$BACKUP_FILES]"
 
 if [[ "$OP" == "backup-running" ]]; then
   backup_running_vm
