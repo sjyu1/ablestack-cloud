@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-set -eo pipefail
+set -Eeo pipefail
 
 OP=""
 VM=""
@@ -16,6 +16,18 @@ BACKUP_FILES=""
 logFile="/var/log/cloudstack/agent/agent.log"
 
 EXIT_CLEANUP_FAILED=20
+
+err_report() {
+  local exit_code="$1"
+  local line_no="$2"
+  local command="$3"
+  local function_name="${4:-main}"
+  local message="cvtbackup.sh failed at line ${line_no} in ${function_name}: [${command}] (exit=${exit_code})"
+  builtin echo "$(date '+%Y-%m-%d %H-%M-%S>')" "$message" >> "$logFile"
+  builtin echo "$message" >&2
+}
+
+trap 'err_report "$?" "$LINENO" "$BASH_COMMAND" "${FUNCNAME[1]:-main}"' ERR
 
 log() {
   [[ "$verb" -eq 1 ]] && builtin echo "$@"
