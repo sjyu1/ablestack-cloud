@@ -13,7 +13,6 @@ PARENT_BACKUP_DIR=""
 PARENT_CHECKPOINT_NAME=""
 PARENT_CHECKPOINT_PATH=""
 BACKUP_FILES=""
-DUMMY_VM=""
 logFile="/var/log/cloudstack/agent/agent.log"
 
 EXIT_CLEANUP_FAILED=20
@@ -63,21 +62,11 @@ sanity_checks() {
 
 cleanup() {
   local status=0
-  cleanup_dummy_vm
   rm -rf "$dest" || { echo "Failed to delete $dest"; status=1; }
   if [[ $status -ne 0 ]]; then
     echo "Backup cleanup failed"
     exit $EXIT_CLEANUP_FAILED
   fi
-}
-
-cleanup_dummy_vm() {
-  if [[ -z "$DUMMY_VM" ]]; then
-    return
-  fi
-  virsh -c qemu:///system destroy "$DUMMY_VM" > /dev/null 2>&1 || true
-  virsh -c qemu:///system undefine "$DUMMY_VM" --nvram > /dev/null 2>&1 || true
-  DUMMY_VM=""
 }
 
 split_csv() {
@@ -129,92 +118,6 @@ redefine_checkpoint_if_needed() {
   fi
 }
 
-create_dummy_vm_xml() {
-  local dummy_vm="$1"
-  local xml_file="$2"
-  {
-    echo "<domain type='kvm'>"
-    echo "  <name>$dummy_vm</name>"
-    echo "  <memory unit='MiB'>256</memory>"
-    echo "  <currentMemory unit='MiB'>256</currentMemory>"
-    echo "  <vcpu placement='static'>1</vcpu>"
-    echo "  <os><type arch='x86_64' machine='pc'>hvm</type></os>"
-    echo "  <devices>"
-    echo "    <emulator>/usr/bin/qemu-system-x86_64</emulator>"
-  } > "$xml_file"
-
-  local index=0
-  while IFS= read -r disk_path; do
-    [[ -z "$disk_path" ]] && continue
-    local disk_name
-    disk_name=$(printf "\\$(printf '%03o' $((97 + index)))")
-    if [[ "$disk_path" == rbd:* ]]; then
-      local source_name="${disk_path#rbd:}"
-      source_name="${source_name%%:mon_host=*}"
-      local mon_hosts="${disk_path#*:mon_host=}"
-      mon_hosts="${mon_hosts%%:*}"
-      {
-        echo "    <disk type='network' device='disk'>"
-        echo "      <driver name='qemu' type='raw'/>"
-        echo "      <source protocol='rbd' name='$source_name'>"
-        IFS=';' read -r -a hosts <<< "$mon_hosts"
-        for host in "${hosts[@]}"; do
-          echo "        <host name='$host'/>"
-        done
-        echo "      </source>"
-        echo "      <target dev='vd$disk_name' bus='virtio'/>"
-        echo "    </disk>"
-      } >> "$xml_file"
-    else
-      {
-        echo "    <disk type='file' device='disk'>"
-        echo "      <driver name='qemu' type='qcow2'/>"
-        echo "      <source file='$disk_path'/>"
-        echo "      <target dev='vd$disk_name' bus='virtio'/>"
-        echo "    </disk>"
-      } >> "$xml_file"
-    fi
-    index=$((index + 1))
-  done < <(split_csv "$DISK_PATHS")
-
-  {
-    echo "    <console type='pty'/>"
-    echo "  </devices>"
-    echo "</domain>"
-  } >> "$xml_file"
-}
-
-create_backup_xml_for_dummy_vm() {
-  local backup_xml="$1"
-  local checkpoint_xml="$2"
-
-  echo "<domainbackup mode='push'><disks>" > "$backup_xml"
-  local index=0
-  while IFS= read -r disk_path; do
-    [[ -z "$disk_path" ]] && continue
-    local disk_name
-    disk_name=$(printf "\\$(printf '%03o' $((97 + index)))")
-    local target_file="$dest/$(get_backup_file_by_index "$index" "volume-${index}.qcow2")"
-    echo "<disk name='vd$disk_name' backup='yes' type='file' backupmode='full'><driver type='qcow2'/><target file='$target_file'/>" >> "$backup_xml"
-    if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
-      echo "<incremental>$PARENT_CHECKPOINT_NAME</incremental>" >> "$backup_xml"
-    fi
-    echo "</disk>" >> "$backup_xml"
-    index=$((index + 1))
-  done < <(split_csv "$DISK_PATHS")
-  echo "</disks></domainbackup>" >> "$backup_xml"
-
-  echo "<domaincheckpoint><name>$CHECKPOINT_NAME</name><disks>" > "$checkpoint_xml"
-  index=0
-  while IFS= read -r disk_path; do
-    [[ -z "$disk_path" ]] && continue
-    local disk_name
-    disk_name=$(printf "\\$(printf '%03o' $((97 + index)))")
-    echo "<disk name='vd$disk_name' checkpoint='bitmap'/>" >> "$checkpoint_xml"
-    index=$((index + 1))
-  done < <(split_csv "$DISK_PATHS")
-  echo "</disks></domaincheckpoint>" >> "$checkpoint_xml"
-}
 
 parse_rbd_uri() {
   local uri="$1"
@@ -354,51 +257,6 @@ backup_running_vm() {
 
   dump_checkpoint_xml "$VM"
   rm -f "$dest/backup.xml" "$dest/checkpoint.xml"
-  sync
-}
-
-backup_stopped_vm() {
-  mkdir -p "$dest/checkpoints" || { echo "Failed to create backup directory $dest"; exit 1; }
-  local dummy_vm="DUMMY-VM-${CHECKPOINT_NAME//./-}"
-  DUMMY_VM="$dummy_vm"
-  local dummy_xml="$dest/dummy-vm.xml"
-  local backup_xml="$dest/backup.xml"
-  local checkpoint_xml="$dest/checkpoint.xml"
-
-  create_dummy_vm_xml "$dummy_vm" "$dummy_xml"
-  virsh -c qemu:///system define "$dummy_xml" > /dev/null
-  virsh -c qemu:///system start "$dummy_vm" --paused > /dev/null
-
-  if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_PATH" ]]; then
-    redefine_checkpoint_if_needed "$dummy_vm" "$PARENT_CHECKPOINT_PATH"
-  fi
-
-  create_backup_xml_for_dummy_vm "$backup_xml" "$checkpoint_xml"
-  if ! virsh -c qemu:///system backup-begin --domain "$dummy_vm" --backupxml "$backup_xml" --checkpointxml "$checkpoint_xml" > /dev/null 2>&1; then
-    echo "Failed to start backup for dummy VM $dummy_vm"
-    cleanup
-    exit 1
-  fi
-
-  while true; do
-    status=$(virsh -c qemu:///system domjobinfo "$dummy_vm" --completed --keep-completed | awk '/Job type:/ {print $3}')
-    case "$status" in
-      Completed) break ;;
-      Failed) echo "Virsh backup job failed for dummy VM $dummy_vm"; cleanup ;;
-    esac
-    sleep 5
-  done
-
-  if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_BACKUP_DIR" ]]; then
-    while IFS= read -r backup_file; do
-      [[ -z "$backup_file" ]] && continue
-      qemu-img rebase -u -F qcow2 -b "$PARENT_BACKUP_DIR/$backup_file" "$dest/$backup_file" > /dev/null 2>&1 || true
-    done < <(split_csv "$BACKUP_FILES")
-  fi
-
-  dump_checkpoint_xml "$dummy_vm"
-  cleanup_dummy_vm
-  rm -f "$backup_xml" "$checkpoint_xml" "$dummy_xml"
   sync
 }
 
