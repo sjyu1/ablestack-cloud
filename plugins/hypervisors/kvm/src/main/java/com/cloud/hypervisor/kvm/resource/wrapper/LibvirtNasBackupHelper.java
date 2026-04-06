@@ -34,8 +34,8 @@ import org.libvirt.Connect;
 import org.libvirt.Domain;
 import org.libvirt.DomainInfo.DomainState;
 import org.libvirt.LibvirtException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -49,7 +49,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 class LibvirtNasBackupHelper {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LibvirtNasBackupHelper.class);
+    protected Logger LOGGER = LogManager.getLogger(LibvirtNasBackupHelper.class);
     static final Integer EXIT_CLEANUP_FAILED = 20;
     private static final int BACKUP_JOB_POLL_INTERVAL_MS = 10000;
 
