@@ -76,6 +76,8 @@ class LibvirtNasBackupHelper {
     }
 
     Pair<Integer, String> executeBackup(TakeBackupCommand command) {
+        LOGGER.info("LibvirtNasBackupHelper executeBackup entered for vm=[{}], backupPath=[{}], backupType=[{}]",
+                command.getVmName(), command.getBackupPath(), command.getBackupType());
         List<String> diskPaths = resolveDiskPaths(command.getVolumePools(), command.getVolumePaths());
         BackupExecutionMode executionMode = determineExecutionMode(command.getVmName(), command.getVolumePools());
         LOGGER.debug("NAS backup execution mode=[{}], vm=[{}], backupType=[{}], diskPaths=[{}]",
