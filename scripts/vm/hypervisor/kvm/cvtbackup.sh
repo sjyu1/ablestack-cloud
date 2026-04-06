@@ -23,7 +23,7 @@ err_report() {
   local command="$3"
   local function_name="${4:-main}"
   local message="cvtbackup.sh failed at line ${line_no} in ${function_name}: [${command}] (exit=${exit_code})"
-  builtin echo "$(date '+%Y-%m-%d %H-%M-%S>')" "$message" >> "$logFile"
+  log -ne "$message"
   builtin echo "$message" >&2
 }
 
