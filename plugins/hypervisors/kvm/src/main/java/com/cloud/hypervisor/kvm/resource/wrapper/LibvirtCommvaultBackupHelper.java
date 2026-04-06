@@ -33,6 +33,8 @@ import org.libvirt.Connect;
 import org.libvirt.Domain;
 import org.libvirt.DomainInfo.DomainState;
 import org.libvirt.LibvirtException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -44,6 +46,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 class LibvirtCommvaultBackupHelper {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LibvirtCommvaultBackupHelper.class);
     static final Integer EXIT_CLEANUP_FAILED = 20;
     private static final int BACKUP_JOB_POLL_INTERVAL_MS = 10000;
 
@@ -72,12 +75,16 @@ class LibvirtCommvaultBackupHelper {
     Pair<Integer, String> executeBackup(CommvaultTakeBackupCommand command) {
         List<String> diskPaths = resolveDiskPaths(command.getVolumePools(), command.getVolumePaths());
         BackupExecutionMode executionMode = determineExecutionMode(command.getVmName(), command.getVolumePools());
+        LOGGER.debug("Commvault backup execution mode=[{}], vm=[{}], backupType=[{}], diskPaths=[{}]",
+                executionMode, command.getVmName(), command.getBackupType(), diskPaths);
         if (BackupExecutionMode.STOPPED.equals(executionMode)) {
             return executeStoppedVmBackup(command, diskPaths);
         }
 
         List<String[]> commands = new ArrayList<>();
-        commands.add(buildBackupScriptCommand(command, diskPaths, executionMode));
+        String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
+        LOGGER.debug("Executing Commvault backup script command=[{}]", String.join(" ", scriptCommand));
+        commands.add(scriptCommand);
         return Script.executePipedCommands(commands, resource.getCmdsTimeout());
     }
 
@@ -141,6 +148,8 @@ class LibvirtCommvaultBackupHelper {
         Path dest = Path.of(command.getBackupPath());
         Connect conn = null;
         try {
+            LOGGER.info("Starting stopped VM Commvault backup for vm=[{}], dummyVm=[{}], backupType=[{}]",
+                    command.getVmName(), dummyVmName, command.getBackupType());
             validateStoppedBackupDiskPaths(diskPaths);
             if (isIncremental(command)) {
                 resource.validateLibvirtAndQemuVersionForIncrementalSnapshots();
@@ -161,7 +170,9 @@ class LibvirtCommvaultBackupHelper {
 
             String backupBeginCommand = String.format("virsh -c qemu:///system backup-begin --domain %s --backupxml %s --checkpointxml %s",
                     shellQuote(dummyVmName), shellQuote(backupXml.toString()), shellQuote(checkpointXml.toString()));
+            LOGGER.debug("Starting stopped VM Commvault backup-begin command=[{}]", backupBeginCommand);
             if (Script.runSimpleBashScriptForExitValue(backupBeginCommand, resource.getCmdsTimeout(), false) != 0) {
+                LOGGER.error("Failed to start backup for stopped VM Commvault dummy domain [{}]", dummyVmName);
                 return new Pair<>(1, "Failed to start backup for dummy VM " + dummyVmName);
             }
 
@@ -180,8 +191,11 @@ class LibvirtCommvaultBackupHelper {
             Files.deleteIfExists(backupXml);
             Files.deleteIfExists(checkpointXml);
             Script.runSimpleBashScriptForExitValue("sync", resource.getCmdsTimeout(), false);
+            LOGGER.info("Completed stopped VM Commvault backup for vm=[{}], dummyVm=[{}]", command.getVmName(), dummyVmName);
             return new Pair<>(0, "success");
         } catch (Exception e) {
+            LOGGER.error("Stopped VM Commvault backup failed for vm=[{}], dummyVm=[{}] due to: {}",
+                    command.getVmName(), dummyVmName, e.getMessage(), e);
             return new Pair<>(1, e.getMessage());
         } finally {
             cleanupDummyVm(dummyVmName);
