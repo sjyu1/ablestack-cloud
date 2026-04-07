@@ -83,6 +83,7 @@ public class AutomationControllerStartWorker extends AutomationControllerResourc
     private static final int AUTOMATION_CONTROLLER_HTTP_PORT = 80;
     private static final int HTTP_CONNECT_TIMEOUT_MS = 5000;
     private static final int HTTP_READ_TIMEOUT_MS = 5000;
+    private static final long AUTOMATION_CONTROLLER_CREATE_READY_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30);
     private static final long AUTOMATION_CONTROLLER_READY_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(15);
     private static final long AUTOMATION_CONTROLLER_READY_RETRY_INTERVAL_MS = TimeUnit.SECONDS.toMillis(5);
 
@@ -408,7 +409,7 @@ public class AutomationControllerStartWorker extends AutomationControllerResourc
             }
             try {
                 if (waitForAutomationControllerReady(publicIpAddressStr, AUTOMATION_CONTROLLER_HTTP_PORT,
-                        AUTOMATION_CONTROLLER_READY_TIMEOUT_MS, AUTOMATION_CONTROLLER_READY_RETRY_INTERVAL_MS)) {
+                        AUTOMATION_CONTROLLER_CREATE_READY_TIMEOUT_MS, AUTOMATION_CONTROLLER_READY_RETRY_INTERVAL_MS)) {
                     if (logger.isInfoEnabled()) {
                         logger.info(String.format("Starting automation controller : %s", automationController.getName()));
                     }
