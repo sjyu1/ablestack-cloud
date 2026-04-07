@@ -170,8 +170,8 @@ public class AutomationControllerManagerImpl extends ManagerBase implements Auto
 
         NetworkVO ntwk = networkDao.findByIdIncludingRemoved(automationController.getNetworkId());
         response.setNetworkId(ntwk.getUuid());
-        response.getAutomationControllerIp(automationController.getAutomationControllerIp());
-        response.getRemoved(automationController.getRemoved());
+        response.setAutomationControllerIp(automationController.getAutomationControllerIp());
+        response.setRemoved(automationController.getRemoved());
         if (automationController.getState() != null) {
             response.setState(automationController.getState().toString());
         }
@@ -203,7 +203,6 @@ public class AutomationControllerManagerImpl extends ManagerBase implements Auto
         }
 
         List<UserVmResponse> automationControllerVmResponses = new ArrayList<UserVmResponse>();
-        List<VMInstanceVO> vmList = vmInstanceDao.listByZoneId(automationController.getZoneId());
         List<AutomationControllerVmMapVO> controlVmList = automationControllerVmMapDao.listByAutomationControllerId(automationController.getId());
 
         ResponseObject.ResponseView respView = ResponseObject.ResponseView.Restricted;
@@ -232,26 +231,6 @@ public class AutomationControllerManagerImpl extends ManagerBase implements Auto
                     logger.warn(String.format("Failed to run Automation controller Alert state scanner on Automation controller : %s status scanner", automationController.getName()), e);
                 }
                 response.setHostName(userVM.getHostName());
-            }
-
-            String automationControllerState = String.valueOf(automationController.getState());
-            String automationControllerVmState = automationControllerVmResponses.get(0).getState();
-            try {
-                if (automationControllerState != "Starting") {
-                    if (automationControllerVmState == "Stopped" && automationControllerState != "Stopped") {
-                        stateTransitTo(automationController.getId(), AutomationController.Event.StopRequested);
-                        stateTransitTo(automationController.getId(), AutomationController.Event.OperationSucceeded);
-                    }
-                }
-                if (automationControllerState != "Destroyed" || automationControllerState != "Expunging") {
-                    if (automationControllerVmState == "Destroyed" ) {
-                        stopAutomationController(automationController.getId());
-                    }else if (automationControllerVmState == "Expunging") {
-                        deleteAutomationController(automationController.getId());
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn(String.format("Failed to run Automation controller Alert state scanner on Automation controller : %s status scanner", automationController.getName()), e);
             }
         }
 
