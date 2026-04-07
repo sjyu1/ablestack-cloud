@@ -339,7 +339,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             details.putAll(backupDetails);
         }
         details.put(DETAIL_CHECKPOINT_NAME, checkpointName);
-        details.put(DETAIL_CHECKPOINT_PATH, String.format("%s/checkpoints/%s.xml", backupPath, checkpointName));
+        details.put(DETAIL_CHECKPOINT_PATH, getCheckpointPath(backupPath, checkpointName, backupEngine));
         details.put(DETAIL_BACKUP_ENGINE, backupEngine);
         if (parentBackup != null) {
             details.put(DETAIL_PARENT_BACKUP_UUID, parentBackup.getUuid());
@@ -350,6 +350,13 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         backup.setDetails(details);
 
         return backupDao.persist(backup);
+    }
+
+    private String getCheckpointPath(String backupPath, String checkpointName, String backupEngine) {
+        if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+            return String.format("%s/checkpoints/%s.meta", backupPath, checkpointName);
+        }
+        return String.format("%s/checkpoints/%s.xml", backupPath, checkpointName);
     }
 
     private BackupVO getLatestBackedUpBackup(VirtualMachine vm) {
