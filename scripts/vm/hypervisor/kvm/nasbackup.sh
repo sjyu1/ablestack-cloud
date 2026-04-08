@@ -227,6 +227,13 @@ backup_rbd_volumes() {
       cleanup
     fi
 
+    if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
+      if ! timeout 30s "${RBD_CMD[@]}" snap ls "$RBD_IMAGE" 2>>"$logFile" | awk 'NR>1 {print $2}' | grep -Fxq "$PARENT_CHECKPOINT_NAME"; then
+        echo "Parent RBD snapshot ${RBD_IMAGE}@${PARENT_CHECKPOINT_NAME} not found for incremental backup"
+        cleanup
+      fi
+    fi
+
     if ! timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${current_snapshot}" >> "$logFile" 2>&1; then
       echo "Failed to create RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
       cleanup

@@ -110,6 +110,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     private static final String DETAIL_PARENT_CHECKPOINT_NAME = "commvault.parent.checkpoint.name";
     private static final String DETAIL_PARENT_CHECKPOINT_PATH = "commvault.parent.checkpoint.path";
     private static final String DETAIL_BACKUP_ENGINE = "commvault.backup.engine";
+    private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String DETAIL_STAGE_HOST = "commvault.stage.host";
     private static final String RM_COMMAND = "rm -rf %s";
     private static final int BASE_MAJOR = 11;
@@ -307,15 +308,15 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final Backup latestBackup = getLatestBackedUpBackup(vm);
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost);
-        Pair<Boolean, Backup> result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, vmVolumes, volumePoolsAndPaths,
+        BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, vmVolumes, volumePoolsAndPaths,
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
-        if (!result.first() && incrementalBackup && vmVolumes.size() > 1) {
-            LOG.warn("Incremental backup failed for multi-disk VM [{}]. Retrying as full backup to preserve disk consistency.", vm);
+        if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
+            LOG.warn("Incremental backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm, result.details);
             String fallbackBackupPath = buildBackupPath(vm);
-            return executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, fallbackBackupPath, vmVolumes, volumePoolsAndPaths,
+            result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, fallbackBackupPath, vmVolumes, volumePoolsAndPaths,
                     null, false, false);
         }
-        return result;
+        return new Pair<>(result.success, result.backup);
     }
 
     private Backup getLatestBackedUpBackup(VirtualMachine vm) {
@@ -428,7 +429,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
     }
 
-    private Pair<Boolean, Backup> executeBackup(VirtualMachine vm, Boolean quiesceVM, Host vmHost, HostVO vmHostVO, CommvaultClient client,
+    private BackupExecutionResult executeBackup(VirtualMachine vm, Boolean quiesceVM, Host vmHost, HostVO vmHostVO, CommvaultClient client,
                                                 String planId, String backupPath, List<VolumeVO> vmVolumes,
                                                 Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths, Backup latestBackup,
                                                 boolean incrementalBackup, boolean retryAsFullOnFailure) {
@@ -530,7 +531,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                                     backupVO.setDetails(backupDetails);
                                     backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
                                     if (backupDao.update(backupVO.getId(), backupVO)) {
-                                        return new Pair<>(true, backupVO);
+                                        return BackupExecutionResult.success(backupVO);
                                     }
                                     throw new CloudRuntimeException("Failed to update backup");
                                 }
@@ -551,10 +552,11 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
             executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
-            return new Pair<>(false, null);
+            return BackupExecutionResult.failure("Failed to complete Commvault backup job");
         }
 
-        LOG.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), answer != null ? answer.getDetails() : "No answer received");
+        final String details = answer != null ? answer.getDetails() : "No answer received";
+        LOG.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
         if (retryAsFullOnFailure) {
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
@@ -566,7 +568,37 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
         }
-        return new Pair<>(false, null);
+        return BackupExecutionResult.failure(details);
+    }
+
+    private boolean shouldRetryAsFullAfterIncrementalFailure(BackupExecutionResult result, List<VolumeVO> vmVolumes) {
+        if (result == null || result.success) {
+            return false;
+        }
+        if (StringUtils.contains(result.details, MISSING_PARENT_RBD_SNAPSHOT_ERROR)) {
+            return true;
+        }
+        return vmVolumes.size() > 1;
+    }
+
+    private static final class BackupExecutionResult {
+        private final boolean success;
+        private final Backup backup;
+        private final String details;
+
+        private BackupExecutionResult(boolean success, Backup backup, String details) {
+            this.success = success;
+            this.backup = backup;
+            this.details = details;
+        }
+
+        private static BackupExecutionResult success(Backup backup) {
+            return new BackupExecutionResult(true, backup, null);
+        }
+
+        private static BackupExecutionResult failure(String details) {
+            return new BackupExecutionResult(false, null, details);
+        }
     }
 
     private String buildBackupPath(VirtualMachine vm) {

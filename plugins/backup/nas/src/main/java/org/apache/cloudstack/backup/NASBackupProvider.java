@@ -94,6 +94,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     private static final String DETAIL_PARENT_CHECKPOINT_NAME = "nas.parent.checkpoint.name";
     private static final String DETAIL_PARENT_CHECKPOINT_PATH = "nas.parent.checkpoint.path";
     private static final String DETAIL_BACKUP_ENGINE = "nas.backup.engine";
+    private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
             "nas.backup.restore.mount.timeout",
@@ -226,16 +227,16 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final BackupVO latestBackup = getLatestBackedUpBackup(vm);
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup);
-        Pair<Boolean, Backup> result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup,
+        BackupExecutionResult result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup,
                 incrementalBackup && vmVolumes.size() > 1);
-        if (!result.first() && incrementalBackup && vmVolumes.size() > 1) {
-            LOG.warn("Incremental backup failed for multi-disk VM [{}]. Retrying as full backup to preserve disk consistency.", vm);
-            return executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, null, false, false);
+        if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
+            LOG.warn("Incremental backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm, result.details);
+            result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, null, false, false);
         }
-        return result;
+        return new Pair<>(result.success, result.backup);
     }
 
-    private Pair<Boolean, Backup> executeBackup(VirtualMachine vm, Boolean quiesceVM, Host host, BackupRepository backupRepository,
+    private BackupExecutionResult executeBackup(VirtualMachine vm, Boolean quiesceVM, Host host, BackupRepository backupRepository,
                                                 List<VolumeVO> vmVolumes, Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths,
                                                 Backup parentBackup, boolean incrementalBackup, boolean retryAsFullOnFailure) {
         final String backupPath = buildBackupPath(vm);
@@ -282,12 +283,13 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             backupVO.setStatus(Backup.Status.BackedUp);
             backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
             if (backupDao.update(backupVO.getId(), backupVO)) {
-                return new Pair<>(true, backupVO);
+                return BackupExecutionResult.success(backupVO);
             }
             throw new CloudRuntimeException("Failed to update backup");
         }
 
-        logger.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), answer != null ? answer.getDetails() : "No answer received");
+        final String details = answer != null ? answer.getDetails() : "No answer received";
+        logger.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
         if (retryAsFullOnFailure) {
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
@@ -299,7 +301,37 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
         }
-        return new Pair<>(false, null);
+        return BackupExecutionResult.failure(details);
+    }
+
+    private boolean shouldRetryAsFullAfterIncrementalFailure(BackupExecutionResult result, List<VolumeVO> vmVolumes) {
+        if (result == null || result.success) {
+            return false;
+        }
+        if (StringUtils.contains(result.details, MISSING_PARENT_RBD_SNAPSHOT_ERROR)) {
+            return true;
+        }
+        return vmVolumes.size() > 1;
+    }
+
+    private static final class BackupExecutionResult {
+        private final boolean success;
+        private final Backup backup;
+        private final String details;
+
+        private BackupExecutionResult(boolean success, Backup backup, String details) {
+            this.success = success;
+            this.backup = backup;
+            this.details = details;
+        }
+
+        private static BackupExecutionResult success(Backup backup) {
+            return new BackupExecutionResult(true, backup, null);
+        }
+
+        private static BackupExecutionResult failure(String details) {
+            return new BackupExecutionResult(false, null, details);
+        }
     }
 
     private String buildBackupPath(VirtualMachine vm) {

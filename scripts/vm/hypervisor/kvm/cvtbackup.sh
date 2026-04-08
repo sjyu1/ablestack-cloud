@@ -274,15 +274,22 @@ backup_rbd_volumes() {
     local output_file="$dest/$(get_backup_file_by_index "$index" "${RBD_IMAGE##*/}.raw")"
     log -ne "Starting RBD backup for disk path [$disk_path], resolved image [$RBD_IMAGE], output [$output_file]"
 
-    if ! timeout 30s "${RBD_CMD[@]}" info "$RBD_IMAGE" >> "$logFile" 2>&1; then
-      echo "Failed to access RBD image $RBD_IMAGE"
-      cleanup
-    fi
+  if ! timeout 30s "${RBD_CMD[@]}" info "$RBD_IMAGE" >> "$logFile" 2>&1; then
+    echo "Failed to access RBD image $RBD_IMAGE"
+    cleanup
+  fi
 
-    if ! timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${CHECKPOINT_NAME}" >> "$logFile" 2>&1; then
-      echo "Failed to create RBD snapshot ${RBD_IMAGE}@${CHECKPOINT_NAME}"
+  if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
+    if ! timeout 30s "${RBD_CMD[@]}" snap ls "$RBD_IMAGE" 2>>"$logFile" | awk 'NR>1 {print $2}' | grep -Fxq "$PARENT_CHECKPOINT_NAME"; then
+      echo "Parent RBD snapshot ${RBD_IMAGE}@${PARENT_CHECKPOINT_NAME} not found for incremental backup"
       cleanup
     fi
+  fi
+
+  if ! timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${CHECKPOINT_NAME}" >> "$logFile" 2>&1; then
+    echo "Failed to create RBD snapshot ${RBD_IMAGE}@${CHECKPOINT_NAME}"
+    cleanup
+  fi
     created_snapshot="${RBD_IMAGE}@${CHECKPOINT_NAME}"
 
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
