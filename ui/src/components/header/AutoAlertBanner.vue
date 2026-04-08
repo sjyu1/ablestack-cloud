@@ -50,6 +50,17 @@
                   <a-button size="small" @click.stop="goToAlertRulesMenu">
                     {{ tr('label.goto.the.alertRules') }}
                   </a-button>
+
+                  <a-button
+                    size="small"
+                    type="text"
+                    :aria-label="tr('label.close')"
+                    @click.stop="markAllAsRead"
+                  >
+                    <template #icon>
+                      <CloseOutlined />
+                    </template>
+                  </a-button>
                 </a-space>
               </div>
             </div>
@@ -643,7 +654,7 @@ import {
   nextTick,
   getCurrentInstance
 } from 'vue'
-import { ExclamationCircleFilled, SoundOutlined, PauseCircleOutlined, LinkOutlined } from '@ant-design/icons-vue'
+import { ExclamationCircleFilled, SoundOutlined, PauseCircleOutlined, LinkOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { api } from '@/api'
 import MarkdownIt from 'markdown-it'
@@ -656,6 +667,7 @@ export default {
     SoundOutlined,
     PauseCircleOutlined,
     LinkOutlined,
+    CloseOutlined,
     RuleSilenceModal: defineAsyncComponent(() => import('@/views/infra/RuleSilenceModal.vue')),
     RulePauseModal: defineAsyncComponent(() => import('@/views/infra/RulePauseModal.vue'))
   },
