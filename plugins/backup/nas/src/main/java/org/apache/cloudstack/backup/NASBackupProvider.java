@@ -585,6 +585,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     }
 
     private List<String> getBackupFileChain(String volumeUuid, Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
         if (isLegacyBackup(backup)) {
             Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), volumeUuid);
             return volumeInfo != null ? getLegacyBackupFileCandidates(volumeInfo) : List.of();
@@ -608,6 +609,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     }
 
     private List<Backup> getBackupChain(Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
         List<Backup> backups = backupDao.listByVmIdAndOffering(backup.getZoneId(), backup.getVmId(), backup.getBackupOfferingId());
         Map<String, Backup> backupsByUuid = new HashMap<>();
         for (Backup candidate : backups) {
@@ -626,6 +628,12 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         }
         Collections.reverse(chain);
         return chain;
+    }
+
+    private void loadBackupDetailsIfNeeded(Backup backup) {
+        if (backup instanceof BackupVO && backup.getDetails() == null) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
     }
 
     private boolean isLegacyBackup(Backup backup) {

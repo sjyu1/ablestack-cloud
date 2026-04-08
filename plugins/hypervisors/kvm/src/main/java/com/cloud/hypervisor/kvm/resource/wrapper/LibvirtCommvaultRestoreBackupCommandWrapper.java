@@ -57,7 +57,6 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
     private static final String ATTACH_QCOW2_DISK_COMMAND = " virsh attach-disk %s %s %s --driver qemu --subdriver qcow2 --cache none";
     private static final String ATTACH_RBD_DISK_XML_COMMAND = " virsh attach-device %s /dev/stdin <<EOF%sEOF";
     private static final String CURRRENT_DEVICE = "virsh domblklist --domain %s | tail -n 3 | head -n 1 | awk '{print $1}'";
-    private static final String RSYNC_COMMAND = "rsync -az %s %s";
     private static final String MKDIR_P = "mkdir -p %s";
     private static final String RSYNC_DIR_FROM_REMOTE = "rsync -az -e \"ssh -o StrictHostKeyChecking=no\" %s:%s/ %s/";
 
@@ -199,20 +198,6 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
 
     private String getLegacyBackupFileName(String diskType, String volumeUuid) {
         return String.format("%s.%s.qcow2", diskType.toLowerCase(Locale.ROOT), volumeUuid);
-    }
-
-    private boolean checkBackupFileImage(String backupPath) {
-        int exitValue = Script.runSimpleBashScriptForExitValue(String.format("qemu-img check %s", backupPath));
-        return exitValue == 0;
-    }
-
-    private boolean checkBackupPathExists(String backupPath) {
-        int exitValue = Script.runSimpleBashScriptForExitValue(String.format("ls %s", backupPath));
-        return exitValue == 0;
-    }
-
-    private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout) {
-        return replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, null, 0, false);
     }
 
     private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout,

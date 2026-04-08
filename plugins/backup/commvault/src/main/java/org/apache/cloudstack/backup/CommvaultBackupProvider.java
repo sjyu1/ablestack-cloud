@@ -661,11 +661,13 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     }
 
     private String getBackupFileChain(Backup.VolumeInfo backupVolume, Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
         List<String> chain = getBackupChain(backupVolume, backup);
         return String.join(";", chain);
     }
 
     private List<String> getBackupChain(Backup.VolumeInfo backupVolume, Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
         List<String> chain = new ArrayList<>();
         Backup current = backup;
         while (current != null) {
@@ -687,6 +689,12 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             chain.add(backupVolume.getPath());
         }
         return chain;
+    }
+
+    private void loadBackupDetailsIfNeeded(Backup backup) {
+        if (backup instanceof BackupVO && backup.getDetails() == null) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
     }
 
     private boolean isLegacyBackup(Backup backup) {

@@ -68,11 +68,8 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         String backupRepoType = command.getBackupRepoType();
         String mountOptions = command.getMountOptions();
         Boolean vmExists = command.isVmExists();
-        String diskType = command.getDiskType();
-        List<String> backedVolumeUUIDs = command.getBackupVolumesUUIDs();
         List<PrimaryDataStoreTO> restoreVolumePools = command.getRestoreVolumePools();
         List<String> restoreVolumePaths = command.getRestoreVolumePaths();
-        // String restoreVolumeUuid = command.getRestoreVolumeUUID();
         Integer mountTimeout = command.getMountTimeout() * 1000;
         int timeout = command.getWait() > 0 ? command.getWait() : command.getMountTimeout();
         String cacheMode = command.getCacheMode();
@@ -237,20 +234,6 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
             mountedPaths.add(String.format(FILE_PATH_PLACEHOLDER, String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath), backupFile));
         }
         return mountedPaths;
-    }
-
-    private boolean checkBackupFileImage(String backupPath) {
-        int exitValue = Script.runSimpleBashScriptForExitValue(String.format("qemu-img check %s", backupPath));
-        return exitValue == 0;
-    }
-
-    private boolean checkBackupPathExists(String backupPath) {
-        int exitValue = Script.runSimpleBashScriptForExitValue(String.format("ls %s", backupPath));
-        return exitValue == 0;
-    }
-
-    private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout) {
-        return replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, null, 0, false);
     }
 
     private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout,
