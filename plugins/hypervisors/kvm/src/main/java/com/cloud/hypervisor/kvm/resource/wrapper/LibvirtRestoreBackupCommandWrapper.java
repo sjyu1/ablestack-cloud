@@ -409,18 +409,48 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         }
 
         KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
-        for (int index = 1; index < backupPaths.size(); index++) {
-            String backupPath = backupPaths.get(index);
-            if (!backupPath.endsWith(".rbdiff")) {
-                continue;
+        List<String> restoreSnapshots = new ArrayList<>();
+        try {
+            Map<String, String> baseMetadata = readRbdBackupMetadata(backupPaths.get(0));
+            String baseCheckpoint = baseMetadata.get("checkpoint_name");
+            if (StringUtils.isNotBlank(baseCheckpoint)) {
+                if (!ensureRbdSnapshotExists(volumeStoragePool, normalizedVolumePath, baseCheckpoint, timeout)) {
+                    return false;
+                }
+                restoreSnapshots.add(baseCheckpoint);
             }
-            String importDiffCommand = buildRbdImportDiffCommand(volumeStoragePool, backupPath, normalizedVolumePath);
-            if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
-                logger.error("Failed to import RBD diff {} into volume {}", backupPath, normalizedVolumePath);
-                return false;
+
+            for (int index = 1; index < backupPaths.size(); index++) {
+                String backupPath = backupPaths.get(index);
+                if (!backupPath.endsWith(".rbdiff")) {
+                    continue;
+                }
+
+                Map<String, String> metadata = readRbdBackupMetadata(backupPath);
+                String parentCheckpoint = metadata.get("parent_checkpoint_name");
+                String checkpoint = metadata.get("checkpoint_name");
+                if (StringUtils.isBlank(parentCheckpoint) || StringUtils.isBlank(checkpoint)) {
+                    throw new CloudRuntimeException(String.format("RBD incremental backup metadata is incomplete for %s", backupPath));
+                }
+                if (!rbdSnapshotExists(volumeStoragePool, normalizedVolumePath, parentCheckpoint, timeout)) {
+                    throw new CloudRuntimeException(String.format("Required parent snapshot %s is missing on volume %s", parentCheckpoint, normalizedVolumePath));
+                }
+
+                String importDiffCommand = buildRbdImportDiffCommand(volumeStoragePool, backupPath, normalizedVolumePath);
+                if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
+                    logger.error("Failed to import RBD diff {} into volume {}", backupPath, normalizedVolumePath);
+                    return false;
+                }
+
+                if (!ensureRbdSnapshotExists(volumeStoragePool, normalizedVolumePath, checkpoint, timeout)) {
+                    return false;
+                }
+                restoreSnapshots.add(checkpoint);
             }
+            return true;
+        } finally {
+            cleanupRbdRestoreSnapshots(volumeStoragePool, normalizedVolumePath, restoreSnapshots, timeout);
         }
-        return true;
     }
 
     private String normalizeRbdVolumePath(String volumePath, KVMStoragePool storagePool) {
@@ -493,18 +523,127 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
             logger.error("Failed to import base RBD backup {} into temporary image {}", backupPaths.get(0), tempImage);
             return false;
         }
-        for (int index = 1; index < backupPaths.size(); index++) {
-            String backupPath = backupPaths.get(index);
-            if (!backupPath.endsWith(".rbdiff")) {
-                continue;
+
+        List<String> restoreSnapshots = new ArrayList<>();
+        try {
+            Map<String, String> baseMetadata = readRbdBackupMetadata(backupPaths.get(0));
+            String baseCheckpoint = baseMetadata.get("checkpoint_name");
+            if (StringUtils.isNotBlank(baseCheckpoint)) {
+                if (!ensureRbdSnapshotExists(sourceImage, tempImage, baseCheckpoint, timeout)) {
+                    return false;
+                }
+                restoreSnapshots.add(baseCheckpoint);
             }
-            String importDiffCommand = sourceImage.buildRbdCommand("import-diff", quote(backupPath), quote(tempImage));
-            if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
-                logger.error("Failed to import RBD diff {} into temporary image {}", backupPath, tempImage);
-                return false;
+
+            for (int index = 1; index < backupPaths.size(); index++) {
+                String backupPath = backupPaths.get(index);
+                if (!backupPath.endsWith(".rbdiff")) {
+                    continue;
+                }
+                Map<String, String> metadata = readRbdBackupMetadata(backupPath);
+                String parentCheckpoint = metadata.get("parent_checkpoint_name");
+                String checkpoint = metadata.get("checkpoint_name");
+                if (StringUtils.isBlank(parentCheckpoint) || StringUtils.isBlank(checkpoint)) {
+                    throw new CloudRuntimeException(String.format("RBD incremental backup metadata is incomplete for %s", backupPath));
+                }
+                if (!rbdSnapshotExists(sourceImage, tempImage, parentCheckpoint, timeout)) {
+                    throw new CloudRuntimeException(String.format("Required parent snapshot %s is missing on temporary image %s", parentCheckpoint, tempImage));
+                }
+                String importDiffCommand = sourceImage.buildRbdCommand("import-diff", quote(backupPath), quote(tempImage));
+                if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
+                    logger.error("Failed to import RBD diff {} into temporary image {}", backupPath, tempImage);
+                    return false;
+                }
+                if (!ensureRbdSnapshotExists(sourceImage, tempImage, checkpoint, timeout)) {
+                    return false;
+                }
+                restoreSnapshots.add(checkpoint);
             }
+            return true;
+        } finally {
+            cleanupRbdRestoreSnapshots(sourceImage, tempImage, restoreSnapshots, timeout);
+        }
+    }
+
+    private Map<String, String> readRbdBackupMetadata(String backupPath) {
+        java.nio.file.Path metadataPath = Paths.get(backupPath).getParent().resolve("rbd-backup.meta");
+        if (!Files.exists(metadataPath)) {
+            throw new CloudRuntimeException(String.format("RBD backup metadata file not found: %s", metadataPath));
+        }
+        try {
+            return Files.readAllLines(metadataPath).stream()
+                    .map(String::trim)
+                    .filter(line -> !line.isEmpty() && line.contains("="))
+                    .map(line -> line.split("=", 2))
+                    .collect(java.util.stream.Collectors.toMap(parts -> parts[0], parts -> parts[1], (left, right) -> right));
+        } catch (IOException e) {
+            throw new CloudRuntimeException(String.format("Failed to read RBD backup metadata: %s", metadataPath), e);
+        }
+    }
+
+    private boolean ensureRbdSnapshotExists(KVMStoragePool storagePool, String volumePath, String snapshotName, int timeout) {
+        if (rbdSnapshotExists(storagePool, volumePath, snapshotName, timeout)) {
+            return true;
+        }
+        String createSnapshotCommand = buildRbdSnapshotCommand(storagePool, "snap create", volumePath + "@" + snapshotName);
+        if (Script.runSimpleBashScriptForExitValue(createSnapshotCommand, timeout * 1000, false) != 0) {
+            logger.error("Failed to create RBD snapshot {} on volume {}", snapshotName, volumePath);
+            return false;
         }
         return true;
+    }
+
+    private boolean ensureRbdSnapshotExists(RbdImageSpec imageSpec, String image, String snapshotName, int timeout) {
+        if (rbdSnapshotExists(imageSpec, image, snapshotName, timeout)) {
+            return true;
+        }
+        String createSnapshotCommand = imageSpec.buildRbdCommand("snap", "create", quote(image + "@" + snapshotName));
+        if (Script.runSimpleBashScriptForExitValue(createSnapshotCommand, timeout * 1000, false) != 0) {
+            logger.error("Failed to create RBD snapshot {} on image {}", snapshotName, image);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean rbdSnapshotExists(KVMStoragePool storagePool, String volumePath, String snapshotName, int timeout) {
+        String existsCommand = buildRbdSnapshotCommand(storagePool, "snap ls", volumePath) + " | awk 'NR>1 {print $2}' | grep -Fx " + quote(snapshotName);
+        return Script.runSimpleBashScriptForExitValue(existsCommand, timeout * 1000, false) == 0;
+    }
+
+    private boolean rbdSnapshotExists(RbdImageSpec imageSpec, String image, String snapshotName, int timeout) {
+        String existsCommand = imageSpec.buildRbdCommand("snap", "ls", quote(image)) + " | awk 'NR>1 {print $2}' | grep -Fx " + quote(snapshotName);
+        return Script.runSimpleBashScriptForExitValue(existsCommand, timeout * 1000, false) == 0;
+    }
+
+    private void cleanupRbdRestoreSnapshots(KVMStoragePool storagePool, String volumePath, List<String> snapshotNames, int timeout) {
+        for (int index = snapshotNames.size() - 1; index >= 0; index--) {
+            String snapshotName = snapshotNames.get(index);
+            String removeSnapshotCommand = buildRbdSnapshotCommand(storagePool, "snap rm", volumePath + "@" + snapshotName);
+            Script.runSimpleBashScriptForExitValue(removeSnapshotCommand, timeout * 1000, false);
+        }
+    }
+
+    private void cleanupRbdRestoreSnapshots(RbdImageSpec imageSpec, String image, List<String> snapshotNames, int timeout) {
+        for (int index = snapshotNames.size() - 1; index >= 0; index--) {
+            String snapshotName = snapshotNames.get(index);
+            String removeSnapshotCommand = imageSpec.buildRbdCommand("snap", "rm", quote(image + "@" + snapshotName));
+            Script.runSimpleBashScriptForExitValue(removeSnapshotCommand, timeout * 1000, false);
+        }
+    }
+
+    private String buildRbdSnapshotCommand(KVMStoragePool storagePool, String action, String target) {
+        StringBuilder command = new StringBuilder("rbd");
+        if (StringUtils.isNotBlank(storagePool.getSourceHost())) {
+            command.append(" -m ").append(formatRbdMonHosts(storagePool.getSourceHost(), storagePool.getSourcePort()));
+        }
+        if (StringUtils.isNotBlank(storagePool.getAuthUserName())) {
+            command.append(" --id ").append(storagePool.getAuthUserName());
+        }
+        if (StringUtils.isNotBlank(storagePool.getAuthSecret())) {
+            command.append(" --key ").append(storagePool.getAuthSecret());
+        }
+        command.append(" ").append(action).append(" ").append(target);
+        return command.toString();
     }
 
     private void removeTemporaryRbdImage(RbdImageSpec sourceImage, String tempImage, int timeout) {
