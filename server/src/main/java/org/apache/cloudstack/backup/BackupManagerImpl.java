@@ -1656,6 +1656,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             Long backupSize = backup.getSize() != null ? backup.getSize() : 0L;
             resourceLimitMgr.decrementResourceCount(backup.getAccountId(), Resource.ResourceType.backup_storage, backupSize);
             if (backupDao.remove(backup.getId())) {
+                backupDetailsDao.removeDetails(backup.getId());
                 checkAndGenerateUsageForLastBackupDeletedAfterOfferingRemove(vm, backup);
                 return true;
             } else {
