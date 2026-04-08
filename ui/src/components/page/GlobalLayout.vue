@@ -527,6 +527,13 @@ body.dark-mode .banner-spacer::before {
   /* 배너 높이만큼 밑으로 내려서 겹치지 않게 처리 */
   top: calc(24px + var(--autoBannerHeight, 0px)) !important;
 }
+
+/* 일반 모달은 최상단 경고 배너보다 항상 위에 렌더링 */
+.ant-modal-root,
+.ant-modal-mask,
+.ant-modal-wrap {
+  z-index: 2147483655 !important;
+}
 @media (max-width: 768px) {
   /* 1. 사이드바를 공중에 띄워서 공간 차지를 못하게 만듦 */
   .ant-layout.layout.mobile .sticky-sidebar {
@@ -551,7 +558,7 @@ body.dark-mode .banner-spacer::before {
     font-size: 0; /* 글자 크기 0으로 숨김 */
   }
 
-  /* 3. ★ 아이콘 심폐소생술 (여기가 중요!) ★ */
+  /* 3. ★ 아이콘 조정 */
   /* .anticon: 번역 아이콘 등 / .ant-avatar: 사용자 프로필 */
   .user-menu .action .anticon,
   .user-menu .action .ant-avatar {
