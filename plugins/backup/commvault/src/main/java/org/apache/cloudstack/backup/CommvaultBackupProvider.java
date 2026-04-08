@@ -312,6 +312,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, vmVolumes, volumePoolsAndPaths,
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
+            cleanupFailedBackupForFullRetry(result.backup);
             LOG.warn("Incremental backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm, result.details);
             String fallbackBackupPath = buildBackupPath(vm);
             result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, fallbackBackupPath, vmVolumes, volumePoolsAndPaths,
@@ -569,7 +570,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
         }
-        return BackupExecutionResult.failure(details);
+        return BackupExecutionResult.failure(details, backupVO);
     }
 
     private boolean shouldRetryAsFullAfterIncrementalFailure(BackupExecutionResult result, List<VolumeVO> vmVolumes) {
@@ -580,6 +581,13 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             return true;
         }
         return vmVolumes.size() > 1;
+    }
+
+    private void cleanupFailedBackupForFullRetry(Backup backup) {
+        if (backup == null) {
+            return;
+        }
+        backupDao.remove(backup.getId());
     }
 
     private static final class BackupExecutionResult {
@@ -597,8 +605,8 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             return new BackupExecutionResult(true, backup, null);
         }
 
-        private static BackupExecutionResult failure(String details) {
-            return new BackupExecutionResult(false, null, details);
+        private static BackupExecutionResult failure(String details, Backup backup) {
+            return new BackupExecutionResult(false, backup, details);
         }
     }
 

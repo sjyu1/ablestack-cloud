@@ -230,6 +230,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         BackupExecutionResult result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup,
                 incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
+            cleanupFailedBackupForFullRetry(result.backup);
             LOG.warn("Incremental backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm, result.details);
             result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, null, false, false);
         }
@@ -301,7 +302,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
         }
-        return BackupExecutionResult.failure(details);
+        return BackupExecutionResult.failure(details, backupVO);
     }
 
     private boolean shouldRetryAsFullAfterIncrementalFailure(BackupExecutionResult result, List<VolumeVO> vmVolumes) {
@@ -312,6 +313,13 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             return true;
         }
         return vmVolumes.size() > 1;
+    }
+
+    private void cleanupFailedBackupForFullRetry(Backup backup) {
+        if (backup == null) {
+            return;
+        }
+        backupDao.remove(backup.getId());
     }
 
     private static final class BackupExecutionResult {
@@ -329,8 +337,8 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             return new BackupExecutionResult(true, backup, null);
         }
 
-        private static BackupExecutionResult failure(String details) {
-            return new BackupExecutionResult(false, null, details);
+        private static BackupExecutionResult failure(String details, Backup backup) {
+            return new BackupExecutionResult(false, backup, details);
         }
     }
 
