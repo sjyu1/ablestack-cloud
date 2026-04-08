@@ -554,7 +554,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.remove(backupVO.getId());
             executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
-            return BackupExecutionResult.failure("Failed to complete Commvault backup job");
+            return BackupExecutionResult.failure("Failed to complete Commvault backup job", backupVO);
         }
 
         final String details = answer != null ? answer.getDetails() : "No answer received";
