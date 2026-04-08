@@ -33,6 +33,7 @@ import java.util.Objects;
 import java.util.List;
 import java.util.Properties;
 import java.net.InetAddress;
+import java.util.concurrent.TimeUnit;
 
 import com.cloud.api.query.vo.UserAccountJoinVO;
 import com.cloud.automation.version.AutomationControllerVersion;
@@ -79,6 +80,12 @@ public class AutomationControllerStartWorker extends AutomationControllerResourc
 
     private AutomationControllerVersion automationControllerVersion;
     private static final long GiB_TO_BYTES = 1024 * 1024 * 1024;
+    private static final int AUTOMATION_CONTROLLER_HTTP_PORT = 80;
+    private static final int HTTP_CONNECT_TIMEOUT_MS = 5000;
+    private static final int HTTP_READ_TIMEOUT_MS = 5000;
+    private static final long AUTOMATION_CONTROLLER_CREATE_READY_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30);
+    private static final long AUTOMATION_CONTROLLER_READY_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(15);
+    private static final long AUTOMATION_CONTROLLER_READY_RETRY_INTERVAL_MS = TimeUnit.SECONDS.toMillis(5);
 
     public AutomationControllerStartWorker(final AutomationController automationController, final AutomationControllerManagerImpl automationManager) {
         super(automationController, automationManager);
@@ -400,10 +407,9 @@ public class AutomationControllerStartWorker extends AutomationControllerResourc
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-            boolean urlReachableResult;
             try {
-                urlReachableResult = urlReachable(publicIpAddressStr, 80);
-                if (urlReachableResult == true) {
+                if (waitForAutomationControllerReady(publicIpAddressStr, AUTOMATION_CONTROLLER_HTTP_PORT,
+                        AUTOMATION_CONTROLLER_CREATE_READY_TIMEOUT_MS, AUTOMATION_CONTROLLER_READY_RETRY_INTERVAL_MS)) {
                     if (logger.isInfoEnabled()) {
                         logger.info(String.format("Starting automation controller : %s", automationController.getName()));
                     }
@@ -432,7 +438,6 @@ public class AutomationControllerStartWorker extends AutomationControllerResourc
     public boolean startStoppedAutomationController() throws CloudRuntimeException {
         init();
         IpAddress publicIpAddress = null;
-        boolean urlReachableResult = false;
         publicIpAddress = getAutomationControllerServerIp();
         String publicIpAddressStr = String.valueOf(publicIpAddress.getAddress());
         stateTransitTo(automationController.getId(), AutomationController.Event.StartRequested);
@@ -443,8 +448,8 @@ public class AutomationControllerStartWorker extends AutomationControllerResourc
             throw new RuntimeException(e);
         }
         try {
-            urlReachableResult = urlReachable(publicIpAddressStr, 80);
-            if (urlReachableResult == true) {
+            if (waitForAutomationControllerReady(publicIpAddressStr, AUTOMATION_CONTROLLER_HTTP_PORT,
+                    AUTOMATION_CONTROLLER_READY_TIMEOUT_MS, AUTOMATION_CONTROLLER_READY_RETRY_INTERVAL_MS)) {
                 if (logger.isInfoEnabled()) {
                     logger.info(String.format("Starting automation controller : %s", automationController.getName()));
                 }
@@ -473,26 +478,51 @@ public class AutomationControllerStartWorker extends AutomationControllerResourc
         return target.isReachable(timeout);
     }
 
-    public static boolean urlReachable(String address, int port) throws IOException {
-        try {
-            URL url = new URL("http://"+address+":"+port);
-            URLConnection con = url.openConnection();
-            con.setConnectTimeout(400000);
-            con.setReadTimeout(450000);
-            HttpURLConnection exitCode = (HttpURLConnection)con;
-            if(exitCode.getResponseCode() == 200) {
+    private boolean waitForAutomationControllerReady(String address, int port, long timeoutMs, long retryIntervalMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            int responseCode = getHttpResponseCode(address, port);
+            if (responseCode >= 200 && responseCode < 400) {
                 return true;
             }
-            else {
+
+            if (logger.isDebugEnabled()) {
+                logger.debug(String.format("Automation controller %s is not ready yet on %s:%d (HTTP %d)",
+                        automationController.getName(), address, port, responseCode));
+            }
+
+            try {
+                Thread.sleep(retryIntervalMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warn(String.format("Interrupted while waiting for automation controller %s readiness", automationController.getName()), e);
                 return false;
             }
-        } catch (java.net.SocketTimeoutException e) {
-            return false;
-        } catch (IOException exception) {
-            return false;
         }
+
+        logger.warn(String.format("Timed out waiting for automation controller %s readiness on %s:%d after %d ms",
+                automationController.getName(), address, port, timeoutMs));
+        return false;
     }
 
+    private static int getHttpResponseCode(String address, int port) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL("http://" + address + ":" + port);
+            URLConnection con = url.openConnection();
+            connection = (HttpURLConnection) con;
+            connection.setConnectTimeout(HTTP_CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(HTTP_READ_TIMEOUT_MS);
+            connection.setInstanceFollowRedirects(false);
+            return connection.getResponseCode();
+        } catch (IOException exception) {
+            return -1;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
 
 
 }
