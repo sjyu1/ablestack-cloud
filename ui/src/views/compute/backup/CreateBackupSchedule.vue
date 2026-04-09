@@ -42,6 +42,7 @@
     <div v-if="selectedVM && selectedVM.id">
       <BackupScheduleWizard
         ref="backupScheduleWizard"
+        :key="wizardRenderKey"
         :resource="selectedVM"
         @close-action="closeAction"
         @refresh="handleRefresh"
