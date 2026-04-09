@@ -457,6 +457,24 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         return value == null ? defaultValue : value;
     }
 
+    private Pair<String, String> parseExternalId(String externalId) {
+        if (StringUtils.isBlank(externalId)) {
+            throw new CloudRuntimeException("Backup externalId is empty");
+        }
+
+        final int separatorIndex = externalId.lastIndexOf(',');
+        if (separatorIndex < 0) {
+            throw new CloudRuntimeException(String.format("Invalid Commvault backup externalId format: [%s]", externalId));
+        }
+
+        final String path = externalId.substring(0, separatorIndex);
+        final String jobId = externalId.substring(separatorIndex + 1).trim();
+        if (StringUtils.isAnyBlank(path, jobId)) {
+            throw new CloudRuntimeException(String.format("Invalid Commvault backup externalId format: [%s]", externalId));
+        }
+        return new Pair<>(path, jobId);
+    }
+
     private void validateNoVmSnapshots(VirtualMachine vm) {
         if (CollectionUtils.isNotEmpty(vmSnapshotDao.findByVm(vm.getId()))) {
             LOG.debug("Commvault backup provider cannot take backups of a VM [{}] with VM snapshots.", vm);
@@ -760,8 +778,9 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
         final CommvaultClient client = getClient(vm.getDataCenterId());
         final String externalId = backup.getExternalId();
-        String jobId = externalId.substring(externalId.lastIndexOf(',') + 1).trim();
-        final String path = externalId.substring(0, externalId.lastIndexOf(','));
+        final Pair<String, String> externalIdParts = parseExternalId(externalId);
+        final String path = externalIdParts.first();
+        final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
         if (jobDetails == null) {
             throw new CloudRuntimeException("Failed to get job details commvault api");
@@ -895,8 +914,9 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         final String externalId = backup.getExternalId();
         final Long zoneId = backup.getZoneId();
         final CommvaultClient client = getClient(zoneId);
-        String jobId = externalId.substring(externalId.lastIndexOf(',') + 1).trim();
-        final String path = externalId.substring(0, externalId.lastIndexOf(','));
+        final Pair<String, String> externalIdParts = parseExternalId(externalId);
+        final String path = externalIdParts.first();
+        final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
         if (jobDetails == null) {
             throw new CloudRuntimeException("Failed to get job details commvault api");
@@ -1029,8 +1049,9 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
         final Long zoneId = backup.getZoneId();
         final String externalId = backup.getExternalId();
-        String jobId = externalId.substring(externalId.lastIndexOf(',') + 1).trim();
-        String path = externalId.substring(0, externalId.lastIndexOf(','));
+        final Pair<String, String> externalIdParts = parseExternalId(externalId);
+        final String path = externalIdParts.first();
+        final String jobId = externalIdParts.second();
         final CommvaultClient client = getClient(zoneId);
         String jobDetails = client.getJobDetails(jobId);
         if (jobDetails != null) {
@@ -1180,9 +1201,16 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         final CommvaultClient client = getClient(vm.getDataCenterId());
         for (final Backup backup: backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
             loadBackupDetailsIfNeeded(backup);
-            String externalId = backup.getExternalId();
-            String jobId = externalId.substring(externalId.lastIndexOf(',') + 1).trim();
-            String path = externalId.substring(0, externalId.lastIndexOf(','));
+            final String externalId = backup.getExternalId();
+            final Pair<String, String> externalIdParts;
+            try {
+                externalIdParts = parseExternalId(externalId);
+            } catch (CloudRuntimeException e) {
+                LOG.warn("Skipping Commvault backup sync for backup [{}] due to invalid externalId [{}]", backup.getUuid(), externalId);
+                continue;
+            }
+            final String jobId = externalIdParts.second();
+            final String path = externalIdParts.first();
             String jobDetails = client.getJobDetails(jobId);
             if (jobDetails != null) {
                 JSONObject jsonObject = new JSONObject(jobDetails);
