@@ -740,6 +740,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     }
 
     private Pair<Boolean, String> restoreVMBackup(VirtualMachine vm, Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
         try {
             String commvaultServer = getUrlDomain(CommvaultUrl.value());
         } catch (URISyntaxException e) {
