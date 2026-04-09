@@ -304,19 +304,20 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
 
         final String backupPath = buildBackupPath(vm);
+        final String backupContentPath = buildBackupContentPath(vm);
         List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final Backup latestBackup = getLatestBackedUpBackup(vm);
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost);
-        BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, vmVolumes, volumePoolsAndPaths,
+        BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, backupContentPath, vmVolumes, volumePoolsAndPaths,
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             cleanupFailedBackupForFullRetry(result.backup);
             LOG.warn("Incremental backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm, result.details);
             String fallbackBackupPath = buildBackupPath(vm);
-            result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, fallbackBackupPath, vmVolumes, volumePoolsAndPaths,
+            result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, fallbackBackupPath, backupContentPath, vmVolumes, volumePoolsAndPaths,
                     null, false, false);
         }
         return new Pair<>(result.success, result.backup);
@@ -483,7 +484,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     }
 
     private BackupExecutionResult executeBackup(VirtualMachine vm, Boolean quiesceVM, Host vmHost, HostVO vmHostVO, CommvaultClient client,
-                                                String planId, String backupPath, List<VolumeVO> vmVolumes,
+                                                String planId, String backupPath, String backupContentPath, List<VolumeVO> vmVolumes,
                                                 Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths, Backup latestBackup,
                                                 boolean incrementalBackup, boolean retryAsFullOnFailure) {
         final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
@@ -547,7 +548,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 String subclientGUID = String.valueOf(jsonObject.get("subclientGUID"));
                 String subclientName = String.valueOf(jsonObject.get("subclientName"));
                 String csGUID = String.valueOf(jsonObject.get("csGUID"));
-                boolean upResult = client.updateBackupSet(backupPath, subclientId, clientId, planId, applicationId, backupsetId, instanceId, subclientName, backupsetName);
+                boolean upResult = client.updateBackupSet(backupContentPath, subclientId, clientId, planId, applicationId, backupsetId, instanceId, subclientName, backupsetName);
                 if (upResult) {
                     String planName = client.getPlanName(planId);
                     String storagePolicyId = client.getStoragePolicyId(planName);
@@ -664,6 +665,10 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     private String buildBackupPath(VirtualMachine vm) {
         return String.format("%s/%s/%s", COMMVAULT_DIRECTORY, vm.getInstanceName(),
                 new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date()));
+    }
+
+    private String buildBackupContentPath(VirtualMachine vm) {
+        return String.format("%s/%s", COMMVAULT_DIRECTORY, vm.getInstanceName());
     }
 
     private void validateVolumePoolTypes(List<PrimaryDataStoreTO> volumePools) {
