@@ -883,6 +883,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     // 백업 볼륨 복원 및 연결
     @Override
     public Pair<Boolean, String> restoreBackedUpVolume(Backup backup, Backup.VolumeInfo backupVolumeInfo, String hostIp, String dataStoreUuid, Pair<String, VirtualMachine.State> vmNameAndState) {
+        loadBackupDetailsIfNeeded(backup);
         try {
             String commvaultServer = getUrlDomain(CommvaultUrl.value());
         } catch (URISyntaxException e) {
