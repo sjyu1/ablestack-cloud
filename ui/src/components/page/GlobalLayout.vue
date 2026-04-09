@@ -534,6 +534,16 @@ body.dark-mode .banner-spacer::before {
 .ant-modal-wrap {
   z-index: 2147483655 !important;
 }
+
+/* 모달 위에서 열리는 선택/날짜/팝업 목록도 함께 위로 올립니다 */
+.ant-select-dropdown,
+.ant-picker-dropdown,
+.ant-dropdown,
+.ant-popover,
+.ant-tooltip,
+.ant-cascader-menus {
+  z-index: 2147483656 !important;
+}
 @media (max-width: 768px) {
   /* 1. 사이드바를 공중에 띄워서 공간 차지를 못하게 만듦 */
   .ant-layout.layout.mobile .sticky-sidebar {
