@@ -346,6 +346,9 @@ delete_backup() {
     fi
 
     delete_rbd_snapshot_if_unreferenced "$disk_paths" "$checkpoint_name"
+  elif [[ -n "$CHECKPOINT_NAME" && -n "$DISK_PATHS" ]]; then
+    log -ne "Deleting backup using command metadata [$dest]"
+    delete_rbd_snapshot_if_unreferenced "$DISK_PATHS" "$CHECKPOINT_NAME"
   fi
 
   rm -frv $dest

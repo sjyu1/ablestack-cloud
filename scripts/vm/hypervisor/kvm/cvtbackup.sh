@@ -13,6 +13,7 @@ PARENT_BACKUP_DIR=""
 PARENT_CHECKPOINT_NAME=""
 PARENT_CHECKPOINT_PATH=""
 BACKUP_FILES=""
+FORCED="false"
 logFile="/var/log/cloudstack/agent/agent.log"
 
 EXIT_CLEANUP_FAILED=20
@@ -191,6 +192,16 @@ EOF
   log -ne "Wrote RBD backup metadata to [$dest/rbd-backup.meta]"
 }
 
+write_rbd_checkpoint_metadata() {
+  local checkpoint_name="$1"
+  local parent_checkpoint_name="$2"
+
+  cat > "$dest/checkpoints/$checkpoint_name.meta" <<EOF
+checkpoint_name=$checkpoint_name
+parent_checkpoint_name=$parent_checkpoint_name
+EOF
+}
+
 backup_running_vm() {
   mkdir -p "$dest/checkpoints" || { echo "Failed to create backup directory $dest"; exit 1; }
   local parent_checkpoint_file=""
@@ -311,6 +322,57 @@ backup_rbd_volumes() {
   done < <(split_csv "$DISK_PATHS")
 
   write_rbd_backup_metadata "$BACKUP_TYPE" "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
+  write_rbd_checkpoint_metadata "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
+}
+
+has_child_backup() {
+  local checkpoint_name="$1"
+  [[ -z "$checkpoint_name" ]] && return 1
+  grep -R -q "^parent_checkpoint_name=$checkpoint_name$" "$(dirname "$dest")"/*/rbd-backup.meta 2>/dev/null
+}
+
+delete_rbd_snapshot_if_unreferenced() {
+  local disk_paths="$1"
+  local checkpoint_name="$2"
+
+  [[ -z "$checkpoint_name" ]] && return 0
+
+  if has_child_backup "$checkpoint_name"; then
+    log -ne "Skip snapshot delete [$checkpoint_name] (child exists)"
+    return 0
+  fi
+
+  while IFS= read -r disk_path; do
+    [[ -z "$disk_path" ]] && continue
+    parse_rbd_uri "$disk_path"
+    build_rbd_cmd
+
+    if timeout 30s "${RBD_CMD[@]}" snap ls "$RBD_IMAGE" 2>/dev/null | awk 'NR>1 {print $2}' | grep -Fxq "$checkpoint_name"; then
+      log -ne "Deleting snapshot [${RBD_IMAGE}@${checkpoint_name}]"
+      "${RBD_CMD[@]}" snap rm "${RBD_IMAGE}@${checkpoint_name}" >> "$logFile" 2>&1 || true
+    fi
+  done < <(split_csv "$disk_paths")
+}
+
+delete_backup() {
+  if [[ -f "$dest/rbd-backup.meta" ]]; then
+    source "$dest/rbd-backup.meta"
+
+    log -ne "Deleting backup with metadata [$dest]"
+
+    if [[ "$FORCED" != "true" ]] && has_child_backup "$checkpoint_name"; then
+      echo "Cannot delete backup [$backup_dir]: child backup exists"
+      exit 1
+    fi
+
+    delete_rbd_snapshot_if_unreferenced "$disk_paths" "$checkpoint_name"
+  elif [[ -n "$CHECKPOINT_NAME" && -n "$DISK_PATHS" ]]; then
+    log -ne "Deleting backup using command metadata [$dest]"
+    delete_rbd_snapshot_if_unreferenced "$DISK_PATHS" "$CHECKPOINT_NAME"
+  fi
+
+  rm -frv "$dest"
+  sync
 }
 
 usage() {
@@ -333,6 +395,7 @@ while [[ $# -gt 0 ]]; do
     -f|--backupfiles) BACKUP_FILES="$2"; shift; shift ;;
     -q|--quiesce) QUIESCE="$2"; shift; shift ;;
     -d|--diskpaths) DISK_PATHS="$2"; shift; shift ;;
+    -x|--forced) FORCED="$2"; shift; shift ;;
     -h|--help) usage ;;
     *) echo "Invalid option: $1"; usage ;;
   esac
@@ -352,6 +415,8 @@ if [[ "$OP" == "backup-running" ]]; then
   backup_running_vm
 elif [[ "$OP" == "backup-rbd" ]]; then
   backup_rbd_volumes
+elif [[ "$OP" == "delete" ]]; then
+  delete_backup
 else
   echo "Unsupported operation: $OP"
   exit 1

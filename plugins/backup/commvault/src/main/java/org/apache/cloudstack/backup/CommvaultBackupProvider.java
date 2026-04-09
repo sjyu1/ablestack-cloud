@@ -111,6 +111,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     private static final String DETAIL_PARENT_CHECKPOINT_NAME = "commvault.parent.checkpoint.name";
     private static final String DETAIL_PARENT_CHECKPOINT_PATH = "commvault.parent.checkpoint.path";
     private static final String DETAIL_BACKUP_ENGINE = "commvault.backup.engine";
+    private static final String DETAIL_RBD_DISK_PATHS = "commvault.rbd.disk.paths";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String DETAIL_STAGE_HOST = "commvault.stage.host";
     private static final String RM_COMMAND = "rm -rf %s";
@@ -373,6 +374,16 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         return chainSize;
     }
 
+    private boolean hasDependentBackups(Backup backup) {
+        List<Backup> backups = backupDao.listByVmId(null, backup.getVmId());
+        return backups.stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(candidate -> !Objects.equals(candidate.getId(), backup.getId()))
+                .peek(backupDao::loadDetails)
+                .anyMatch(candidate -> Objects.equals(getBackupDetail(candidate, DETAIL_PARENT_BACKUP_UUID), backup.getUuid()));
+    }
+
     private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, Map<String, String> details) {
         BackupVO backup = new BackupVO();
         backup.setVmId(vm.getId());
@@ -402,17 +413,27 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         Map<String, String> details = backupManager.getBackupDetailsFromVM(vm);
         details.put(DETAIL_BACKUP_ENGINE, backupEngine);
         details.put(DETAIL_STAGE_HOST, stageHost);
+        details.put(DETAIL_CHECKPOINT_NAME, checkpointName);
+        details.put(DETAIL_CHECKPOINT_PATH, getCheckpointPath(backupPath, checkpointName, backupEngine));
+        if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+            details.put(DETAIL_RBD_DISK_PATHS, String.join(",", getVolumePoolsAndPaths(volumeDao.findByInstance(vm.getId())).second()));
+        }
         if (!incrementalBackup) {
             return details;
         }
 
-        details.put(DETAIL_CHECKPOINT_NAME, checkpointName);
-        details.put(DETAIL_CHECKPOINT_PATH, String.format("%s/checkpoints/%s.xml", backupPath, checkpointName));
         details.put(DETAIL_PARENT_BACKUP_UUID, latestBackup.getUuid());
         details.put(DETAIL_PARENT_BACKUP_PATH, latestBackup.getExternalId().substring(0, latestBackup.getExternalId().lastIndexOf(',')));
         details.put(DETAIL_PARENT_CHECKPOINT_NAME, getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
         details.put(DETAIL_PARENT_CHECKPOINT_PATH, getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
         return details;
+    }
+
+    private String getCheckpointPath(String backupPath, String checkpointName, String backupEngine) {
+        if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+            return String.format("%s/checkpoints/%s.meta", backupPath, checkpointName);
+        }
+        return String.format("%s/checkpoints/%s.xml", backupPath, checkpointName);
     }
 
     private String getBackupDetail(Backup backup, String key) {
@@ -1011,6 +1032,10 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
 
     @Override
     public boolean deleteBackup(Backup backup, boolean forced) {
+        loadBackupDetailsIfNeeded(backup);
+        if (!forced && hasDependentBackups(backup)) {
+            throw new CloudRuntimeException(String.format("Backup [%s] cannot be deleted because one or more incremental backups depend on it.", backup.getUuid()));
+        }
         final Long zoneId = backup.getZoneId();
         final String externalId = backup.getExternalId();
         String jobId = externalId.substring(externalId.lastIndexOf(',') + 1).trim();
@@ -1025,7 +1050,11 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             String clientId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("clientId"));
             String clientName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("clientName"));
             String backupsetId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("backupsetId"));
-            return client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
+            boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
+            if (result) {
+                cleanupBackupPathOnStageHost(clientName, path, forced, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+            }
+            return result;
         } else {
             throw new CloudRuntimeException("Failed to request backup job detail commvault api");
         }
@@ -1159,6 +1188,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
         final CommvaultClient client = getClient(vm.getDataCenterId());
         for (final Backup backup: backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
+            loadBackupDetailsIfNeeded(backup);
             String externalId = backup.getExternalId();
             String jobId = externalId.substring(externalId.lastIndexOf(',') + 1).trim();
             String path = externalId.substring(0, externalId.lastIndexOf(','));
@@ -1183,6 +1213,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                     String backupsetId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("backupsetId"));
                     boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
                     if (result) {
+                        cleanupBackupPathOnStageHost(clientName, path, false, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
                         backupDao.remove(backup.getId());
                     }
                 }
@@ -1400,6 +1431,28 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             throw new CloudRuntimeException(String.format("Failed to delete backup path on host %s due to: %s", host.getName(), e.getMessage()));
         }
         return false;
+    }
+
+    private void cleanupBackupPathOnStageHost(String clientName, String path, boolean forced, String checkpointName, String diskPaths) {
+        HostVO stageHost = hostDao.findByName(clientName);
+        if (stageHost == null) {
+            throw new CloudRuntimeException(String.format("Unable to find stage host [%s] for backup cleanup", clientName));
+        }
+        DeleteBackupCommand command = new DeleteBackupCommand(path, null, null, null, forced);
+        command.setBackupProvider("commvault");
+        command.setCheckpointName(checkpointName);
+        command.setDiskPaths(diskPaths);
+        try {
+            BackupAnswer answer = (BackupAnswer) agentManager.send(stageHost.getId(), command);
+            if (answer == null || !answer.getResult()) {
+                throw new CloudRuntimeException(String.format("Failed to delete Commvault backup path on host %s due to: %s",
+                        stageHost.getName(), answer != null ? answer.getDetails() : "no answer received"));
+            }
+        } catch (AgentUnavailableException e) {
+            throw new CloudRuntimeException("Unable to contact backend control plane to delete Commvault backup");
+        } catch (OperationTimedoutException e) {
+            throw new CloudRuntimeException("Operation to delete Commvault backup timed out, please try again");
+        }
     }
 
     public static boolean isRetentionExpired(String retainedUntil) {

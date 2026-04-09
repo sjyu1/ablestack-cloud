@@ -26,6 +26,9 @@ public class DeleteBackupCommand extends Command {
     private String backupPath;
     private String backupRepoType;
     private String backupRepoAddress;
+    private String backupProvider;
+    private String checkpointName;
+    private String diskPaths;
     private boolean forced;
     @LogLevel(LogLevel.Log4jLevel.Off)
     private String mountOptions;
@@ -61,6 +64,30 @@ public class DeleteBackupCommand extends Command {
 
     public void setBackupRepoAddress(String backupRepoAddress) {
         this.backupRepoAddress = backupRepoAddress;
+    }
+
+    public String getBackupProvider() {
+        return backupProvider;
+    }
+
+    public void setBackupProvider(String backupProvider) {
+        this.backupProvider = backupProvider;
+    }
+
+    public String getCheckpointName() {
+        return checkpointName;
+    }
+
+    public void setCheckpointName(String checkpointName) {
+        this.checkpointName = checkpointName;
+    }
+
+    public String getDiskPaths() {
+        return diskPaths;
+    }
+
+    public void setDiskPaths(String diskPaths) {
+        this.diskPaths = diskPaths;
     }
 
     public String getMountOptions() {

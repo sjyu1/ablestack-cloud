@@ -27,6 +27,7 @@ import com.cloud.utils.Pair;
 import com.cloud.utils.script.Script;
 import org.apache.cloudstack.backup.BackupAnswer;
 import org.apache.cloudstack.backup.DeleteBackupCommand;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,18 +40,55 @@ public class LibvirtDeleteBackupCommandWrapper extends CommandWrapper<DeleteBack
         final String backupRepoType = command.getBackupRepoType();
         final String backupRepoAddress = command.getBackupRepoAddress();
         final String mountOptions = command.getMountOptions();
+        final String backupProvider = command.getBackupProvider();
+        final String checkpointName = command.getCheckpointName();
+        final String diskPaths = command.getDiskPaths();
         final boolean forced = command.isForced();
 
         List<String[]> commands = new ArrayList<>();
-        commands.add(new String[]{
-                libvirtComputingResource.getNasBackupPath(),
-                "-o", "delete",
-                "-t", backupRepoType,
-                "-s", backupRepoAddress,
-                "-m", mountOptions,
-                "-p", backupPath,
-                "-x", Boolean.toString(forced)
-        });
+        if ("commvault".equalsIgnoreCase(backupProvider)) {
+            List<String> deleteCommand = new ArrayList<>();
+            deleteCommand.add(libvirtComputingResource.getCvtBackupPath());
+            deleteCommand.add("-o");
+            deleteCommand.add("delete");
+            deleteCommand.add("-p");
+            deleteCommand.add(backupPath);
+            deleteCommand.add("-x");
+            deleteCommand.add(Boolean.toString(forced));
+            if (StringUtils.isNotBlank(checkpointName)) {
+                deleteCommand.add("-c");
+                deleteCommand.add(checkpointName);
+            }
+            if (StringUtils.isNotBlank(diskPaths)) {
+                deleteCommand.add("-d");
+                deleteCommand.add(diskPaths);
+            }
+            commands.add(deleteCommand.toArray(new String[0]));
+        } else {
+            List<String> deleteCommand = new ArrayList<>();
+            deleteCommand.add(libvirtComputingResource.getNasBackupPath());
+            deleteCommand.add("-o");
+            deleteCommand.add("delete");
+            deleteCommand.add("-t");
+            deleteCommand.add(backupRepoType);
+            deleteCommand.add("-s");
+            deleteCommand.add(backupRepoAddress);
+            deleteCommand.add("-m");
+            deleteCommand.add(mountOptions);
+            deleteCommand.add("-p");
+            deleteCommand.add(backupPath);
+            deleteCommand.add("-x");
+            deleteCommand.add(Boolean.toString(forced));
+            if (StringUtils.isNotBlank(checkpointName)) {
+                deleteCommand.add("-c");
+                deleteCommand.add(checkpointName);
+            }
+            if (StringUtils.isNotBlank(diskPaths)) {
+                deleteCommand.add("-d");
+                deleteCommand.add(diskPaths);
+            }
+            commands.add(deleteCommand.toArray(new String[0]));
+        }
 
         Pair<Integer, String> result = Script.executePipedCommands(commands, libvirtComputingResource.getCmdsTimeout());
 

@@ -94,6 +94,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     private static final String DETAIL_PARENT_CHECKPOINT_NAME = "nas.parent.checkpoint.name";
     private static final String DETAIL_PARENT_CHECKPOINT_PATH = "nas.parent.checkpoint.path";
     private static final String DETAIL_BACKUP_ENGINE = "nas.backup.engine";
+    private static final String DETAIL_RBD_DISK_PATHS = "nas.rbd.disk.paths";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
@@ -246,7 +247,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
 
         BackupVO backupVO = createBackupObject(vm, backupPath, incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL,
-                checkpointName, backupEngine, incrementalBackup ? parentBackup : null);
+                checkpointName, backupEngine, incrementalBackup ? parentBackup : null, volumePoolsAndPaths.second());
         TakeBackupCommand command = new TakeBackupCommand(vm.getInstanceName(), backupPath);
         command.setBackupType(backupVO.getType());
         command.setCheckpointName(checkpointName);
@@ -354,7 +355,8 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         }
     }
 
-    private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, String checkpointName, String backupEngine, Backup parentBackup) {
+    private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, String checkpointName, String backupEngine, Backup parentBackup,
+                                        List<String> diskPaths) {
         BackupVO backup = new BackupVO();
         backup.setVmId(vm.getId());
         backup.setExternalId(backupPath);
@@ -381,6 +383,9 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         details.put(DETAIL_CHECKPOINT_NAME, checkpointName);
         details.put(DETAIL_CHECKPOINT_PATH, getCheckpointPath(backupPath, checkpointName, backupEngine));
         details.put(DETAIL_BACKUP_ENGINE, backupEngine);
+        if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine) && CollectionUtils.isNotEmpty(diskPaths)) {
+            details.put(DETAIL_RBD_DISK_PATHS, String.join(",", diskPaths));
+        }
         if (parentBackup != null) {
             details.put(DETAIL_PARENT_BACKUP_UUID, parentBackup.getUuid());
             details.put(DETAIL_PARENT_BACKUP_PATH, parentBackup.getExternalId());
@@ -843,6 +848,9 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
 
     @Override
     public boolean deleteBackup(Backup backup, boolean forced) {
+        if (backup instanceof BackupVO && backup.getDetails() == null) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
         if (!forced && hasDependentBackups(backup)) {
             throw new CloudRuntimeException(String.format("Backup [%s] cannot be deleted because one or more incremental backups depend on it.", backup.getUuid()));
         }
@@ -862,6 +870,9 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
 
         DeleteBackupCommand command = new DeleteBackupCommand(backup.getExternalId(), backupRepository.getType(),
                 backupRepository.getAddress(), backupRepository.getMountOptions(), forced);
+        command.setBackupProvider("nas");
+        command.setCheckpointName(getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+        command.setDiskPaths(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
 
         BackupAnswer answer;
         try {
