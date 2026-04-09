@@ -475,10 +475,10 @@
                     </div>
                     <div v-show="!(vm.templateid && templateNics && templateNics.length > 0)" >
                       <network-selection
-                        :key="`network-selection-${zoneId}-${tabKey}-${form.templateid || 'no-template'}-${form.isoid || 'no-iso'}-${networkOfferingIds.join(',')}`"
+                        :key="`network-selection-${zoneId}-${tabKey}-${form.templateid || 'no-template'}-${form.isoid || 'no-iso'}-${(form.networkids || []).join(',')}`"
                         :items="options.networks"
                         :row-count="rowCount.networks"
-                        :value="networkOfferingIds"
+                        :value="form.networkids || []"
                         :loading="loading.networks"
                         :zoneId="zoneId"
                         :preFillContent="dataPreFill"
@@ -487,7 +487,7 @@
                       ></network-selection>
                       <network-configuration
                         v-if="networks.length > 0"
-                        :key="`network-config-${zoneId}-${tabKey}-${defaultnetworkid}-${networkOfferingIds.join(',')}`"
+                        :key="`network-config-${zoneId}-${tabKey}-${defaultnetworkid}-${(form.networkids || []).join(',')}`"
                         :items="networks"
                         :value="defaultnetworkid"
                         :preFillContent="dataPreFill"
@@ -1457,6 +1457,13 @@ export default {
   created () {
     this.initForm()
     this.dataPreFill = this.preFillContent && Object.keys(this.preFillContent).length > 0 ? this.preFillContent : {}
+    if (Array.isArray(this.dataPreFill.networkids) && this.dataPreFill.networkids.length > 0) {
+      this.form.networkids = [...this.dataPreFill.networkids]
+      if (!this.form.defaultnetworkid) {
+        this.defaultnetworkid = this.dataPreFill.networkids[0]
+        this.form.defaultnetworkid = this.dataPreFill.networkids[0]
+      }
+    }
     this.showOverrideDiskOfferingOption = this.dataPreFill.overridediskoffering
 
     if (this.dataPreFill.isIso) {
