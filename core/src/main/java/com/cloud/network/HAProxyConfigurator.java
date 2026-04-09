@@ -44,6 +44,9 @@ public class HAProxyConfigurator implements LoadBalancerConfigurator {
 
     protected Logger logger = LogManager.getLogger(getClass());
     private static final String blankLine = "\t ";
+    private static final String defaultConnectTimeout = "5000";
+    private static final String defaultClientTimeout = "50000";
+    private static final String defaultServerTimeout = "50000";
     private static String[] globalSection = {"global", "\tlog 127.0.0.1:3914   local0 warning", "\tmaxconn 4096", "\tmaxpipes 1024", "\tchroot /var/lib/haproxy",
         "\tuser haproxy", "\tgroup haproxy", "\tstats socket /run/haproxy/admin.sock", "\tdaemon"};
 
@@ -74,7 +77,7 @@ public class HAProxyConfigurator implements LoadBalancerConfigurator {
 
         result.addAll(Arrays.asList(globalSection));
         result.add(blankLine);
-        result.addAll(Arrays.asList(defaultsSection));
+        result.addAll(getDefaultsSection(defaultConnectTimeout, defaultClientTimeout, defaultServerTimeout, false));
         result.add(blankLine);
 
         if (pools.isEmpty()) {
@@ -602,10 +605,7 @@ public class HAProxyConfigurator implements LoadBalancerConfigurator {
         //        result.add("\tnopoll");
 
         result.add(blankLine);
-        final List<String> dSection = Arrays.asList(defaultsSection);
-        if (lbCmd.keepAliveEnabled) {
-            dSection.set(7, "\tno option httpclose");
-        }
+        final List<String> dSection = getDefaultsSection(lbCmd.lbConnectTimeout, lbCmd.lbClientTimeout, lbCmd.lbServerTimeout, lbCmd.keepAliveEnabled);
 
         if (logger.isDebugEnabled()) {
             for (final String s : dSection) {
@@ -695,5 +695,19 @@ public class HAProxyConfigurator implements LoadBalancerConfigurator {
         result[STATS] = toStats.toArray(new String[toStats.size()]);
 
         return result;
+    }
+
+    private List<String> getDefaultsSection(final String connectTimeout, final String clientTimeout, final String serverTimeout, final boolean keepAliveEnabled) {
+        final List<String> dSection = new ArrayList<>(Arrays.asList(defaultsSection));
+        final String effectiveConnectTimeout = StringUtils.isBlank(connectTimeout) ? defaultConnectTimeout : connectTimeout;
+        final String effectiveClientTimeout = StringUtils.isBlank(clientTimeout) ? defaultClientTimeout : clientTimeout;
+        final String effectiveServerTimeout = StringUtils.isBlank(serverTimeout) ? defaultServerTimeout : serverTimeout;
+        dSection.set(8, "\ttimeout connect    " + effectiveConnectTimeout);
+        dSection.set(9, "\ttimeout client     " + effectiveClientTimeout);
+        dSection.set(10, "\ttimeout server     " + effectiveServerTimeout);
+        if (keepAliveEnabled) {
+            dSection.set(7, "\tno option httpclose");
+        }
+        return dSection;
     }
 }
