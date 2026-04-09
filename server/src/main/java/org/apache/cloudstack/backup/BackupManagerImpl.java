@@ -1598,9 +1598,15 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException(String.format("Error restoring volume [%s] of VM [%s] to host [%s] using backup provider [%s] due to: [%s].",
                     backedUpVolumeUuid, vm.getUuid(), host.getUuid(), backupProvider.getName(), result.second()));
         }
-        if (!attachVolumeToVM(vm.getDataCenterId(), result.second(), backupVolumeInfo,
-                            backedUpVolumeUuid, vm, datastore.getUuid(), backup)) {
-            throw new CloudRuntimeException(String.format("Error attaching volume [%s] to VM [%s].", backedUpVolumeUuid, vm.getUuid()));
+        try {
+            if (!attachVolumeToVM(vm.getDataCenterId(), result.second(), backupVolumeInfo,
+                                backedUpVolumeUuid, vm, datastore.getUuid(), backup)) {
+                cleanupRestoredVolumeAfterAttachFailure(result.second());
+                throw new CloudRuntimeException(String.format("Error attaching volume [%s] to VM [%s].", backedUpVolumeUuid, vm.getUuid()));
+            }
+        } catch (Exception e) {
+            cleanupRestoredVolumeAfterAttachFailure(result.second());
+            throw e;
         }
         return true;
     }
@@ -1720,6 +1726,22 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             return guru.attachRestoredVolumeToVirtualMachine(zoneId, restoredVolumeLocation, backupVolumeInfo, vm, pool.getId(), backup);
         } catch (Exception e) {
             throw new CloudRuntimeException("Error attach restored volume to VM " + vm.getUuid() + " due to: " + e.getMessage());
+        }
+    }
+
+    private void cleanupRestoredVolumeAfterAttachFailure(String restoredVolumeLocation) {
+        if (StringUtils.isBlank(restoredVolumeLocation)) {
+            return;
+        }
+        VolumeVO restoredVolume = volumeDao.findByUuid(restoredVolumeLocation);
+        if (restoredVolume == null) {
+            return;
+        }
+        try {
+            Account caller = CallContext.current() != null ? CallContext.current().getCallingAccount() : accountDao.findById(restoredVolume.getAccountId());
+            volumeApiService.deleteVolume(restoredVolume.getId(), caller);
+        } catch (Exception e) {
+            logger.warn("Failed to cleanup restored volume {} after attach failure", restoredVolumeLocation, e);
         }
     }
 

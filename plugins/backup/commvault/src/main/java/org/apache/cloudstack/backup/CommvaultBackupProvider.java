@@ -337,6 +337,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         if (latestBackup == null) {
             return false;
         }
+        loadBackupDetailsIfNeeded(latestBackup);
 
         Long clusterId = getClusterIdFromRootVolume(vm);
         if (clusterId == null) {
@@ -347,8 +348,19 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             return false;
         }
 
+        return canContinueIncrementalChain(vm, latestBackup, vmHost) && getBackupChainSize(vm, latestBackup) < BackupDeltaMax.value();
+    }
+
+    private boolean canContinueIncrementalChain(VirtualMachine vm, Backup latestBackup, Host vmHost) {
+        final String backupEngine = getBackupDetail(latestBackup, DETAIL_BACKUP_ENGINE);
+        if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+            LOG.debug("Allowing Commvault incremental backup for VM [{}] on host [{}] using RBD chain from previous stage host [{}]",
+                    vm.getInstanceName(), vmHost.getName(), getBackupDetail(latestBackup, DETAIL_STAGE_HOST));
+            return true;
+        }
+
         String stageHost = getBackupDetail(latestBackup, DETAIL_STAGE_HOST);
-        return Objects.equals(stageHost, vmHost.getName()) && getBackupChainSize(vm, latestBackup) < BackupDeltaMax.value();
+        return Objects.equals(stageHost, vmHost.getName());
     }
 
     private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {
@@ -792,9 +804,6 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                         .collect(Collectors.toList());
 
                 LOG.debug("Restoring vm {} from backup {} on the Commvault Backup Provider", vm, backup);
-                // 가상머신이 실행중인 호스트 정의
-                final Host vmHost = getVMHypervisorHost(vm);
-                final HostVO vmHostVO = hostDao.findById(vmHost.getId());
                 CommvaultRestoreBackupCommand restoreCommand = new CommvaultRestoreBackupCommand();
                 LOG.info(path);
                 restoreCommand.setBackupPath(path);
@@ -818,12 +827,11 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setVmExists(vm.getRemoved() == null);
                 restoreCommand.setVmState(vm.getState());
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
-                // 복원된 호스트와 가상머신이 실행중인 호스트가 같은 경우 null, 다른 경우 추가
-                restoreCommand.setHostName(restoreHost.getId() == vmHost.getId() ? null : restoreHost.getName());
+                restoreCommand.setHostName(null);
 
                 BackupAnswer answer;
                 try {
-                    answer = (BackupAnswer) agentManager.send(vmHost.getId(), restoreCommand);
+                    answer = (BackupAnswer) agentManager.send(restoreHost.getId(), restoreCommand);
                 } catch (AgentUnavailableException e) {
                     throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
                 } catch (OperationTimedoutException e) {
@@ -831,14 +839,9 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 }
                 if (!answer.getResult()) {
                     int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-                    Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
+                    Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
                     String command = String.format(RM_COMMAND, path);
-                    executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, command);
-                    if (restoreHost.getId() != vmHost.getId()) {
-                        credentials = getKVMHyperisorCredentials(restoreHostVO);
-                        command = String.format(RM_COMMAND, path);
-                        executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
-                    }
+                    executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
                 }
                 return new Pair<>(answer.getResult(), answer.getDetails());
             } else {
@@ -922,7 +925,6 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         if (jobId2 != null) {
             String jobStatus = client.getJobStatus(jobId2);
             if (jobStatus.equalsIgnoreCase("Completed")) {
-                final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
                 final VolumeVO volume = volumeDao.findByUuid(backupVolumeInfo.getUuid());
                 final DiskOffering diskOffering = diskOfferingDao.findByUuid(backupVolumeInfo.getDiskOfferingId());
                 String cacheMode = null;
@@ -936,9 +938,6 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                     }
                 }
                 final StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
-                // 백업 볼륨 복원 및 연결 시 연결할 가상머신이 실행중인 경우 해당 호스트, 정지중인 경우 랜덤 호스트 정의백업
-                final HostVO vmHost = hostDao.findByIp(hostIp);
-                final HostVO vmHostVO = hostDao.findById(vmHost.getId());
                 // 복원된 호스트 정의
                 final HostVO restoreHost = hostDao.findByName(clientName);
                 final HostVO restoreHostVO = hostDao.findById(restoreHost.getId());
@@ -983,12 +982,11 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setCacheMode(cacheMode);
-                // 복원된 호스트와 가상머신이 실행중인 호스트가 같은 경우 null, 다른 경우 추가
-                restoreCommand.setHostName(restoreHost.getId() == vmHost.getId() ? null : restoreHost.getName());
+                restoreCommand.setHostName(null);
 
                 BackupAnswer answer;
                 try {
-                    answer = (BackupAnswer) agentManager.send(vmHost.getId(), restoreCommand);
+                    answer = (BackupAnswer) agentManager.send(restoreHost.getId(), restoreCommand);
                 } catch (AgentUnavailableException e) {
                     throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
                 } catch (OperationTimedoutException e) {
@@ -1001,21 +999,12 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                     } catch (Exception e) {
                         throw new CloudRuntimeException("Unable to create restored volume due to: " + e);
                     }
-                    if (restoreHost.getId() != vmHost.getId()) {
-                        Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
-                        String command = String.format(RM_COMMAND, path);
-                        executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
-                    }
                     return new Pair<>(answer.getResult(), answer.getDetails());
                 } else {
-                    Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
+                    final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
+                    Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
                     String command = String.format(RM_COMMAND, path);
-                    executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, command);
-                    if (restoreHost.getId() != vmHost.getId()) {
-                        credentials = getKVMHyperisorCredentials(restoreHostVO);
-                        command = String.format(RM_COMMAND, path);
-                        executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
-                    }
+                    executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
                 }
             } else {
                 LOG.error("Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job status is " + jobStatus);

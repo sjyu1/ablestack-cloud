@@ -149,11 +149,6 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
             if (!replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, localBackupPaths, timeout, backupPath, 0, true)) {
                 throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", volumeUUID));
             }
-            if (VirtualMachine.State.Running.equals(vmNameAndState.second())) {
-                if (!attachVolumeToVm(storagePoolMgr, vmNameAndState.first(), volumePool, volumePath, cacheMode)) {
-                    throw new CloudRuntimeException(String.format("Failed to attach volume to VM: %s", vmNameAndState.first()));
-                }
-            }
         } finally {
             deleteBackupDirectory(backupPath);
         }
