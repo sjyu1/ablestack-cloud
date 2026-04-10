@@ -1157,7 +1157,6 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
         if (compressDedupVolume == null) {
             throw new ConfigurationException("Unable to find compress_dedup_volume.sh");
         }
-
         createVmPath = Script.findScript(storageScriptsDir, "createvm.sh");
         if (createVmPath == null) {
             throw new ConfigurationException("Unable to find the createvm.sh");
@@ -1444,7 +1443,6 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
         final String[] info = NetUtils.getNetworkParams(privateNic);
 
         kvmhaMonitor = new KVMHAMonitor(null, info[0], heartBeatPath, heartBeatPathGfs, heartBeatPathRbd, heartBeatPathClvm);
-
         final Thread ha = new Thread(kvmhaMonitor);
         ha.start();
 

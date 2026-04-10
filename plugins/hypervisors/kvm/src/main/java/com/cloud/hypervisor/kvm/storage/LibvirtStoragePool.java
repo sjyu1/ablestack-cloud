@@ -31,6 +31,9 @@ import org.libvirt.StoragePool;
 import org.apache.cloudstack.utils.qemu.QemuImg.PhysicalDiskFormat;
 
 import com.cloud.agent.api.to.HostTO;
+import com.cloud.agent.properties.AgentProperties;
+import com.cloud.agent.properties.AgentPropertiesFileHandler;
+import com.cloud.ha.HighAvailabilityManager;
 import com.cloud.hypervisor.kvm.resource.KVMHABase.HAStoragePool;
 import com.cloud.storage.Storage;
 import com.cloud.storage.Storage.StoragePoolType;
@@ -538,7 +541,7 @@ public class LibvirtStoragePool implements KVMStoragePool {
         }
     }
 
-        public void createRBDSecretKeyFileIfNoExist(String uuid, String localPath, String skey) {
+    public void createRBDSecretKeyFileIfNoExist(String uuid, String localPath, String skey) {
         File file = new File(localPath + File.separator + uuid);
         try {
             // 파일이 존재하지 않을 때만 생성
@@ -554,4 +557,7 @@ public class LibvirtStoragePool implements KVMStoragePool {
         } catch (IOException e) {}
     }
 
+    public void setType(StoragePoolType type) {
+        this.type = type;
+    }
 }

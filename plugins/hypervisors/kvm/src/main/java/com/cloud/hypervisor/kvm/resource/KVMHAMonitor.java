@@ -18,7 +18,7 @@ package com.cloud.hypervisor.kvm.resource;
 
 import com.cloud.agent.properties.AgentProperties;
 import com.cloud.agent.properties.AgentPropertiesFileHandler;
-import com.cloud.storage.Storage.StoragePoolType;
+import com.cloud.ha.HighAvailabilityManager;
 import com.cloud.utils.script.Script;
 import org.libvirt.Connect;
 import org.libvirt.LibvirtException;
@@ -214,7 +214,7 @@ public class KVMHAMonitor extends KVMHABase implements Runnable {
         return result;
     }
 
-    private void checkForNotExistingPools(Set<String> removedPools, String uuid) {
+    private void checkForNotExistingLibvirtStoragePools(Set<String> removedPools, String uuid) {
         try {
             Connect conn = LibvirtConnection.getConnection();
             StoragePool storage = conn.storagePoolLookupByUUIDString(uuid);
