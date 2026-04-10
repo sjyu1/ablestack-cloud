@@ -78,6 +78,7 @@ import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -748,6 +749,24 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         return chain;
     }
 
+    private LinkedHashMap<String, Backup> getBackupChainStageHosts(Backup backup) {
+        LinkedHashMap<String, Backup> stageHosts = new LinkedHashMap<>();
+        Backup current = backup;
+        while (current != null) {
+            loadBackupDetailsIfNeeded(current);
+            String stageHost = getBackupDetail(current, DETAIL_STAGE_HOST);
+            if (StringUtils.isNotBlank(stageHost)) {
+                stageHosts.putIfAbsent(stageHost, current);
+            }
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (parentBackupUuid == null) {
+                break;
+            }
+            current = backupDao.findByUuid(parentBackupUuid);
+        }
+        return stageHosts;
+    }
+
     private void loadBackupDetailsIfNeeded(Backup backup) {
         if (backup instanceof BackupVO && backup.getDetails() == null) {
             backupDao.loadDetails((BackupVO) backup);
@@ -773,6 +792,87 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
 
     private boolean isLegacyBackup(Backup backup) {
         return getBackupDetail(backup, DETAIL_BACKUP_ENGINE) == null;
+    }
+
+    private List<String> restoreBackupSourcesOnAdditionalHosts(CommvaultClient client, Backup backup, String executionHostName) {
+        if (!BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            return Collections.emptyList();
+        }
+
+        List<String> additionalHosts = new ArrayList<>();
+        for (Map.Entry<String, Backup> entry : getBackupChainStageHosts(backup).entrySet()) {
+            String stageHost = entry.getKey();
+            if (StringUtils.isBlank(stageHost) || Objects.equals(stageHost, executionHostName)) {
+                continue;
+            }
+            restoreBackupRootOnStageHost(client, entry.getValue());
+            additionalHosts.add(stageHost);
+        }
+        return additionalHosts;
+    }
+
+    private void restoreBackupRootOnStageHost(CommvaultClient client, Backup backup) {
+        final Pair<String, String> externalIdParts = parseExternalId(backup.getExternalId());
+        final String restoreSourcePath = getRestoreBackupRootPath(backup);
+        final String jobId = externalIdParts.second();
+        String jobDetails = client.getJobDetails(jobId);
+        if (jobDetails == null) {
+            throw new CloudRuntimeException("Failed to get job details commvault api");
+        }
+
+        JSONObject jsonObject = new JSONObject(jobDetails);
+        String endTime = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("detailInfo").get("endTime"));
+        String subclientId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("subclientId"));
+        String displayName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("displayName"));
+        String clientId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("clientId"));
+        String companyId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("company").get("companyId"));
+        String companyName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("company").get("companyName"));
+        String instanceName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("instanceName"));
+        String appName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("appName"));
+        String applicationId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("applicationId"));
+        String clientName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("clientName"));
+        String backupsetId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("backupsetId"));
+        String instanceId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("instanceId"));
+        String backupsetName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("backupsetName"));
+        String commCellId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("commcell").get("commCellId"));
+        String backupsetGUID = client.getVmBackupSetGuid(clientName, backupsetName);
+        if (backupsetGUID == null) {
+            throw new CloudRuntimeException("Failed to get vm backup set guid commvault api");
+        }
+
+        String restoreJobId = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName,
+                appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
+        if (restoreJobId == null) {
+            throw new CloudRuntimeException("Failed to restore Full VM commvault api");
+        }
+
+        String jobStatus = client.getJobStatus(restoreJobId);
+        if (!jobStatus.equalsIgnoreCase("Completed")) {
+            throw new CloudRuntimeException("Failed to restore Full VM commvault api resulted in " + jobStatus);
+        }
+    }
+
+    private void cleanupBackupPathOnAdditionalHosts(List<String> hostNames, String backupPath) {
+        if (hostNames == null || hostNames.isEmpty()) {
+            return;
+        }
+        int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
+        String command = String.format(RM_COMMAND, backupPath);
+        for (String hostName : hostNames) {
+            if (StringUtils.isBlank(hostName)) {
+                continue;
+            }
+            HostVO host = hostDao.findByName(hostName);
+            if (host == null) {
+                continue;
+            }
+            try {
+                Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
+                executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort, command);
+            } catch (Exception e) {
+                LOG.warn("Failed to cleanup Commvault restore source path [{}] on host [{}]", backupPath, hostName, e);
+            }
+        }
     }
 
     private String getLegacyBackupFileName(Backup.VolumeInfo backupVolumeInfo) {
@@ -831,12 +931,13 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         // 복원된 호스트 정의
         final HostVO restoreHost = hostDao.findByName(clientName);
         final HostVO restoreHostVO = hostDao.findById(restoreHost.getId());
+        final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
         LOG.info(String.format("Restoring vm %s from backup %s on the Commvault Backup Provider", vm, backup));
-        // 복원 실행
-        String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
-        if (jobId2 != null) {
-            String jobStatus = client.getJobStatus(jobId2);
-            if (jobStatus.equalsIgnoreCase("Completed")) {
+        try {
+            String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
+            if (jobId2 != null) {
+                String jobStatus = client.getJobStatus(jobId2);
+                if (jobStatus.equalsIgnoreCase("Completed")) {
                 List<String> backedVolumesUUIDs = backup.getBackedUpVolumes().stream()
                         .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
                         .map(Backup.VolumeInfo::getUuid)
@@ -871,6 +972,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setVmState(vm.getState());
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setHostName(null);
+                restoreCommand.setBackupSourceHosts(additionalSourceHosts);
 
                 BackupAnswer answer;
                 try {
@@ -887,11 +989,14 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                     executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
                 }
                 return new Pair<>(answer.getResult(), answer.getDetails());
+                } else {
+                    throw new CloudRuntimeException("Failed to restore Full VM commvault api resulted in " + jobStatus);
+                }
             } else {
-                throw new CloudRuntimeException("Failed to restore Full VM commvault api resulted in " + jobStatus);
+                throw new CloudRuntimeException("Failed to restore Full VM commvault api");
             }
-        } else {
-            throw new CloudRuntimeException("Failed to restore Full VM commvault api");
+        } finally {
+            cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
         }
     }
 
@@ -965,11 +1070,12 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         if (backupsetGUID == null) {
             throw new CloudRuntimeException("Failed to get vm backup set guid commvault api");
         }
-        // 복원 실행
-        String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
-        if (jobId2 != null) {
-            String jobStatus = client.getJobStatus(jobId2);
-            if (jobStatus.equalsIgnoreCase("Completed")) {
+        final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
+        try {
+            String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
+            if (jobId2 != null) {
+                String jobStatus = client.getJobStatus(jobId2);
+                if (jobStatus.equalsIgnoreCase("Completed")) {
                 final VolumeVO volume = volumeDao.findByUuid(backupVolumeInfo.getUuid());
                 final DiskOffering diskOffering = diskOfferingDao.findByUuid(backupVolumeInfo.getDiskOfferingId());
                 String cacheMode = null;
@@ -1028,6 +1134,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setCacheMode(cacheMode);
                 restoreCommand.setHostName(null);
+                restoreCommand.setBackupSourceHosts(additionalSourceHosts);
 
                 BackupAnswer answer;
                 try {
@@ -1048,14 +1155,17 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 } else {
                     final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
                     Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
-                    String command = String.format(RM_COMMAND, path);
+                    String command = String.format(RM_COMMAND, restoreSourcePath);
                     executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
                 }
+                } else {
+                    LOG.error("Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job status is " + jobStatus);
+                }
             } else {
-                LOG.error("Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job status is " + jobStatus);
+                LOG.error("Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job commvault api");
             }
-        } else {
-            LOG.error("Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job commvault api");
+        } finally {
+            cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
         }
         return new Pair<>(false, null);
     }

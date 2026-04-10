@@ -41,6 +41,7 @@ public class CommvaultRestoreBackupCommand extends Command  {
     private Integer timeout;
     private String cacheMode;
     private String hostName;
+    private List<String> backupSourceHosts;
 
     protected CommvaultRestoreBackupCommand() {
         super();
@@ -164,5 +165,13 @@ public class CommvaultRestoreBackupCommand extends Command  {
 
     public void setHostName(String hostName) {
         this.hostName = hostName;
+    }
+
+    public List<String> getBackupSourceHosts() {
+        return backupSourceHosts;
+    }
+
+    public void setBackupSourceHosts(List<String> backupSourceHosts) {
+        this.backupSourceHosts = backupSourceHosts;
     }
 }

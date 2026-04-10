@@ -47,6 +47,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -76,12 +77,22 @@ public class LibvirtCommvaultRestoreBackupCommandWrapper extends CommandWrapper<
         int timeout = command.getTimeout();
         String cacheMode = command.getCacheMode();
         String hostName = command.getHostName();
+        List<String> backupSourceHosts = command.getBackupSourceHosts();
         KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();
 
         String newVolumeId = null;
         try {
             if (hostName != null) {
                 fetchBackupFile(hostName, backupPath);
+            }
+            if (backupSourceHosts != null && !backupSourceHosts.isEmpty()) {
+                LinkedHashSet<String> sourceHosts = new LinkedHashSet<>(backupSourceHosts);
+                for (String sourceHost : sourceHosts) {
+                    if (StringUtils.isBlank(sourceHost) || Objects.equals(sourceHost, hostName)) {
+                        continue;
+                    }
+                    fetchBackupFile(sourceHost, backupPath);
+                }
             }
             if (Objects.isNull(vmExists)) {
                 PrimaryDataStoreTO volumePool = restoreVolumePools.get(0);
