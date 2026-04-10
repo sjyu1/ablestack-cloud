@@ -26,7 +26,7 @@ import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 
 import java.util.List;
 
-public class CommvaultRestoreBackupCommand extends Command  {
+public class AblestackCommvaultRestoreBackupCommand extends Command  {
     private String vmName;
     private String backupPath;
     private List<String> backupVolumesUUIDs;
@@ -43,7 +43,7 @@ public class CommvaultRestoreBackupCommand extends Command  {
     private String hostName;
     private List<String> backupSourceHosts;
 
-    protected CommvaultRestoreBackupCommand() {
+    protected AblestackCommvaultRestoreBackupCommand() {
         super();
     }
 
