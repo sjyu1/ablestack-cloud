@@ -67,7 +67,6 @@ import org.apache.cloudstack.api.command.user.backup.repository.ListBackupReposi
 import org.apache.cloudstack.api.command.user.backup.repository.UpdateBackupRepositoryCmd;
 import org.apache.cloudstack.api.command.user.vm.CreateVMFromBackupCmd;
 import org.apache.cloudstack.api.response.BackupResponse;
-import org.apache.cloudstack.backup.BackupProviderNameUtils;
 import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupDetailsDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDao;

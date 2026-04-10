@@ -782,6 +782,35 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return stageHosts;
     }
 
+    private List<String> getRestoreSourcePathsForStageHost(Backup backup, String stageHost) {
+        if (!BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            return Collections.singletonList(getRestoreBackupRootPath(backup));
+        }
+
+        List<String> restoreSourcePaths = new ArrayList<>();
+        Backup current = backup;
+        while (current != null) {
+            loadBackupDetailsIfNeeded(current);
+            String currentStageHost = getBackupDetail(current, DETAIL_STAGE_HOST);
+            if (Objects.equals(currentStageHost, stageHost)) {
+                String backupPath = parseExternalId(current.getExternalId()).first();
+                if (!restoreSourcePaths.contains(backupPath)) {
+                    restoreSourcePaths.add(0, backupPath);
+                }
+            }
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (parentBackupUuid == null) {
+                break;
+            }
+            current = backupDao.findByUuid(parentBackupUuid);
+        }
+
+        if (restoreSourcePaths.isEmpty()) {
+            restoreSourcePaths.add(getRestoreBackupRootPath(backup));
+        }
+        return restoreSourcePaths;
+    }
+
     private void loadBackupDetailsIfNeeded(Backup backup) {
         if (backup instanceof BackupVO && backup.getDetails() == null) {
             backupDao.loadDetails((BackupVO) backup);
@@ -820,15 +849,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             if (StringUtils.isBlank(stageHost) || Objects.equals(stageHost, executionHostName)) {
                 continue;
             }
-            restoreBackupRootOnStageHost(client, entry.getValue());
+            restoreBackupPathsOnStageHost(client, entry.getValue(), getRestoreSourcePathsForStageHost(backup, stageHost));
             additionalHosts.add(stageHost);
         }
         return additionalHosts;
     }
 
-    private void restoreBackupRootOnStageHost(AblestackCommvaultClient client, Backup backup) {
+    private void restoreBackupPathsOnStageHost(AblestackCommvaultClient client, Backup backup, List<String> restoreSourcePaths) {
         final Pair<String, String> externalIdParts = parseExternalId(backup.getExternalId());
-        final String restoreSourcePath = getRestoreBackupRootPath(backup);
         final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
         if (jobDetails == null) {
@@ -856,7 +884,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
 
         String restoreJobId = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName,
-                appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
+                appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePaths);
         if (restoreJobId == null) {
             throw new CloudRuntimeException("Failed to restore Full VM commvault api");
         }
@@ -918,6 +946,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final String externalId = backup.getExternalId();
         final Pair<String, String> externalIdParts = parseExternalId(externalId);
         final String path = externalIdParts.first();
+        final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         final String restoreSourcePath = getRestoreBackupRootPath(backup);
         final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
@@ -949,7 +978,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
         LOG.info(String.format("Restoring vm %s from backup %s on the Commvault Backup Provider", vm, backup));
         try {
-            String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
+            String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePaths);
             if (jobId2 != null) {
                 String jobStatus = client.getJobStatus(jobId2);
                 if (jobStatus.equalsIgnoreCase("Completed")) {
@@ -1060,6 +1089,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final AblestackCommvaultClient client = getClient(zoneId);
         final Pair<String, String> externalIdParts = parseExternalId(externalId);
         final String path = externalIdParts.first();
+        final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         final String restoreSourcePath = getRestoreBackupRootPath(backup);
         final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
@@ -1087,7 +1117,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
         final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
         try {
-            String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
+            String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePaths);
             if (jobId2 != null) {
                 String jobStatus = client.getJobStatus(jobId2);
                 if (jobStatus.equalsIgnoreCase("Completed")) {

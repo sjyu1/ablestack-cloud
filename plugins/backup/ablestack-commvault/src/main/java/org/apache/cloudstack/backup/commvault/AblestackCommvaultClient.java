@@ -1430,6 +1430,13 @@ public class AblestackCommvaultClient {
         return null;
     }
 
+    public String restoreFullVM(String subclientId, String displayName, String backupsetGUID, String clientId, String companyId, String companyName, String instanceName,
+                                String appName, String applicationId, String clientName, String backupsetId, String instanceId, String backupsetName,
+                                String commCellId, String endTime, List<String> paths) {
+        return restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName,
+                applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, String.join(",", paths));
+    }
+
     // GET https://<commserveIp>/commandcenter/api/commcell/properties
     // 에이전트 설치를 위한 commcell 정보 조회 API
     public String getCommcell() {
