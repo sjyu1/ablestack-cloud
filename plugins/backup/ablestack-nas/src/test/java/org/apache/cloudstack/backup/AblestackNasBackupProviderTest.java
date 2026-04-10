@@ -115,7 +115,7 @@ public class AblestackNasBackupProviderTest {
         Mockito.when(hostDao.findById(hostId)).thenReturn(host);
         Mockito.when(backupRepositoryDao.findByBackupOfferingId(1L)).thenReturn(backupRepository);
         Mockito.when(vmInstanceDao.findByIdIncludingRemoved(1L)).thenReturn(vm);
-        Mockito.when(agentManager.send(anyLong(), Mockito.any(AblestackDeleteBackupCommand.class))).thenReturn(new BackupAnswer(new DeleteBackupCommand(null, null, null, null, true), true, "details"));
+        Mockito.when(agentManager.send(anyLong(), Mockito.any(AblestackDeleteBackupCommand.class))).thenReturn(new BackupAnswer(new AblestackDeleteBackupCommand(null, null, null, null, true), true, "details"));
         Mockito.when(backupDao.remove(1L)).thenReturn(true);
 
         boolean result = ablestackNasBackupProvider.deleteBackup(backup, true);
@@ -138,7 +138,7 @@ public class AblestackNasBackupProviderTest {
         answer.setUsedSize(50L);
         Mockito.when(agentManager.send(anyLong(), Mockito.any(GetBackupStorageStatsCommand.class))).thenReturn(answer);
 
-        nasBackupProvider.syncBackupStorageStats(1L);
+        ablestackNasBackupProvider.syncBackupStorageStats(1L);
         Mockito.verify(backupRepositoryDao, Mockito.times(1)).updateCapacity(backupRepository, 100L, 50L);
     }
 
@@ -150,7 +150,7 @@ public class AblestackNasBackupProviderTest {
 
         Mockito.when(backupRepositoryDao.listByZoneAndProvider(1L, "nas")).thenReturn(Collections.singletonList(backupRepository));
 
-        List<BackupOffering> result = nasBackupProvider.listBackupOfferings(1L);
+        List<BackupOffering> result = ablestackNasBackupProvider.listBackupOfferings(1L);
         Assert.assertEquals(1, result.size());
         Assert.assertEquals("test-repo", result.get(0).getName());
         Assert.assertEquals("uuid", result.get(0).getUuid());
@@ -169,7 +169,7 @@ public class AblestackNasBackupProviderTest {
         Mockito.when(backupRepositoryDao.listByZoneAndProvider(1L, "nas"))
                 .thenReturn(List.of(backupRepository1, backupRepository2));
 
-        Pair<Long, Long> result = nasBackupProvider.getBackupStorageStats(1L);
+        Pair<Long, Long> result = ablestackNasBackupProvider.getBackupStorageStats(1L);
         Assert.assertEquals(Long.valueOf(1100L), result.first());
         Assert.assertEquals(Long.valueOf(3000L), result.second());
     }
@@ -222,7 +222,7 @@ public class AblestackNasBackupProviderTest {
         Mockito.when(backupDao.persist(Mockito.any(BackupVO.class))).thenAnswer(invocation -> invocation.getArgument(0));
         Mockito.when(backupDao.update(Mockito.anyLong(), Mockito.any(BackupVO.class))).thenReturn(true);
 
-        Pair<Boolean, Backup> result = nasBackupProvider.takeBackup(vm, false);
+        Pair<Boolean, Backup> result = ablestackNasBackupProvider.takeBackup(vm, false);
 
         Assert.assertTrue(result.first());
         Assert.assertNotNull(result.second());
@@ -255,7 +255,7 @@ public class AblestackNasBackupProviderTest {
         Mockito.when(host.getStatus()).thenReturn(Status.Up);
         Mockito.when(hostDao.findById(hostId)).thenReturn(host);
 
-        Host result = nasBackupProvider.getVMHypervisorHost(vm);
+        Host result = ablestackNasBackupProvider.getVMHypervisorHost(vm);
 
         Assert.assertNotNull(result);
         Assert.assertTrue(Objects.equals(hostId, result.getId()));
@@ -282,7 +282,7 @@ public class AblestackNasBackupProviderTest {
         Mockito.when(upHostInCluster.getStatus()).thenReturn(Status.Up);
         Mockito.when(hostDao.findHypervisorHostInCluster(clusterId)).thenReturn(List.of(upHostInCluster));
 
-        Host result = nasBackupProvider.getVMHypervisorHost(vm);
+        Host result = ablestackNasBackupProvider.getVMHypervisorHost(vm);
 
         Assert.assertNotNull(result);
         Assert.assertTrue(Objects.equals(Long.valueOf(3L), result.getId()));
@@ -314,7 +314,7 @@ public class AblestackNasBackupProviderTest {
         Mockito.when(upHostInCluster.getStatus()).thenReturn(Status.Up);
         Mockito.when(hostDao.findHypervisorHostInCluster(clusterId)).thenReturn(List.of(upHostInCluster));
 
-        Host result = nasBackupProvider.getVMHypervisorHost(vm);
+        Host result = ablestackNasBackupProvider.getVMHypervisorHost(vm);
 
         Assert.assertNotNull(result);
         Assert.assertTrue(Objects.equals(Long.valueOf(4L), result.getId()));
@@ -346,7 +346,7 @@ public class AblestackNasBackupProviderTest {
         Mockito.when(resourceManager.findOneRandomRunningHostByHypervisor(Hypervisor.HypervisorType.KVM, zoneId))
                 .thenReturn(fallbackHost);
 
-        Host result = nasBackupProvider.getVMHypervisorHost(vm);
+        Host result = ablestackNasBackupProvider.getVMHypervisorHost(vm);
 
         Assert.assertNotNull(result);
         Assert.assertTrue(Objects.equals(Long.valueOf(5L), result.getId()));
