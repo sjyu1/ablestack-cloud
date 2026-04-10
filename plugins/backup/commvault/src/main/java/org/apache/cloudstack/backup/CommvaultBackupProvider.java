@@ -727,6 +727,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         List<String> chain = new ArrayList<>();
         Backup current = backup;
         while (current != null) {
+            loadBackupDetailsIfNeeded(current);
             Backup.VolumeInfo currentVolumeInfo = current.getBackedUpVolumes().stream()
                     .filter(volume -> Objects.equals(volume.getUuid(), backupVolume.getUuid()))
                     .findFirst()
