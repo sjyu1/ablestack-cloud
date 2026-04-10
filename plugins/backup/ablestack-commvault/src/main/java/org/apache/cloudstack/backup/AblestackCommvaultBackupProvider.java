@@ -61,6 +61,7 @@ import org.apache.cloudstack.backup.commvault.AblestackCommvaultClient;
 import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDaoImpl;
+import org.apache.cloudstack.backup.dao.BackupScheduleDao;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -216,6 +217,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     @Inject
     private DiskOfferingDao diskOfferingDao;
 
+    @Inject
+    private BackupScheduleDao backupScheduleDao;
+
     private Long getClusterIdFromRootVolume(VirtualMachine vm) {
         VolumeVO rootVolume = volumeDao.getInstanceRootVolume(vm.getId());
         StoragePoolVO rootDiskPool = primaryDataStoreDao.findById(rootVolume.getPoolId());
@@ -350,7 +354,18 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
 
-        return canContinueIncrementalChain(vm, latestBackup, vmHost) && getBackupChainSize(vm, latestBackup) < BackupDeltaMax.value();
+        return canContinueIncrementalChain(vm, latestBackup, vmHost) && getBackupChainSize(vm, latestBackup) < getEffectiveIncrementalLimit(vm);
+    }
+
+    private int getEffectiveIncrementalLimit(VirtualMachine vm) {
+        int effectiveLimit = BackupDeltaMax.value();
+        List<BackupScheduleVO> schedules = backupScheduleDao.listByVM(vm.getId());
+        for (BackupScheduleVO schedule : schedules) {
+            if (schedule != null && schedule.getMaxBackups() > 0) {
+                effectiveLimit = Math.min(effectiveLimit, schedule.getMaxBackups());
+            }
+        }
+        return effectiveLimit;
     }
 
     private boolean canContinueIncrementalChain(VirtualMachine vm, Backup latestBackup, Host vmHost) {

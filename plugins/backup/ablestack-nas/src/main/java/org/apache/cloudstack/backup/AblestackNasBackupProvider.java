@@ -51,6 +51,7 @@ import com.cloud.vm.snapshot.dao.VMSnapshotDetailsDao;
 
 import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupRepositoryDao;
+import org.apache.cloudstack.backup.dao.BackupScheduleDao;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -155,6 +156,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Inject
     private DiskOfferingDao diskOfferingDao;
+
+    @Inject
+    private BackupScheduleDao backupScheduleDao;
 
     private Long getClusterIdFromRootVolume(VirtualMachine vm) {
         VolumeVO rootVolume = volumeDao.getInstanceRootVolume(vm.getId());
@@ -431,7 +435,18 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             return false;
         }
 
-        return getBackupChainSize(vm, latestBackup) < BackupDeltaMax.value();
+        return getBackupChainSize(vm, latestBackup) < getEffectiveIncrementalLimit(vm);
+    }
+
+    private int getEffectiveIncrementalLimit(VirtualMachine vm) {
+        int effectiveLimit = BackupDeltaMax.value();
+        List<BackupScheduleVO> schedules = backupScheduleDao.listByVM(vm.getId());
+        for (BackupScheduleVO schedule : schedules) {
+            if (schedule != null && schedule.getMaxBackups() > 0) {
+                effectiveLimit = Math.min(effectiveLimit, schedule.getMaxBackups());
+            }
+        }
+        return effectiveLimit;
     }
 
     private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {
