@@ -36,6 +36,7 @@ public class RestoreBackupCommand extends Command  {
     private List<String> restoreVolumePaths;
     private List<String> volumePaths;
     private List<String> backupFiles;
+    private List<String> backupFileChains;
     private String diskType;
     private Boolean vmExists;
     private VirtualMachine.State vmState;
@@ -108,6 +109,14 @@ public class RestoreBackupCommand extends Command  {
 
     public void setBackupFiles(List<String> backupFiles) {
         this.backupFiles = backupFiles;
+    }
+
+    public List<String> getBackupFileChains() {
+        return backupFileChains;
+    }
+
+    public void setBackupFileChains(List<String> backupFileChains) {
+        this.backupFileChains = backupFileChains;
     }
 
     public Boolean isVmExists() {

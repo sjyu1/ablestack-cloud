@@ -58,10 +58,10 @@ import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 
 @RunWith(MockitoJUnitRunner.class)
-public class NASBackupProviderTest {
+public class AblestackNasBackupProviderTest {
     @Spy
     @InjectMocks
-    private NASBackupProvider nasBackupProvider;
+    private AblestackNasBackupProvider ablestackNasBackupProvider;
 
     @Mock
     private BackupDao backupDao;
@@ -115,11 +115,12 @@ public class NASBackupProviderTest {
         Mockito.when(hostDao.findById(hostId)).thenReturn(host);
         Mockito.when(backupRepositoryDao.findByBackupOfferingId(1L)).thenReturn(backupRepository);
         Mockito.when(vmInstanceDao.findByIdIncludingRemoved(1L)).thenReturn(vm);
-        Mockito.when(agentManager.send(anyLong(), Mockito.any(DeleteBackupCommand.class))).thenReturn(new BackupAnswer(new DeleteBackupCommand(null, null, null, null), true, "details"));
+        Mockito.when(agentManager.send(anyLong(), Mockito.any(AblestackDeleteBackupCommand.class))).thenReturn(new BackupAnswer(new DeleteBackupCommand(null, null, null, null, true), true, "details"));
         Mockito.when(backupDao.remove(1L)).thenReturn(true);
 
-        boolean result = nasBackupProvider.deleteBackup(backup, true);
+        boolean result = ablestackNasBackupProvider.deleteBackup(backup, true);
         Assert.assertTrue(result);
+        Mockito.verify(agentManager).send(anyLong(), Mockito.<AblestackDeleteBackupCommand>argThat(AblestackDeleteBackupCommand::isForced));
     }
 
     @Test
@@ -216,7 +217,7 @@ public class NASBackupProviderTest {
         BackupAnswer answer = mock(BackupAnswer.class);
         Mockito.when(answer.getResult()).thenReturn(true);
         Mockito.when(answer.getSize()).thenReturn(100L);
-        Mockito.when(agentManager.send(anyLong(), Mockito.any(TakeBackupCommand.class))).thenReturn(answer);
+        Mockito.when(agentManager.send(anyLong(), Mockito.any(AblestackNasTakeBackupCommand.class))).thenReturn(answer);
 
         Mockito.when(backupDao.persist(Mockito.any(BackupVO.class))).thenAnswer(invocation -> invocation.getArgument(0));
         Mockito.when(backupDao.update(Mockito.anyLong(), Mockito.any(BackupVO.class))).thenReturn(true);
@@ -237,7 +238,7 @@ public class NASBackupProviderTest {
 
         Mockito.verify(backupDao).persist(Mockito.any(BackupVO.class));
         Mockito.verify(backupDao).update(Mockito.anyLong(), Mockito.any(BackupVO.class));
-        Mockito.verify(agentManager).send(anyLong(), Mockito.any(TakeBackupCommand.class));
+        Mockito.verify(agentManager).send(anyLong(), Mockito.any(AblestackNasTakeBackupCommand.class));
     }
 
     @Test

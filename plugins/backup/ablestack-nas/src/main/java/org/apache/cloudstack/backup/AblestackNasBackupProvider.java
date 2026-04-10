@@ -59,12 +59,14 @@ import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
 import javax.inject.Inject;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
@@ -75,15 +77,37 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static org.apache.cloudstack.backup.BackupManager.BackupDeltaMax;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
+import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
-public class NASBackupProvider extends AdapterBase implements BackupProvider, Configurable {
-    private static final Logger LOG = LogManager.getLogger(NASBackupProvider.class);
+public class AblestackNasBackupProvider extends AdapterBase implements BackupProvider, Configurable {
+    private static final Logger LOG = LogManager.getLogger(AblestackNasBackupProvider.class);
+    private static final String BACKUP_TYPE_FULL = "FULL";
+    private static final String BACKUP_TYPE_INCREMENTAL = "INCREMENTAL";
+    private static final String BACKUP_ENGINE_QCOW2 = "QCOW2";
+    private static final String BACKUP_ENGINE_RBD_DIFF = "RBD_DIFF";
+    private static final String DETAIL_CHECKPOINT_NAME = "nas.checkpoint.name";
+    private static final String DETAIL_CHECKPOINT_PATH = "nas.checkpoint.path";
+    private static final String DETAIL_PARENT_BACKUP_UUID = "nas.parent.backup.uuid";
+    private static final String DETAIL_PARENT_BACKUP_PATH = "nas.parent.backup.path";
+    private static final String DETAIL_PARENT_CHECKPOINT_NAME = "nas.parent.checkpoint.name";
+    private static final String DETAIL_PARENT_CHECKPOINT_PATH = "nas.parent.checkpoint.path";
+    private static final String DETAIL_BACKUP_ENGINE = "nas.backup.engine";
+    private static final String DETAIL_RBD_DISK_PATHS = "nas.rbd.disk.paths";
+    private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
             "nas.backup.restore.mount.timeout",
             "30",
             "Timeout in seconds after which backup repository mount for restore fails.",
+            true,
+            BackupFrameworkEnabled.key());
+
+    ConfigKey<Integer> NASBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
+            "nas.backup.restore.timeout",
+            "1800",
+            "Timeout in seconds after which NAS backup restore operations fail.",
             true,
             BackupFrameworkEnabled.key());
 
@@ -197,30 +221,48 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             throw new CloudRuntimeException("No valid backup repository found for the VM, please check the attached backup offering");
         }
 
-        if (CollectionUtils.isNotEmpty(vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.DiskAndMemory))) {
-            logger.debug("NAS backup provider cannot take backups of a VM [{}] with disk-and-memory VM snapshots. Restoring the backup will corrupt any newer disk-and-memory " +
-                    "VM snapshots.", vm);
-            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has disk-and-memory VM snapshots.", vm.getUuid()));
+        validateNoVmSnapshots(vm);
+        List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
+        vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
+        Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
+        validateVolumePoolTypes(volumePoolsAndPaths.first());
+        final BackupVO latestBackup = getLatestBackedUpBackup(vm);
+        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup);
+        BackupExecutionResult result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup,
+                incrementalBackup && vmVolumes.size() > 1);
+        if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
+            cleanupFailedBackupForFullRetry(result.backup);
+            LOG.warn("Incremental backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm, result.details);
+            result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, null, false, false);
         }
+        return new Pair<>(result.success, result.backup);
+    }
 
-        final Date creationDate = new Date();
-        final String backupPath = String.format("%s/%s", vm.getInstanceName(),
-                new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(creationDate));
+    private BackupExecutionResult executeBackup(VirtualMachine vm, Boolean quiesceVM, Host host, BackupRepository backupRepository,
+                                                List<VolumeVO> vmVolumes, Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths,
+                                                Backup parentBackup, boolean incrementalBackup, boolean retryAsFullOnFailure) {
+        final String backupPath = buildBackupPath(vm);
+        final String checkpointName = backupPath.substring(backupPath.lastIndexOf("/") + 1);
+        final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
+        final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
 
-        BackupVO backupVO = createBackupObject(vm, backupPath);
-        TakeBackupCommand command = new TakeBackupCommand(vm.getInstanceName(), backupPath);
+        BackupVO backupVO = createBackupObject(vm, backupPath, incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL,
+                checkpointName, backupEngine, incrementalBackup ? parentBackup : null, volumePoolsAndPaths.second());
+        AblestackNasTakeBackupCommand command = new AblestackNasTakeBackupCommand(vm.getInstanceName(), backupPath);
+        command.setBackupType(backupVO.getType());
+        command.setCheckpointName(checkpointName);
+        command.setBackupFiles(backupFiles);
+        command.setVolumePools(volumePoolsAndPaths.first());
+        command.setVolumePaths(volumePoolsAndPaths.second());
+        if (incrementalBackup && parentBackup != null) {
+            command.setParentBackupPath(parentBackup.getExternalId());
+            command.setParentCheckpointName(getBackupDetail(parentBackup, DETAIL_CHECKPOINT_NAME));
+            command.setParentCheckpointPath(getBackupDetail(parentBackup, DETAIL_CHECKPOINT_PATH));
+        }
         command.setBackupRepoType(backupRepository.getType());
         command.setBackupRepoAddress(backupRepository.getAddress());
         command.setMountOptions(backupRepository.getMountOptions());
         command.setQuiesce(quiesceVM);
-
-        if (VirtualMachine.State.Stopped.equals(vm.getState())) {
-            List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
-            vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
-            Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
-            command.setVolumePools(volumePoolsAndPaths.first());
-            command.setVolumePaths(volumePoolsAndPaths.second());
-        }
 
         BackupAnswer answer;
         try {
@@ -241,32 +283,84 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             backupVO.setDate(new Date());
             backupVO.setSize(answer.getSize());
             backupVO.setStatus(Backup.Status.BackedUp);
-            List<Volume> volumes = new ArrayList<>(volumeDao.findByInstance(vm.getId()));
-            backupVO.setBackedUpVolumes(backupManager.createVolumeInfoFromVolumes(volumes));
+            backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
             if (backupDao.update(backupVO.getId(), backupVO)) {
-                return new Pair<>(true, backupVO);
-            } else {
-                throw new CloudRuntimeException("Failed to update backup");
+                return BackupExecutionResult.success(backupVO);
             }
+            throw new CloudRuntimeException("Failed to update backup");
+        }
+
+        final String details = answer != null ? answer.getDetails() : "No answer received";
+        logger.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
+        if (retryAsFullOnFailure) {
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.remove(backupVO.getId());
+        } else if (answer != null && answer.getNeedsCleanup()) {
+            logger.error("Backup cleanup failed for VM {}. Leaving the backup in Error state.", vm.getInstanceName());
+            backupVO.setStatus(Backup.Status.Error);
+            backupDao.update(backupVO.getId(), backupVO);
         } else {
-            logger.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), answer != null ? answer.getDetails() : "No answer received");
-            if (answer.getNeedsCleanup()) {
-                logger.error("Backup cleanup failed for VM {}. Leaving the backup in Error state.", vm.getInstanceName());
-                backupVO.setStatus(Backup.Status.Error);
-                backupDao.update(backupVO.getId(), backupVO);
-            } else {
-                backupVO.setStatus(Backup.Status.Failed);
-                backupDao.remove(backupVO.getId());
-            }
-            return new Pair<>(false, null);
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.remove(backupVO.getId());
+        }
+        return BackupExecutionResult.failure(details, backupVO);
+    }
+
+    private boolean shouldRetryAsFullAfterIncrementalFailure(BackupExecutionResult result, List<VolumeVO> vmVolumes) {
+        if (result == null || result.success) {
+            return false;
+        }
+        if (StringUtils.contains(result.details, MISSING_PARENT_RBD_SNAPSHOT_ERROR)) {
+            return true;
+        }
+        return vmVolumes.size() > 1;
+    }
+
+    private void cleanupFailedBackupForFullRetry(Backup backup) {
+        if (backup == null) {
+            return;
+        }
+        backupDao.remove(backup.getId());
+    }
+
+    private static final class BackupExecutionResult {
+        private final boolean success;
+        private final Backup backup;
+        private final String details;
+
+        private BackupExecutionResult(boolean success, Backup backup, String details) {
+            this.success = success;
+            this.backup = backup;
+            this.details = details;
+        }
+
+        private static BackupExecutionResult success(Backup backup) {
+            return new BackupExecutionResult(true, backup, null);
+        }
+
+        private static BackupExecutionResult failure(String details, Backup backup) {
+            return new BackupExecutionResult(false, backup, details);
         }
     }
 
-    private BackupVO createBackupObject(VirtualMachine vm, String backupPath) {
+    private String buildBackupPath(VirtualMachine vm) {
+        return String.format("%s/%s", vm.getInstanceName(),
+                new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date()));
+    }
+
+    private void validateNoVmSnapshots(VirtualMachine vm) {
+        if (CollectionUtils.isNotEmpty(vmSnapshotDao.findByVm(vm.getId()))) {
+            logger.debug("NAS backup provider cannot take backups of a VM [{}] with VM snapshots.", vm);
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has VM snapshots.", vm.getUuid()));
+        }
+    }
+
+    private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, String checkpointName, String backupEngine, Backup parentBackup,
+                                        List<String> diskPaths) {
         BackupVO backup = new BackupVO();
         backup.setVmId(vm.getId());
         backup.setExternalId(backupPath);
-        backup.setType("FULL");
+        backup.setType(backupType);
         backup.setDate(new Date());
         long virtualSize = 0L;
         for (final Volume volume: volumeDao.findByInstance(vm.getId())) {
@@ -281,10 +375,140 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         backup.setDomainId(vm.getDomainId());
         backup.setZoneId(vm.getDataCenterId());
         backup.setName(backupManager.getBackupNameFromVM(vm));
-        Map<String, String> details = backupManager.getBackupDetailsFromVM(vm);
+        Map<String, String> details = new HashMap<>();
+        Map<String, String> backupDetails = backupManager.getBackupDetailsFromVM(vm);
+        if (backupDetails != null) {
+            details.putAll(backupDetails);
+        }
+        details.put(DETAIL_CHECKPOINT_NAME, checkpointName);
+        details.put(DETAIL_CHECKPOINT_PATH, getCheckpointPath(backupPath, checkpointName, backupEngine));
+        details.put(DETAIL_BACKUP_ENGINE, backupEngine);
+        if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine) && CollectionUtils.isNotEmpty(diskPaths)) {
+            details.put(DETAIL_RBD_DISK_PATHS, String.join(",", diskPaths));
+        }
+        if (parentBackup != null) {
+            details.put(DETAIL_PARENT_BACKUP_UUID, parentBackup.getUuid());
+            details.put(DETAIL_PARENT_BACKUP_PATH, parentBackup.getExternalId());
+            details.put(DETAIL_PARENT_CHECKPOINT_NAME, getBackupDetail(parentBackup, DETAIL_CHECKPOINT_NAME));
+            details.put(DETAIL_PARENT_CHECKPOINT_PATH, getBackupDetail(parentBackup, DETAIL_CHECKPOINT_PATH));
+        }
         backup.setDetails(details);
 
         return backupDao.persist(backup);
+    }
+
+    private String getCheckpointPath(String backupPath, String checkpointName, String backupEngine) {
+        if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+            return String.format("%s/checkpoints/%s.meta", backupPath, checkpointName);
+        }
+        return String.format("%s/checkpoints/%s.xml", backupPath, checkpointName);
+    }
+
+    private BackupVO getLatestBackedUpBackup(VirtualMachine vm) {
+        List<Backup> backups = backupDao.listByVmIdAndOffering(vm.getDataCenterId(), vm.getId(), vm.getBackupOfferingId());
+        return backups.stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
+                .peek(backupDao::loadDetails)
+                .filter(backup -> getBackupDetail(backup, DETAIL_CHECKPOINT_NAME) != null)
+                .max(Comparator.comparing(BackupVO::getDate))
+                .orElse(null);
+    }
+
+    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup) {
+        if (latestBackup == null) {
+            return false;
+        }
+
+        final Long clusterId = getClusterIdFromRootVolume(vm);
+        if (clusterId == null) {
+            LOG.debug("Unable to resolve cluster for VM [{}], fallback to full backup.", vm);
+            return false;
+        }
+
+        if (!KvmIncrementalBackup.valueIn(clusterId)) {
+            return false;
+        }
+
+        return getBackupChainSize(vm, latestBackup) < BackupDeltaMax.value();
+    }
+
+    private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {
+        List<BackupVO> backups = backupDao.listByVmIdAndOffering(vm.getDataCenterId(), vm.getId(), vm.getBackupOfferingId()).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
+                .peek(backupDao::loadDetails)
+                .collect(Collectors.toList());
+        Map<String, BackupVO> backupsByUuid = backups.stream().collect(Collectors.toMap(BackupVO::getUuid, backup -> backup, (left, right) -> left));
+        int chainSize = 1;
+        Backup current = latestBackup;
+        while (current != null) {
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (parentBackupUuid == null) {
+                break;
+            }
+            current = backupsByUuid.get(parentBackupUuid);
+            if (current != null) {
+                chainSize++;
+            }
+        }
+        return chainSize;
+    }
+
+    private boolean hasDependentBackups(Backup backup) {
+        List<Backup> backups = backupDao.listByVmIdAndOffering(backup.getZoneId(), backup.getVmId(), backup.getBackupOfferingId());
+        return backups.stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(candidate -> !Objects.equals(candidate.getId(), backup.getId()))
+                .peek(backupDao::loadDetails)
+                .anyMatch(candidate -> Objects.equals(getBackupDetail(candidate, DETAIL_PARENT_BACKUP_UUID), backup.getUuid()));
+    }
+
+    private String getBackupDetail(Backup backup, String key) {
+        Map<String, String> details = backup.getDetails();
+        return details != null ? details.get(key) : null;
+    }
+
+    private void validateVolumePoolTypes(List<PrimaryDataStoreTO> volumePools) {
+        boolean hasRbd = volumePools.stream().anyMatch(pool -> pool != null && Storage.StoragePoolType.RBD.equals(pool.getPoolType()));
+        boolean hasNonRbd = volumePools.stream().anyMatch(pool -> pool != null && !Storage.StoragePoolType.RBD.equals(pool.getPoolType()));
+        if (hasRbd && hasNonRbd) {
+            throw new CloudRuntimeException("NAS incremental backup does not support VMs with mixed RBD and non-RBD volumes");
+        }
+    }
+
+    private boolean areAllVolumesOnRbdPool(List<PrimaryDataStoreTO> volumePools) {
+        return CollectionUtils.isNotEmpty(volumePools) &&
+                volumePools.stream().allMatch(pool -> pool != null && Storage.StoragePoolType.RBD.equals(pool.getPoolType()));
+    }
+
+    private List<String> buildBackupFileNames(List<VolumeVO> volumes, String backupEngine, boolean incrementalBackup) {
+        List<String> backupFiles = new ArrayList<>();
+        for (VolumeVO volume : volumes) {
+            String suffix;
+            if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+                suffix = incrementalBackup ? ".rbdiff" : ".raw";
+            } else {
+                suffix = ".qcow2";
+            }
+            backupFiles.add(String.format("volume-%s%s", volume.getUuid(), suffix));
+        }
+        return backupFiles;
+    }
+
+    private String createVolumeInfoFromVolumes(List<VolumeVO> volumes, List<String> backupFiles) {
+        List<Backup.VolumeInfo> infoList = new ArrayList<>();
+        for (int i = 0; i < volumes.size(); i++) {
+            VolumeVO vol = volumes.get(i);
+            DiskOffering diskOffering = diskOfferingDao.findById(vol.getDiskOfferingId());
+            String diskOfferingUuid = diskOffering != null ? diskOffering.getUuid() : null;
+            infoList.add(new Backup.VolumeInfo(vol.getUuid(), backupFiles.get(i), vol.getVolumeType(), vol.getSize(),
+                    vol.getDeviceId(), diskOfferingUuid, vol.getMinIops(), vol.getMaxIops()));
+        }
+        return new com.google.gson.Gson().toJson(infoList.toArray(), Backup.VolumeInfo[].class);
     }
 
     @Override
@@ -298,7 +522,8 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     }
 
     private Pair<Boolean, String> restoreVMBackup(VirtualMachine vm, Backup backup) {
-        List<String> backedVolumesUUIDs = backup.getBackedUpVolumes().stream()
+        List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
+        List<String> backedVolumesUUIDs = backupVolumes.stream()
                 .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
                 .map(Backup.VolumeInfo::getUuid)
                 .collect(Collectors.toList());
@@ -311,7 +536,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         BackupRepository backupRepository = getBackupRepository(backup);
 
         final Host host = getVMHypervisorHost(vm);
-        RestoreBackupCommand restoreCommand = new RestoreBackupCommand();
+        AblestackNasRestoreBackupCommand restoreCommand = new AblestackNasRestoreBackupCommand();
         restoreCommand.setBackupPath(backup.getExternalId());
         restoreCommand.setBackupRepoType(backupRepository.getType());
         restoreCommand.setBackupRepoAddress(backupRepository.getAddress());
@@ -322,10 +547,12 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         restoreCommand.setRestoreVolumePools(volumePoolsAndPaths.first());
         restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
         restoreCommand.setVolumePaths(getVolumePaths(restoreVolumes));
-        restoreCommand.setBackupFiles(getBackupFiles(vm.getBackupVolumeList()));
+        restoreCommand.setBackupFiles(getBackupFiles(backupVolumes, backup));
+        restoreCommand.setBackupFileChains(getBackupFileChains(backupVolumes, backup));
         restoreCommand.setVmExists(vm.getRemoved() == null);
         restoreCommand.setVmState(vm.getState());
         restoreCommand.setMountTimeout(NASBackupRestoreMountTimeout.value());
+        restoreCommand.setWait(NASBackupRestoreTimeout.value());
 
         BackupAnswer answer;
         try {
@@ -338,12 +565,124 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         return new Pair<>(answer.getResult(), answer.getDetails());
     }
 
-    private List<String> getBackupFiles(List<Backup.VolumeInfo> backedVolumes) {
+    private List<String> getBackupFiles(List<Backup.VolumeInfo> backedVolumes, Backup backup) {
         List<String> backupFiles = new ArrayList<>();
-        for (Backup.VolumeInfo backedVolume : backedVolumes) {
-            backupFiles.add(backedVolume.getPath());
+        List<Backup.VolumeInfo> sortedVolumes = new ArrayList<>(backedVolumes);
+        sortedVolumes.sort(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId));
+        for (Backup.VolumeInfo backedVolume : sortedVolumes) {
+            if (isLegacyBackup(backup)) {
+                backupFiles.add(getLegacyBackupFileName(backedVolume));
+            } else {
+                backupFiles.add(backedVolume.getPath());
+            }
         }
         return backupFiles;
+    }
+
+    private List<String> getBackupFileChains(List<Backup.VolumeInfo> backedVolumes, Backup backup) {
+        List<String> backupFileChains = new ArrayList<>();
+        List<Backup.VolumeInfo> sortedVolumes = new ArrayList<>(backedVolumes);
+        sortedVolumes.sort(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId));
+        for (Backup.VolumeInfo backedVolume : sortedVolumes) {
+            backupFileChains.add(String.join(";", getBackupFileChain(backedVolume.getUuid(), backup)));
+        }
+        return backupFileChains;
+    }
+
+    private List<String> getBackupFileChain(String volumeUuid, Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        if (isLegacyBackup(backup)) {
+            Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), volumeUuid);
+            return volumeInfo != null ? getLegacyBackupFileCandidates(volumeInfo) : List.of();
+        }
+
+        String backupEngine = getBackupDetail(backup, DETAIL_BACKUP_ENGINE);
+        if (!BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
+            Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), volumeUuid);
+            return volumeInfo != null ? List.of(volumeInfo.getPath()) : List.of();
+        }
+
+        List<Backup> chain = getBackupChain(backup);
+        List<String> files = new ArrayList<>();
+        for (Backup chainBackup : chain) {
+            Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(chainBackup.getBackedUpVolumes(), volumeUuid);
+            if (volumeInfo != null) {
+                files.add(String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath()));
+            }
+        }
+        return files;
+    }
+
+    private List<Backup> getBackupChain(Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        List<Backup> backups = backupDao.listByVmIdAndOffering(backup.getZoneId(), backup.getVmId(), backup.getBackupOfferingId());
+        Map<String, Backup> backupsByUuid = new HashMap<>();
+        for (Backup candidate : backups) {
+            if (candidate instanceof BackupVO) {
+                backupDao.loadDetails((BackupVO) candidate);
+            }
+            backupsByUuid.put(candidate.getUuid(), candidate);
+        }
+
+        List<Backup> chain = new ArrayList<>();
+        Backup current = backup;
+        while (current != null) {
+            chain.add(current);
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            current = parentBackupUuid != null ? backupsByUuid.get(parentBackupUuid) : null;
+        }
+        Collections.reverse(chain);
+        return chain;
+    }
+
+    private void loadBackupDetailsIfNeeded(Backup backup) {
+        if (backup instanceof BackupVO && backup.getDetails() == null) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
+    }
+
+    private boolean isLegacyBackup(Backup backup) {
+        return getBackupDetail(backup, DETAIL_BACKUP_ENGINE) == null;
+    }
+
+    private String getLegacyBackupFileName(Backup.VolumeInfo volumeInfo) {
+        String volumePath = volumeInfo.getPath();
+        if (StringUtils.isNotBlank(volumePath) &&
+                (volumePath.endsWith(".qcow2") || volumePath.endsWith(".raw") || volumePath.endsWith(".rbdiff"))) {
+            return volumePath;
+        }
+        String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
+        return String.format("%s.%s.qcow2", diskPrefix, volumeInfo.getPath());
+    }
+
+    private List<String> getLegacyBackupFileCandidates(Backup.VolumeInfo volumeInfo) {
+        List<String> candidates = new ArrayList<>();
+        String volumePath = volumeInfo.getPath();
+        if (StringUtils.isNotBlank(volumePath)) {
+            candidates.add(volumePath);
+            if (volumePath.contains("/")) {
+                String baseName = volumePath.substring(volumePath.lastIndexOf('/') + 1);
+                if (!Objects.equals(volumePath, baseName)) {
+                    candidates.add(baseName);
+                }
+            }
+        }
+
+        String legacyFileName = getLegacyBackupFileName(volumeInfo);
+        if (!candidates.contains(legacyFileName)) {
+            candidates.add(legacyFileName);
+        }
+
+        if (volumePath != null && volumePath.contains("/")) {
+            String baseName = volumePath.substring(volumePath.lastIndexOf('/') + 1);
+            String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
+            String baseNameLegacyFile = String.format("%s.%s.qcow2", diskPrefix, baseName);
+            if (!candidates.contains(baseNameLegacyFile)) {
+                candidates.add(baseNameLegacyFile);
+            }
+        }
+
+        return candidates;
     }
 
     private List<String> getVolumePaths(List<VolumeVO> volumes) {
@@ -411,8 +750,15 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
                 cacheMode = baseDiskOffering.getCacheMode().toString();
             }
         }
-        final StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
-        final HostVO hostVO = hostDao.findByIp(hostIp);
+        StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
+        if (pool == null) {
+            List<StoragePoolVO> pools = primaryDataStoreDao.findPoolByName(dataStoreUuid);
+            pool = pools.get(0);
+        }
+        HostVO hostVO = hostDao.findByIp(hostIp);
+        if (hostVO == null) {
+            hostVO = hostDao.findByName(hostIp);
+        }
 
         Backup.VolumeInfo matchingVolume = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), volume.getUuid());
         if (matchingVolume == null) {
@@ -446,7 +792,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             restoredVolume.setFormat(Storage.ImageFormat.RAW);
         }
 
-        RestoreBackupCommand restoreCommand = new RestoreBackupCommand();
+        AblestackNasRestoreBackupCommand restoreCommand = new AblestackNasRestoreBackupCommand();
         restoreCommand.setBackupPath(backup.getExternalId());
         restoreCommand.setBackupRepoType(backupRepository.getType());
         restoreCommand.setBackupRepoAddress(backupRepository.getAddress());
@@ -459,9 +805,11 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         restoreCommand.setVmExists(null);
         restoreCommand.setVmState(vmNameAndState.second());
         restoreCommand.setMountTimeout(NASBackupRestoreMountTimeout.value());
+        restoreCommand.setWait(NASBackupRestoreTimeout.value());
         restoreCommand.setCacheMode(cacheMode);
         restoreCommand.setVolumePaths(Collections.singletonList(String.format("%s/%s", pool.getPath(), volumeUUID)));
-        restoreCommand.setBackupFiles(Collections.singletonList(matchingVolume.getPath()));
+        restoreCommand.setBackupFiles(getBackupFiles(Collections.singletonList(matchingVolume), backup));
+        restoreCommand.setBackupFileChains(Collections.singletonList(String.join(";", getBackupFileChain(matchingVolume.getUuid(), backup))));
 
         BackupAnswer answer;
         try {
@@ -500,6 +848,13 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
 
     @Override
     public boolean deleteBackup(Backup backup, boolean forced) {
+        if (backup instanceof BackupVO && backup.getDetails() == null) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
+        if (!forced && hasDependentBackups(backup)) {
+            throw new CloudRuntimeException(String.format("Backup [%s] cannot be deleted because one or more incremental backups depend on it.", backup.getUuid()));
+        }
+
         final BackupRepository backupRepository = backupRepositoryDao.findByBackupOfferingId(backup.getBackupOfferingId());
         if (backupRepository == null) {
             throw new CloudRuntimeException("No valid backup repository found for the VM, please check the attached backup offering");
@@ -513,8 +868,11 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             host = resourceManager.findOneRandomRunningHostByHypervisor(Hypervisor.HypervisorType.KVM, backup.getZoneId());
         }
 
-        DeleteBackupCommand command = new DeleteBackupCommand(backup.getExternalId(), backupRepository.getType(),
-                backupRepository.getAddress(), backupRepository.getMountOptions());
+        AblestackDeleteBackupCommand command = new AblestackDeleteBackupCommand(backup.getExternalId(), backupRepository.getType(),
+                backupRepository.getAddress(), backupRepository.getMountOptions(), forced);
+        command.setBackupProvider("nas");
+        command.setCheckpointName(getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+        command.setDiskPaths(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
 
         BackupAnswer answer;
         try {
@@ -526,7 +884,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         }
 
         if (answer != null && answer.getResult()) {
-            return backupDao.remove(backup.getId());
+            return true;
         }
 
         logger.debug("There was an error removing the backup with id {}", backup.getId());
@@ -640,13 +998,14 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     @Override
     public ConfigKey<?>[] getConfigKeys() {
         return new ConfigKey[]{
-                NASBackupRestoreMountTimeout
+                NASBackupRestoreMountTimeout,
+                NASBackupRestoreTimeout
         };
     }
 
     @Override
     public String getName() {
-        return "nas";
+        return "ablestack-nas";
     }
 
     @Override

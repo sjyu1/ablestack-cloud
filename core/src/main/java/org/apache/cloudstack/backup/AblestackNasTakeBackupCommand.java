@@ -25,18 +25,24 @@ import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 
 import java.util.List;
 
-public class TakeBackupCommand extends Command {
+public class AblestackNasTakeBackupCommand extends Command {
     private String vmName;
     private String backupPath;
+    private String backupType;
+    private String checkpointName;
+    private String parentBackupPath;
+    private String parentCheckpointName;
+    private String parentCheckpointPath;
     private String backupRepoType;
     private String backupRepoAddress;
     private List<PrimaryDataStoreTO> volumePools;
     private List<String> volumePaths;
+    private List<String> backupFiles;
     private Boolean quiesce;
     @LogLevel(LogLevel.Log4jLevel.Off)
     private String mountOptions;
 
-    public TakeBackupCommand(String vmName, String backupPath) {
+    public AblestackNasTakeBackupCommand(String vmName, String backupPath) {
         super();
         this.vmName = vmName;
         this.backupPath = backupPath;
@@ -56,6 +62,46 @@ public class TakeBackupCommand extends Command {
 
     public void setBackupPath(String backupPath) {
         this.backupPath = backupPath;
+    }
+
+    public String getBackupType() {
+        return backupType;
+    }
+
+    public void setBackupType(String backupType) {
+        this.backupType = backupType;
+    }
+
+    public String getCheckpointName() {
+        return checkpointName;
+    }
+
+    public void setCheckpointName(String checkpointName) {
+        this.checkpointName = checkpointName;
+    }
+
+    public String getParentBackupPath() {
+        return parentBackupPath;
+    }
+
+    public void setParentBackupPath(String parentBackupPath) {
+        this.parentBackupPath = parentBackupPath;
+    }
+
+    public String getParentCheckpointName() {
+        return parentCheckpointName;
+    }
+
+    public void setParentCheckpointName(String parentCheckpointName) {
+        this.parentCheckpointName = parentCheckpointName;
+    }
+
+    public String getParentCheckpointPath() {
+        return parentCheckpointPath;
+    }
+
+    public void setParentCheckpointPath(String parentCheckpointPath) {
+        this.parentCheckpointPath = parentCheckpointPath;
     }
 
     public String getBackupRepoType() {
@@ -96,6 +142,14 @@ public class TakeBackupCommand extends Command {
 
     public void setVolumePaths(List<String> volumePaths) {
         this.volumePaths = volumePaths;
+    }
+
+    public List<String> getBackupFiles() {
+        return backupFiles;
+    }
+
+    public void setBackupFiles(List<String> backupFiles) {
+        this.backupFiles = backupFiles;
     }
 
     public Boolean getQuiesce() {

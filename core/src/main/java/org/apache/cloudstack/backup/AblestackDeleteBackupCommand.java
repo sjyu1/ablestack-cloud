@@ -22,19 +22,24 @@ package org.apache.cloudstack.backup;
 import com.cloud.agent.api.Command;
 import com.cloud.agent.api.LogLevel;
 
-public class DeleteBackupCommand extends Command {
+public class AblestackDeleteBackupCommand extends Command {
     private String backupPath;
     private String backupRepoType;
     private String backupRepoAddress;
+    private String backupProvider;
+    private String checkpointName;
+    private String diskPaths;
+    private boolean forced;
     @LogLevel(LogLevel.Log4jLevel.Off)
     private String mountOptions;
 
-    public DeleteBackupCommand(String backupPath, String backupRepoType, String backupRepoAddress, String mountOptions) {
+    public AblestackDeleteBackupCommand(String backupPath, String backupRepoType, String backupRepoAddress, String mountOptions, boolean forced) {
         super();
         this.backupPath = backupPath;
         this.backupRepoType = backupRepoType;
         this.backupRepoAddress = backupRepoAddress;
         this.mountOptions = mountOptions;
+        this.forced = forced;
     }
 
     public String getBackupPath() {
@@ -61,12 +66,44 @@ public class DeleteBackupCommand extends Command {
         this.backupRepoAddress = backupRepoAddress;
     }
 
+    public String getBackupProvider() {
+        return backupProvider;
+    }
+
+    public void setBackupProvider(String backupProvider) {
+        this.backupProvider = backupProvider;
+    }
+
+    public String getCheckpointName() {
+        return checkpointName;
+    }
+
+    public void setCheckpointName(String checkpointName) {
+        this.checkpointName = checkpointName;
+    }
+
+    public String getDiskPaths() {
+        return diskPaths;
+    }
+
+    public void setDiskPaths(String diskPaths) {
+        this.diskPaths = diskPaths;
+    }
+
     public String getMountOptions() {
         return mountOptions == null ? "" : mountOptions;
     }
 
     public void setMountOptions(String mountOptions) {
         this.mountOptions = mountOptions;
+    }
+
+    public boolean isForced() {
+        return forced;
+    }
+
+    public void setForced(boolean forced) {
+        this.forced = forced;
     }
 
     @Override

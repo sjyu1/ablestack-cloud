@@ -20,23 +20,24 @@
 package org.apache.cloudstack.backup;
 
 import com.cloud.agent.api.Command;
-import com.cloud.agent.api.LogLevel;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 
 import java.util.List;
 
-public class TakeBackupCommand extends Command {
+public class AblestackCommvaultTakeBackupCommand extends Command {
     private String vmName;
     private String backupPath;
-    private String backupRepoType;
-    private String backupRepoAddress;
     private List<PrimaryDataStoreTO> volumePools;
     private List<String> volumePaths;
     private Boolean quiesce;
-    @LogLevel(LogLevel.Log4jLevel.Off)
-    private String mountOptions;
+    private String backupType;
+    private String checkpointName;
+    private String parentBackupPath;
+    private String parentCheckpointName;
+    private String parentCheckpointPath;
+    private List<String> backupFiles;
 
-    public TakeBackupCommand(String vmName, String backupPath) {
+    public AblestackCommvaultTakeBackupCommand(String vmName, String backupPath) {
         super();
         this.vmName = vmName;
         this.backupPath = backupPath;
@@ -56,30 +57,6 @@ public class TakeBackupCommand extends Command {
 
     public void setBackupPath(String backupPath) {
         this.backupPath = backupPath;
-    }
-
-    public String getBackupRepoType() {
-        return backupRepoType;
-    }
-
-    public void setBackupRepoType(String backupRepoType) {
-        this.backupRepoType = backupRepoType;
-    }
-
-    public String getBackupRepoAddress() {
-        return backupRepoAddress;
-    }
-
-    public void setBackupRepoAddress(String backupRepoAddress) {
-        this.backupRepoAddress = backupRepoAddress;
-    }
-
-    public String getMountOptions() {
-        return mountOptions;
-    }
-
-    public void setMountOptions(String mountOptions) {
-        this.mountOptions = mountOptions;
     }
 
     public List<PrimaryDataStoreTO> getVolumePools() {
@@ -104,6 +81,54 @@ public class TakeBackupCommand extends Command {
 
     public void setQuiesce(Boolean quiesce) {
         this.quiesce = quiesce;
+    }
+
+    public String getBackupType() {
+        return backupType;
+    }
+
+    public void setBackupType(String backupType) {
+        this.backupType = backupType;
+    }
+
+    public String getCheckpointName() {
+        return checkpointName;
+    }
+
+    public void setCheckpointName(String checkpointName) {
+        this.checkpointName = checkpointName;
+    }
+
+    public String getParentBackupPath() {
+        return parentBackupPath;
+    }
+
+    public void setParentBackupPath(String parentBackupPath) {
+        this.parentBackupPath = parentBackupPath;
+    }
+
+    public String getParentCheckpointName() {
+        return parentCheckpointName;
+    }
+
+    public void setParentCheckpointName(String parentCheckpointName) {
+        this.parentCheckpointName = parentCheckpointName;
+    }
+
+    public String getParentCheckpointPath() {
+        return parentCheckpointPath;
+    }
+
+    public void setParentCheckpointPath(String parentCheckpointPath) {
+        this.parentCheckpointPath = parentCheckpointPath;
+    }
+
+    public List<String> getBackupFiles() {
+        return backupFiles;
+    }
+
+    public void setBackupFiles(List<String> backupFiles) {
+        this.backupFiles = backupFiles;
     }
 
     @Override
