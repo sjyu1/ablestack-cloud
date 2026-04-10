@@ -26,7 +26,7 @@ import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 
 import java.util.List;
 
-public class RestoreBackupCommand extends Command  {
+public class AblestackNasRestoreBackupCommand extends Command  {
     private String vmName;
     private String backupPath;
     private String backupRepoType;
@@ -43,7 +43,7 @@ public class RestoreBackupCommand extends Command  {
     private Integer mountTimeout;
     private String cacheMode;
 
-    protected RestoreBackupCommand() {
+    protected AblestackNasRestoreBackupCommand() {
         super();
     }
 
