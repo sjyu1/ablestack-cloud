@@ -1846,11 +1846,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         if (StringUtils.isEmpty(name)) {
             throw new CloudRuntimeException("Invalid backup provider name provided");
         }
-       final String canonicalName = BackupProviderNameUtils.canonicalize(name);
-       if (!backupProvidersMap.containsKey(canonicalName)) {
-           throw new CloudRuntimeException("Failed to find backup provider by the name: " + canonicalName);
-       }
-       return backupProvidersMap.get(canonicalName);
+        final String canonicalName = BackupProviderNameUtils.canonicalize(name);
+        if (!backupProvidersMap.containsKey(canonicalName)) {
+            throw new CloudRuntimeException("Failed to find backup provider by the name: " + canonicalName);
+        }
+        return backupProvidersMap.get(canonicalName);
     }
 
     @Override
