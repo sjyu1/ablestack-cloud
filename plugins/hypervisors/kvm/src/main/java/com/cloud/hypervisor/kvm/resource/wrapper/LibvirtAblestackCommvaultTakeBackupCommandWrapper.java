@@ -37,7 +37,7 @@ public class LibvirtAblestackCommvaultTakeBackupCommandWrapper extends CommandWr
         if (result.first() != 0) {
             logger.debug("Failed to take VM backup");
             BackupAnswer answer = new BackupAnswer(command, false, null);
-            if (result.first() == LibvirtCommvaultBackupHelper.EXIT_CLEANUP_FAILED) {
+            if (result.first() == LibvirtAblestackCommvaultBackupHelper.EXIT_CLEANUP_FAILED) {
                 logger.debug("Backup cleanup failed");
                 answer.setNeedsCleanup(true);
             }

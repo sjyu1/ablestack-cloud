@@ -133,7 +133,7 @@ class LibvirtAblestackNasBackupHelper {
 
     private String[] buildBackupScriptCommand(AblestackNasTakeBackupCommand command, List<String> diskPaths, BackupExecutionMode executionMode) {
         return new String[] {
-                resource.getAblestackNasBackupPath(),
+                resource.getAbleNasBackupPath(),
                 "-o", executionMode.getScriptOperation(),
                 "-v", command.getVmName(),
                 "-t", command.getBackupRepoType(),
