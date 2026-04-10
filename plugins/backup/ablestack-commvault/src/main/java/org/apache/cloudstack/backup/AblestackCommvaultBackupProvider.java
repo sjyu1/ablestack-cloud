@@ -946,7 +946,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final String externalId = backup.getExternalId();
         final Pair<String, String> externalIdParts = parseExternalId(externalId);
         final String path = externalIdParts.first();
-        final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         final String restoreSourcePath = getRestoreBackupRootPath(backup);
         final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
@@ -976,6 +975,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final HostVO restoreHost = hostDao.findByName(clientName);
         final HostVO restoreHostVO = hostDao.findById(restoreHost.getId());
         final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
+        final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         LOG.info(String.format("Restoring vm %s from backup %s on the Commvault Backup Provider", vm, backup));
         try {
             String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePaths);
@@ -1089,7 +1089,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final AblestackCommvaultClient client = getClient(zoneId);
         final Pair<String, String> externalIdParts = parseExternalId(externalId);
         final String path = externalIdParts.first();
-        final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         final String restoreSourcePath = getRestoreBackupRootPath(backup);
         final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
@@ -1115,6 +1114,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (backupsetGUID == null) {
             throw new CloudRuntimeException("Failed to get vm backup set guid commvault api");
         }
+        final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
         try {
             String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePaths);
@@ -1276,7 +1276,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Override
     public boolean removeVMFromBackupOffering(VirtualMachine vm) {
-        final CommvaultClient client = getClient(vm.getDataCenterId());
+        final AblestackCommvaultClient client = getClient(vm.getDataCenterId());
         List<HostVO> Hosts = hostDao.findByDataCenterId(vm.getDataCenterId());
         boolean allDeleted = true;
         for (final HostVO host : Hosts) {

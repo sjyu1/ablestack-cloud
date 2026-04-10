@@ -251,7 +251,7 @@ public class AblestackCommvaultClient {
                     if (!planDetails.isMissingNode()) {
                         String planId = planDetails.path("planId").asText();
                         String planName = planDetails.path("planName").asText();
-                        offerings.add(new CommvaultBackupOffering(planName, planId));
+                        offerings.add(new AblestackCommvaultBackupOffering(planName, planId));
                     }
                 }
             }

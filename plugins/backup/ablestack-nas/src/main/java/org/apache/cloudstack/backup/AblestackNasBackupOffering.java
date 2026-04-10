@@ -23,7 +23,7 @@ public class AblestackNasBackupOffering implements BackupOffering {
     private String name;
     private String uid;
 
-    public NasBackupOffering(String name, String uid) {
+    public AblestackNasBackupOffering(String name, String uid) {
         this.name = name;
         this.uid = uid;
     }
