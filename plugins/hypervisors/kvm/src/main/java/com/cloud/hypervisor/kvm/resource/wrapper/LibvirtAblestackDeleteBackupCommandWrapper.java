@@ -66,7 +66,7 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
             commands.add(deleteCommand.toArray(new String[0]));
         } else {
             List<String> deleteCommand = new ArrayList<>();
-            deleteCommand.add(libvirtComputingResource.getNasBackupPath());
+            deleteCommand.add(libvirtComputingResource.getAbleNasBackupPath());
             deleteCommand.add("-o");
             deleteCommand.add("delete");
             deleteCommand.add("-t");

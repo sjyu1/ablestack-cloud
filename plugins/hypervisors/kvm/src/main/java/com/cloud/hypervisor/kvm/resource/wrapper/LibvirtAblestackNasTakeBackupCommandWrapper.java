@@ -30,12 +30,12 @@ import org.apache.cloudstack.backup.AblestackNasTakeBackupCommand;
 import java.util.List;
 
 @ResourceWrapper(handles = AblestackNasTakeBackupCommand.class)
-public class LibvirtAblestackTakeBackupCommandWrapper extends CommandWrapper<AblestackNasTakeBackupCommand, Answer, LibvirtComputingResource> {
+public class LibvirtAblestackNasTakeBackupCommandWrapper extends CommandWrapper<AblestackNasTakeBackupCommand, Answer, LibvirtComputingResource> {
     @Override
     public Answer execute(AblestackNasTakeBackupCommand command, LibvirtComputingResource libvirtComputingResource) {
         logger.info("LibvirtTakeBackupCommandWrapper entering execute for vm=[{}], backupPath=[{}], backupType=[{}]",
                 command.getVmName(), command.getBackupPath(), command.getBackupType());
-        LibvirtNasBackupHelper backupHelper = new LibvirtNasBackupHelper(libvirtComputingResource);
+        LibvirtAblestackNasBackupHelper backupHelper = new LibvirtAblestackNasBackupHelper(libvirtComputingResource);
         List<String> diskPaths = backupHelper.resolveDiskPaths(command.getVolumePools(), command.getVolumePaths());
         logger.info("LibvirtTakeBackupCommandWrapper invoking helper for vm=[{}], diskPaths=[{}]",
                 command.getVmName(), diskPaths);
@@ -46,7 +46,7 @@ public class LibvirtAblestackTakeBackupCommandWrapper extends CommandWrapper<Abl
         if (result.first() != 0) {
             logger.debug("Failed to take VM backup: " + result.second());
             BackupAnswer answer = new BackupAnswer(command, false, result.second().trim());
-            if (result.first() == LibvirtNasBackupHelper.EXIT_CLEANUP_FAILED) {
+            if (result.first() == LibvirtAblestackNasBackupHelper.EXIT_CLEANUP_FAILED) {
                 logger.debug("Backup cleanup failed");
                 answer.setNeedsCleanup(true);
             }
