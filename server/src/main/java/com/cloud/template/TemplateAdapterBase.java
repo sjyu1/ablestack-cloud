@@ -45,6 +45,7 @@ import org.apache.cloudstack.engine.subsystem.api.storage.EndPoint;
 import org.apache.cloudstack.engine.subsystem.api.storage.EndPointSelector;
 import org.apache.cloudstack.engine.subsystem.api.storage.TemplateDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.TemplateInfo;
+import org.apache.cloudstack.engine.subsystem.api.storage.ZoneScope;
 import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.secstorage.heuristics.HeuristicType;
 import org.apache.cloudstack.storage.command.TemplateOrVolumePostUploadCommand;
@@ -205,6 +206,16 @@ public abstract class TemplateAdapterBase extends AdapterBase implements Templat
         logger.info(String.format("Private template will be allocated in image store [%s] in zone [%s].", imageStore, zone));
         zoneSet.add(zoneId);
         return true;
+    }
+
+    protected boolean isWritableImageStore(DataStore imageStore, Long zoneId) {
+        if (imageStore == null || zoneId == null) {
+            return false;
+        }
+
+        List<DataStore> writableImageStores = storeMgr.getImageStoresByScopeExcludingReadOnly(new ZoneScope(zoneId));
+        return CollectionUtils.isNotEmpty(writableImageStores) &&
+                writableImageStores.stream().anyMatch(store -> store.getId() == imageStore.getId());
     }
 
     /**
