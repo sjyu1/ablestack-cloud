@@ -1593,7 +1593,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             throw new CloudRuntimeException(String.format("Unable to find stage host [%s] for backup cleanup", clientName));
         }
         AblestackDeleteBackupCommand command = new AblestackDeleteBackupCommand(path, null, null, null, forced);
-        command.setBackupProvider("commvault");
+        command.setBackupProvider("ablestack-commvault");
         command.setCheckpointName(checkpointName);
         command.setDiskPaths(diskPaths);
         try {

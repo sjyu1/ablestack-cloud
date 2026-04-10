@@ -46,7 +46,7 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
         final boolean forced = command.isForced();
 
         List<String[]> commands = new ArrayList<>();
-        if ("commvault".equalsIgnoreCase(backupProvider)) {
+        if ("ablestack-commvault".equalsIgnoreCase(backupProvider)) {
             List<String> deleteCommand = new ArrayList<>();
             deleteCommand.add(libvirtComputingResource.getAbleCvtBackupPath());
             deleteCommand.add("-o");

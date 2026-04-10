@@ -67,6 +67,7 @@ import org.apache.cloudstack.api.command.user.backup.repository.ListBackupReposi
 import org.apache.cloudstack.api.command.user.backup.repository.UpdateBackupRepositoryCmd;
 import org.apache.cloudstack.api.command.user.vm.CreateVMFromBackupCmd;
 import org.apache.cloudstack.api.response.BackupResponse;
+import org.apache.cloudstack.backup.BackupProviderNameUtils;
 import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupDetailsDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDao;
@@ -272,9 +273,10 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
         List<BackupOffering> allOfferings = new ArrayList<>();
         List<BackupProvider> providers = getBackupProvidersForZone(zoneId);
+        final String canonicalProviderName = BackupProviderNameUtils.canonicalize(providerName);
 
         for (BackupProvider provider : providers) {
-            if (provider.getName().equalsIgnoreCase(providerName)) {
+            if (provider.getName().equalsIgnoreCase(canonicalProviderName)) {
                 try {
                     logger.debug("Listing external backup offerings for provider {} in zone {}", provider.getName(), zoneId);
                     List<BackupOffering> offerings = provider.listBackupOfferings(zoneId);
@@ -294,7 +296,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     public BackupOffering importBackupOffering(final ImportBackupOfferingCmd cmd) {
         validateBackupForZone(cmd.getZoneId());
 
-        String providerName = cmd.getProvider();
+        String providerName = BackupProviderNameUtils.canonicalize(cmd.getProvider());
         if (StringUtils.isEmpty(providerName)) {
             throw new CloudRuntimeException("Provider name must be specified");
         }
@@ -695,7 +697,9 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         final int maxBackups = validateAndGetDefaultBackupRetentionIfRequired(cmd.getMaxBackups(), offering, vm);
 
-        if ((!"nas".equals(offering.getProvider()) && !"commvault".equals(offering.getProvider())) && cmd.getQuiesceVM() != null) {
+        if (!BackupProviderNameUtils.isNasFamily(offering.getProvider()) &&
+                !BackupProviderNameUtils.isCommvaultFamily(offering.getProvider()) &&
+                cmd.getQuiesceVM() != null) {
             throw new InvalidParameterValueException("Quiesce VM option is supported only for NAS, Commvault backup provider");
         }
 
@@ -897,7 +901,9 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException("The assigned backup offering does not allow ad-hoc user backup");
         }
 
-        if ((!"nas".equals(offering.getProvider()) && !"commvault".equals(offering.getProvider())) && cmd.getQuiesceVM() != null) {
+        if (!BackupProviderNameUtils.isNasFamily(offering.getProvider()) &&
+                !BackupProviderNameUtils.isCommvaultFamily(offering.getProvider()) &&
+                cmd.getQuiesceVM() != null) {
             throw new InvalidParameterValueException("Quiesce VM option is supported only for NAS, Commvault backup provider");
         }
 
@@ -1497,7 +1503,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
             String host = null;
             String dataStore = null;
-            if (!"nas".equals(offering.getProvider()) && !"commvault".equals(offering.getProvider())) {
+            if (!BackupProviderNameUtils.isNasFamily(offering.getProvider()) &&
+                    !BackupProviderNameUtils.isCommvaultFamily(offering.getProvider())) {
                 Pair<HostVO, StoragePoolVO> restoreInfo = getRestoreVolumeHostAndDatastore(vm);
                 host = restoreInfo.first().getPrivateIpAddress();
                 dataStore = restoreInfo.second().getUuid();
@@ -1575,7 +1582,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         BackupProvider backupProvider = getBackupProvider(offering.getProvider());
         VolumeVO backedUpVolume = volumeDao.findByUuid(backedUpVolumeUuid);
         Pair<HostVO, StoragePoolVO> restoreInfo;
-        if ((!"nas".equals(offering.getProvider()) && !"commvault".equals(offering.getProvider())) || backedUpVolume == null) {
+        if ((!BackupProviderNameUtils.isNasFamily(offering.getProvider()) &&
+                !BackupProviderNameUtils.isCommvaultFamily(offering.getProvider())) || backedUpVolume == null) {
             restoreInfo = getRestoreVolumeHostAndDatastore(vm);
         } else {
             restoreInfo = getRestoreVolumeHostAndDatastoreForNas(vm, backedUpVolume);
@@ -1777,7 +1785,18 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     @Override
     public List<BackupProvider> listBackupProviders() {
-        return backupProviders;
+        final List<BackupProvider> providers = new ArrayList<>();
+        final Set<String> seenProviders = new HashSet<>();
+        for (final BackupProvider provider : backupProviders) {
+            if (provider == null) {
+                continue;
+            }
+            final String displayName = BackupProviderNameUtils.toDisplayName(provider.getName());
+            if (seenProviders.add(displayName)) {
+                providers.add(provider);
+            }
+        }
+        return providers;
     }
 
     @Override
@@ -1807,7 +1826,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             if (!StringUtils.isEmpty(trimmedName)) {
                 try {
                     BackupProvider provider = getBackupProvider(trimmedName);
-                    providers.add(provider);
+                    boolean exists = providers.stream().anyMatch(p ->
+                            BackupProviderNameUtils.toDisplayName(p.getName()).equalsIgnoreCase(
+                                    BackupProviderNameUtils.toDisplayName(provider.getName())));
+                    if (!exists) {
+                        providers.add(provider);
+                    }
                 } catch (CloudRuntimeException e) {
                     logger.warn("Failed to load backup provider: " + trimmedName + " for zone: " + zoneId, e);
                 }
@@ -1823,10 +1847,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         if (StringUtils.isEmpty(name)) {
             throw new CloudRuntimeException("Invalid backup provider name provided");
         }
-       if (!backupProvidersMap.containsKey(name)) {
-           throw new CloudRuntimeException("Failed to find backup provider by the name: " + name);
+       final String canonicalName = BackupProviderNameUtils.canonicalize(name);
+       if (!backupProvidersMap.containsKey(canonicalName)) {
+           throw new CloudRuntimeException("Failed to find backup provider by the name: " + canonicalName);
        }
-       return backupProvidersMap.get(name);
+       return backupProvidersMap.get(canonicalName);
     }
 
     @Override
