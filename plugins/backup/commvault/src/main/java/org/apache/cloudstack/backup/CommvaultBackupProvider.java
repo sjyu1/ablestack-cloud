@@ -735,7 +735,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             if (currentVolumeInfo == null) {
                 break;
             }
-            chain.add(0, currentVolumeInfo.getPath());
+            chain.add(0, getRestoreBackupFilePath(current, currentVolumeInfo));
             String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
             if (parentBackupUuid == null) {
                 break;
@@ -752,6 +752,23 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         if (backup instanceof BackupVO && backup.getDetails() == null) {
             backupDao.loadDetails((BackupVO) backup);
         }
+    }
+
+    private String getRestoreBackupRootPath(Backup backup) {
+        final String backupPath = parseExternalId(backup.getExternalId()).first();
+        if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            return java.nio.file.Path.of(backupPath).getParent().toString();
+        }
+        return backupPath;
+    }
+
+    private String getRestoreBackupFilePath(Backup backup, Backup.VolumeInfo volumeInfo) {
+        final String backupPath = parseExternalId(backup.getExternalId()).first();
+        final String filePath = volumeInfo.getPath();
+        if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            return java.nio.file.Path.of(backupPath).getFileName().resolve(filePath).toString();
+        }
+        return filePath;
     }
 
     private boolean isLegacyBackup(Backup backup) {
@@ -786,6 +803,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         final String externalId = backup.getExternalId();
         final Pair<String, String> externalIdParts = parseExternalId(externalId);
         final String path = externalIdParts.first();
+        final String restoreSourcePath = getRestoreBackupRootPath(backup);
         final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
         if (jobDetails == null) {
@@ -815,7 +833,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         final HostVO restoreHostVO = hostDao.findById(restoreHost.getId());
         LOG.info(String.format("Restoring vm %s from backup %s on the Commvault Backup Provider", vm, backup));
         // 복원 실행
-        String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, path);
+        String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
         if (jobId2 != null) {
             String jobStatus = client.getJobStatus(jobId2);
             if (jobStatus.equalsIgnoreCase("Completed")) {
@@ -830,8 +848,8 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
 
                 LOG.debug("Restoring vm {} from backup {} on the Commvault Backup Provider", vm, backup);
                 CommvaultRestoreBackupCommand restoreCommand = new CommvaultRestoreBackupCommand();
-                LOG.info(path);
-                restoreCommand.setBackupPath(path);
+                LOG.info(restoreSourcePath);
+                restoreCommand.setBackupPath(restoreSourcePath);
                 restoreCommand.setVmName(vm.getName());
                 restoreCommand.setBackupVolumesUUIDs(backedVolumesUUIDs);
                 if (isLegacyBackup(backup)) {
@@ -842,7 +860,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 } else {
                     restoreCommand.setBackupFiles(backup.getBackedUpVolumes().stream()
                             .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
-                            .map(Backup.VolumeInfo::getPath)
+                            .map(volume -> getRestoreBackupFilePath(backup, volume))
                             .collect(Collectors.toList()));
                     restoreCommand.setBackupFileChains(getBackupFileChains(backup.getBackedUpVolumes(), backup));
                 }
@@ -865,7 +883,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 if (!answer.getResult()) {
                     int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
                     Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
-                    String command = String.format(RM_COMMAND, path);
+                    String command = String.format(RM_COMMAND, restoreSourcePath);
                     executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
                 }
                 return new Pair<>(answer.getResult(), answer.getDetails());
@@ -922,6 +940,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         final CommvaultClient client = getClient(zoneId);
         final Pair<String, String> externalIdParts = parseExternalId(externalId);
         final String path = externalIdParts.first();
+        final String restoreSourcePath = getRestoreBackupRootPath(backup);
         final String jobId = externalIdParts.second();
         String jobDetails = client.getJobDetails(jobId);
         if (jobDetails == null) {
@@ -947,7 +966,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             throw new CloudRuntimeException("Failed to get vm backup set guid commvault api");
         }
         // 복원 실행
-        String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, path);
+        String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePath);
         if (jobId2 != null) {
             String jobStatus = client.getJobStatus(jobId2);
             if (jobStatus.equalsIgnoreCase("Completed")) {
@@ -993,9 +1012,9 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 }
 
                 CommvaultRestoreBackupCommand restoreCommand = new CommvaultRestoreBackupCommand();
-                restoreCommand.setBackupPath(path);
+                restoreCommand.setBackupPath(restoreSourcePath);
                 restoreCommand.setVmName(vmNameAndState.first());
-                restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(backupVolumeInfo) : backupVolumeInfo.getPath()));
+                restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(backupVolumeInfo) : getRestoreBackupFilePath(backup, backupVolumeInfo)));
                 if (!isLegacyBackup(backup)) {
                     restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(backupVolumeInfo, backup)));
                 }
