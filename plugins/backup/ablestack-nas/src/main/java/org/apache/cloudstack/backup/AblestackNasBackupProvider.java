@@ -991,7 +991,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, getName());
         final List<BackupOffering> offerings = new ArrayList<>();
         for (final BackupRepository repository : repositories) {
-            offerings.add(new NasBackupOffering(repository.getName(), repository.getUuid()));
+            offerings.add(new AblestackNasBackupOffering(repository.getName(), repository.getUuid()));
         }
         return offerings;
     }
