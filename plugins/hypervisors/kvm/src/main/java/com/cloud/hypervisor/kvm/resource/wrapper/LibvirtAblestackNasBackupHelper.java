@@ -448,11 +448,11 @@ class LibvirtAblestackNasBackupHelper {
         Script.runSimpleBashScriptForExitValue(command, resource.getCmdsTimeout(), false);
     }
 
-    private boolean isIncremental(TakeBackupCommand command) {
+    private boolean isIncremental(AblestackNasTakeBackupCommand command) {
         return "INCREMENTAL".equalsIgnoreCase(command.getBackupType());
     }
 
-    private String getBackupFileByIndex(TakeBackupCommand command, int index, String fallback) {
+    private String getBackupFileByIndex(AblestackNasTakeBackupCommand command, int index, String fallback) {
         List<String> backupFiles = command.getBackupFiles();
         if (CollectionUtils.isNullOrEmpty(backupFiles) || index >= backupFiles.size()) {
             return fallback;
