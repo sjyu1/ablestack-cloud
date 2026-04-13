@@ -1455,7 +1455,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     // 남아있는 백업본 데이터는 mold에서 관리하지 않고, commvault 의 plan 보존기간에 따라 데이터 에이징 됨.
     @Override
     public boolean willDeleteBackupsOnOfferingRemoval() {
-        return true;
+        return false;
     }
 
     @Override
