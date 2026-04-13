@@ -365,7 +365,7 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
     }
 
     private boolean importRawBackupToRbd(KVMStoragePool volumeStoragePool, String volumePath, String backupPath, int timeout, boolean createTargetVolume) {
-        if (!createTargetVolume && !volumeStoragePool.deletePhysicalDisk(volumePath, Storage.ImageFormat.RAW)) {
+        if (!createTargetVolume && !deleteExistingRbdVolumeIfPresent(volumeStoragePool, volumePath)) {
             logger.error("Failed to delete existing RBD volume {} before raw import", volumePath);
             return false;
         }
@@ -376,6 +376,24 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             return false;
         }
         return true;
+    }
+
+    private boolean deleteExistingRbdVolumeIfPresent(KVMStoragePool volumeStoragePool, String volumePath) {
+        try {
+            return volumeStoragePool.deletePhysicalDisk(volumePath, Storage.ImageFormat.RAW);
+        } catch (CloudRuntimeException e) {
+            if (isMissingRbdImageError(e)) {
+                logger.info("Skipping deletion for missing RBD volume {} before restore", volumePath);
+                return true;
+            }
+            throw e;
+        }
+    }
+
+    private boolean isMissingRbdImageError(CloudRuntimeException e) {
+        String message = e.getMessage();
+        return StringUtils.containsIgnoreCase(message, "Failed to open image")
+                && StringUtils.containsIgnoreCase(message, "No such file or directory");
     }
 
     private boolean restoreIncrementalRbdBackupChain(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths,
