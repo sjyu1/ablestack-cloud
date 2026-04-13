@@ -76,11 +76,11 @@ public interface BackupManager extends BackupService, Configurable, PluggableSer
             ConfigKey.Scope.Cluster,
             null);
 
-    ConfigKey<Integer> BackupDeltaMax = new ConfigKey<>(Integer.class,
-            "backup.delta.max",
+    ConfigKey<Integer> BackupChainSize = new ConfigKey<>(Integer.class,
+            "backup.chain.size",
             "Advanced",
             "10",
-            "Max incremental backups between two full backups for KVM backup providers.",
+            "Max incremental backup chain size before switching back to a full backup for KVM backup providers.",
             true,
             ConfigKey.Scope.Global,
             null);

@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.Iterator;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -248,9 +249,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private AsyncJobDispatcher asyncJobDispatcher;
     private Timer backupTimer;
     private Date currentTimestamp;
+    private static final int POST_RESTORE_MAINTENANCE_MAX_RETRIES = 5;
+    private static final long POST_RESTORE_MAINTENANCE_RETRY_INTERVAL_MS = 60_000L;
 
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
     private List<BackupProvider> backupProviders;
+    private final List<PostRestoreMaintenanceTask> postRestoreMaintenanceTasks = Collections.synchronizedList(new ArrayList<>());
 
     public AsyncJobDispatcher getAsyncJobDispatcher() {
         return asyncJobDispatcher;
@@ -1231,6 +1235,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                         vm.getId(), ApiCommandResourceType.VirtualMachine.toString(),0);
                 throw new CloudRuntimeException("Error restoring VM from backup with uuid " + backup.getUuid());
             }
+            runPostRestoreMaintenance(backupProvider, vm, backup, false);
         // The restore process is executed by a backup provider outside of ACS, I am using the catch-all (Exception) to
         // ensure that no provider-side exception is missed. Therefore, we have a proper handling of exceptions, and rollbacks if needed.
         } catch (Exception e) {
@@ -1611,6 +1616,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 cleanupRestoredVolumeAfterAttachFailure(result.second());
                 throw new CloudRuntimeException(String.format("Error attaching volume [%s] to VM [%s].", backedUpVolumeUuid, vm.getUuid()));
             }
+            runPostRestoreMaintenance(backupProvider, vm, backup, true);
         } catch (Exception e) {
             cleanupRestoredVolumeAfterAttachFailure(result.second());
             throw e;
@@ -1639,6 +1645,47 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             }
         }
         return result;
+    }
+
+    private void runPostRestoreMaintenance(final BackupProvider backupProvider, final VirtualMachine vm, final Backup backup, final boolean volumeOnly) {
+        if (!backupProvider.supportsPostRestoreMaintenance()) {
+            return;
+        }
+        try {
+            backupProvider.runPostRestoreMaintenance(vm, backup, volumeOnly);
+        } catch (Exception e) {
+            logger.warn("Post-restore maintenance failed for provider {} on VM {} and backup {}: {}", backupProvider.getName(),
+                    vm != null ? vm.getUuid() : null, backup != null ? backup.getUuid() : null, e.getMessage(), e);
+            schedulePostRestoreMaintenanceRetry(backupProvider, vm, backup, volumeOnly);
+        }
+    }
+
+    private void schedulePostRestoreMaintenanceRetry(final BackupProvider backupProvider, final VirtualMachine vm, final Backup backup, final boolean volumeOnly) {
+        if (backupProvider == null || vm == null || backup == null) {
+            return;
+        }
+        synchronized (postRestoreMaintenanceTasks) {
+            postRestoreMaintenanceTasks.add(new PostRestoreMaintenanceTask(backupProvider.getName(), vm.getId(), backup.getId(), volumeOnly, 1,
+                    System.currentTimeMillis() + POST_RESTORE_MAINTENANCE_RETRY_INTERVAL_MS));
+        }
+    }
+
+    private static final class PostRestoreMaintenanceTask {
+        private final String providerName;
+        private final long vmId;
+        private final long backupId;
+        private final boolean volumeOnly;
+        private int retryCount;
+        private long nextAttemptEpochMs;
+
+        private PostRestoreMaintenanceTask(String providerName, long vmId, long backupId, boolean volumeOnly, int retryCount, long nextAttemptEpochMs) {
+            this.providerName = providerName;
+            this.vmId = vmId;
+            this.backupId = backupId;
+            this.volumeOnly = volumeOnly;
+            this.retryCount = retryCount;
+            this.nextAttemptEpochMs = nextAttemptEpochMs;
+        }
     }
 
     @Override
@@ -1904,7 +1951,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 BackupSyncPollingInterval,
                 BackupEnableAttachDetachVolumes,
                 KvmIncrementalBackup,
-                BackupDeltaMax,
+                BackupChainSize,
                 DefaultMaxAccountBackups,
                 DefaultMaxAccountBackupStorage,
                 DefaultMaxProjectBackups,
@@ -2130,6 +2177,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 if (logger.isTraceEnabled()) {
                     logger.trace("Backup sync background task is running...");
                 }
+                processPostRestoreMaintenanceTasks();
                 for (final DataCenter dataCenter : dataCenterDao.listAllZones()) {
                     if (dataCenter == null || isDisabled(dataCenter.getId())) {
                         logger.debug("Backup Sync Task is not enabled in zone [{}]. Skipping this zone!", dataCenter == null ? "NULL Zone!" : dataCenter);
@@ -2139,8 +2187,13 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     List<BackupProvider> providers = getBackupProvidersForZone(dataCenter.getId());
                     for (BackupProvider backupProvider : providers) {
                         try {
-                            backupProvider.syncBackupStorageStats(dataCenter.getId());
-                            syncOutOfBandBackups(backupProvider, dataCenter);
+                            if (backupProvider.supportsBackgroundSync()) {
+                                backupProvider.syncBackupStorageStats(dataCenter.getId());
+                                syncOutOfBandBackups(backupProvider, dataCenter);
+                            }
+                            if (backupProvider.supportsBackgroundChainValidation()) {
+                                backupProvider.validateChains(dataCenter.getId());
+                            }
                             updateBackupUsageRecords(backupProvider, dataCenter);
                         } catch (Exception e) {
                             logger.error("Failed to sync backups for provider {} in zone {}: {}", backupProvider.getName(), dataCenter.getId(), e.getMessage(), e);
@@ -2152,8 +2205,49 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             }
         }
 
+        private void processPostRestoreMaintenanceTasks() {
+            synchronized (postRestoreMaintenanceTasks) {
+                if (postRestoreMaintenanceTasks.isEmpty()) {
+                    return;
+                }
+                final long now = System.currentTimeMillis();
+                final Iterator<PostRestoreMaintenanceTask> iterator = postRestoreMaintenanceTasks.iterator();
+                while (iterator.hasNext()) {
+                    final PostRestoreMaintenanceTask task = iterator.next();
+                    if (task.nextAttemptEpochMs > now) {
+                        continue;
+                    }
+                    try {
+                        final BackupProvider backupProvider = getBackupProvider(task.providerName);
+                        final BackupVO backup = backupDao.findByIdIncludingRemoved(task.backupId);
+                        final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(task.vmId);
+                        if (backup == null || vm == null || !backupProvider.supportsPostRestoreMaintenance()) {
+                            iterator.remove();
+                            continue;
+                        }
+                        backupProvider.runPostRestoreMaintenance(vm, backup, task.volumeOnly);
+                        iterator.remove();
+                    } catch (Exception e) {
+                        if (task.retryCount >= POST_RESTORE_MAINTENANCE_MAX_RETRIES) {
+                            logger.warn("Exhausted post-restore maintenance retries for provider {}, VM {}, backup {} due to: {}",
+                                    task.providerName, task.vmId, task.backupId, e.getMessage(), e);
+                            iterator.remove();
+                            continue;
+                        }
+                        task.retryCount++;
+                        task.nextAttemptEpochMs = now + (POST_RESTORE_MAINTENANCE_RETRY_INTERVAL_MS * task.retryCount);
+                        logger.warn("Post-restore maintenance retry {} scheduled for provider {}, VM {}, backup {} due to: {}",
+                                task.retryCount, task.providerName, task.vmId, task.backupId, e.getMessage());
+                    }
+                }
+            }
+        }
+
         private void syncOutOfBandBackups(final BackupProvider backupProvider, DataCenter dataCenter) {
-            if (backupProvider.getName().equalsIgnoreCase("commvault")) {
+            if (!backupProvider.supportsOutOfBandBackupSync()) {
+                return;
+            }
+            if (backupProvider.supportsProviderManagedBackupAgents()) {
                 boolean check = backupProvider.checkBackupAgent(dataCenter.getId());
                 if (!check) {
                     boolean install = false;
@@ -2169,7 +2263,9 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 logger.debug("Can't find any VM to sync backups in zone {}", dataCenter);
                 return;
             }
-            backupProvider.syncBackupMetrics(dataCenter.getId());
+            if (backupProvider.supportsBackupMetricsSync()) {
+                backupProvider.syncBackupMetrics(dataCenter.getId());
+            }
             for (final VMInstanceVO vm : vms) {
                 try {
                     logger.debug(String.format("Trying to sync backups of VM [%s] using backup provider [%s].", vm, backupProvider.getName()));
@@ -2367,7 +2463,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         if (retentionPeriod != null) {
             final BackupProvider provider = getBackupProvider(providerName);
-            if (!provider.getName().equalsIgnoreCase("commvault")){
+            if (!provider.supportsRetentionPlanUpdate()) {
                 throw new CloudRuntimeException("Failed to update backup offering, Because the backup offering provider is not set to commvault.");
             }
             boolean result = provider.updateBackupPlan(zoneId, retentionPeriod, externalId);

@@ -32,6 +32,8 @@ public class AblestackCommvaultRestoreBackupCommand extends Command  {
     private List<String> backupVolumesUUIDs;
     private List<String> backupFiles;
     private List<String> backupFileChains;
+    private List<BackupVolumeChainState> volumeChainStates;
+    private BackupRestorePlan restorePlan;
     private List<PrimaryDataStoreTO> restoreVolumePools;
     private List<String> restoreVolumePaths;
     private String diskType;
@@ -141,6 +143,22 @@ public class AblestackCommvaultRestoreBackupCommand extends Command  {
 
     public void setBackupFileChains(List<String> backupFileChains) {
         this.backupFileChains = backupFileChains;
+    }
+
+    public List<BackupVolumeChainState> getVolumeChainStates() {
+        return volumeChainStates;
+    }
+
+    public void setVolumeChainStates(List<BackupVolumeChainState> volumeChainStates) {
+        this.volumeChainStates = volumeChainStates;
+    }
+
+    public BackupRestorePlan getRestorePlan() {
+        return restorePlan;
+    }
+
+    public void setRestorePlan(BackupRestorePlan restorePlan) {
+        this.restorePlan = restorePlan;
     }
 
     public Integer getTimeout() {

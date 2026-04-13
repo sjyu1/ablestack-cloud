@@ -59,6 +59,7 @@ import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 import org.apache.cloudstack.backup.commvault.AblestackCommvaultClient;
 import org.apache.cloudstack.backup.dao.BackupDao;
+import org.apache.cloudstack.backup.dao.BackupDetailsDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDaoImpl;
 import org.apache.cloudstack.backup.dao.BackupScheduleDao;
@@ -95,7 +96,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
 
-import static org.apache.cloudstack.backup.BackupManager.BackupDeltaMax;
+import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
@@ -116,6 +117,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String DETAIL_RBD_DISK_PATHS = "commvault.rbd.disk.paths";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String DETAIL_STAGE_HOST = "commvault.stage.host";
+    private static final String DETAIL_CHAIN_SEALED = "commvault.chain.sealed";
+    private static final String DETAIL_CHAIN_SEAL_REASON = "commvault.chain.seal.reason";
+    private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "commvault.fallback.volume.uuids";
     private static final String RM_COMMAND = "rm -rf %s";
     private static final int BASE_MAJOR = 11;
     private static final int BASE_FR = 32;
@@ -168,6 +172,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Inject
     private BackupDao backupDao;
+
+    @Inject
+    private BackupDetailsDao backupDetailsDao;
 
     @Inject
     private BackupOfferingDao backupOfferingDao;
@@ -315,7 +322,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final Backup latestBackup = getLatestBackedUpBackup(vm);
-        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost);
+        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost, vmVolumes);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, backupContentPath, vmVolumes, volumePoolsAndPaths,
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
@@ -339,7 +346,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 .orElse(null);
     }
 
-    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, Host vmHost) {
+    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, Host vmHost, List<VolumeVO> vmVolumes) {
         if (latestBackup == null) {
             return false;
         }
@@ -354,18 +361,26 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
 
-        return canContinueIncrementalChain(vm, latestBackup, vmHost) && getBackupChainSize(vm, latestBackup) < getEffectiveIncrementalLimit(vm);
+        if (!hasHealthyIncrementalSource(latestBackup)) {
+            markVolumeFallbackAndSeal(latestBackup, "unhealthy-chain");
+            return false;
+        }
+        if (!canContinueIncrementalChain(vm, latestBackup, vmHost)) {
+            sealBackupChain(latestBackup, "stage-host-mismatch");
+            return false;
+        }
+        if (getBackupChainSize(vm, latestBackup) >= getEffectiveIncrementalLimit(vm)) {
+            sealBackupChain(latestBackup, "chain-size-limit");
+            return false;
+        }
+        return true;
     }
 
     private int getEffectiveIncrementalLimit(VirtualMachine vm) {
-        int effectiveLimit = BackupDeltaMax.value();
-        List<BackupScheduleVO> schedules = backupScheduleDao.listByVM(vm.getId());
-        for (BackupScheduleVO schedule : schedules) {
-            if (schedule != null && schedule.getMaxBackups() > 0) {
-                effectiveLimit = Math.min(effectiveLimit, schedule.getMaxBackups());
-            }
-        }
-        return effectiveLimit;
+        List<Integer> scheduleMaxBackups = backupScheduleDao.listByVM(vm.getId()).stream()
+                .map(BackupScheduleVO::getMaxBackups)
+                .collect(Collectors.toList());
+        return AblestackBackupFrameworkUtils.getEffectiveIncrementalLimit(BackupChainSize.value(), scheduleMaxBackups);
     }
 
     private boolean canContinueIncrementalChain(VirtualMachine vm, Backup latestBackup, Host vmHost) {
@@ -387,20 +402,66 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
                 .peek(backupDao::loadDetails)
                 .collect(Collectors.toList());
-        Map<String, BackupVO> backupsByUuid = backups.stream().collect(Collectors.toMap(BackupVO::getUuid, backup -> backup, (left, right) -> left));
-        int chainSize = 1;
-        Backup current = latestBackup;
-        while (current != null) {
-            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
-            if (parentBackupUuid == null) {
-                break;
-            }
-            current = backupsByUuid.get(parentBackupUuid);
-            if (current != null) {
-                chainSize++;
+        Map<String, Backup> backupsByUuid = backups.stream().collect(Collectors.toMap(BackupVO::getUuid, backup -> (Backup) backup, (left, right) -> left));
+        return AblestackBackupFrameworkUtils.getBackupChainSize(latestBackup, backupsByUuid,
+                current -> getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID));
+    }
+
+    private boolean hasHealthyIncrementalSource(Backup latestBackup) {
+        try {
+            return AblestackBackupFrameworkUtils.hasUsableVolumeChainStates(getVolumeChainStates(latestBackup.getBackedUpVolumes(), latestBackup));
+        } catch (Exception e) {
+            LOG.warn("Latest Commvault backup chain [{}] is not healthy enough for incremental reuse: {}", latestBackup.getUuid(), e.getMessage());
+            return false;
+        }
+    }
+
+    private void markVolumeFallbackAndSeal(Backup latestBackup, String reason) {
+        List<String> unhealthyVolumeUuids = listUnhealthyVolumeUuids(latestBackup);
+        if (!unhealthyVolumeUuids.isEmpty()) {
+            updateBackupDetail(latestBackup, DETAIL_FALLBACK_VOLUME_UUIDS, String.join(",", unhealthyVolumeUuids));
+        }
+        sealBackupChain(latestBackup, reason);
+    }
+
+    private List<String> listUnhealthyVolumeUuids(Backup backup) {
+        List<String> unhealthy = new ArrayList<>();
+        if (backup == null || CollectionUtils.isEmpty(backup.getBackedUpVolumes())) {
+            return unhealthy;
+        }
+        for (Backup.VolumeInfo volumeInfo : backup.getBackedUpVolumes()) {
+            List<String> chainFiles = AblestackBackupFrameworkUtils.sanitizeChainFiles(getBackupChain(volumeInfo, backup));
+            if (chainFiles.isEmpty()) {
+                unhealthy.add(volumeInfo.getUuid());
             }
         }
-        return chainSize;
+        return unhealthy;
+    }
+
+    private void sealBackupChain(Backup backup, String reason) {
+        updateBackupDetail(backup, DETAIL_CHAIN_SEALED, "true");
+        updateBackupDetail(backup, DETAIL_CHAIN_SEAL_REASON, reason);
+    }
+
+    private void updateBackupDetail(Backup backup, String key, String value) {
+        if (backup == null || StringUtils.isBlank(key)) {
+            return;
+        }
+        backupDetailsDao.removeDetail(backup.getId(), key);
+        backupDetailsDao.addDetail(backup.getId(), key, value, false);
+        if (backup instanceof BackupVO) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
+    }
+
+    @Override
+    public boolean supportsProviderManagedBackupAgents() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsRetentionPlanUpdate() {
+        return true;
     }
 
     private boolean hasDependentBackups(Backup backup) {
@@ -503,11 +564,12 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                                                 String planId, String backupPath, String backupContentPath, List<VolumeVO> vmVolumes,
                                                 Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths, Backup latestBackup,
                                                 boolean incrementalBackup, boolean retryAsFullOnFailure) {
-        final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
         final String checkpointName = backupPath.substring(backupPath.lastIndexOf("/") + 1);
         final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
+        final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
-        final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup, incrementalBackup, vmHost.getName());
+        final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup,
+                BACKUP_TYPE_INCREMENTAL.equalsIgnoreCase(requestedBackupType), vmHost.getName());
 
         BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         AblestackCommvaultTakeBackupCommand command = new AblestackCommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
@@ -738,6 +800,94 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return String.join(";", chain);
     }
 
+    private List<BackupVolumeChainState> getVolumeChainStates(List<Backup.VolumeInfo> backupVolumes, Backup backup) {
+        String backupEngine = getBackupDetail(backup, DETAIL_BACKUP_ENGINE);
+        List<BackupVolumeChainState> volumeChainStates = backupVolumes.stream()
+                .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                .map(volume -> new BackupVolumeChainState(volume.getUuid(), backupEngine,
+                        AblestackBackupFrameworkUtils.sanitizeChainFiles(getBackupChain(volume, backup))))
+                .collect(Collectors.toList());
+        AblestackBackupFrameworkUtils.validateVolumeChainStates(volumeChainStates);
+        return volumeChainStates;
+    }
+
+    private BackupRestorePlan createRestorePlan(boolean attachRequired) {
+        return AblestackBackupFrameworkUtils.createRestorePlan(attachRequired, true);
+    }
+
+    @Override
+    public boolean supportsVolumeLevelChainState() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsRestorePlan() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsRestoreChainValidation() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsPostRestoreMaintenance() {
+        return true;
+    }
+
+    @Override
+    public void runPostRestoreMaintenance(VirtualMachine vm, Backup backup, boolean volumeOnly) {
+        if (backup == null || CollectionUtils.isEmpty(backup.getBackedUpVolumes())) {
+            return;
+        }
+        loadBackupDetailsIfNeeded(backup);
+        final List<BackupVolumeChainState> chainStates = getVolumeChainStates(backup.getBackedUpVolumes(), backup);
+        AblestackBackupFrameworkUtils.validateVolumeChainStates(chainStates);
+        LOG.debug("Completed Commvault post-restore maintenance for VM [{}], backup [{}], volumeOnly=[{}]", vm != null ? vm.getInstanceName() : null,
+                backup.getUuid(), volumeOnly);
+    }
+
+    @Override
+    public boolean supportsBackgroundChainValidation() {
+        return true;
+    }
+
+    @Override
+    public void validateChains(Long zoneId) {
+        final List<Long> vmIdsWithBackups = backupDao.listVmIdsWithBackupsInZone(zoneId);
+        if (CollectionUtils.isEmpty(vmIdsWithBackups)) {
+            return;
+        }
+        for (final Long vmId : vmIdsWithBackups) {
+            final Backup latestBackup = getLatestBackedUpBackupForProvider(zoneId, vmId);
+            if (latestBackup == null) {
+                continue;
+            }
+            loadBackupDetailsIfNeeded(latestBackup);
+            if (Boolean.parseBoolean(getBackupDetail(latestBackup, DETAIL_CHAIN_SEALED))) {
+                continue;
+            }
+            if (!hasHealthyIncrementalSource(latestBackup)) {
+                markVolumeFallbackAndSeal(latestBackup, "background-chain-validation");
+                LOG.warn("Sealed Commvault backup chain [{}] during background validation in zone [{}]", latestBackup.getUuid(), zoneId);
+            }
+        }
+    }
+
+    private Backup getLatestBackedUpBackupForProvider(Long zoneId, Long vmId) {
+        return backupDao.listByVmId(zoneId, vmId).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
+                .filter(backup -> {
+                    BackupOffering offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+                    return offering != null && Objects.equals(getName(), offering.getProvider());
+                })
+                .peek(backupDao::loadDetails)
+                .max(Comparator.comparing(BackupVO::getDate))
+                .orElse(null);
+    }
+
     private List<String> getBackupChain(Backup.VolumeInfo backupVolume, Backup backup) {
         loadBackupDetailsIfNeeded(backup);
         List<String> chain = new ArrayList<>();
@@ -752,6 +902,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 break;
             }
             chain.add(0, getRestoreBackupFilePath(current, currentVolumeInfo));
+            if (StringUtils.endsWith(currentVolumeInfo.getPath(), ".raw")) {
+                break;
+            }
             String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
             if (parentBackupUuid == null) {
                 break;
@@ -1009,11 +1162,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                             .collect(Collectors.toList()));
                     restoreCommand.setBackupFileChains(getBackupFileChains(backup.getBackedUpVolumes(), backup));
                 }
+                restoreCommand.setVolumeChainStates(getVolumeChainStates(backup.getBackedUpVolumes(), backup));
                 Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(restoreVolumes);
                 restoreCommand.setRestoreVolumePools(volumePoolsAndPaths.first());
                 restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
                 restoreCommand.setVmExists(vm.getRemoved() == null);
                 restoreCommand.setVmState(vm.getState());
+                restoreCommand.setRestorePlan(createRestorePlan(false));
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setHostName(null);
                 restoreCommand.setBackupSourceHosts(additionalSourceHosts);
@@ -1169,6 +1324,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 if (!isLegacyBackup(backup)) {
                     restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(backupVolumeInfo, backup)));
                 }
+                restoreCommand.setVolumeChainStates(getVolumeChainStates(Collections.singletonList(backupVolumeInfo), backup));
                 restoreCommand.setRestoreVolumePaths(Collections.singletonList(String.format("%s/%s", getVolumePathPrefix(pool), volumeUUID)));
                 DataStore dataStore = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
                 restoreCommand.setRestoreVolumePools(Collections.singletonList(dataStore != null ? (PrimaryDataStoreTO)dataStore.getTO() : null));
@@ -1176,6 +1332,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 restoreCommand.setVmExists(null);
                 restoreCommand.setVmState(vmNameAndState.second());
                 restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
+                restoreCommand.setRestorePlan(createRestorePlan(AblestackBackupFrameworkUtils.requiresRunningVmAttach(vmNameAndState.second())));
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setCacheMode(cacheMode);
                 restoreCommand.setHostName(null);

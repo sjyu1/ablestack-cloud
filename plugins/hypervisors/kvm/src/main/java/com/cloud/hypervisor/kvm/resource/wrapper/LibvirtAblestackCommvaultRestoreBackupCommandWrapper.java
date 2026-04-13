@@ -31,8 +31,12 @@ import com.cloud.utils.Pair;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.script.Script;
 import com.cloud.vm.VirtualMachine;
+import org.apache.cloudstack.backup.AblestackBackupFrameworkUtils;
 import org.apache.cloudstack.backup.BackupAnswer;
 import org.apache.cloudstack.backup.AblestackCommvaultRestoreBackupCommand;
+import org.apache.cloudstack.backup.BackupRestorePlan;
+import org.apache.cloudstack.backup.BackupRestoreStage;
+import org.apache.cloudstack.backup.BackupVolumeChainState;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 import org.apache.cloudstack.utils.qemu.QemuImg;
 import org.apache.cloudstack.utils.qemu.QemuImgException;
@@ -71,6 +75,7 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
         List<String> backedVolumeUUIDs = command.getBackupVolumesUUIDs();
         List<String> backupFiles = command.getBackupFiles();
         List<String> backupFileChains = command.getBackupFileChains();
+        List<BackupVolumeChainState> volumeChainStates = command.getVolumeChainStates();
         List<PrimaryDataStoreTO> restoreVolumePools = command.getRestoreVolumePools();
         List<String> restoreVolumePaths = command.getRestoreVolumePaths();
         String restoreVolumeUuid = command.getRestoreVolumeUUID();
@@ -78,14 +83,16 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
         String cacheMode = command.getCacheMode();
         String hostName = command.getHostName();
         List<String> backupSourceHosts = command.getBackupSourceHosts();
+        BackupRestorePlan restorePlan = command.getRestorePlan();
         KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();
 
         String newVolumeId = null;
         try {
-            if (hostName != null) {
+            validateChainStatePlan(volumeChainStates, restorePlan);
+            if (AblestackBackupFrameworkUtils.hasRestoreStage(restorePlan, BackupRestoreStage.PREPARE_SOURCE) && hostName != null) {
                 fetchBackupFile(hostName, backupPath);
             }
-            if (backupSourceHosts != null && !backupSourceHosts.isEmpty()) {
+            if (AblestackBackupFrameworkUtils.hasRestoreStage(restorePlan, BackupRestoreStage.PREPARE_SOURCE) && backupSourceHosts != null && !backupSourceHosts.isEmpty()) {
                 LinkedHashSet<String> sourceHosts = new LinkedHashSet<>(backupSourceHosts);
                 for (String sourceHost : sourceHosts) {
                     if (StringUtils.isBlank(sourceHost) || Objects.equals(sourceHost, hostName)) {
@@ -99,12 +106,14 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
                 String volumePath = restoreVolumePaths.get(0);
                 int lastIndex = volumePath.lastIndexOf("/");
                 newVolumeId = volumePath.substring(lastIndex + 1);
-                restoreVolume(storagePoolMgr, backupPath, volumePool, volumePath, diskType, restoreVolumeUuid, backupFiles, backupFileChains,
-                        new Pair<>(vmName, command.getVmState()), timeout, cacheMode);
+                restoreVolume(storagePoolMgr, backupPath, volumePool, volumePath, diskType, restoreVolumeUuid, backupFiles, backupFileChains, volumeChainStates,
+                        new Pair<>(vmName, command.getVmState()), timeout, cacheMode, restorePlan);
             } else if (Boolean.TRUE.equals(vmExists)) {
-                restoreVolumesOfExistingVM(storagePoolMgr, restoreVolumePools, restoreVolumePaths, backedVolumeUUIDs, backupPath, backupFiles, backupFileChains, timeout);
+                restoreVolumesOfExistingVM(storagePoolMgr, restoreVolumePools, restoreVolumePaths, backedVolumeUUIDs, backupPath, backupFiles, backupFileChains,
+                        volumeChainStates, timeout, restorePlan);
             } else {
-                restoreVolumesOfDestroyedVMs(storagePoolMgr, restoreVolumePools, restoreVolumePaths, vmName, backupPath, backupFiles, backupFileChains, timeout);
+                restoreVolumesOfDestroyedVMs(storagePoolMgr, restoreVolumePools, restoreVolumePaths, vmName, backupPath, backupFiles, backupFileChains,
+                        volumeChainStates, timeout, restorePlan);
             }
         } catch (CloudRuntimeException e) {
             String errorMessage = e.getMessage() != null ? e.getMessage() : "";
@@ -115,52 +124,79 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
     }
 
     private void restoreVolumesOfExistingVM(KVMStoragePoolManager storagePoolMgr, List<PrimaryDataStoreTO> restoreVolumePools, List<String> restoreVolumePaths, List<String> backedVolumesUUIDs,
-                                            String backupPath, List<String> backupFiles, List<String> backupFileChains, int timeout) {
+                                            String backupPath, List<String> backupFiles, List<String> backupFileChains,
+                                            List<BackupVolumeChainState> volumeChainStates, int timeout, BackupRestorePlan restorePlan) {
         String diskType = "root";
         try {
             for (int idx = 0; idx < restoreVolumePaths.size(); idx++) {
                 PrimaryDataStoreTO restoreVolumePool = restoreVolumePools.get(idx);
                 String restoreVolumePath = restoreVolumePaths.get(idx);
                 String backupVolumeUuid = backedVolumesUUIDs.get(idx);
-                List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, idx, getLegacyBackupFileName(diskType, backupVolumeUuid));
+                List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, volumeChainStates, idx, getLegacyBackupFileName(diskType, backupVolumeUuid));
+                validateResolvedChainPaths(localBackupPaths, restoreVolumePath);
                 diskType = "datadisk";
                 if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, restoreVolumePath, localBackupPaths, timeout, backupPath, idx)) {
                     throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", backupVolumeUuid));
                 }
             }
         } finally {
-            deleteBackupDirectory(backupPath);
+            cleanupBackupDirectory(backupPath, restorePlan);
         }
     }
 
     private void restoreVolumesOfDestroyedVMs(KVMStoragePoolManager storagePoolMgr, List<PrimaryDataStoreTO> volumePools, List<String> volumePaths, String vmName, String backupPath,
-                                              List<String> backupFiles, List<String> backupFileChains, int timeout) {
+                                              List<String> backupFiles, List<String> backupFileChains,
+                                              List<BackupVolumeChainState> volumeChainStates, int timeout, BackupRestorePlan restorePlan) {
         String diskType = "root";
         try {
             for (int i = 0; i < volumePaths.size(); i++) {
                 PrimaryDataStoreTO volumePool = volumePools.get(i);
                 String volumePath = volumePaths.get(i);
                 String volumeUuid = volumePath.substring(volumePath.lastIndexOf(File.separator) + 1);
-                List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, i, getLegacyBackupFileName(diskType, volumeUuid));
+                List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, volumeChainStates, i, getLegacyBackupFileName(diskType, volumeUuid));
+                validateResolvedChainPaths(localBackupPaths, volumePath);
                 diskType = "datadisk";
                 if (!replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, localBackupPaths, timeout, backupPath, i)) {
                     throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", volumeUuid));
                 }
             }
         } finally {
-            deleteBackupDirectory(backupPath);
+            cleanupBackupDirectory(backupPath, restorePlan);
         }
     }
 
     private void restoreVolume(KVMStoragePoolManager storagePoolMgr, String backupPath, PrimaryDataStoreTO volumePool, String volumePath, String diskType, String volumeUUID,
-                               List<String> backupFiles, List<String> backupFileChains,
-                               Pair<String, VirtualMachine.State> vmNameAndState, int timeout, String cacheMode) {
+                               List<String> backupFiles, List<String> backupFileChains, List<BackupVolumeChainState> volumeChainStates,
+                               Pair<String, VirtualMachine.State> vmNameAndState, int timeout, String cacheMode, BackupRestorePlan restorePlan) {
         try {
-            List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, 0, getLegacyBackupFileName(diskType, volumeUUID));
+            List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, volumeChainStates, 0, getLegacyBackupFileName(diskType, volumeUUID));
+            validateResolvedChainPaths(localBackupPaths, volumePath);
             if (!replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, localBackupPaths, timeout, backupPath, 0, true)) {
                 throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", volumeUUID));
             }
         } finally {
+            cleanupBackupDirectory(backupPath, restorePlan);
+        }
+    }
+
+    private void validateChainStatePlan(List<BackupVolumeChainState> volumeChainStates, BackupRestorePlan restorePlan) {
+        if (AblestackBackupFrameworkUtils.hasRestoreStage(restorePlan, BackupRestoreStage.VALIDATE_CHAIN) && volumeChainStates != null && !volumeChainStates.isEmpty()) {
+            try {
+                AblestackBackupFrameworkUtils.validateVolumeChainStates(volumeChainStates);
+            } catch (IllegalArgumentException e) {
+                throw new CloudRuntimeException(e.getMessage(), e);
+            }
+        }
+    }
+
+    private void validateResolvedChainPaths(List<String> resolvedPaths, String volumePath) {
+        if (resolvedPaths == null || resolvedPaths.isEmpty()) {
+            throw new CloudRuntimeException(String.format("No resolved backup chain paths found for volume [%s]", volumePath));
+        }
+    }
+
+    private void cleanupBackupDirectory(String backupPath, BackupRestorePlan restorePlan) {
+        if (AblestackBackupFrameworkUtils.hasRestoreStage(restorePlan, BackupRestoreStage.CLEANUP_SOURCE)) {
             deleteBackupDirectory(backupPath);
         }
     }
@@ -174,8 +210,17 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
         }
     }
 
-    private List<String> getLocalBackupPaths(String backupPath, List<String> backupFiles, List<String> backupFileChains, int index, String legacyBackupFileName) {
+    private List<String> getLocalBackupPaths(String backupPath, List<String> backupFiles, List<String> backupFileChains,
+                                             List<BackupVolumeChainState> volumeChainStates, int index, String legacyBackupFileName) {
         List<String> localPaths = new ArrayList<>();
+        if (volumeChainStates != null && volumeChainStates.size() > index) {
+            for (String chainPath : volumeChainStates.get(index).getChainFiles()) {
+                if (StringUtils.isBlank(chainPath)) {
+                    continue;
+                }
+                localPaths.add(resolveBackupPath(backupPath, chainPath));
+            }
+        }
         if (backupFileChains != null && backupFileChains.size() > index && StringUtils.isNotBlank(backupFileChains.get(index))) {
             for (String chainPath : backupFileChains.get(index).split(";")) {
                 if (StringUtils.isBlank(chainPath)) {

@@ -50,6 +50,8 @@ import com.cloud.vm.snapshot.dao.VMSnapshotDetailsDao;
 
 
 import org.apache.cloudstack.backup.dao.BackupDao;
+import org.apache.cloudstack.backup.dao.BackupDetailsDao;
+import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.backup.dao.BackupRepositoryDao;
 import org.apache.cloudstack.backup.dao.BackupScheduleDao;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
@@ -78,7 +80,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import static org.apache.cloudstack.backup.BackupManager.BackupDeltaMax;
+import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
@@ -96,6 +98,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_PARENT_CHECKPOINT_PATH = "nas.parent.checkpoint.path";
     private static final String DETAIL_BACKUP_ENGINE = "nas.backup.engine";
     private static final String DETAIL_RBD_DISK_PATHS = "nas.rbd.disk.paths";
+    private static final String DETAIL_CHAIN_SEALED = "nas.chain.sealed";
+    private static final String DETAIL_CHAIN_SEAL_REASON = "nas.chain.seal.reason";
+    private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "nas.fallback.volume.uuids";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
@@ -116,7 +121,13 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private BackupDao backupDao;
 
     @Inject
+    private BackupDetailsDao backupDetailsDao;
+
+    @Inject
     private BackupRepositoryDao backupRepositoryDao;
+
+    @Inject
+    private BackupOfferingDao backupOfferingDao;
 
     @Inject
     private BackupRepositoryService backupRepositoryService;
@@ -231,7 +242,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final BackupVO latestBackup = getLatestBackedUpBackup(vm);
-        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup);
+        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmVolumes);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup,
                 incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
@@ -249,11 +260,12 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         final String checkpointName = backupPath.substring(backupPath.lastIndexOf("/") + 1);
         final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
+        final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
 
-        BackupVO backupVO = createBackupObject(vm, backupPath, incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL,
+        BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType,
                 checkpointName, backupEngine, incrementalBackup ? parentBackup : null, volumePoolsAndPaths.second());
         AblestackNasTakeBackupCommand command = new AblestackNasTakeBackupCommand(vm.getInstanceName(), backupPath);
-        command.setBackupType(backupVO.getType());
+        command.setBackupType(requestedBackupType);
         command.setCheckpointName(checkpointName);
         command.setBackupFiles(backupFiles);
         command.setVolumePools(volumePoolsAndPaths.first());
@@ -420,7 +432,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 .orElse(null);
     }
 
-    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup) {
+    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, List<VolumeVO> vmVolumes) {
         if (latestBackup == null) {
             return false;
         }
@@ -435,18 +447,22 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             return false;
         }
 
-        return getBackupChainSize(vm, latestBackup) < getEffectiveIncrementalLimit(vm);
+        if (!hasHealthyIncrementalSource(latestBackup)) {
+            markVolumeFallbackAndSeal(latestBackup, "unhealthy-chain");
+            return false;
+        }
+        if (getBackupChainSize(vm, latestBackup) >= getEffectiveIncrementalLimit(vm)) {
+            sealBackupChain(latestBackup, "chain-size-limit");
+            return false;
+        }
+        return true;
     }
 
     private int getEffectiveIncrementalLimit(VirtualMachine vm) {
-        int effectiveLimit = BackupDeltaMax.value();
-        List<BackupScheduleVO> schedules = backupScheduleDao.listByVM(vm.getId());
-        for (BackupScheduleVO schedule : schedules) {
-            if (schedule != null && schedule.getMaxBackups() > 0) {
-                effectiveLimit = Math.min(effectiveLimit, schedule.getMaxBackups());
-            }
-        }
-        return effectiveLimit;
+        List<Integer> scheduleMaxBackups = backupScheduleDao.listByVM(vm.getId()).stream()
+                .map(BackupScheduleVO::getMaxBackups)
+                .collect(Collectors.toList());
+        return AblestackBackupFrameworkUtils.getEffectiveIncrementalLimit(BackupChainSize.value(), scheduleMaxBackups);
     }
 
     private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {
@@ -456,20 +472,56 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
                 .peek(backupDao::loadDetails)
                 .collect(Collectors.toList());
-        Map<String, BackupVO> backupsByUuid = backups.stream().collect(Collectors.toMap(BackupVO::getUuid, backup -> backup, (left, right) -> left));
-        int chainSize = 1;
-        Backup current = latestBackup;
-        while (current != null) {
-            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
-            if (parentBackupUuid == null) {
-                break;
-            }
-            current = backupsByUuid.get(parentBackupUuid);
-            if (current != null) {
-                chainSize++;
+        Map<String, Backup> backupsByUuid = backups.stream().collect(Collectors.toMap(BackupVO::getUuid, backup -> (Backup) backup, (left, right) -> left));
+        return AblestackBackupFrameworkUtils.getBackupChainSize(latestBackup, backupsByUuid,
+                current -> getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID));
+    }
+
+    private boolean hasHealthyIncrementalSource(Backup latestBackup) {
+        try {
+            return AblestackBackupFrameworkUtils.hasUsableVolumeChainStates(getVolumeChainStates(latestBackup.getBackedUpVolumes(), latestBackup));
+        } catch (Exception e) {
+            LOG.warn("Latest NAS backup chain [{}] is not healthy enough for incremental reuse: {}", latestBackup.getUuid(), e.getMessage());
+            return false;
+        }
+    }
+
+    private void markVolumeFallbackAndSeal(Backup latestBackup, String reason) {
+        List<String> unhealthyVolumeUuids = listUnhealthyVolumeUuids(latestBackup);
+        if (!unhealthyVolumeUuids.isEmpty()) {
+            updateBackupDetail(latestBackup, DETAIL_FALLBACK_VOLUME_UUIDS, String.join(",", unhealthyVolumeUuids));
+        }
+        sealBackupChain(latestBackup, reason);
+    }
+
+    private List<String> listUnhealthyVolumeUuids(Backup backup) {
+        List<String> unhealthy = new ArrayList<>();
+        if (backup == null || CollectionUtils.isEmpty(backup.getBackedUpVolumes())) {
+            return unhealthy;
+        }
+        for (Backup.VolumeInfo volumeInfo : backup.getBackedUpVolumes()) {
+            List<String> chainFiles = AblestackBackupFrameworkUtils.sanitizeChainFiles(getBackupFileChain(volumeInfo.getUuid(), backup));
+            if (chainFiles.isEmpty()) {
+                unhealthy.add(volumeInfo.getUuid());
             }
         }
-        return chainSize;
+        return unhealthy;
+    }
+
+    private void sealBackupChain(Backup backup, String reason) {
+        updateBackupDetail(backup, DETAIL_CHAIN_SEALED, "true");
+        updateBackupDetail(backup, DETAIL_CHAIN_SEAL_REASON, reason);
+    }
+
+    private void updateBackupDetail(Backup backup, String key, String value) {
+        if (backup == null || StringUtils.isBlank(key)) {
+            return;
+        }
+        backupDetailsDao.removeDetail(backup.getId(), key);
+        backupDetailsDao.addDetail(backup.getId(), key, value, false);
+        if (backup instanceof BackupVO) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
     }
 
     private boolean hasDependentBackups(Backup backup) {
@@ -564,8 +616,10 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         restoreCommand.setVolumePaths(getVolumePaths(restoreVolumes));
         restoreCommand.setBackupFiles(getBackupFiles(backupVolumes, backup));
         restoreCommand.setBackupFileChains(getBackupFileChains(backupVolumes, backup));
+        restoreCommand.setVolumeChainStates(getVolumeChainStates(backupVolumes, backup));
         restoreCommand.setVmExists(vm.getRemoved() == null);
         restoreCommand.setVmState(vm.getState());
+        restoreCommand.setRestorePlan(createRestorePlan(false));
         restoreCommand.setMountTimeout(NASBackupRestoreMountTimeout.value());
         restoreCommand.setWait(NASBackupRestoreTimeout.value());
 
@@ -604,6 +658,95 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         return backupFileChains;
     }
 
+    private List<BackupVolumeChainState> getVolumeChainStates(List<Backup.VolumeInfo> backedVolumes, Backup backup) {
+        List<BackupVolumeChainState> volumeChainStates = new ArrayList<>();
+        List<Backup.VolumeInfo> sortedVolumes = new ArrayList<>(backedVolumes);
+        sortedVolumes.sort(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId));
+        String backupEngine = getBackupDetail(backup, DETAIL_BACKUP_ENGINE);
+        for (Backup.VolumeInfo backedVolume : sortedVolumes) {
+            volumeChainStates.add(new BackupVolumeChainState(backedVolume.getUuid(), backupEngine,
+                    AblestackBackupFrameworkUtils.sanitizeChainFiles(getBackupFileChain(backedVolume.getUuid(), backup))));
+        }
+        AblestackBackupFrameworkUtils.validateVolumeChainStates(volumeChainStates);
+        return volumeChainStates;
+    }
+
+    private BackupRestorePlan createRestorePlan(boolean attachRequired) {
+        return AblestackBackupFrameworkUtils.createRestorePlan(attachRequired, true);
+    }
+
+    @Override
+    public boolean supportsVolumeLevelChainState() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsRestorePlan() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsRestoreChainValidation() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsPostRestoreMaintenance() {
+        return true;
+    }
+
+    @Override
+    public void runPostRestoreMaintenance(VirtualMachine vm, Backup backup, boolean volumeOnly) {
+        if (backup == null || CollectionUtils.isEmpty(backup.getBackedUpVolumes())) {
+            return;
+        }
+        final List<BackupVolumeChainState> chainStates = getVolumeChainStates(backup.getBackedUpVolumes(), backup);
+        AblestackBackupFrameworkUtils.validateVolumeChainStates(chainStates);
+        LOG.debug("Completed NAS post-restore maintenance for VM [{}], backup [{}], volumeOnly=[{}]", vm != null ? vm.getInstanceName() : null,
+                backup.getUuid(), volumeOnly);
+    }
+
+    @Override
+    public boolean supportsBackgroundChainValidation() {
+        return true;
+    }
+
+    @Override
+    public void validateChains(Long zoneId) {
+        final List<Long> vmIdsWithBackups = backupDao.listVmIdsWithBackupsInZone(zoneId);
+        if (CollectionUtils.isEmpty(vmIdsWithBackups)) {
+            return;
+        }
+        for (final Long vmId : vmIdsWithBackups) {
+            final Backup latestBackup = getLatestBackedUpBackupForProvider(zoneId, vmId);
+            if (latestBackup == null) {
+                continue;
+            }
+            loadBackupDetailsIfNeeded(latestBackup);
+            if (Boolean.parseBoolean(getBackupDetail(latestBackup, DETAIL_CHAIN_SEALED))) {
+                continue;
+            }
+            if (!hasHealthyIncrementalSource(latestBackup)) {
+                markVolumeFallbackAndSeal(latestBackup, "background-chain-validation");
+                LOG.warn("Sealed NAS backup chain [{}] during background validation in zone [{}]", latestBackup.getUuid(), zoneId);
+            }
+        }
+    }
+
+    private Backup getLatestBackedUpBackupForProvider(Long zoneId, Long vmId) {
+        return backupDao.listByVmId(zoneId, vmId).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
+                .filter(backup -> {
+                    BackupOffering offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+                    return offering != null && Objects.equals(getName(), offering.getProvider());
+                })
+                .peek(backupDao::loadDetails)
+                .max(Comparator.comparing(BackupVO::getDate))
+                .orElse(null);
+    }
+
     private List<String> getBackupFileChain(String volumeUuid, Backup backup) {
         loadBackupDetailsIfNeeded(backup);
         if (isLegacyBackup(backup)) {
@@ -623,6 +766,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(chainBackup.getBackedUpVolumes(), volumeUuid);
             if (volumeInfo != null) {
                 files.add(String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath()));
+                if (StringUtils.endsWith(volumeInfo.getPath(), ".raw")) {
+                    break;
+                }
             }
         }
         return files;
@@ -825,6 +971,8 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         restoreCommand.setVolumePaths(Collections.singletonList(String.format("%s/%s", pool.getPath(), volumeUUID)));
         restoreCommand.setBackupFiles(getBackupFiles(Collections.singletonList(matchingVolume), backup));
         restoreCommand.setBackupFileChains(Collections.singletonList(String.join(";", getBackupFileChain(matchingVolume.getUuid(), backup))));
+        restoreCommand.setVolumeChainStates(getVolumeChainStates(Collections.singletonList(matchingVolume), backup));
+        restoreCommand.setRestorePlan(createRestorePlan(AblestackBackupFrameworkUtils.requiresRunningVmAttach(vmNameAndState.second())));
 
         BackupAnswer answer;
         try {

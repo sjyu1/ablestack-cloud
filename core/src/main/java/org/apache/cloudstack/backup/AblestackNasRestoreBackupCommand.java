@@ -37,6 +37,8 @@ public class AblestackNasRestoreBackupCommand extends Command  {
     private List<String> volumePaths;
     private List<String> backupFiles;
     private List<String> backupFileChains;
+    private List<BackupVolumeChainState> volumeChainStates;
+    private BackupRestorePlan restorePlan;
     private String diskType;
     private Boolean vmExists;
     private VirtualMachine.State vmState;
@@ -117,6 +119,22 @@ public class AblestackNasRestoreBackupCommand extends Command  {
 
     public void setBackupFileChains(List<String> backupFileChains) {
         this.backupFileChains = backupFileChains;
+    }
+
+    public List<BackupVolumeChainState> getVolumeChainStates() {
+        return volumeChainStates;
+    }
+
+    public void setVolumeChainStates(List<BackupVolumeChainState> volumeChainStates) {
+        this.volumeChainStates = volumeChainStates;
+    }
+
+    public BackupRestorePlan getRestorePlan() {
+        return restorePlan;
+    }
+
+    public void setRestorePlan(BackupRestorePlan restorePlan) {
+        this.restorePlan = restorePlan;
     }
 
     public Boolean isVmExists() {
