@@ -73,4 +73,6 @@ public interface UnmanagedVMsManager extends VmImportService, UnmanageVMService,
     static boolean isSupported(Hypervisor.HypervisorType hypervisorType) {
         return hypervisorType == VMware || hypervisorType == KVM;
     }
+
+    void finalizeAblestackV2KTask(String importVmTaskUuid);
 }

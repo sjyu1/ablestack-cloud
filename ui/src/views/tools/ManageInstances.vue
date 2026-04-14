@@ -508,6 +508,7 @@
                 @fetch-import-vm-tasks="fetchImportVmTasks"
                 @change-pagination="onChangeImportTasksPagination"
                 @change-filter="onChangeImportTasksFilter"
+                @start-phase2="onStartPhase2"
               />
             </a-tab-pane>
           </a-tabs>
@@ -554,7 +555,6 @@
 </template>
 
 <script>
-import { message } from 'ant-design-vue'
 import { ref, reactive, toRaw } from 'vue'
 import { postAPI, getAPI } from '@/api'
 import _ from 'lodash'
@@ -774,7 +774,9 @@ export default {
       activeTabKey: 1,
       loadingImportVmTasks: false,
       importVmTasks: [],
-      importVmTasksFilter: 'running'
+      selectedImportVmTask: null,
+      importVmTasksFilter: 'all',
+      importVmTasksAutoRefreshTimer: null
     }
   },
   created () {
@@ -783,6 +785,9 @@ export default {
     this.page.tasks = parseInt(this.$route.query.tasks || 1)
     this.initForm()
     this.fetchData()
+  },
+  beforeUnmount () {
+    this.stopImportVmTasksAutoRefresh()
   },
   computed: {
     isPageAllowed () {
@@ -1114,6 +1119,7 @@ export default {
       this.managedInstancesSelectedRowKeys = []
       this.page.tasks = 1
       this.activeTabKey = 1
+      this.stopImportVmTasksAutoRefresh()
     },
     onSelectHypervisor (value) {
       this.sourceHypervisor = value
@@ -1185,8 +1191,26 @@ export default {
       this.fetchOptions(this.params.pools, 'pools', value)
     },
     onTabChange (e) {
-      if (e === 2) {
+      if (String(e) === '2') {
         this.fetchImportVmTasks()
+        this.startImportVmTasksAutoRefresh()
+      } else {
+        this.stopImportVmTasksAutoRefresh()
+      }
+    },
+    startImportVmTasksAutoRefresh () {
+      this.stopImportVmTasksAutoRefresh()
+      this.importVmTasksAutoRefreshTimer = window.setInterval(() => {
+        if (String(this.activeTabKey) !== '2' || !this.zoneId || !this.isMigrateFromVmware || this.loadingImportVmTasks) {
+          return
+        }
+        this.fetchImportVmTasks()
+      }, 10000)
+    },
+    stopImportVmTasksAutoRefresh () {
+      if (this.importVmTasksAutoRefreshTimer) {
+        window.clearInterval(this.importVmTasksAutoRefreshTimer)
+        this.importVmTasksAutoRefreshTimer = null
       }
     },
     onChangeImportTasksPagination (page, pagesize) {
@@ -1197,6 +1221,48 @@ export default {
     onChangeImportTasksFilter (filter) {
       this.importVmTasksFilter = filter
       this.fetchImportVmTasks()
+    },
+    onStartPhase2 (task) {
+      this.selectedImportVmTask = task
+      const params = {
+        importvmtaskid: task.id,
+        split: 'phase2',
+        zoneid: task.zoneid,
+        clusterid: task.clusterid,
+        serviceofferingid: task.serviceofferingid,
+        name: task.sourcevmname,
+        importsource: 'VMWARE',
+        hypervisor: 'KVM'
+      }
+      if (this.selectedVmwareVcenter) {
+        if (this.selectedVmwareVcenter.existingvcenterid) {
+          params.existingvcenterid = this.selectedVmwareVcenter.existingvcenterid
+        } else {
+          params.vcenter = this.selectedVmwareVcenter.vcenter
+          params.datacentername = this.selectedVmwareVcenter.datacentername
+          params.username = this.selectedVmwareVcenter.username
+          params.password = this.selectedVmwareVcenter.password
+        }
+      }
+      postAPI('importUnmanagedInstanceForAblestackV2K', params).then(response => {
+        const jobId = response.importunmanagedinstanceforablestackv2kresponse.jobid
+        this.$pollJob({
+          jobId,
+          title: this.$t('label.phase2.execute'),
+          description: task.displayname || task.sourcevmname,
+          loadingMessage: `${task.displayname || task.sourcevmname} ${this.$t('label.in.progress')}`,
+          catchMessage: this.$t('error.fetching.async.job.result'),
+          successMessage: this.$t('label.phase2.execute'),
+          successMethod: () => {
+            this.fetchImportVmTasks()
+          },
+          errorMethod: (result) => {
+            this.$notifyError(result?.jobresult?.errortext || result)
+          }
+        })
+      }).catch(error => {
+        this.$notifyError(error)
+      })
     },
     fetchImportVmTasks () {
       this.loadingImportVmTasks = true
@@ -1410,16 +1476,7 @@ export default {
         this.selectedUnmanagedInstance.ostypename = this.selectedUnmanagedInstance.osdisplayname
         this.selectedUnmanagedInstance.state = this.selectedUnmanagedInstance.powerstate
       }
-      if (this.isMigrateFromVmware && this.selectedUnmanagedInstance.state === 'PowerOn' && this.selectedUnmanagedInstance.ostypename.toLowerCase().includes('windows')) {
-        message.error({
-          content: () => 'Cannot import Running Windows VMs, please gracefully shutdown the source VM before importing',
-          style: {
-            marginTop: '20vh',
-            color: 'red'
-          }
-        })
-        this.showUnmanageForm = false
-      } else if (this.isMigrateFromVmware) {
+      if (this.isMigrateFromVmware) {
         this.fetchVmwareInstanceForKVMMigration(this.selectedUnmanagedInstance.name, this.selectedUnmanagedInstance.hostname)
         this.showUnmanageForm = true
       } else {

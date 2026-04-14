@@ -47,6 +47,14 @@ public class ImportVMTaskResponse extends BaseResponse {
     @Param(description = "the ID of account")
     private String accountId;
 
+    @SerializedName(ApiConstants.CLUSTER_ID)
+    @Param(description = "the cluster ID used by the import task")
+    private String clusterId;
+
+    @SerializedName(ApiConstants.SERVICE_OFFERING_ID)
+    @Param(description = "the service offering ID used by the import task")
+    private String serviceOfferingId;
+
     @SerializedName(ApiConstants.VIRTUAL_MACHINE_ID)
     @Param(description = "the ID of the imported VM (after task is completed)")
     private String virtualMachineId;
@@ -75,6 +83,10 @@ public class ImportVMTaskResponse extends BaseResponse {
     @Param(description = "the current step on the importing VM task")
     private String step;
 
+    @SerializedName("v2kstep")
+    @Param(description = "the current ablestack-v2k step on the importing VM task")
+    private String v2kStep;
+
     @SerializedName("stepduration")
     @Param(description = "the duration of the current step")
     private String stepDuration;
@@ -102,6 +114,26 @@ public class ImportVMTaskResponse extends BaseResponse {
     @SerializedName(ApiConstants.LAST_UPDATED)
     @Param(description = "the last updated date of the importing task")
     private Date lastUpdated;
+
+    @SerializedName("phase")
+    @Param(description = "the current PHASE from ablestack-v2k status")
+    private String phase;
+
+    @SerializedName("migrationstate")
+    @Param(description = "the current STATE from ablestack-v2k status")
+    private String migrationState;
+
+    @SerializedName("migrationstep")
+    @Param(description = "the current STEP from ablestack-v2k status")
+    private String migrationStep;
+
+    @SerializedName("syncphysical")
+    @Param(description = "the current SYNC(Physical) from ablestack-v2k status")
+    private String syncPhysical;
+
+    @SerializedName("workdir")
+    @Param(description = "the current WORKDIR from ablestack-v2k status")
+    private String workdir;
 
     public String getId() {
         return id;
@@ -141,6 +173,22 @@ public class ImportVMTaskResponse extends BaseResponse {
 
     public void setAccountId(String accountId) {
         this.accountId = accountId;
+    }
+
+    public String getClusterId() {
+        return clusterId;
+    }
+
+    public void setClusterId(String clusterId) {
+        this.clusterId = clusterId;
+    }
+
+    public String getServiceOfferingId() {
+        return serviceOfferingId;
+    }
+
+    public void setServiceOfferingId(String serviceOfferingId) {
+        this.serviceOfferingId = serviceOfferingId;
     }
 
     public String getVirtualMachineId() {
@@ -189,6 +237,14 @@ public class ImportVMTaskResponse extends BaseResponse {
 
     public void setStep(String step) {
         this.step = step;
+    }
+
+    public String getV2kStep() {
+        return v2kStep;
+    }
+
+    public void setV2kStep(String v2kStep) {
+        this.v2kStep = v2kStep;
     }
 
     public String getStepDuration() {
@@ -253,5 +309,45 @@ public class ImportVMTaskResponse extends BaseResponse {
 
     public void setState(String state) {
         this.state = state;
+    }
+
+    public String getPhase() {
+        return phase;
+    }
+
+    public void setPhase(String phase) {
+        this.phase = phase;
+    }
+
+    public String getMigrationState() {
+        return migrationState;
+    }
+
+    public void setMigrationState(String migrationState) {
+        this.migrationState = migrationState;
+    }
+
+    public String getMigrationStep() {
+        return migrationStep;
+    }
+
+    public void setMigrationStep(String migrationStep) {
+        this.migrationStep = migrationStep;
+    }
+
+    public String getSyncPhysical() {
+        return syncPhysical;
+    }
+
+    public void setSyncPhysical(String syncPhysical) {
+        this.syncPhysical = syncPhysical;
+    }
+
+    public String getWorkdir() {
+        return workdir;
+    }
+
+    public void setWorkdir(String workdir) {
+        this.workdir = workdir;
     }
 }

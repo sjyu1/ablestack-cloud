@@ -3244,12 +3244,13 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
         }
 
         vm.addComp(guest);
-        vm.addComp(createGuestResourceDef(vmTO));
 
         int vcpus = vmTO.getCpus();
         if (!extraConfig.containsKey(DpdkHelper.DPDK_NUMA)) {
             vm.addComp(createCpuModeDef(vmTO, vcpus));
         }
+
+        vm.addComp(createGuestResourceDef(vmTO));
 
         if (hypervisorLibvirtVersion >= MIN_LIBVIRT_VERSION_FOR_GUEST_CPU_TUNE) {
             vm.addComp(createCpuTuneDef(vmTO));
@@ -3374,7 +3375,8 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
      * Creates a Libvirt Graphic Definition with the VM's password and VNC address.
      */
     protected GraphicDef createGraphicDef(VirtualMachineTO vmTO) {
-        return new GraphicDef(VNC, (short)0, true, vmTO.getVncAddr(), vmTO.getVncPassword(), null);
+        String vncPassword = org.apache.commons.lang3.StringUtils.isBlank(vmTO.getVncPassword()) ? null : vmTO.getVncPassword();
+        return new GraphicDef(VNC, (short)0, true, vmTO.getVncAddr(), vncPassword, null);
     }
 
     /**
@@ -7366,4 +7368,3 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
         return guestCpuArch;
     }
 }
-
