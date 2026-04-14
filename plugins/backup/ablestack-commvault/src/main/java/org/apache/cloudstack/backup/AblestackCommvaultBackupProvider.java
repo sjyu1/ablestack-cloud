@@ -1852,4 +1852,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return true;
     }
 
+    @Override
+    public Pair<Boolean, String> restoreBackupToVM(Long backupId, String vmName) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'restoreBackupToVM'");
+    }
 }

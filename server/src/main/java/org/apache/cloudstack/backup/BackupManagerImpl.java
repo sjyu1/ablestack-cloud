@@ -67,6 +67,7 @@ import org.apache.cloudstack.api.command.user.backup.repository.DeleteBackupRepo
 import org.apache.cloudstack.api.command.user.backup.repository.ListBackupRepositoriesCmd;
 import org.apache.cloudstack.api.command.user.backup.repository.UpdateBackupRepositoryCmd;
 import org.apache.cloudstack.api.command.user.vm.CreateVMFromBackupCmd;
+import org.apache.cloudstack.api.command.user.vm.CreateVMFromBxBackupCmd;
 import org.apache.cloudstack.api.response.BackupResponse;
 import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupDetailsDao;
@@ -1934,6 +1935,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         cmdList.add(DeleteBackupRepositoryCmd.class);
         cmdList.add(ListBackupRepositoriesCmd.class);
         cmdList.add(CreateVMFromBackupCmd.class);
+        cmdList.add(CreateVMFromBxBackupCmd.class);
         cmdList.add(CreateVMFromBackupCmdByAdmin.class);
         return cmdList;
     }

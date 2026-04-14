@@ -90,6 +90,11 @@ public interface BackupProvider {
     Pair<Boolean, String> restoreBackupToVM(VirtualMachine vm, Backup backup, String hostIp, String dataStoreUuid);
 
     /**
+     * Restore VM from BX backup
+     */
+    Pair<Boolean, String> restoreBackupToVM(Long backupId, String vmName);
+
+    /**
      * Restore VM from backup
      */
     boolean restoreVMFromBackup(VirtualMachine vm, Backup backup);

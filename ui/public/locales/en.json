@@ -5478,5 +5478,7 @@
 "message.no.alerts": "There are no alerts to display right now.",
 "message.solution.description.placeholder": "Enter the solution in Markdown format.",
 "message.solution.preview.empty": "There is no content to preview.",
-"message.solution.summary.placeholder": "Enter a brief summary of the solution."
+"message.solution.summary.placeholder": "Enter a brief summary of the solution.",
+"message.create.instance.from.backup.initiated": "Creation of virtual machine from backup initiated.",
+"message.create.instance.from.backup.failed": "Failed to create virtual machine from backup."
 }
