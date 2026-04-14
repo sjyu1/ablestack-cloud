@@ -141,7 +141,7 @@
     </a-affix>
 
     <div v-show="showAction">
-      <keep-alive v-if="currentAction.component && (!currentAction.groupAction || selectedRowKeys.length === 0 || (this.selectedRowKeys.length > 0 && currentAction.api === 'destroyVirtualMachine'))">
+      <keep-alive v-if="currentAction.component && (!currentAction.invokedAsGroupAction || (this.selectedRowKeys.length > 0 && currentAction.api === 'destroyVirtualMachine'))">
         <a-modal
           :visible="showAction"
           :closable="true"
@@ -418,7 +418,7 @@
         :maskClosable="false"
         :footer="null"
         style="top: 20px;"
-        :width="currentAction.groupAction ? modalWidth : '30vw'"
+        :width="currentAction.invokedAsGroupAction ? modalWidth : '30vw'"
         :ok-button-props="getOkProps()"
         ok-text="111"
         :cancel-button-props="getCancelProps()"
@@ -438,7 +438,7 @@
         </template>
         <a-spin :spinning="actionLoading" v-ctrl-enter="handleSubmit">
           <span v-if="currentAction.message">
-            <div v-if="selectedRowKeys.length > 0 && currentAction.groupAction">
+            <div v-if="selectedRowKeys.length > 0 && currentAction.invokedAsGroupAction">
               <a-alert
                 v-if="['delete-outlined', 'DeleteOutlined', 'poweroff-outlined', 'PoweroffOutlined'].includes(currentAction.icon)"
                 type="error">
@@ -462,7 +462,7 @@
                 </template>
               </a-alert>
             </div>
-            <div v-if="selectedRowKeys.length > 0 && currentAction.groupAction">
+            <div v-if="selectedRowKeys.length > 0 && currentAction.invokedAsGroupAction">
               <a-divider />
               <a-table
                 v-if="selectedRowKeys.length > 0"
@@ -990,6 +990,13 @@ export default {
     },
     '$store.getters.listAllProjects' (oldVal, newVal) {
       this.fetchData()
+    },
+    showAction (visible) {
+      if (visible) {
+        this.clearAutoRefresh()
+      } else if (!this.dataView) {
+        this.scheduleAutoRefresh()
+      }
     }
   },
   computed: {
@@ -1091,7 +1098,7 @@ export default {
       return 'inline-flex'
     },
     getOkProps () {
-      if (this.selectedRowKeys.length > 0 && this.currentAction?.groupAction) {
+      if (this.selectedRowKeys.length > 0 && this.currentAction?.invokedAsGroupAction) {
       } else {
         return { props: { type: 'primary' } }
       }
@@ -1137,7 +1144,7 @@ export default {
       downloadLink.click()
     },
     getCancelProps () {
-      if (this.selectedRowKeys.length > 0 && this.currentAction?.groupAction) {
+      if (this.selectedRowKeys.length > 0 && this.currentAction?.invokedAsGroupAction) {
         return { props: { type: 'primary' } }
       } else {
         return { props: { type: 'default' } }
@@ -1589,7 +1596,10 @@ export default {
         this.$router.push({ name: action.api, query })
         return
       }
-      this.currentAction = action
+      this.currentAction = {
+        ...action,
+        invokedAsGroupAction: !!isGroupAction
+      }
       this.currentAction.params = store.getters.apis[this.currentAction.api].params
       this.resource = action.resource
       this.$emit('change-resource', this.resource)
@@ -1855,7 +1865,7 @@ export default {
     handleSubmit (e) {
       if (this.actionLoading) return
       this.promises = []
-      if (!this.dataView && this.currentAction.groupAction && this.selectedRowKeys.length > 0) {
+      if (!this.dataView && this.currentAction.invokedAsGroupAction && this.selectedRowKeys.length > 0) {
         if (this.selectedRowKeys.length > 0) {
           this.bulkColumns = this.chosenColumns
           this.selectedItems = this.selectedItems.map(v => ({ ...v, status: 'InProgress' }))

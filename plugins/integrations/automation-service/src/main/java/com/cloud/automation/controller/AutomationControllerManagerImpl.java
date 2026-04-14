@@ -17,6 +17,10 @@
 
 package com.cloud.automation.controller;
 
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -59,7 +63,6 @@ import com.cloud.utils.db.TransactionStatus;
 import com.cloud.utils.fsm.NoTransitionException;
 import com.cloud.utils.fsm.StateMachine2;
 import com.cloud.utils.net.NetUtils;
-import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.dao.VMInstanceDao;
 import org.apache.cloudstack.acl.ControlledEntity;
 import org.apache.cloudstack.acl.SecurityChecker;
@@ -92,6 +95,9 @@ import com.cloud.dc.DataCenterVO;
 import static com.cloud.automation.version.AutomationVersionService.AutomationServiceEnabled;
 
 public class AutomationControllerManagerImpl extends ManagerBase implements AutomationControllerService {
+    private static final int AUTOMATION_CONTROLLER_HTTP_PORT = 80;
+    private static final int ALERT_RECOVERY_CONNECT_TIMEOUT_MS = 3000;
+    private static final int ALERT_RECOVERY_READ_TIMEOUT_MS = 3000;
 
     protected StateMachine2<AutomationController.State, AutomationController.Event, AutomationController> _stateMachine = AutomationController.State.getStateMachine();
 
@@ -170,11 +176,8 @@ public class AutomationControllerManagerImpl extends ManagerBase implements Auto
 
         NetworkVO ntwk = networkDao.findByIdIncludingRemoved(automationController.getNetworkId());
         response.setNetworkId(ntwk.getUuid());
-        response.getAutomationControllerIp(automationController.getAutomationControllerIp());
-        response.getRemoved(automationController.getRemoved());
-        if (automationController.getState() != null) {
-            response.setState(automationController.getState().toString());
-        }
+        response.setAutomationControllerIp(automationController.getAutomationControllerIp());
+        response.setRemoved(automationController.getRemoved());
         DataCenterVO zone = dataCenterDao.findById(automationController.getZoneId());
         if (zone != null) {
             response.setZoneId(zone.getUuid());
@@ -203,7 +206,6 @@ public class AutomationControllerManagerImpl extends ManagerBase implements Auto
         }
 
         List<UserVmResponse> automationControllerVmResponses = new ArrayList<UserVmResponse>();
-        List<VMInstanceVO> vmList = vmInstanceDao.listByZoneId(automationController.getZoneId());
         List<AutomationControllerVmMapVO> controlVmList = automationControllerVmMapDao.listByAutomationControllerId(automationController.getId());
 
         ResponseObject.ResponseView respView = ResponseObject.ResponseView.Restricted;
@@ -233,31 +235,71 @@ public class AutomationControllerManagerImpl extends ManagerBase implements Auto
                 }
                 response.setHostName(userVM.getHostName());
             }
-
-            String automationControllerState = String.valueOf(automationController.getState());
-            String automationControllerVmState = automationControllerVmResponses.get(0).getState();
-            try {
-                if (automationControllerState != "Starting") {
-                    if (automationControllerVmState == "Stopped" && automationControllerState != "Stopped") {
-                        stateTransitTo(automationController.getId(), AutomationController.Event.StopRequested);
-                        stateTransitTo(automationController.getId(), AutomationController.Event.OperationSucceeded);
-                    }
-                }
-                if (automationControllerState != "Destroyed" || automationControllerState != "Expunging") {
-                    if (automationControllerVmState == "Destroyed" ) {
-                        stopAutomationController(automationController.getId());
-                    }else if (automationControllerVmState == "Expunging") {
-                        deleteAutomationController(automationController.getId());
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn(String.format("Failed to run Automation controller Alert state scanner on Automation controller : %s status scanner", automationController.getName()), e);
-            }
         }
 
+        response.setState(resolveAutomationControllerResponseState(automationController, automationControllerVmResponses));
         response.setAutomationControllerVms(automationControllerVmResponses);
 
         return response;
+    }
+
+    private String resolveAutomationControllerResponseState(AutomationControllerVO automationController,
+                                                            List<UserVmResponse> automationControllerVmResponses) {
+        if (automationController.getState() == null) {
+            return null;
+        }
+        if (!AutomationController.State.Alert.equals(automationController.getState())) {
+            return automationController.getState().toString();
+        }
+        if (automationControllerVmResponses.isEmpty()) {
+            return automationController.getState().toString();
+        }
+
+        final String automationControllerVmState = automationControllerVmResponses.get(0).getState();
+        if (!"Running".equals(automationControllerVmState)) {
+            return automationController.getState().toString();
+        }
+
+        final String address = getAutomationControllerPublicIpAddress(automationController);
+        if (address != null && isAutomationControllerHttpReady(address, AUTOMATION_CONTROLLER_HTTP_PORT)) {
+            return AutomationController.State.Running.toString();
+        }
+
+        return automationController.getState().toString();
+    }
+
+    private String getAutomationControllerPublicIpAddress(AutomationControllerVO automationController) {
+        NetworkVO ntwk = networkDao.findByIdIncludingRemoved(automationController.getNetworkId());
+        if (ntwk == null || ntwk.getGuestType() != Network.GuestType.Isolated) {
+            return null;
+        }
+
+        List<IPAddressVO> ipAddresses = ipAddressDao.listByAssociatedNetwork(ntwk.getId(), true);
+        if (ipAddresses == null || ipAddresses.size() != 1) {
+            return null;
+        }
+
+        return ipAddresses.get(0).getAddress().addr();
+    }
+
+    private boolean isAutomationControllerHttpReady(String address, int port) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL("http://" + address + ":" + port);
+            URLConnection con = url.openConnection();
+            connection = (HttpURLConnection) con;
+            connection.setConnectTimeout(ALERT_RECOVERY_CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(ALERT_RECOVERY_READ_TIMEOUT_MS);
+            connection.setInstanceFollowRedirects(false);
+            int responseCode = connection.getResponseCode();
+            return responseCode >= 200 && responseCode < 400;
+        } catch (IOException e) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     @Override
