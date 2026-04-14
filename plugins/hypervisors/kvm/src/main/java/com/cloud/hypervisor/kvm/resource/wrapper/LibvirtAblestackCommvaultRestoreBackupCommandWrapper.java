@@ -65,6 +65,7 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
     private static final String CURRRENT_DEVICE = "virsh domblklist --domain %s | tail -n 3 | head -n 1 | awk '{print $1}'";
     private static final String MKDIR_P = "mkdir -p %s";
     private static final String RSYNC_DIR_FROM_REMOTE = "rsync -az -e \"ssh -o StrictHostKeyChecking=no\" %s:%s/ %s/";
+    private static final String COMMAND_EXIT_MARKER = "__CS_COMMAND_EXIT__=";
 
     @Override
     public Answer execute(AblestackCommvaultRestoreBackupCommand command, LibvirtComputingResource serverResource) {
@@ -416,8 +417,9 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
         }
 
         String importCommand = buildRbdImportCommand(volumeStoragePool, backupPath, volumePath);
-        if (Script.runSimpleBashScriptForExitValue(importCommand, timeout * 1000, false) != 0) {
-            logger.error("Failed to import raw backup {} into volume {}", backupPath, volumePath);
+        CommandExecutionResult importResult = executeBashCommandWithResult(importCommand, timeout, "Import raw backup to RBD");
+        if (importResult.exitCode != 0) {
+            logger.error("Failed to import raw backup {} into volume {}. Exit code: {}, output: {}", backupPath, volumePath, importResult.exitCode, importResult.output);
             return false;
         }
         return true;
@@ -479,8 +481,10 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
                     throw new CloudRuntimeException(String.format("Required parent snapshot %s is missing on volume %s", parentCheckpoint, normalizedVolumePath));
                 }
                 String importDiffCommand = buildRbdImportDiffCommand(volumeStoragePool, backupPath, normalizedVolumePath);
-                if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
-                    logger.error("Failed to import RBD diff {} into volume {}", backupPath, normalizedVolumePath);
+                CommandExecutionResult importDiffResult = executeBashCommandWithResult(importDiffCommand, timeout, "Import RBD diff to target volume");
+                if (importDiffResult.exitCode != 0) {
+                    logger.error("Failed to import RBD diff {} into volume {}. Exit code: {}, output: {}", backupPath, normalizedVolumePath,
+                            importDiffResult.exitCode, importDiffResult.output);
                     return false;
                 }
                 if (!ensureRbdSnapshotExists(volumeStoragePool, normalizedVolumePath, checkpoint, timeout)) {
@@ -560,8 +564,10 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             throw new CloudRuntimeException("Incremental RBD backup chain is missing the base full backup");
         }
         String importCommand = sourceImage.buildRbdCommand("import", quote(backupPaths.get(0)), quote(tempImage));
-        if (Script.runSimpleBashScriptForExitValue(importCommand, timeout * 1000, false) != 0) {
-            logger.error("Failed to import base RBD backup {} into temporary image {}", backupPaths.get(0), tempImage);
+        CommandExecutionResult importResult = executeBashCommandWithResult(importCommand, timeout, "Import raw backup to temporary RBD");
+        if (importResult.exitCode != 0) {
+            logger.error("Failed to import base RBD backup {} into temporary image {}. Exit code: {}, output: {}", backupPaths.get(0), tempImage,
+                    importResult.exitCode, importResult.output);
             return false;
         }
         List<String> restoreSnapshots = new ArrayList<>();
@@ -589,8 +595,10 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
                     throw new CloudRuntimeException(String.format("Required parent snapshot %s is missing on temporary image %s", parentCheckpoint, tempImage));
                 }
                 String importDiffCommand = sourceImage.buildRbdCommand("import-diff", quote(backupPath), quote(tempImage));
-                if (Script.runSimpleBashScriptForExitValue(importDiffCommand, timeout * 1000, false) != 0) {
-                    logger.error("Failed to import RBD diff {} into temporary image {}", backupPath, tempImage);
+                CommandExecutionResult importDiffResult = executeBashCommandWithResult(importDiffCommand, timeout, "Import RBD diff to temporary image");
+                if (importDiffResult.exitCode != 0) {
+                    logger.error("Failed to import RBD diff {} into temporary image {}. Exit code: {}, output: {}", backupPath, tempImage,
+                            importDiffResult.exitCode, importDiffResult.output);
                     return false;
                 }
                 if (!ensureRbdSnapshotExists(sourceImage, tempImage, checkpoint, timeout)) {
@@ -625,8 +633,10 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             return true;
         }
         String createSnapshotCommand = buildRbdSnapshotCommand(storagePool, "snap create", volumePath + "@" + snapshotName);
-        if (Script.runSimpleBashScriptForExitValue(createSnapshotCommand, timeout * 1000, false) != 0) {
-            logger.error("Failed to create RBD snapshot {} on volume {}", snapshotName, volumePath);
+        CommandExecutionResult createSnapshotResult = executeBashCommandWithResult(createSnapshotCommand, timeout, "Create RBD snapshot on target volume");
+        if (createSnapshotResult.exitCode != 0) {
+            logger.error("Failed to create RBD snapshot {} on volume {}. Exit code: {}, output: {}", snapshotName, volumePath,
+                    createSnapshotResult.exitCode, createSnapshotResult.output);
             return false;
         }
         return true;
@@ -637,11 +647,52 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             return true;
         }
         String createSnapshotCommand = imageSpec.buildRbdCommand("snap", "create", quote(image + "@" + snapshotName));
-        if (Script.runSimpleBashScriptForExitValue(createSnapshotCommand, timeout * 1000, false) != 0) {
-            logger.error("Failed to create RBD snapshot {} on image {}", snapshotName, image);
+        CommandExecutionResult createSnapshotResult = executeBashCommandWithResult(createSnapshotCommand, timeout, "Create RBD snapshot on temporary image");
+        if (createSnapshotResult.exitCode != 0) {
+            logger.error("Failed to create RBD snapshot {} on image {}. Exit code: {}, output: {}", snapshotName, image,
+                    createSnapshotResult.exitCode, createSnapshotResult.output);
             return false;
         }
         return true;
+    }
+
+    private CommandExecutionResult executeBashCommandWithResult(String command, int timeoutInSeconds, String description) {
+        logger.debug("{} command: {}", description, command);
+        String wrappedCommand = String.format("set -o pipefail; { %s; } 2>&1; rc=$?; echo \"%s${rc}\"", command, COMMAND_EXIT_MARKER);
+        String output = Script.runSimpleBashScriptWithFullResult(wrappedCommand, timeoutInSeconds);
+        if (StringUtils.isBlank(output)) {
+            return new CommandExecutionResult(-1, "");
+        }
+        int markerIndex = output.lastIndexOf(COMMAND_EXIT_MARKER);
+        if (markerIndex < 0) {
+            logger.warn("{} command output did not include an exit marker. Output: {}", description, output);
+            return new CommandExecutionResult(-1, output.trim());
+        }
+        String commandOutput = output.substring(0, markerIndex).trim();
+        String exitCodeString = output.substring(markerIndex + COMMAND_EXIT_MARKER.length()).trim();
+        int exitCode;
+        try {
+            exitCode = Integer.parseInt(exitCodeString);
+        } catch (NumberFormatException e) {
+            logger.warn("{} command exit marker was not a valid integer. Output: {}", description, output, e);
+            exitCode = -1;
+        }
+        if (exitCode == 0) {
+            logger.debug("{} command completed successfully. Output: {}", description, commandOutput);
+        } else {
+            logger.error("{} command failed with exit code {}. Output: {}", description, exitCode, commandOutput);
+        }
+        return new CommandExecutionResult(exitCode, commandOutput);
+    }
+
+    private static final class CommandExecutionResult {
+        private final int exitCode;
+        private final String output;
+
+        private CommandExecutionResult(int exitCode, String output) {
+            this.exitCode = exitCode;
+            this.output = output;
+        }
     }
 
     private boolean rbdSnapshotExists(KVMStoragePool storagePool, String volumePath, String snapshotName, int timeout) {
