@@ -116,6 +116,7 @@ export default {
       }).then(response => {
         const backupOfferings = response.listbackupofferingsresponse.backupoffering || []
         this.backupOffering = backupOfferings[0]
+        this.backupProvider = this.backupOffering.provider
       })
     },
     populatePreFillData () {
@@ -192,6 +193,35 @@ export default {
       const title = this.$t('label.create.instance.from.backup')
       const description = ''
       const password = this.$t('label.password')
+
+      if (this.backupProvider === 'bx') {
+        postAPI('createVMFromBxBackup', args, 'GET', null).then(response => {
+          const res = response.createvmfrombxbackupresponse.success
+          if (res) {
+            this.$notification.success({
+              message: title,
+              description: this.$t('message.create.instance.from.backup.initiated')
+            })
+          } else {
+            this.$notification.error({
+              message: title,
+              description: this.$t('message.create.instance.from.backup.failed')
+            })
+          }
+          // Sending a refresh in case it hasn't picked up the new VM
+          new Promise(resolve => setTimeout(resolve, 3000)).then(() => {
+            eventBus.emit('vm-refresh-data')
+          })
+        }).catch(error => {
+          this.$notifyError(error)
+          this.loading.deploy = false
+        }).finally(() => {
+          this.form.stayonpage = false
+          this.loading.deploy = false
+        })
+        this.$emit('close-action')
+        return
+      }
 
       postAPI('createVMFromBackup', args, 'GET', null).then(response => {
         const jobId = response.deployvirtualmachineresponse.jobid
