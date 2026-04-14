@@ -766,9 +766,6 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(chainBackup.getBackedUpVolumes(), volumeUuid);
             if (volumeInfo != null) {
                 files.add(String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath()));
-                if (StringUtils.endsWith(volumeInfo.getPath(), ".raw")) {
-                    break;
-                }
             }
         }
         return files;
