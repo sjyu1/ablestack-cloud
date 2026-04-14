@@ -314,7 +314,8 @@ export default {
           },
           groupAction: true,
           popup: true,
-          groupMap: (selection) => { return selection.map(x => { return { id: x } }) }        },
+          groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
+        },
         {
           api: 'destroyVolume',
           icon: 'delete-outlined',
