@@ -655,4 +655,10 @@ public class NetworkerBackupProvider extends AdapterBase implements BackupProvid
     @Override
     public boolean updateBackupPlan(final Long zoneId, final String retentionPeriod, final String externalId) { return true; }
 
+    @Override
+    public Pair<Boolean, String> restoreBackupToVM(Long backupId, String vmName) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'restoreBackupToVM'");
+    }
+
 }
