@@ -40,7 +40,7 @@ public interface RfbConstants {
      * Server authorization type
      */
     public final static int CONNECTION_FAILED = 0, NO_AUTH = 1, VNC_AUTH = 2,
-        V_ENCRYPT = 19, V_ENCRYPT_X509_VNC = 261;
+        V_ENCRYPT = 19, V_ENCRYPT_X509_NONE = 260, V_ENCRYPT_X509_VNC = 261;
 
     /**
      * Server authorization reply.

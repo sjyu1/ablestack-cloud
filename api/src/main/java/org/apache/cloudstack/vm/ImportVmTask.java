@@ -22,8 +22,14 @@ import org.apache.cloudstack.api.Identity;
 import org.apache.cloudstack.api.InternalIdentity;
 
 public interface ImportVmTask extends Identity, InternalIdentity {
+    String V2K_STEP_NONE = "None";
+
     enum Step {
         Prepare, CloningInstance, ConvertingInstance, Importing, Completed
+    }
+
+    enum V2KStep {
+        Phase1_In_Progress, Phase1_Completed, Phase2_In_Progress, Phase2_Completed, Completed
     }
 
     enum TaskState {
