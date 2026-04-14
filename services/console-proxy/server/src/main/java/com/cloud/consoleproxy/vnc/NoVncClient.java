@@ -299,6 +299,7 @@ public class NoVncClient {
         if (numberOfSubtypes <= 0) {
             throw new CloudRuntimeException("The server reported no VeNCrypt sub-types");
         }
+        Integer selectedSubtype = null;
         for (int i = 0; i < numberOfSubtypes; i++) {
             nioSocketConnection.waitForBytesAvailableForReading(4);
             int subtype = nioSocketConnection.readUnsignedInteger(32);
@@ -308,6 +309,15 @@ public class NoVncClient {
                 }
                 return subtype;
             }
+            if (subtype == RfbConstants.V_ENCRYPT_X509_NONE && selectedSubtype == null) {
+                selectedSubtype = subtype;
+            }
+        }
+        if (selectedSubtype != null) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Selected VEncrypt subtype " + selectedSubtype);
+            }
+            return selectedSubtype;
         }
         throw new CloudRuntimeException("Could not select a VEncrypt subtype");
     }
@@ -416,7 +426,7 @@ public class NoVncClient {
         int selectedSecurityType = RfbConstants.CONNECTION_FAILED;
 
         List<Integer> supportedSecurityTypes = Arrays.asList(RfbConstants.NO_AUTH, RfbConstants.VNC_AUTH,
-                RfbConstants.V_ENCRYPT, RfbConstants.V_ENCRYPT_X509_VNC);
+                RfbConstants.V_ENCRYPT, RfbConstants.V_ENCRYPT_X509_NONE, RfbConstants.V_ENCRYPT_X509_VNC);
 
         nioSocketConnection.waitForBytesAvailableForReading(1);
         int serverOfferedSecurityTypes = nioSocketConnection.readUnsignedInteger(8);

@@ -118,6 +118,15 @@ public interface HypervisorGuru extends Adapter {
     Pair<UnmanagedInstanceTO, Boolean> getHypervisorVMOutOfBandAndCloneIfRequired(String hostIp, String vmName, Map<String, String> params);
 
     /**
+     * Will return the hypervisor VM without cloning it on an external host (if the guru can handle)
+     * @param hostIp VM's source host IP
+     * @param vmName name of the source VM
+     * @param params hypervisor specific additional parameters
+     * @return a reference to the hypervisor VM
+     */
+    UnmanagedInstanceTO getHypervisorVMOutOfBand(String hostIp, String vmName, Map<String, String> params);
+
+    /**
      * Removes a VM created as a clone of a VM on an external host
      * @param hostIp VM's source host IP
      * @param vmName name of the VM to remove

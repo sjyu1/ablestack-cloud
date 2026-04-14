@@ -478,6 +478,7 @@ public class DatabaseUpgradeChecker implements SystemIntegrityChecker {
                 beforeUpgradeAblestack("Bronto");
                 beforeUpgradeAblestack("Cerato");
                 beforeUpgradeAblestack("Diplo");
+                beforeUpgradeAblestack("Europa");
                 ///////////////////// Ablestack 업그레이드 //////////////////////////
 
                 // 4) 재조회 후 본 업그레이드 진행
@@ -500,6 +501,7 @@ public class DatabaseUpgradeChecker implements SystemIntegrityChecker {
                 afterUpgradeAblestack("Bronto");
                 afterUpgradeAblestack("Cerato");
                 afterUpgradeAblestack("Diplo");
+                afterUpgradeAblestack("Europa");
                 ///////////////////// Ablestack 업그레이드 //////////////////////////
 
                 executeViewScripts();

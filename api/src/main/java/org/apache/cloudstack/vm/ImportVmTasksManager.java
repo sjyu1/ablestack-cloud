@@ -23,6 +23,8 @@ import org.apache.cloudstack.api.command.admin.vm.ListImportVMTasksCmd;
 import org.apache.cloudstack.api.response.ImportVMTaskResponse;
 import org.apache.cloudstack.api.response.ListResponse;
 
+import java.util.Map;
+
 public interface ImportVmTasksManager {
 
     ListResponse<ImportVMTaskResponse> listImportVMTasks(ListImportVMTasksCmd cmd);
@@ -33,6 +35,14 @@ public interface ImportVmTasksManager {
 
     void updateImportVMTaskStep(ImportVmTask importVMTaskVO, DataCenter zone, Account owner, Host convertHost,
                                 Host importHost, Long vmId, ImportVmTask.Step step);
+
+    void updateImportVMTaskV2KStep(ImportVmTask importVMTaskVO, ImportVmTask.V2KStep step);
+
+    void updateImportVMTaskV2KContext(ImportVmTask importVMTaskVO, Long clusterId, Long serviceOfferingId,
+                                      Long targetStoragePoolId, String sourceClusterName, String sourceHostName,
+                                      Long vcenterId, String vcenterUsername, String vcenterPassword,
+                                      Map<String, String> serviceOfferingDetails,
+                                      Map<String, Map<String, String>> nicSelectionMap);
 
     void updateImportVMTaskErrorState(ImportVmTask importVMTaskVO, ImportVmTask.TaskState state, String errorMsg);
 }

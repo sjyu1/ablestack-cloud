@@ -737,6 +737,8 @@ public final class LibvirtMigrateCommandWrapper extends CommandWrapper<MigrateCo
                 graphElem = graphElem.replaceAll("address='[a-zA-Z0-9\\.]*'", "address='" + target + "'");
                 if (org.apache.commons.lang3.StringUtils.isNotBlank(vncPassword)) {
                     graphElem = graphElem.replaceAll("passwd='([^\\s]+)'", "passwd='" + vncPassword + "'");
+                } else {
+                    graphElem = graphElem.replaceAll("\\s+passwd='([^\\s]*)'", "");
                 }
                 xmlDesc = xmlDesc.replaceAll(GRAPHICS_ELEM_START + CONTENTS_WILDCARD + GRAPHICS_ELEM_END, graphElem);
                 logger.debug("Replaced the VNC IP address {} with {} in VM {}.", maskSensitiveInfoInXML(originalGraphElem), maskSensitiveInfoInXML(graphElem), vmName);
