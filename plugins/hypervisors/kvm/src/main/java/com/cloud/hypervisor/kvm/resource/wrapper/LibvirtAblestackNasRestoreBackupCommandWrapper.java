@@ -265,7 +265,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
     }
 
     private List<String> getMountedBackupPaths(String mountDirectory, String backupPath, String backupFile, String backupFileChain) {
-        List<String> mountedPaths = new ArrayList<>();
+        LinkedHashSet<String> mountedPaths = new LinkedHashSet<>();
         if (StringUtils.isNotBlank(backupFileChain)) {
             for (String chainPath : backupFileChain.split(";")) {
                 if (StringUtils.isBlank(chainPath)) {
@@ -282,7 +282,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         if (mountedPaths.isEmpty() && StringUtils.isNotBlank(backupFile)) {
             mountedPaths.add(String.format(FILE_PATH_PLACEHOLDER, String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath), backupFile));
         }
-        return mountedPaths;
+        return new ArrayList<>(mountedPaths);
     }
 
     private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, List<String> backupPaths, int timeout,

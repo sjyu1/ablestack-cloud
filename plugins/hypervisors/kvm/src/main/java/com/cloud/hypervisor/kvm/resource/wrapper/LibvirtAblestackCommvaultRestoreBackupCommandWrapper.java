@@ -213,16 +213,18 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
 
     private List<String> getLocalBackupPaths(String backupPath, List<String> backupFiles, List<String> backupFileChains,
                                              List<BackupVolumeChainState> volumeChainStates, int index, String legacyBackupFileName) {
-        List<String> localPaths = new ArrayList<>();
+        LinkedHashSet<String> localPaths = new LinkedHashSet<>();
+        boolean resolvedFromVolumeChainStates = false;
         if (volumeChainStates != null && volumeChainStates.size() > index) {
             for (String chainPath : volumeChainStates.get(index).getChainFiles()) {
                 if (StringUtils.isBlank(chainPath)) {
                     continue;
                 }
                 localPaths.add(resolveBackupPath(backupPath, chainPath));
+                resolvedFromVolumeChainStates = true;
             }
         }
-        if (backupFileChains != null && backupFileChains.size() > index && StringUtils.isNotBlank(backupFileChains.get(index))) {
+        if (!resolvedFromVolumeChainStates && backupFileChains != null && backupFileChains.size() > index && StringUtils.isNotBlank(backupFileChains.get(index))) {
             for (String chainPath : backupFileChains.get(index).split(";")) {
                 if (StringUtils.isBlank(chainPath)) {
                     continue;
@@ -236,7 +238,7 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
         if (localPaths.isEmpty()) {
             localPaths.add(String.format(FILE_PATH_PLACEHOLDER, backupPath, legacyBackupFileName));
         }
-        return localPaths;
+        return new ArrayList<>(localPaths);
     }
 
     private String resolveBackupPath(String backupPath, String chainPath) {
