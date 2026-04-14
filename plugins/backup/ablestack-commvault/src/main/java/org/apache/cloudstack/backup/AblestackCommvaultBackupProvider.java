@@ -1278,6 +1278,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 if (jobStatus.equalsIgnoreCase("Completed")) {
                 final VolumeVO volume = volumeDao.findByUuid(backupVolumeInfo.getUuid());
                 final DiskOffering diskOffering = diskOfferingDao.findByUuid(backupVolumeInfo.getDiskOfferingId());
+                if (diskOffering == null) {
+                    throw new CloudRuntimeException(String.format("Unable to find disk offering [%s] for backed up volume [%s]",
+                            backupVolumeInfo.getDiskOfferingId(), backupVolumeInfo.getUuid()));
+                }
+                final Backup.VolumeInfo matchingVolume = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), backupVolumeInfo.getUuid())
+                        .orElseThrow(() -> new CloudRuntimeException(String.format(
+                                "Unable to find volume %s in the list of backed up volumes for backup %s, cannot proceed with restore",
+                                backupVolumeInfo.getUuid(), backup)));
                 String cacheMode = null;
                 final VMInstanceVO vm = vmInstanceDao.findVMByInstanceName(vmNameAndState.first());
                 List<VolumeVO> listVolumes = volumeDao.findByInstanceAndType(vm.getId(), Type.ROOT);
@@ -1288,11 +1296,26 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                         cacheMode = baseDiskOffering.getCacheMode().toString();
                     }
                 }
-                final StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
+                StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
+                if (pool == null) {
+                    List<StoragePoolVO> pools = primaryDataStoreDao.findPoolByName(dataStoreUuid);
+                    if (CollectionUtils.isNotEmpty(pools)) {
+                        pool = pools.get(0);
+                    }
+                }
+                if (pool == null) {
+                    throw new CloudRuntimeException(String.format("Unable to find primary storage pool for restore target [%s]", dataStoreUuid));
+                }
                 // 복원된 호스트 정의
-                final HostVO restoreHost = hostDao.findByName(clientName);
+                HostVO restoreHost = hostDao.findByName(clientName);
+                if (restoreHost == null) {
+                    restoreHost = hostDao.findByIp(clientName);
+                }
+                if (restoreHost == null) {
+                    throw new CloudRuntimeException(String.format("Unable to find restore host [%s] for Commvault volume restore", clientName));
+                }
                 final HostVO restoreHostVO = hostDao.findById(restoreHost.getId());
-                LOG.info(String.format("Restoring volume %s from backup %s on the Commvault Backup Provider", volume.getUuid(), backup));
+                LOG.info(String.format("Restoring volume %s from backup %s on the Commvault Backup Provider", backupVolumeInfo.getUuid(), backup));
                 LOG.debug("Restoring vm volume {} from backup {} on the Commvault Backup Provider", backupVolumeInfo, backup);
                 VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
                         backup.getDomainId(), backup.getAccountId(), 0, null,
@@ -1320,15 +1343,19 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 AblestackCommvaultRestoreBackupCommand restoreCommand = new AblestackCommvaultRestoreBackupCommand();
                 restoreCommand.setBackupPath(restoreSourcePath);
                 restoreCommand.setVmName(vmNameAndState.first());
-                restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(backupVolumeInfo) : getRestoreBackupFilePath(backup, backupVolumeInfo)));
+                restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(matchingVolume) : getRestoreBackupFilePath(backup, matchingVolume)));
                 if (!isLegacyBackup(backup)) {
-                    restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(backupVolumeInfo, backup)));
+                    restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(matchingVolume, backup)));
                 }
-                restoreCommand.setVolumeChainStates(getVolumeChainStates(Collections.singletonList(backupVolumeInfo), backup));
+                restoreCommand.setVolumeChainStates(getVolumeChainStates(Collections.singletonList(matchingVolume), backup));
                 restoreCommand.setRestoreVolumePaths(Collections.singletonList(String.format("%s/%s", getVolumePathPrefix(pool), volumeUUID)));
                 DataStore dataStore = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
-                restoreCommand.setRestoreVolumePools(Collections.singletonList(dataStore != null ? (PrimaryDataStoreTO)dataStore.getTO() : null));
-                restoreCommand.setDiskType(backupVolumeInfo.getType().name().toLowerCase(Locale.ROOT));
+                if (dataStore == null) {
+                    throw new CloudRuntimeException(String.format("Unable to get primary datastore TO for pool [%s] while restoring volume [%s]",
+                            pool.getUuid(), backupVolumeInfo.getUuid()));
+                }
+                restoreCommand.setRestoreVolumePools(Collections.singletonList((PrimaryDataStoreTO) dataStore.getTO()));
+                restoreCommand.setDiskType(matchingVolume.getType().name().toLowerCase(Locale.ROOT));
                 restoreCommand.setVmExists(null);
                 restoreCommand.setVmState(vmNameAndState.second());
                 restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
