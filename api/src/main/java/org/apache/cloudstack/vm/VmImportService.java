@@ -18,6 +18,7 @@
 package org.apache.cloudstack.vm;
 
 import org.apache.cloudstack.api.command.admin.vm.ImportUnmanagedInstanceCmd;
+import org.apache.cloudstack.api.command.admin.vm.ImportUnmanagedInstanceForAblestackV2KCmd;
 import org.apache.cloudstack.api.command.admin.vm.ImportVmCmd;
 import org.apache.cloudstack.api.command.admin.vm.ListUnmanagedInstancesCmd;
 import org.apache.cloudstack.api.command.admin.vm.ListVmsForImportCmd;
@@ -40,6 +41,7 @@ public interface VmImportService {
     UserVmResponse importUnmanagedInstance(ImportUnmanagedInstanceCmd cmd);
 
     UserVmResponse importVm(ImportVmCmd cmd);
+    UserVmResponse importVmForAblestackV2K(ImportUnmanagedInstanceForAblestackV2KCmd cmd);
 
     ListResponse<UnmanagedInstanceResponse> listVmsForImport(ListVmsForImportCmd cmd);
 }

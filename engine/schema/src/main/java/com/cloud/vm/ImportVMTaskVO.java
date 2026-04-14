@@ -78,6 +78,15 @@ public class ImportVMTaskVO implements ImportVmTask {
     @Column(name = "vcenter")
     private String vcenter;
 
+    @Column(name = "vcenter_id")
+    private Long vcenterId;
+
+    @Column(name = "vcenter_username")
+    private String vcenterUsername;
+
+    @Column(name = "vcenter_password")
+    private String vcenterPassword;
+
     @Column(name = "datacenter")
     private String datacenter;
 
@@ -92,6 +101,30 @@ public class ImportVMTaskVO implements ImportVmTask {
 
     @Column(name = "step")
     private Step step;
+
+    @Column(name = "v2k_step")
+    private String v2kStep;
+
+    @Column(name = "cluster_id")
+    private Long clusterId;
+
+    @Column(name = "service_offering_id")
+    private Long serviceOfferingId;
+
+    @Column(name = "v2k_target_storage_pool_id")
+    private Long v2kTargetStoragePoolId;
+
+    @Column(name = "source_cluster_name")
+    private String sourceClusterName;
+
+    @Column(name = "source_host_name")
+    private String sourceHostName;
+
+    @Column(name = "service_offering_details")
+    private String serviceOfferingDetails;
+
+    @Column(name = "nic_network_map")
+    private String nicNetworkMap;
 
     @Column(name = "state")
     private TaskState state;
@@ -180,6 +213,30 @@ public class ImportVMTaskVO implements ImportVmTask {
         this.vcenter = vcenter;
     }
 
+    public Long getVcenterId() {
+        return vcenterId;
+    }
+
+    public void setVcenterId(Long vcenterId) {
+        this.vcenterId = vcenterId;
+    }
+
+    public String getVcenterUsername() {
+        return vcenterUsername;
+    }
+
+    public void setVcenterUsername(String vcenterUsername) {
+        this.vcenterUsername = vcenterUsername;
+    }
+
+    public String getVcenterPassword() {
+        return vcenterPassword;
+    }
+
+    public void setVcenterPassword(String vcenterPassword) {
+        this.vcenterPassword = vcenterPassword;
+    }
+
     public String getDatacenter() {
         return datacenter;
     }
@@ -218,6 +275,70 @@ public class ImportVMTaskVO implements ImportVmTask {
 
     public void setStep(Step step) {
         this.step = step;
+    }
+
+    public String getV2kStep() {
+        return v2kStep;
+    }
+
+    public void setV2kStep(String v2kStep) {
+        this.v2kStep = v2kStep;
+    }
+
+    public Long getClusterId() {
+        return clusterId;
+    }
+
+    public void setClusterId(Long clusterId) {
+        this.clusterId = clusterId;
+    }
+
+    public Long getServiceOfferingId() {
+        return serviceOfferingId;
+    }
+
+    public void setServiceOfferingId(Long serviceOfferingId) {
+        this.serviceOfferingId = serviceOfferingId;
+    }
+
+    public Long getV2kTargetStoragePoolId() {
+        return v2kTargetStoragePoolId;
+    }
+
+    public void setV2kTargetStoragePoolId(Long v2kTargetStoragePoolId) {
+        this.v2kTargetStoragePoolId = v2kTargetStoragePoolId;
+    }
+
+    public String getSourceClusterName() {
+        return sourceClusterName;
+    }
+
+    public void setSourceClusterName(String sourceClusterName) {
+        this.sourceClusterName = sourceClusterName;
+    }
+
+    public String getSourceHostName() {
+        return sourceHostName;
+    }
+
+    public void setSourceHostName(String sourceHostName) {
+        this.sourceHostName = sourceHostName;
+    }
+
+    public String getServiceOfferingDetails() {
+        return serviceOfferingDetails;
+    }
+
+    public void setServiceOfferingDetails(String serviceOfferingDetails) {
+        this.serviceOfferingDetails = serviceOfferingDetails;
+    }
+
+    public String getNicNetworkMap() {
+        return nicNetworkMap;
+    }
+
+    public void setNicNetworkMap(String nicNetworkMap) {
+        this.nicNetworkMap = nicNetworkMap;
     }
 
     public TaskState getState() {

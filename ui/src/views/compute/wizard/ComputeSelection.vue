@@ -219,10 +219,6 @@ export default {
       this.cpuNumberInputValue = this.minCpu === 0 || isNaN(this.minCpu) ? 1 : this.minCpu
       this.memoryInputValue = this.minMemory === 0 || isNaN(this.minMemory) ? 1024 : this.minMemory
       this.cpuSpeedInputValue = this.cpuSpeed === 0 || isNaN(this.cpuSpeed) ? 1000 : this.cpuSpeed
-      console.log('this.cpuNumberInputValue :>> ', this.cpuNumberInputValue)
-      console.log('this.memoryInputValue :>> ', this.memoryInputValue)
-      console.log('this.cpuSpeedInputValue :>> ', this.cpuSpeedInputValue)
-      console.log('this.preFillContent.cpuspeed :>> ', this.preFillContent.cpuspeed)
 
       if (!this.preFillContent) {
         this.updateComputeCpuNumber(this.cpuNumberInputValue)

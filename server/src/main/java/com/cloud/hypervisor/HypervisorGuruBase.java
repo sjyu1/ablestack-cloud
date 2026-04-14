@@ -491,6 +491,12 @@ public abstract class HypervisorGuruBase extends AdapterBase implements Hypervis
     }
 
     @Override
+    public UnmanagedInstanceTO getHypervisorVMOutOfBand(String hostIp, String vmName, Map<String, String> params) {
+        logger.error("Unsupported operation: cannot fetch external VM");
+        return null;
+    }
+
+    @Override
     public boolean removeClonedHypervisorVMOutOfBand(String hostIp, String vmName, Map<String, String> params) {
         logger.error("Unsupported operation: cannot remove external VM");
         return false;

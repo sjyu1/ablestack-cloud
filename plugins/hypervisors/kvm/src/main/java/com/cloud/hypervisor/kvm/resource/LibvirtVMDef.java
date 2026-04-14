@@ -24,6 +24,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -64,7 +65,9 @@ public class LibvirtVMDef {
     private String _domUUID;
     private String _desc;
     private String _platformEmulator;
-    private final Map<String, Object> components = new HashMap<String, Object>();
+    private final Map<String, Object> components = new LinkedHashMap<String, Object>();
+    private final List<String> extraXmlComponents = new ArrayList<String>();
+    private final List<String> qemuCommandlineComponents = new ArrayList<String>();
     private static final int NUMBER_OF_IOTHREADS = AgentPropertiesFileHandler.getPropertyValue(AgentProperties.IOTHREADS);
 
     public static class MetadataDef {
@@ -2315,7 +2318,7 @@ public class LibvirtVMDef {
             } else {
                 graphicBuilder.append(" listen=''");
             }
-            if (_passwd != null) {
+            if (StringUtils.isNotBlank(_passwd)) {
                 graphicBuilder.append(" passwd='" + StringUtils.truncate(_passwd, 8) + "'");
             } else if (_keyMap != null) {
                 graphicBuilder.append(" _keymap='" + _keyMap + "'");
@@ -2747,16 +2750,40 @@ public class LibvirtVMDef {
         return _platformEmulator;
     }
 
-    public void addComp(Object comp) {
-        components.put(comp.getClass().toString(), comp);
-    }
-
     public DevicesDef getDevices() {
         Object o = components.get(DevicesDef.class.toString());
         if (o != null) {
             return (DevicesDef)o;
         }
         return null;
+    }
+
+    public void addComp(Object comp) {
+        if (comp instanceof String) {
+            addStringComp((String) comp);
+            return;
+        }
+        components.put(comp.getClass().toString(), comp);
+    }
+
+    private void addStringComp(String comp) {
+        if (StringUtils.isBlank(comp)) {
+            return;
+        }
+
+        String trimmedComp = comp.trim();
+        if (trimmedComp.startsWith("<qemu:commandline")) {
+            qemuCommandlineComponents.add(trimmedComp);
+        } else {
+            extraXmlComponents.add(trimmedComp);
+        }
+    }
+
+    private void appendXmlFragment(StringBuilder vmBuilder, String xmlFragment) {
+        vmBuilder.append(xmlFragment);
+        if (!xmlFragment.endsWith("\n")) {
+            vmBuilder.append("\n");
+        }
     }
 
     @Override
@@ -2777,6 +2804,12 @@ public class LibvirtVMDef {
 
         for (Object o : components.values()) {
             vmBuilder.append(o.toString());
+        }
+        for (String xmlFragment : extraXmlComponents) {
+            appendXmlFragment(vmBuilder, xmlFragment);
+        }
+        for (String qemuCommandline : qemuCommandlineComponents) {
+            appendXmlFragment(vmBuilder, qemuCommandline);
         }
         vmBuilder.append("</domain>\n");
         return vmBuilder.toString();

@@ -510,8 +510,7 @@ public class ConsoleProxy {
                         throw new AuthenticationException("Cannot use the existing viewer " + viewer + ": modified AJAX session id");
                 }
 
-                if (param.getClientHostPassword() == null || param.getClientHostPassword().isEmpty() ||
-                        !param.getClientHostPassword().equals(viewer.getClientHostPassword()))
+                if (!StringUtils.equals(param.getClientHostPassword(), viewer.getClientHostPassword()))
                     throw new AuthenticationException("Cannot use the existing viewer " + viewer + ": bad sid");
 
                 if (!viewer.isFrontEndAlive()) {
@@ -608,8 +607,7 @@ public class ConsoleProxy {
                 connectionMap.put(clientKey, viewer);
                 reportLoadChange = true;
             } else {
-                if (param.getClientHostPassword() == null || param.getClientHostPassword().isEmpty() ||
-                        !param.getClientHostPassword().equals(viewer.getClientHostPassword()))
+                if (!StringUtils.equals(param.getClientHostPassword(), viewer.getClientHostPassword()))
                     throw new AuthenticationException("Cannot use the existing viewer " + viewer + ": bad sid");
 
                 try {

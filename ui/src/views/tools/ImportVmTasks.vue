@@ -73,6 +73,21 @@
               <template v-else-if="column.key === 'created'">
                 <span>{{ $toLocaleDate(record.created) }}</span>
               </template>
+              <template v-else-if="column.key === 'step'">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <span>{{ record.step }}</span>
+                  <a-button
+                    v-if="showPhase2Button(record)"
+                    type="primary"
+                    size="small"
+                    @click="onStartPhase2(record)">
+                    {{ $t('label.phase2.execute') }}
+                  </a-button>
+                </div>
+              </template>
+              <template v-else-if="column.key === 'description'">
+                <span style="white-space: pre-line">{{ record.description }}</span>
+              </template>
             </template>
         </a-table>
         <div class="instances-card-footer">
@@ -193,6 +208,16 @@ export default {
   methods: {
     fetchData () {
       this.$emit('fetch-import-vm-tasks')
+    },
+    showPhase2Button (record) {
+      const v2kStep = String(record?.v2kstep || '')
+      const phase = String(record?.phase || '').toLowerCase()
+      const migrationState = String(record?.migrationstate || '').toLowerCase()
+      return v2kStep === 'Phase1_Completed' ||
+        (phase === 'phase1' && ['done', 'complete', 'completed', 'success', 'finished'].includes(migrationState))
+    },
+    onStartPhase2 (record) {
+      this.$emit('start-phase2', record)
     },
     onFilterChange (e) {
       this.$emit('change-filter', e)
