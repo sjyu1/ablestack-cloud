@@ -442,11 +442,27 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private static final int ACQUIRE_GLOBAL_LOCK_TIMEOUT_FOR_COOPERATION = 3;
 
     private static final long GiB_TO_BYTES = 1024 * 1024 * 1024;
+    private static final long DEFAULT_VM_IMPORT_TEMPLATE_SIZE = 1L * GiB_TO_BYTES;
 
     private static final String VM_IMPORT_DEFAULT_TEMPLATE_NAME = "system-default-vm-import-dummy-template.iso";
     private static final String KVM_VM_IMPORT_DEFAULT_TEMPLATE_NAME = "kvm-default-vm-import-dummy-template";
     private static final String KVM_STORAGE_SNAPSHOT_DETAIL = "kvmStorageSnapshot";
     private static final String KVM_FILE_BASED_STORAGE_SNAPSHOT_DETAIL = "kvmFileBasedStorageSnapshot";
+
+    private boolean isDefaultVmImportTemplate(VirtualMachineTemplate template) {
+        return template != null && StringUtils.isNotBlank(template.getName()) &&
+                (KVM_VM_IMPORT_DEFAULT_TEMPLATE_NAME.equals(template.getName()) || VM_IMPORT_DEFAULT_TEMPLATE_NAME.equals(template.getName()));
+    }
+
+    private long getTemplateSizeForValidation(VMTemplateVO templateVO) {
+        if (templateVO.getSize() != null) {
+            return templateVO.getSize();
+        }
+        if (isDefaultVmImportTemplate(templateVO)) {
+            return DEFAULT_VM_IMPORT_TEMPLATE_SIZE;
+        }
+        return 0L;
+    }
 
     @Inject
     private EntityManager _entityMgr;
@@ -5061,7 +5077,11 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             // already verified for positive number
             rootDiskSize = Long.parseLong(customParameters.get(VmDetailConstants.ROOT_DISK_SIZE));
 
-            VMTemplateVO templateVO = _templateDao.findById(template.getId());
+            VMTemplateVO templateVO = template instanceof VMTemplateVO ? (VMTemplateVO) template : null;
+            if (templateVO == null && template != null && template.getId() > 0) {
+                final boolean useRemovedTemplateLookup = isImport && isDefaultVmImportTemplate(template);
+                templateVO = useRemovedTemplateLookup ? _templateDao.findByIdIncludingRemoved(template.getId()) : _templateDao.findById(template.getId());
+            }
             if (templateVO == null) {
                 InvalidParameterValueException ipve = new InvalidParameterValueException("Unable to look up template by id " + template.getId());
                 ipve.add(VirtualMachine.class, vm.getUuid());
@@ -5321,11 +5341,12 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     {
         // rootdisksize must be larger than template.
         boolean isIso = ImageFormat.ISO == templateVO.getFormat();
-        if ((rootDiskSize << 30) < templateVO.getSize()) {
-            String error = String.format("Unsupported: rootdisksize override (%s GB) is smaller than template size %s", rootDiskSize, toHumanReadableSize(templateVO.getSize()));
+        long templateSize = getTemplateSizeForValidation(templateVO);
+        if ((rootDiskSize << 30) < templateSize) {
+            String error = String.format("Unsupported: rootdisksize override (%s GB) is smaller than template size %s", rootDiskSize, toHumanReadableSize(templateSize));
             logger.error(error);
             throw new InvalidParameterValueException(error);
-        } else if ((rootDiskSize << 30) > templateVO.getSize()) {
+        } else if ((rootDiskSize << 30) > templateSize) {
             if (hypervisorType == HypervisorType.VMware && (vm.getDetails() == null || vm.getDetails().get(VmDetailConstants.ROOT_DISK_CONTROLLER) == null)) {
                 logger.warn("If Root disk controller parameter is not overridden, then Root disk resize may fail because current Root disk controller value is NULL.");
             } else if (hypervisorType == HypervisorType.VMware && vm.getDetails().get(VmDetailConstants.ROOT_DISK_CONTROLLER).toLowerCase().contains("ide") && !isIso) {
@@ -5333,10 +5354,10 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 logger.error(error);
                 throw new InvalidParameterValueException(error);
             } else {
-                logger.debug("Rootdisksize override validation successful. Template root disk size " + toHumanReadableSize(templateVO.getSize()) + " Root disk size specified " + rootDiskSize + " GB");
+                logger.debug("Rootdisksize override validation successful. Template root disk size " + toHumanReadableSize(templateSize) + " Root disk size specified " + rootDiskSize + " GB");
             }
         } else {
-            logger.debug("Root disk size specified is " + toHumanReadableSize(rootDiskSize << 30) + " and Template root disk size is " + toHumanReadableSize(templateVO.getSize()) + ". Both are equal so no need to override");
+            logger.debug("Root disk size specified is " + toHumanReadableSize(rootDiskSize << 30) + " and Template root disk size is " + toHumanReadableSize(templateSize) + ". Both are equal so no need to override");
             customParameters.remove(VmDetailConstants.ROOT_DISK_SIZE);
         }
     }
@@ -10312,9 +10333,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     }
 
     private void setVncPasswordForKvmIfAvailable(Map<String, String> customParameters, UserVmVO vm) {
-        if (customParameters.containsKey(VmDetailConstants.KVM_VNC_PASSWORD)
-                && StringUtils.isNotEmpty(customParameters.get(VmDetailConstants.KVM_VNC_PASSWORD))) {
-            vm.setVncPassword(customParameters.get(VmDetailConstants.KVM_VNC_PASSWORD));
+        if (customParameters.containsKey(VmDetailConstants.KVM_VNC_PASSWORD)) {
+            vm.setVncPassword(StringUtils.defaultString(customParameters.get(VmDetailConstants.KVM_VNC_PASSWORD)));
         }
     }
 

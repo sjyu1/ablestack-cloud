@@ -215,18 +215,24 @@ public final class LibvirtGetUnmanagedInstancesCommandWrapper extends CommandWra
             disk.setLabel(diskDef.getDiskLabel());
             disk.setController(diskDef.getBusType().toString());
 
-            Pair<String, String> sourceHostPath = getSourceHostPath(libvirtComputingResource, diskDef.getSourcePath());
-            if (sourceHostPath != null) {
-                disk.setDatastoreHost(sourceHostPath.first());
-                disk.setDatastorePath(sourceHostPath.second());
-            } else {
-                int pathEnd = diskDef.getSourcePath().lastIndexOf("/");
-                if (pathEnd >= 0) {
-                    disk.setDatastorePath(diskDef.getSourcePath().substring(0, pathEnd));
-                } else {
-                    disk.setDatastorePath(diskDef.getSourcePath());
-                }
+            if (isRbdBlockDisk(diskDef)) {
+                String rbdPoolName = extractRbdPoolName(diskDef.getSourcePath());
+                disk.setDatastorePath(StringUtils.defaultIfBlank(rbdPoolName, diskDef.getSourcePath()));
                 disk.setDatastoreHost(diskDef.getSourceHost());
+            } else {
+                Pair<String, String> sourceHostPath = getSourceHostPath(libvirtComputingResource, diskDef.getSourcePath());
+                if (sourceHostPath != null) {
+                    disk.setDatastoreHost(sourceHostPath.first());
+                    disk.setDatastorePath(sourceHostPath.second());
+                } else {
+                    int pathEnd = diskDef.getSourcePath().lastIndexOf("/");
+                    if (pathEnd >= 0) {
+                        disk.setDatastorePath(diskDef.getSourcePath().substring(0, pathEnd));
+                    } else {
+                        disk.setDatastorePath(diskDef.getSourcePath());
+                    }
+                    disk.setDatastoreHost(diskDef.getSourceHost());
+                }
             }
 
             disk.setDatastoreType(diskDef.getDiskType().toString());
@@ -237,6 +243,23 @@ public final class LibvirtGetUnmanagedInstancesCommandWrapper extends CommandWra
             disks.add(disk);
         }
         return disks;
+    }
+
+    protected boolean isRbdBlockDisk(LibvirtVMDef.DiskDef diskDef) {
+        return diskDef != null
+                && diskDef.getDiskType() == LibvirtVMDef.DiskDef.DiskType.BLOCK
+                && StringUtils.startsWith(diskDef.getSourcePath(), "/dev/rbd/");
+    }
+
+    protected String extractRbdPoolName(String sourcePath) {
+        if (!StringUtils.startsWith(sourcePath, "/dev/rbd/")) {
+            return null;
+        }
+        String[] parts = StringUtils.split(sourcePath, '/');
+        if (parts == null || parts.length < 3) {
+            return null;
+        }
+        return parts[2];
     }
 
     protected String getDiskRelativePath(LibvirtVMDef.DiskDef diskDef) {
