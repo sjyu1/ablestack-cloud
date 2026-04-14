@@ -88,6 +88,7 @@ import org.apache.cloudstack.api.command.user.vm.AllocateVbmcToVMCmd;
 import org.apache.cloudstack.api.command.user.vm.CloneVMCmd;
 import org.apache.cloudstack.api.command.user.vm.BaseDeployVMCmd;
 import org.apache.cloudstack.api.command.user.vm.CreateVMFromBackupCmd;
+import org.apache.cloudstack.api.command.user.vm.CreateVMFromBxBackupCmd;
 import org.apache.cloudstack.api.command.user.vm.DeployVMCmd;
 import org.apache.cloudstack.api.command.user.vm.DeployVMVolumeCmd;
 import org.apache.cloudstack.api.command.user.vm.DeployVnfApplianceCmd;
@@ -112,6 +113,7 @@ import org.apache.cloudstack.api.command.user.vmgroup.DeleteVMGroupCmd;
 import org.apache.cloudstack.api.command.user.volume.ChangeOfferingForVolumeCmd;
 import org.apache.cloudstack.api.command.user.volume.ResizeVolumeCmd;
 import org.apache.cloudstack.backup.BackupManager;
+import org.apache.cloudstack.backup.BackupProvider;
 import org.apache.cloudstack.backup.BackupScheduleVO;
 import org.apache.cloudstack.backup.BackupVO;
 import org.apache.cloudstack.backup.dao.BackupDao;
@@ -440,11 +442,27 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private static final int ACQUIRE_GLOBAL_LOCK_TIMEOUT_FOR_COOPERATION = 3;
 
     private static final long GiB_TO_BYTES = 1024 * 1024 * 1024;
+    private static final long DEFAULT_VM_IMPORT_TEMPLATE_SIZE = 1L * GiB_TO_BYTES;
 
     private static final String VM_IMPORT_DEFAULT_TEMPLATE_NAME = "system-default-vm-import-dummy-template.iso";
     private static final String KVM_VM_IMPORT_DEFAULT_TEMPLATE_NAME = "kvm-default-vm-import-dummy-template";
     private static final String KVM_STORAGE_SNAPSHOT_DETAIL = "kvmStorageSnapshot";
     private static final String KVM_FILE_BASED_STORAGE_SNAPSHOT_DETAIL = "kvmFileBasedStorageSnapshot";
+
+    private boolean isDefaultVmImportTemplate(VirtualMachineTemplate template) {
+        return template != null && StringUtils.isNotBlank(template.getName()) &&
+                (KVM_VM_IMPORT_DEFAULT_TEMPLATE_NAME.equals(template.getName()) || VM_IMPORT_DEFAULT_TEMPLATE_NAME.equals(template.getName()));
+    }
+
+    private long getTemplateSizeForValidation(VMTemplateVO templateVO) {
+        if (templateVO.getSize() != null) {
+            return templateVO.getSize();
+        }
+        if (isDefaultVmImportTemplate(templateVO)) {
+            return DEFAULT_VM_IMPORT_TEMPLATE_SIZE;
+        }
+        return 0L;
+    }
 
     @Inject
     private EntityManager _entityMgr;
@@ -5059,7 +5077,11 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             // already verified for positive number
             rootDiskSize = Long.parseLong(customParameters.get(VmDetailConstants.ROOT_DISK_SIZE));
 
-            VMTemplateVO templateVO = _templateDao.findById(template.getId());
+            VMTemplateVO templateVO = template instanceof VMTemplateVO ? (VMTemplateVO) template : null;
+            if (templateVO == null && template != null && template.getId() > 0) {
+                final boolean useRemovedTemplateLookup = isImport && isDefaultVmImportTemplate(template);
+                templateVO = useRemovedTemplateLookup ? _templateDao.findByIdIncludingRemoved(template.getId()) : _templateDao.findById(template.getId());
+            }
             if (templateVO == null) {
                 InvalidParameterValueException ipve = new InvalidParameterValueException("Unable to look up template by id " + template.getId());
                 ipve.add(VirtualMachine.class, vm.getUuid());
@@ -5319,11 +5341,12 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     {
         // rootdisksize must be larger than template.
         boolean isIso = ImageFormat.ISO == templateVO.getFormat();
-        if ((rootDiskSize << 30) < templateVO.getSize()) {
-            String error = String.format("Unsupported: rootdisksize override (%s GB) is smaller than template size %s", rootDiskSize, toHumanReadableSize(templateVO.getSize()));
+        long templateSize = getTemplateSizeForValidation(templateVO);
+        if ((rootDiskSize << 30) < templateSize) {
+            String error = String.format("Unsupported: rootdisksize override (%s GB) is smaller than template size %s", rootDiskSize, toHumanReadableSize(templateSize));
             logger.error(error);
             throw new InvalidParameterValueException(error);
-        } else if ((rootDiskSize << 30) > templateVO.getSize()) {
+        } else if ((rootDiskSize << 30) > templateSize) {
             if (hypervisorType == HypervisorType.VMware && (vm.getDetails() == null || vm.getDetails().get(VmDetailConstants.ROOT_DISK_CONTROLLER) == null)) {
                 logger.warn("If Root disk controller parameter is not overridden, then Root disk resize may fail because current Root disk controller value is NULL.");
             } else if (hypervisorType == HypervisorType.VMware && vm.getDetails().get(VmDetailConstants.ROOT_DISK_CONTROLLER).toLowerCase().contains("ide") && !isIso) {
@@ -5331,10 +5354,10 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 logger.error(error);
                 throw new InvalidParameterValueException(error);
             } else {
-                logger.debug("Rootdisksize override validation successful. Template root disk size " + toHumanReadableSize(templateVO.getSize()) + " Root disk size specified " + rootDiskSize + " GB");
+                logger.debug("Rootdisksize override validation successful. Template root disk size " + toHumanReadableSize(templateSize) + " Root disk size specified " + rootDiskSize + " GB");
             }
         } else {
-            logger.debug("Root disk size specified is " + toHumanReadableSize(rootDiskSize << 30) + " and Template root disk size is " + toHumanReadableSize(templateVO.getSize()) + ". Both are equal so no need to override");
+            logger.debug("Root disk size specified is " + toHumanReadableSize(rootDiskSize << 30) + " and Template root disk size is " + toHumanReadableSize(templateSize) + ". Both are equal so no need to override");
             customParameters.remove(VmDetailConstants.ROOT_DISK_SIZE);
         }
     }
@@ -9868,6 +9891,11 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             throw new CloudRuntimeException("Create instance from backup is not supported for this provider.");
         }
 
+        BackupProvider backupProvider = backupManager.getBackupProviderForOffering(backup.getBackupOfferingId());
+        if (backupProvider != null && "bx".equalsIgnoreCase(backupProvider.getName())) {
+            throw new CloudRuntimeException("Create instance from backup is not supported for this provider.");
+        }
+
         DataCenter targetZone = _dcDao.findById(cmd.getZoneId());
         if (targetZone == null) {
             throw new InvalidParameterValueException("Unable to find zone by id=" + cmd.getZoneId());
@@ -10018,6 +10046,13 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         additonalParams.put(VirtualMachineProfile.Param.ReturnAfterVolumePrepare, true);
 
         try {
+            BackupVO backup = backupDao.findById(cmd.getBackupId());
+            BackupProvider backupProvider = backupManager.getBackupProviderForOffering(backup.getBackupOfferingId());
+            if (backupProvider != null && "bx".equalsIgnoreCase(backupProvider.getName())) {
+                vm = _vmDao.findById(vmId);
+                return vm;
+            }
+
             Pair<UserVmVO, Map<VirtualMachineProfile.Param, Object>> vmParamPair = null;
             vmParamPair = startVirtualMachine(vmId, null, null, null, additonalParams, null);
             vm = vmParamPair.first();
@@ -10298,9 +10333,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     }
 
     private void setVncPasswordForKvmIfAvailable(Map<String, String> customParameters, UserVmVO vm) {
-        if (customParameters.containsKey(VmDetailConstants.KVM_VNC_PASSWORD)
-                && StringUtils.isNotEmpty(customParameters.get(VmDetailConstants.KVM_VNC_PASSWORD))) {
-            vm.setVncPassword(customParameters.get(VmDetailConstants.KVM_VNC_PASSWORD));
+        if (customParameters.containsKey(VmDetailConstants.KVM_VNC_PASSWORD)) {
+            vm.setVncPassword(StringUtils.defaultString(customParameters.get(VmDetailConstants.KVM_VNC_PASSWORD)));
         }
     }
 
@@ -10983,5 +11017,42 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
     public static ConfigKey<Boolean> getEnableAdditionalVmConfig() {
         return EnableAdditionalVmConfig;
+    }
+
+    @Override
+    public Pair<Boolean, String> restoreVMFromBxBackup(CreateVMFromBxBackupCmd cmd) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException {
+        BackupVO backup = backupDao.findById(cmd.getBackupId());
+        if (backup == null) {
+            throw new InvalidParameterValueException("Backup " + cmd.getBackupId() + " does not exist");
+        }
+        // backupManager.validateBackupForZone(backup.getZoneId());
+
+        if (!backupManager.canCreateInstanceFromBackup(cmd.getBackupId())) {
+            throw new CloudRuntimeException("Create instance from backup is not supported for this provider.");
+        }
+
+        BackupProvider backupProvider = backupManager.getBackupProviderForOffering(backup.getBackupOfferingId());
+        if (backupProvider != null && "bx".equalsIgnoreCase(backupProvider.getName())) {
+            Pair<Boolean, String> result = backupProvider.restoreBackupToVM(cmd.getBackupId(), cmd.getName());
+            logger.debug(">>>restoreVMFromBxBackup result: {}", result);
+            if (result == null || !Boolean.TRUE.equals(result.first())) {
+                if (result != null && StringUtils.isNotEmpty(result.second())) {
+                    throw new CloudRuntimeException(String.format("Failed to create Instance from backup %s using bx provider. Error: %s", backup.getUuid(), result.second()));
+                }
+                throw new CloudRuntimeException(String.format("Failed to create Instance from backup %s using bx provider.", backup.getUuid()));
+            }
+
+            // logger.debug(">>>allocateVMFromBackup cmd.getName: {}", cmd.getName());
+            // VMInstanceVO vmInstance = _vmInstanceDao.findVMByInstanceName(cmd.getName());
+            // logger.debug(">>>allocateVMFromBackup vmInstance: {}", vmInstance);
+            // UserVm vm = (UserVm) vmInstance;
+            // logger.debug(">>>allocateVMFromBackup vm: {}", vm);
+            // if (vm == null) {
+            //     throw new CloudRuntimeException(String.format("Unable to find restored Instance created from backup %s using bx provider.", backup.getUuid()));
+            // }
+            return result;
+        } else {
+            throw new CloudRuntimeException("Create instance from backup is not supported for this provider.");
+        }
     }
 }

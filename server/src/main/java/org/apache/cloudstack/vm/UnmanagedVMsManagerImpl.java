@@ -19,10 +19,15 @@ package org.apache.cloudstack.vm;
 
 import com.cloud.agent.AgentManager;
 import com.cloud.agent.api.Answer;
+import com.cloud.agent.api.AblestackV2KConvertInstanceCommand;
+import com.cloud.agent.api.AblestackV2KStatusAnswer;
+import com.cloud.agent.api.AblestackV2KStatusCommand;
+import com.cloud.agent.api.AblestackV2KUndefineDomainCommand;
 import com.cloud.agent.api.CheckConvertInstanceAnswer;
 import com.cloud.agent.api.CheckConvertInstanceCommand;
 import com.cloud.agent.api.CheckVolumeAnswer;
 import com.cloud.agent.api.CheckVolumeCommand;
+import com.cloud.agent.api.Command;
 import com.cloud.agent.api.ConvertInstanceAnswer;
 import com.cloud.agent.api.ConvertInstanceCommand;
 import com.cloud.agent.api.CopyRemoteVolumeAnswer;
@@ -123,8 +128,11 @@ import com.cloud.uservm.UserVm;
 import com.cloud.utils.LogUtils;
 import com.cloud.utils.Pair;
 import com.cloud.utils.UuidUtils;
+import com.cloud.utils.DateUtil;
+import com.cloud.utils.concurrency.NamedThreadFactory;
 import com.cloud.utils.db.EntityManager;
 import com.cloud.utils.exception.CloudRuntimeException;
+import com.cloud.vm.ImportVMTaskVO;
 import com.cloud.utils.net.NetUtils;
 import com.cloud.vm.DiskProfile;
 import com.cloud.vm.NicProfile;
@@ -138,10 +146,12 @@ import com.cloud.vm.VirtualMachineProfile;
 import com.cloud.vm.VirtualMachineProfileImpl;
 import com.cloud.vm.VmDetailConstants;
 import com.cloud.vm.dao.NicDao;
+import com.cloud.vm.dao.ImportVMTaskDao;
 import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VMInstanceDetailsDao;
 import com.cloud.vm.dao.VMInstanceDao;
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import org.apache.cloudstack.acl.ControlledEntity;
 import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.api.ApiConstants;
@@ -150,6 +160,7 @@ import org.apache.cloudstack.api.ResponseGenerator;
 import org.apache.cloudstack.api.ResponseObject;
 import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.admin.vm.ImportUnmanagedInstanceCmd;
+import org.apache.cloudstack.api.command.admin.vm.ImportUnmanagedInstanceForAblestackV2KCmd;
 import org.apache.cloudstack.api.command.admin.vm.ImportVmCmd;
 import org.apache.cloudstack.api.command.admin.vm.ListImportVMTasksCmd;
 import org.apache.cloudstack.api.command.admin.vm.ListUnmanagedInstancesCmd;
@@ -161,6 +172,7 @@ import org.apache.cloudstack.api.response.UnmanagedInstanceDiskResponse;
 import org.apache.cloudstack.api.response.UnmanagedInstanceResponse;
 import org.apache.cloudstack.api.response.UserVmResponse;
 import org.apache.cloudstack.context.CallContext;
+import org.apache.cloudstack.managed.context.ManagedContextRunnable;
 import org.apache.cloudstack.engine.orchestration.service.NetworkOrchestrationService;
 import org.apache.cloudstack.engine.orchestration.service.VolumeOrchestrationService;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
@@ -171,6 +183,7 @@ import org.apache.cloudstack.storage.datastore.db.ImageStoreDao;
 import org.apache.cloudstack.storage.datastore.db.ImageStoreVO;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
+import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 import org.apache.cloudstack.storage.volume.VolumeOnStorageTO;
 import org.apache.cloudstack.utils.volume.VirtualMachineDiskInfo;
 import org.apache.commons.collections.CollectionUtils;
@@ -182,9 +195,13 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
+import java.io.File;
+import java.lang.reflect.Type;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -192,6 +209,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.TimeZone;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.apache.cloudstack.api.ApiConstants.MAX_IOPS;
@@ -211,6 +234,13 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
     private static final List<Storage.StoragePoolType> forceConvertToPoolAllowedTypes =
             Arrays.asList(Storage.StoragePoolType.NetworkFilesystem, Storage.StoragePoolType.Filesystem,
                     Storage.StoragePoolType.SharedMountPoint, Storage.StoragePoolType.RBD);
+    protected static final long ABLESTACK_V2K_STATUS_POLL_INTERVAL_MS = 10_000L;
+    private static final String ABLESTACK_V2K_TARGET_DISK_TIMESTAMP_FORMAT = "yyyyMMddHHmm";
+    private static final String V2K_STATUS_PREFIX = "[V2K] ";
+    private final ExecutorService ablestackV2KPhase2MonitorExecutor =
+            Executors.newCachedThreadPool(new NamedThreadFactory("AblestackV2K-Phase2-Monitor"));
+    private final Set<String> ablestackV2KPhase2MonitoringTasks = ConcurrentHashMap.newKeySet();
+    private final Set<String> ablestackV2KImportFinalizationInProgressTasks = ConcurrentHashMap.newKeySet();
 
     ConfigKey<Boolean> ConvertVmwareInstanceToKvmExtraParamsAllowed = new ConfigKey<>(Boolean.class,
             "convert.vmware.instance.to.kvm.extra.params.allowed",
@@ -248,6 +278,8 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
     private VMTemplatePoolDao templatePoolDao;
     @Inject
     private ServiceOfferingDao serviceOfferingDao;
+    @Inject
+    private ImportVMTaskDao importVMTaskDao;
     @Inject
     private DiskOfferingDao diskOfferingDao;
     @Inject
@@ -579,6 +611,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         final String dsPath = disk.getDatastorePath();
         final String dsType = disk.getDatastoreType();
         final String dsName = disk.getDatastoreName();
+        final String rbdPoolName = getRbdPoolName(dsType, dsPath, dsName);
         logger.debug(String.format("### DataStore [Host:%s, Path:%s, Type:%s, Name:%s]" , dsHost, dsPath, dsType, dsName));
         if (dsName != null) {
             List<StoragePoolVO> pools = primaryDataStoreDao.listPoolsByCluster(cluster.getId());
@@ -587,6 +620,18 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                 if (pool.getUuid().equals(dsName) || pool.getName().equals(dsName)) {
                     logger.debug(String.format("Matched datastore %s to storage pool id:%s (uuid:%s name:%s)",
                             dsName, pool.getId(), pool.getUuid(), pool.getName()));
+                    storagePool = pool;
+                    break;
+                }
+            }
+        }
+        if (storagePool == null && StringUtils.isNotBlank(rbdPoolName)) {
+            List<StoragePoolVO> pools = primaryDataStoreDao.listPoolsByCluster(cluster.getId());
+            pools.addAll(primaryDataStoreDao.listByDataCenterId(zone.getId()));
+            for (StoragePool pool : pools) {
+                if ((pool.getPoolType() == Storage.StoragePoolType.RBD || StringUtils.contains(pool.getPath(), rbdPoolName)) &&
+                        (pool.getName().equals(rbdPoolName) || pool.getUuid().equals(rbdPoolName) || StringUtils.contains(pool.getPath(), rbdPoolName)) &&
+                        volumeApiService.doesStoragePoolSupportDiskOffering(pool, diskOffering)) {
                     storagePool = pool;
                     break;
                 }
@@ -621,6 +666,21 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, String.format("Storage pool for disk %s(%s) with datastore: %s not found in zone ID: %s", disk.getLabel(), disk.getDiskId(), disk.getDatastoreName(), zone.getUuid()));
         }
         return storagePool;
+    }
+
+    protected String getRbdPoolName(String datastoreType, String datastorePath, String datastoreName) {
+        if (!StringUtils.equalsIgnoreCase(datastoreType, "block")) {
+            return null;
+        }
+        String candidate = StringUtils.startsWith(datastorePath, "/dev/rbd/") ? datastorePath : datastoreName;
+        if (!StringUtils.startsWith(candidate, "/dev/rbd/")) {
+            return null;
+        }
+        String[] parts = StringUtils.split(candidate, '/');
+        if (parts == null || parts.length < 3) {
+            return null;
+        }
+        return parts[2];
     }
 
     private Pair<UnmanagedInstanceTO.Disk, List<UnmanagedInstanceTO.Disk>> getRootAndDataDisks(
@@ -781,8 +841,20 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             Network.IpAddresses ipAddresses = null;
             if (MapUtils.isNotEmpty(callerNicIpAddressMap) && callerNicIpAddressMap.containsKey(nic.getNicId())) {
                 ipAddresses = callerNicIpAddressMap.get(nic.getNicId());
+            } else {
+                ipAddresses = getMapValueByIndex(callerNicIpAddressMap, i);
+                if (ipAddresses != null) {
+                    logger.debug("Using index-based NIC IP fallback for unmanaged NIC {} at index {} during VM import", nic.getNicId(), i);
+                }
             }
-            if (!callerNicNetworkMap.containsKey(nic.getNicId())) {
+            Long selectedNetworkId = callerNicNetworkMap.get(nic.getNicId());
+            if (selectedNetworkId == null) {
+                selectedNetworkId = getMapValueByIndex(callerNicNetworkMap, i);
+                if (selectedNetworkId != null) {
+                    logger.debug("Using index-based NIC network fallback for unmanaged NIC {} at index {} during VM import", nic.getNicId(), i);
+                }
+            }
+            if (selectedNetworkId == null) {
                 if (nic.getVlan() != null && nic.getVlan() != 0) {
                     // Find a suitable network
                     List<NetworkVO> networks = networkDao.listByZone(zone.getId());
@@ -804,7 +876,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                     }
                 }
             } else {
-                network = networkDao.findById(callerNicNetworkMap.get(nic.getNicId()));
+                network = networkDao.findById(selectedNetworkId);
                 boolean autoImport = false;
                 if (hypervisorType == Hypervisor.HypervisorType.KVM) {
                     autoImport = ipAddresses != null && ipAddresses.getIp4Address() != null && ipAddresses.getIp4Address().equalsIgnoreCase("auto");
@@ -819,6 +891,20 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             nicNetworkMap.put(nic.getNicId(), network.getId());
         }
         return nicNetworkMap;
+    }
+
+    private <T> T getMapValueByIndex(final Map<String, T> map, final int index) {
+        if (MapUtils.isEmpty(map) || index < 0 || index >= map.size()) {
+            return null;
+        }
+        int current = 0;
+        for (Map.Entry<String, T> entry : map.entrySet()) {
+            if (current == index) {
+                return entry.getValue();
+            }
+            current++;
+        }
+        return null;
     }
 
     private Pair<DiskProfile, StoragePool> importExternalDisk(UnmanagedInstanceTO.Disk disk, VirtualMachine vm, DeployDestination dest, DiskOffering diskOffering,
@@ -905,7 +991,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                                                       Volume.Type type, String name, Long diskSize, Long minIops, Long maxIops, VirtualMachineTemplate template,
                                                       Account owner, Long deviceId) {
         final DataCenter zone = dataCenterDao.findById(vm.getDataCenterId());
-        final String path = StringUtils.isEmpty(disk.getFileBaseName()) ? disk.getImagePath() : disk.getFileBaseName();
+        final String path = getImportedDiskPath(disk);
         String chainInfo = disk.getChainInfo();
         if (vm.getHypervisorType() == Hypervisor.HypervisorType.VMware && StringUtils.isEmpty(chainInfo)) {
             VirtualMachineDiskInfo diskInfo = new VirtualMachineDiskInfo();
@@ -1234,7 +1320,10 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             allDetails.put(VmDetailConstants.NIC_ADAPTER, unmanagedInstance.getNics().get(0).getAdapterType());
         }
 
-        if (StringUtils.isNotEmpty(unmanagedInstance.getVncPassword())) {
+        if (cluster.getHypervisorType() == Hypervisor.HypervisorType.KVM && isImportUnmanagedFromSameHypervisor
+                && StringUtils.isBlank(unmanagedInstance.getVncPassword())) {
+            allDetails.put(VmDetailConstants.KVM_VNC_PASSWORD, StringUtils.EMPTY);
+        } else if (StringUtils.isNotEmpty(unmanagedInstance.getVncPassword())) {
             allDetails.put(VmDetailConstants.KVM_VNC_PASSWORD, unmanagedInstance.getVncPassword());
         }
 
@@ -1620,12 +1709,9 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                     throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, String.format("Unable to retrieve details for unmanaged VM: %s", name));
                 }
 
-                if (template.getName().equals(VM_IMPORT_DEFAULT_TEMPLATE_NAME) && cluster.getHypervisorType().equals(Hypervisor.HypervisorType.KVM)) {
-                    throw new InvalidParameterValueException("Template is needed and unable to use default template for hypervisor " + host.getHypervisorType().toString());
-                }
-
-                if (template.getName().equals(VM_IMPORT_DEFAULT_TEMPLATE_NAME)) {
+                if (isDefaultVmImportTemplate(template, cluster.getHypervisorType())) {
                     String osName = unmanagedInstance.getOperatingSystem();
+                    String osId = unmanagedInstance.getOperatingSystemId();
                     GuestOS guestOS = null;
                     if (StringUtils.isNotEmpty(osName)) {
                         guestOS = guestOSDao.findOneByDisplayName(osName);
@@ -1635,17 +1721,23 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                     if (guestOS != null) {
                         guestOSHypervisor = guestOSHypervisorDao.findByOsIdAndHypervisor(guestOS.getId(), host.getHypervisorType().toString(), host.getHypervisorVersion());
                     }
-                    if (guestOSHypervisor == null && StringUtils.isNotEmpty(unmanagedInstance.getOperatingSystemId())) {
-                        guestOSHypervisor = guestOSHypervisorDao.findByOsNameAndHypervisor(unmanagedInstance.getOperatingSystemId(), host.getHypervisorType().toString(), host.getHypervisorVersion());
+                    if (guestOSHypervisor == null && StringUtils.isNotEmpty(osId)) {
+                        guestOSHypervisor = guestOSHypervisorDao.findByOsNameAndHypervisor(osId, host.getHypervisorType().toString(), host.getHypervisorVersion());
                     }
                     if (guestOSHypervisor == null) {
+                        if (cluster.getHypervisorType().equals(Hypervisor.HypervisorType.KVM) && StringUtils.isBlank(osName) && StringUtils.isBlank(osId)) {
+                            logger.warn("Unable to retrieve guest OS details for unmanaged KVM VM: {}. Proceeding with default import template guest OS ID: {}", name, template.getGuestOSId());
+                        } else
                         if (guestOS != null) {
                             throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, String.format("Unable to find hypervisor guest OS ID: %s details for unmanaged VM: %s for hypervisor: %s version: %s. templateid parameter can be used to assign template for VM", guestOS.getUuid(), name, host.getHypervisorType().toString(), host.getHypervisorVersion()));
+                        } else {
+                            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, String.format("Unable to retrieve guest OS details for unmanaged VM: %s with OS name: %s, OS ID: %s for hypervisor: %s version: %s. templateid parameter can be used to assign template for VM", name, osName, osId, host.getHypervisorType().toString(), host.getHypervisorVersion()));
                         }
-                        throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, String.format("Unable to retrieve guest OS details for unmanaged VM: %s with OS name: %s, OS ID: %s for hypervisor: %s version: %s. templateid parameter can be used to assign template for VM", name, osName, unmanagedInstance.getOperatingSystemId(), host.getHypervisorType().toString(), host.getHypervisorVersion()));
                     }
 
-                    template.setGuestOSId(guestOSHypervisor.getGuestOsId());
+                    if (guestOSHypervisor != null) {
+                        template.setGuestOSId(guestOSHypervisor.getGuestOsId());
+                    }
                 }
                 userVm = importVirtualMachineInternal(unmanagedInstance, instanceName, zone, cluster, host,
                         template, displayName, hostName, CallContext.current().getCallingAccount(), owner, userId,
@@ -1766,8 +1858,8 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             HostVO convertHost = selectKVMHostForConversionInCluster(destinationCluster, convertInstanceHostId);
             HostVO importHost = selectKVMHostForImportingInCluster(destinationCluster, importInstanceHostId);
             CheckConvertInstanceAnswer conversionSupportAnswer = checkConversionSupportOnHost(convertHost, sourceVMName, false);
-            logger.debug("The host {}  is selected to execute the conversion of the " +
-                    "instance {} from VMware to KVM ", convertHost, sourceVMName);
+            logger.debug("The host {} is selected to execute the conversion of the instance {} from VMware to KVM",
+                    convertHost, sourceVMName);
 
             temporaryConvertLocation = selectInstanceConversionTemporaryLocation(
                     destinationCluster, convertHost, importHost, convertStoragePoolId, forceConvertToPool);
@@ -2402,6 +2494,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         cmdList.add(UnmanageVMInstanceCmd.class);
         cmdList.add(ListVmsForImportCmd.class);
         cmdList.add(ImportVmCmd.class);
+        cmdList.add(ImportUnmanagedInstanceForAblestackV2KCmd.class);
         cmdList.add(ListImportVMTasksCmd.class);
         return cmdList;
     }
@@ -3066,6 +3159,909 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         }
         GetRemoteVmsAnswer getRemoteVmsAnswer = (GetRemoteVmsAnswer) answer;
         return getRemoteVmsAnswer.getUnmanagedInstances();
+    }
+
+    private void startVmwareToKvmConversionWithAblestackV2K(DataCenter zone, Cluster destinationCluster,
+                                                            String sourceVMName, String displayName, String hostName,
+                                                            Account owner, long userId,
+                                                            ServiceOfferingVO serviceOffering,
+                                                            Map<String, Long> nicNetworkMap,
+                                                            Map<String, Network.IpAddresses> nicIpAddressMap,
+                                                            Map<String, String> serviceOfferingDetails,
+                                                            ImportUnmanagedInstanceForAblestackV2KCmd cmd,
+                                                            boolean forced) {
+        Long existingVcenterId = cmd.getExistingVcenterId();
+        String vcenter = cmd.getVcenter();
+        String datacenterName = cmd.getDatacenterName();
+        String username = cmd.getUsername();
+        String password = cmd.getPassword();
+        String clusterName = cmd.getClusterName();
+        String sourceHostName = cmd.getHostIp();
+        Long convertInstanceHostId = cmd.getConvertInstanceHostId();
+        Long convertStoragePoolId = cmd.getConvertStoragePoolId();
+
+        if ((existingVcenterId == null && vcenter == null) || (existingVcenterId != null && vcenter != null)) {
+            throw new ServerApiException(ApiErrorCode.PARAM_ERROR,
+                    "Please provide an existing vCenter ID or a vCenter IP/Name, parameters are mutually exclusive");
+        }
+        if (existingVcenterId == null && StringUtils.isAnyBlank(vcenter, datacenterName, username, password)) {
+            throw new ServerApiException(ApiErrorCode.PARAM_ERROR,
+                    "Please set all the information for a vCenter IP/Name, datacenter, username and password");
+        }
+
+        if (existingVcenterId != null) {
+            VmwareDatacenterVO existingDC = vmwareDatacenterDao.findById(existingVcenterId);
+            if (existingDC == null) {
+                String err = String.format("Cannot find any existing VMware DC with ID %s", existingVcenterId);
+                logger.error(err);
+                throw new CloudRuntimeException(err);
+            }
+            vcenter = existingDC.getVcenterHost();
+            datacenterName = existingDC.getVmwareDatacenterName();
+            username = existingDC.getUser();
+            password = existingDC.getPassword();
+        }
+
+        UnmanagedInstanceTO sourceVMwareInstance = null;
+        ImportVmTask importVMTask = null;
+        try {
+            HostVO convertHost = selectKVMHostForConversionInCluster(destinationCluster, convertInstanceHostId);
+            HostVO importHost = convertHost;
+            logger.debug("The host {} is selected to execute the ablestack-v2k conversion of the instance {} from VMware to KVM",
+                    convertHost, sourceVMName);
+
+            StoragePoolVO targetStoragePool = selectAblestackV2KTargetStoragePool(
+                    destinationCluster, convertHost, importHost, serviceOffering, convertStoragePoolId);
+            DataStoreTO targetStorageLocation = getPrimaryStorageLocationTO(targetStoragePool);
+
+            importVMTask = importVmTasksManager.createImportVMTaskRecord(zone, owner, userId, displayName, vcenter, datacenterName,
+                    sourceVMName, convertHost, importHost);
+            ImportVMTaskVO persistedImportTask = getImportTaskWithCreatedTimestamp(importVMTask, sourceVMName);
+            importVMTask = persistedImportTask;
+            importVmTasksManager.updateImportVMTaskV2KContext(importVMTask, destinationCluster.getId(), serviceOffering.getId(),
+                    targetStoragePool.getId(), clusterName, sourceHostName, existingVcenterId, username, password, serviceOfferingDetails,
+                    buildNicSelectionMap(nicNetworkMap, nicIpAddressMap));
+            importVmTasksManager.updateImportVMTaskV2KStep(importVMTask, ImportVmTask.V2KStep.Phase1_In_Progress);
+
+            sourceVMwareInstance = getSourceVmwareUnmanagedInstanceWithoutClone(vcenter, datacenterName,
+                    username, password, clusterName, sourceHostName, sourceVMName, serviceOffering);
+
+            checkNetworkingBeforeConvertingVmwareInstance(zone, owner, displayName, hostName, sourceVMwareInstance,
+                    nicNetworkMap, nicIpAddressMap, forced);
+            startVmwareInstanceToKVMUsingAblestackV2K(sourceVMName, sourceVMwareInstance, convertHost, targetStorageLocation,
+                    vcenter, username, password, cmd.getSplitMode(), persistedImportTask.getCreated());
+        } catch (CloudRuntimeException e) {
+            logger.error(String.format("Error starting ablestack-v2k conversion for VM: %s", e.getMessage()), e);
+            if (importVMTask != null) {
+                importVmTasksManager.updateImportVMTaskErrorState(importVMTask, ImportVmTask.TaskState.Failed, e.getMessage());
+            }
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, e.getMessage());
+        }
+    }
+
+    private Map<String, Map<String, String>> buildNicSelectionMap(Map<String, Long> nicNetworkMap,
+                                                                  Map<String, Network.IpAddresses> nicIpAddressMap) {
+        if (MapUtils.isEmpty(nicNetworkMap)) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Map<String, String>> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Long> entry : nicNetworkMap.entrySet()) {
+            Map<String, String> nicSelection = new LinkedHashMap<>();
+            NetworkVO network = networkDao.findById(entry.getValue());
+            if (network == null) {
+                throw new CloudRuntimeException(String.format("Unable to find selected network %s for NIC %s while storing import task context",
+                        entry.getValue(), entry.getKey()));
+            }
+            // Persist the selected destination network UUID with its canonical key.
+            nicSelection.put(VmDetailConstants.NETWORK, network.getUuid());
+            if (MapUtils.isNotEmpty(nicIpAddressMap) && nicIpAddressMap.containsKey(entry.getKey())) {
+                Network.IpAddresses ipAddresses = nicIpAddressMap.get(entry.getKey());
+                if (ipAddresses != null && StringUtils.isNotBlank(ipAddresses.getIp4Address())) {
+                    nicSelection.put("ip4address", ipAddresses.getIp4Address());
+                }
+            }
+            result.put(entry.getKey(), nicSelection);
+        }
+        return result;
+    }
+
+    private void startVmwareInstanceToKVMUsingAblestackV2K(
+            String sourceVM, UnmanagedInstanceTO sourceVmwareInstance, HostVO convertHost, DataStoreTO targetStorageLocation,
+            String vcenterHost, String vcenterUsername,
+            String vcenterPassword, String splitMode, Date importTaskCreatedTime) {
+        logger.debug("Delegating the conversion of instance {} from VMware to KVM to the host {} using ablestack-v2k", sourceVM, convertHost);
+
+        List<String> missingParams = new ArrayList<>();
+        if (StringUtils.isBlank(sourceVM)) {
+            missingParams.add("vmName");
+        }
+        if (StringUtils.isBlank(vcenterHost)) {
+            missingParams.add("vcenter");
+        }
+        if (StringUtils.isBlank(vcenterUsername)) {
+            missingParams.add("username");
+        }
+        if (StringUtils.isBlank(vcenterPassword)) {
+            missingParams.add("password");
+        }
+        if (targetStorageLocation == null) {
+            missingParams.add("targetStorageLocation");
+        }
+        if (!missingParams.isEmpty()) {
+            String err = String.format("Missing required parameter(s) before sending ablestack-v2k command for VM %s on host %s: %s",
+                    sourceVM, convertHost, String.join(", ", missingParams));
+            logger.error(err);
+            throw new CloudRuntimeException(err);
+        }
+
+        String targetFormat = getAblestackV2KTargetFormat(targetStorageLocation);
+        String targetStorage = getAblestackV2KTargetStorage(targetStorageLocation);
+        String targetMapJson = buildAblestackV2KTargetMapJson(sourceVM, sourceVmwareInstance, targetStorageLocation, importTaskCreatedTime);
+
+        AblestackV2KConvertInstanceCommand cmd = new AblestackV2KConvertInstanceCommand(sourceVM, vcenterHost, vcenterUsername, vcenterPassword,
+                targetStorageLocation, splitMode);
+        cmd.setTargetFormat(targetFormat);
+        cmd.setTargetStorage(targetStorage);
+        cmd.setTargetMapJson(targetMapJson);
+        int timeoutSeconds = UnmanagedVMsManager.ConvertVmwareInstanceToKvmTimeout.value() * 60 * 60;
+        cmd.setWait(timeoutSeconds);
+
+        startAblestackV2KConversionProcess(cmd, convertHost, sourceVM);
+    }
+
+    protected DataStoreTO selectAblestackV2KTargetStorageLocation(Cluster destinationCluster, HostVO convertHost,
+                                                                  HostVO importHost, ServiceOfferingVO serviceOffering,
+                                                                  Long targetStoragePoolId) {
+        return getPrimaryStorageLocationTO(selectAblestackV2KTargetStoragePool(destinationCluster, convertHost, importHost, serviceOffering, targetStoragePoolId));
+    }
+
+    protected StoragePoolVO selectAblestackV2KTargetStoragePool(Cluster destinationCluster, HostVO convertHost,
+                                                                HostVO importHost, ServiceOfferingVO serviceOffering,
+                                                                Long targetStoragePoolId) {
+        if (targetStoragePoolId != null) {
+            StoragePoolVO selectedStoragePool = primaryDataStoreDao.findById(targetStoragePoolId);
+            checkBeforeSelectingTemporaryConversionStoragePool(selectedStoragePool, targetStoragePoolId, destinationCluster, convertHost);
+            checkDestinationOrTemporaryStoragePoolForConversion(selectedStoragePool, true, convertHost, importHost);
+            validateAblestackV2KTargetStoragePool(serviceOffering, selectedStoragePool);
+            return selectedStoragePool;
+        }
+
+        Set<StoragePoolVO> candidatePools = new HashSet<>(primaryDataStoreDao.listPoolsByCluster(destinationCluster.getId()));
+        candidatePools.addAll(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisor(destinationCluster.getDataCenterId(), Hypervisor.HypervisorType.KVM));
+        if (candidatePools.isEmpty()) {
+            String msg = String.format("Cannot find suitable primary storage pools in the cluster %s for ablestack-v2k conversion", destinationCluster.getName());
+            logger.error(msg);
+            throw new CloudRuntimeException(msg);
+        }
+
+        StoragePoolVO selectedStoragePool = getStoragePoolWithTags(new ArrayList<>(candidatePools), getServiceOfferingStorageTags(serviceOffering));
+        if (selectedStoragePool == null) {
+            String msg = String.format("Cannot find suitable primary storage pool for service offering %s used by ablestack-v2k conversion", serviceOffering.getName());
+            logger.error(msg);
+            throw new CloudRuntimeException(msg);
+        }
+
+        checkDestinationOrTemporaryStoragePoolForConversion(selectedStoragePool, true, convertHost, importHost);
+        return selectedStoragePool;
+    }
+
+    protected void continueAblestackV2KVmImport(ImportUnmanagedInstanceForAblestackV2KCmd cmd) {
+        ImportVMTaskVO task = importVMTaskDao.findByUuid(cmd.getImportVmTaskId());
+        if (task == null) {
+            throw new InvalidParameterValueException(String.format("Unable to find import VM task with ID %s", cmd.getImportVmTaskId()));
+        }
+        if (!StringUtils.equals(task.getV2kStep(), ImportVmTask.V2KStep.Phase1_Completed.name())) {
+            throw new InvalidParameterValueException(String.format("Import VM task %s is not ready for phase2 execution", cmd.getImportVmTaskId()));
+        }
+        HostVO convertHost = hostDao.findById(task.getConvertHostId());
+        if (convertHost == null || convertHost.getStatus() != Status.Up) {
+            throw new CloudRuntimeException(String.format("Original conversion host for task %s is unavailable", cmd.getImportVmTaskId()));
+        }
+        if (task.getV2kTargetStoragePoolId() == null) {
+            throw new CloudRuntimeException(String.format("Import VM task %s does not have a stored ablestack-v2k target storage pool", cmd.getImportVmTaskId()));
+        }
+        StoragePoolVO targetStoragePool = primaryDataStoreDao.findById(task.getV2kTargetStoragePoolId());
+        if (targetStoragePool == null) {
+            throw new CloudRuntimeException(String.format("Unable to find stored target storage pool for import VM task %s", cmd.getImportVmTaskId()));
+        }
+
+        Long existingVcenterId = ObjectUtils.defaultIfNull(cmd.getExistingVcenterId(), task.getVcenterId());
+        String vcenter = StringUtils.defaultIfBlank(cmd.getVcenter(), task.getVcenter());
+        String username = StringUtils.defaultIfBlank(cmd.getUsername(), task.getVcenterUsername());
+        String password = StringUtils.defaultIfBlank(cmd.getPassword(), task.getVcenterPassword());
+        if (existingVcenterId != null) {
+            VmwareDatacenterVO existingDC = vmwareDatacenterDao.findById(existingVcenterId);
+            if (existingDC == null) {
+                throw new InvalidParameterValueException(String.format("Cannot find any existing VMware DC with ID %s", existingVcenterId));
+            }
+            vcenter = existingDC.getVcenterHost();
+            username = existingDC.getUser();
+            password = existingDC.getPassword();
+        } else {
+            if (StringUtils.isAnyBlank(vcenter, username, password)) {
+                throw new InvalidParameterValueException(
+                        "For phase2 on an external vCenter, vCenter/username/password are required either in the request or in the import VM task context");
+            }
+        }
+
+        ServiceOfferingVO serviceOffering = task.getServiceOfferingId() != null ? serviceOfferingDao.findById(task.getServiceOfferingId()) : null;
+        try {
+            if (task.getCreated() == null) {
+                throw new CloudRuntimeException(String.format("Import VM task %s does not have created timestamp required for stable ablestack-v2k target disk naming",
+                        task.getUuid()));
+            }
+            UnmanagedInstanceTO sourceInstance = getSourceVmwareUnmanagedInstanceWithoutClone(vcenter, task.getDatacenter(), username, password,
+                    task.getSourceClusterName(), task.getSourceHostName(), task.getSourceVMName(), serviceOffering);
+            startVmwareInstanceToKVMUsingAblestackV2K(task.getSourceVMName(), sourceInstance, convertHost,
+                    getPrimaryStorageLocationTO(targetStoragePool), vcenter, username, password, "phase2", task.getCreated());
+            importVmTasksManager.updateImportVMTaskV2KStep(task, ImportVmTask.V2KStep.Phase2_In_Progress);
+            triggerAblestackV2KPhase2MonitoringInBackground(task.getUuid());
+        } catch (RuntimeException e) {
+            logger.error(String.format("Error while executing ablestack-v2k phase2 workflow for task %s", task.getUuid()), e);
+            cleanupAblestackV2KDomain(task, convertHost);
+            importVmTasksManager.updateImportVMTaskErrorState(task, ImportVmTask.TaskState.Failed, StringUtils.defaultIfBlank(e.getMessage(), "ablestack-v2k phase2 workflow failed"));
+            throw e;
+        }
+    }
+
+    private void triggerAblestackV2KPhase2MonitoringInBackground(String taskUuid) {
+        if (StringUtils.isBlank(taskUuid)) {
+            return;
+        }
+        if (!ablestackV2KPhase2MonitoringTasks.add(taskUuid)) {
+            logger.debug("ablestack-v2k phase2 background monitor already running for task {}", taskUuid);
+            return;
+        }
+        try {
+            ablestackV2KPhase2MonitorExecutor.submit(new ManagedContextRunnable() {
+                @Override
+                protected void runInContext() {
+                    try {
+                        ImportVMTaskVO task = importVMTaskDao.findByUuid(taskUuid);
+                        if (task == null || task.getVmId() != null || task.getState() != ImportVmTask.TaskState.Running) {
+                            return;
+                        }
+                        HostVO convertHost = hostDao.findById(task.getConvertHostId());
+                        if (convertHost == null || convertHost.getStatus() != Status.Up) {
+                            throw new CloudRuntimeException(String.format(
+                                    "Original conversion host for task %s is unavailable while monitoring phase2 completion", taskUuid));
+                        }
+                        waitForAblestackV2KPhase2Completion(task, convertHost);
+                        ImportVMTaskVO latestTask = importVMTaskDao.findByUuid(taskUuid);
+                        if (latestTask == null || latestTask.getVmId() != null || latestTask.getState() != ImportVmTask.TaskState.Running) {
+                            return;
+                        }
+                        importVmTasksManager.updateImportVMTaskV2KStep(latestTask, ImportVmTask.V2KStep.Phase2_Completed);
+                        finalizeAblestackV2KTask(taskUuid);
+                    } catch (RuntimeException e) {
+                        logger.error(String.format("Error while monitoring ablestack-v2k phase2 completion for task %s", taskUuid), e);
+                        ImportVMTaskVO latestTask = importVMTaskDao.findByUuid(taskUuid);
+                        if (latestTask != null && latestTask.getVmId() == null && latestTask.getState() == ImportVmTask.TaskState.Running) {
+                            String errorMessage = StringUtils.defaultIfBlank(e.getMessage(), "ablestack-v2k phase2 background monitoring failed");
+                            String description = buildDescriptionWithV2KStatusPrefix(latestTask.getDescription(), errorMessage);
+                            cleanupAblestackV2KDomain(latestTask);
+                            importVmTasksManager.updateImportVMTaskErrorState(latestTask, ImportVmTask.TaskState.Failed, description);
+                        }
+                    } finally {
+                        ablestackV2KPhase2MonitoringTasks.remove(taskUuid);
+                    }
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            ablestackV2KPhase2MonitoringTasks.remove(taskUuid);
+            throw new CloudRuntimeException(String.format("Could not start ablestack-v2k phase2 background monitor for task %s", taskUuid), e);
+        }
+    }
+
+    @Override
+    public void finalizeAblestackV2KTask(String importVmTaskUuid) {
+        if (StringUtils.isBlank(importVmTaskUuid)) {
+            return;
+        }
+        if (!ablestackV2KImportFinalizationInProgressTasks.add(importVmTaskUuid)) {
+            return;
+        }
+        try {
+            ImportVMTaskVO task = importVMTaskDao.findByUuid(importVmTaskUuid);
+            if (task == null || task.getVmId() != null || task.getState() != ImportVmTask.TaskState.Running) {
+                return;
+            }
+            if (!StringUtils.equals(task.getV2kStep(), ImportVmTask.V2KStep.Phase2_Completed.name())) {
+                return;
+            }
+            HostVO convertHost = hostDao.findById(task.getConvertHostId());
+            try {
+                UserVm importedVm = importAblestackV2KConvertedInstance(task, Collections.emptyMap());
+                markAblestackV2KTaskCompleted(task, importedVm.getId());
+                cleanupAblestackV2KDomain(task, convertHost);
+            } catch (RuntimeException e) {
+                logger.error(String.format("Error while finalizing ablestack-v2k import workflow for task %s", task.getUuid()), e);
+                ImportVMTaskVO latestTask = importVMTaskDao.findById(task.getId());
+                String errorMessage = StringUtils.defaultIfBlank(e.getMessage(), "ablestack-v2k finalization failed");
+                String description = buildDescriptionWithV2KStatusPrefix(
+                        latestTask != null ? latestTask.getDescription() : task.getDescription(), errorMessage);
+                cleanupAblestackV2KDomain(latestTask != null ? latestTask : task, convertHost);
+                importVmTasksManager.updateImportVMTaskErrorState(task, ImportVmTask.TaskState.Failed, description);
+                throw e;
+            }
+        } finally {
+            ablestackV2KImportFinalizationInProgressTasks.remove(importVmTaskUuid);
+        }
+    }
+
+    protected void waitForAblestackV2KPhase2Completion(ImportVMTaskVO task, HostVO convertHost) {
+        long timeoutMs = TimeUnit.HOURS.toMillis(ConvertVmwareInstanceToKvmTimeout.value());
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            AblestackV2KStatusAnswer status = getAblestackV2KStatus(convertHost, task.getSourceVMName());
+            if (status != null) {
+                if (isFailedV2KMigrationState(status.getMigrationState())) {
+                    throw new CloudRuntimeException(String.format("ablestack-v2k phase2 failed for task %s: %s / %s / %s",
+                            task.getUuid(), status.getPhase(), status.getMigrationState(), status.getMigrationStep()));
+                }
+                if (isCompletedV2KMigrationState(status.getMigrationState())
+                        && StringUtils.containsIgnoreCase(status.getPhase(), "phase2")) {
+                    return;
+                }
+            }
+            sleepAblestackV2KStatusPoll(task.getUuid());
+        }
+        throw new CloudRuntimeException(String.format("Timed out waiting for ablestack-v2k phase2 completion for task %s", task.getUuid()));
+    }
+
+    protected AblestackV2KStatusAnswer getAblestackV2KStatus(HostVO host, String vmName) {
+        AblestackV2KStatusCommand statusCommand = new AblestackV2KStatusCommand(vmName);
+        statusCommand.setWait(30);
+        try {
+            Answer answer = agentManager.send(host.getId(), statusCommand);
+            if (!(answer instanceof AblestackV2KStatusAnswer) || !answer.getResult()) {
+                logger.debug("Unable to retrieve ablestack-v2k status for VM {} on host {}: {}",
+                        vmName, host.getName(), answer != null ? answer.getDetails() : "no answer");
+                return null;
+            }
+            return (AblestackV2KStatusAnswer) answer;
+        } catch (AgentUnavailableException | OperationTimedoutException e) {
+            throw new CloudRuntimeException(String.format("Could not retrieve ablestack-v2k status for VM %s on host %s due to: %s",
+                    vmName, host.getName(), e.getMessage()), e);
+        }
+    }
+
+    protected UserVm importAblestackV2KConvertedInstance(ImportVMTaskVO task, Map<String, Long> dataDiskOfferingMapInPhase2Request) {
+        if (task.getClusterId() == null) {
+            throw new CloudRuntimeException(String.format("Import VM task %s does not have destination cluster information", task.getUuid()));
+        }
+        if (task.getServiceOfferingId() == null) {
+            throw new CloudRuntimeException(String.format("Import VM task %s does not have service offering information", task.getUuid()));
+        }
+
+        Cluster cluster = basicAccessChecks(task.getClusterId());
+        if (!cluster.getAllocationState().equals(Cluster.AllocationState.Enabled)) {
+            throw new CloudRuntimeException(String.format("Cluster [%s] is not enabled.", cluster));
+        }
+
+        DataCenter zone = dataCenterDao.findById(task.getZoneId());
+        if (zone == null) {
+            throw new CloudRuntimeException(String.format("Unable to find zone %s for import task %s", task.getZoneId(), task.getUuid()));
+        }
+
+        Account owner = accountService.getActiveAccountById(task.getAccountId());
+        if (owner == null) {
+            throw new CloudRuntimeException(String.format("Unable to find owner account %s for import task %s", task.getAccountId(), task.getUuid()));
+        }
+
+        VMTemplateVO template = getTemplateForImportInstance(null, cluster.getHypervisorType());
+        ServiceOfferingVO serviceOffering = getServiceOfferingForImportInstance(task.getServiceOfferingId(), owner, zone);
+        String displayName = getDisplayNameForImportInstance(task.getDisplayName(), task.getSourceVMName());
+        String hostName = getHostNameForImportInstance(null, cluster.getHypervisorType(), task.getSourceVMName(), displayName);
+
+        Map<String, Long> nicNetworkMap = getTaskNicNetworkMap(task);
+        Map<String, Network.IpAddresses> nicIpAddressMap = getTaskNicIpAddressMap(task);
+        Map<String, String> details = getTaskServiceOfferingDetails(task);
+        Map<String, Long> dataDiskOfferingMap = MapUtils.isNotEmpty(dataDiskOfferingMapInPhase2Request) ?
+                dataDiskOfferingMapInPhase2Request : Collections.emptyMap();
+
+        List<HostVO> hosts = resourceManager.listHostsInClusterByStatus(cluster.getId(), Status.Up);
+        List<String> additionalNameFilters = getAdditionalNameFilters(cluster);
+        List<String> managedVms = new ArrayList<>(additionalNameFilters);
+        managedVms.addAll(getHostsManagedVms(hosts));
+        if (MapUtils.isEmpty(dataDiskOfferingMap)) {
+            dataDiskOfferingMap = getAutoDataDiskOfferingMapForAblestackV2K(task, owner, zone, cluster, hosts, managedVms);
+        }
+
+        UserVm importedVm = importUnmanagedInstanceFromHypervisor(zone, cluster, hosts, additionalNameFilters,
+                template, task.getSourceVMName(), displayName, hostName, CallContext.current().getCallingAccount(), owner, task.getUserId(),
+                serviceOffering, dataDiskOfferingMap, nicNetworkMap, nicIpAddressMap, details, false, managedVms, false);
+
+        if (importedVm == null) {
+            throw new CloudRuntimeException(String.format("Failed to import converted KVM VM %s for task %s",
+                    task.getSourceVMName(), task.getUuid()));
+        }
+        return importedVm;
+    }
+
+    protected Map<String, String> getTaskServiceOfferingDetails(ImportVMTaskVO task) {
+        Map<String, String> details = deserializeMap(task.getServiceOfferingDetails(), new TypeToken<Map<String, String>>() {
+        }.getType());
+        return details != null ? details : new HashMap<>();
+    }
+
+    protected Map<String, Long> getAutoDataDiskOfferingMapForAblestackV2K(ImportVMTaskVO task, Account owner, DataCenter zone, Cluster cluster,
+                                                                           List<HostVO> hosts, List<String> managedVms) {
+        UnmanagedInstanceTO convertedInstance = null;
+        for (HostVO host : hosts) {
+            HashMap<String, UnmanagedInstanceTO> unmanagedInstances = getUnmanagedInstancesForHost(host, task.getSourceVMName(), managedVms);
+            if (MapUtils.isEmpty(unmanagedInstances)) {
+                continue;
+            }
+            convertedInstance = unmanagedInstances.get(task.getSourceVMName());
+            if (convertedInstance != null) {
+                break;
+            }
+        }
+        if (convertedInstance == null || CollectionUtils.isEmpty(convertedInstance.getDisks()) || convertedInstance.getDisks().size() <= 1) {
+            return Collections.emptyMap();
+        }
+
+        List<UnmanagedInstanceTO.Disk> disks = new ArrayList<>(convertedInstance.getDisks());
+        disks.sort((left, right) -> {
+            Integer leftPosition = left != null ? left.getPosition() : null;
+            Integer rightPosition = right != null ? right.getPosition() : null;
+            if (leftPosition == null && rightPosition == null) {
+                return 0;
+            }
+            if (leftPosition == null) {
+                return 1;
+            }
+            if (rightPosition == null) {
+                return -1;
+            }
+            return Integer.compare(leftPosition, rightPosition);
+        });
+        UnmanagedInstanceTO.Disk rootDisk = disks.get(0);
+
+        Map<String, Long> autoSelectedDataDiskOfferingMap = new HashMap<>();
+        for (UnmanagedInstanceTO.Disk disk : disks) {
+            if (disk == rootDisk) {
+                continue;
+            }
+            Long diskOfferingId = getAutoMatchedDiskOfferingIdForAblestackV2KDataDisk(task, disk, owner, zone, cluster);
+            autoSelectedDataDiskOfferingMap.put(disk.getDiskId(), diskOfferingId);
+        }
+        logger.info("Auto-selected {} data disk offering mappings for ablestack-v2k task {}",
+                autoSelectedDataDiskOfferingMap.size(), task.getUuid());
+        return autoSelectedDataDiskOfferingMap;
+    }
+
+    protected Long getAutoMatchedDiskOfferingIdForAblestackV2KDataDisk(ImportVMTaskVO task, UnmanagedInstanceTO.Disk disk, Account owner, DataCenter zone, Cluster cluster) {
+        List<DiskOfferingVO> offerings = diskOfferingDao.listAllActiveAndNonComputeDiskOfferings();
+        if (CollectionUtils.isEmpty(offerings)) {
+            throw new CloudRuntimeException(String.format("No active disk offerings found while auto-assigning offering for data disk %s in task %s",
+                    disk.getDiskId(), task.getUuid()));
+        }
+
+        long diskSize = ObjectUtils.defaultIfNull(disk.getCapacity(), 0L);
+        List<DiskOfferingVO> fixedOfferings = offerings.stream()
+                .filter(offering -> offering != null && !offering.isCustomized() && offering.getDiskSize() >= diskSize)
+                .sorted((left, right) -> Long.compare(left.getDiskSize(), right.getDiskSize()))
+                .collect(Collectors.toList());
+        List<DiskOfferingVO> customizedOfferings = offerings.stream()
+                .filter(offering -> offering != null && offering.isCustomized())
+                .collect(Collectors.toList());
+
+        List<DiskOfferingVO> orderedCandidates = new ArrayList<>(fixedOfferings);
+        orderedCandidates.addAll(customizedOfferings);
+        List<String> rejectedReasons = new ArrayList<>();
+
+        for (DiskOfferingVO candidate : orderedCandidates) {
+            try {
+                checkUnmanagedDiskAndOfferingForImport(task.getSourceVMName(), disk, candidate, null, owner, zone, cluster, false);
+                return candidate.getId();
+            } catch (Exception e) {
+                String reason = String.format("%s: %s", e.getClass().getSimpleName(),
+                        StringUtils.defaultIfBlank(e.getMessage(), e.getClass().getSimpleName()));
+                rejectedReasons.add(String.format("%s(%s)", candidate.getUuid(), reason));
+                logger.debug("Skipping auto-selection candidate disk offering {} for disk {} in task {} due to: {}",
+                        candidate.getUuid(), disk.getDiskId(), task.getUuid(), reason);
+            }
+        }
+        int maxReasons = 5;
+        String rejectedSummary = rejectedReasons.stream().limit(maxReasons).collect(Collectors.joining(" | "));
+        if (rejectedReasons.size() > maxReasons) {
+            rejectedSummary = rejectedSummary + String.format(" | ... and %d more", rejectedReasons.size() - maxReasons);
+        }
+        throw new CloudRuntimeException(String.format("Unable to auto-select disk offering for data disk %s (size=%s) in ablestack-v2k task %s. Rejected offerings: %s",
+                disk.getDiskId(), disk.getCapacity(), task.getUuid(), StringUtils.defaultIfBlank(rejectedSummary, "none")));
+    }
+
+    private boolean isFailedV2KMigrationState(String migrationState) {
+        String state = StringUtils.lowerCase(StringUtils.trimToEmpty(migrationState));
+        return state.contains("fail") || state.contains("error") || state.contains("abort") || state.contains("cancel");
+    }
+
+    private boolean isCompletedV2KMigrationState(String migrationState) {
+        String state = StringUtils.lowerCase(StringUtils.trimToEmpty(migrationState));
+        return state.contains("complete") || state.contains("success") || "done".equals(state) || "finished".equals(state);
+    }
+
+    protected void sleepAblestackV2KStatusPoll(String taskUuid) {
+        try {
+            Thread.sleep(ABLESTACK_V2K_STATUS_POLL_INTERVAL_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CloudRuntimeException(String.format("Interrupted while waiting for ablestack-v2k status on task %s", taskUuid), e);
+        }
+    }
+
+    private void validateAblestackV2KTargetStoragePool(ServiceOfferingVO serviceOffering, StoragePoolVO storagePool) {
+        String serviceOfferingTags = getServiceOfferingStorageTags(serviceOffering);
+        if (StringUtils.isBlank(serviceOfferingTags)) {
+            return;
+        }
+        if (!volumeApiService.doesStoragePoolSupportDiskOfferingTags(storagePool, serviceOfferingTags)) {
+            String msg = String.format("Service offering %s storage tags are not compatible with selected storage pool %s for ablestack-v2k conversion",
+                    serviceOffering.getUuid(), storagePool.getUuid());
+            logger.error(msg);
+            throw new CloudRuntimeException(msg);
+        }
+    }
+
+    private String getServiceOfferingStorageTags(ServiceOfferingVO serviceOffering) {
+        if (serviceOffering == null || serviceOffering.getDiskOfferingId() == null) {
+            return null;
+        }
+        DiskOfferingVO diskOffering = diskOfferingDao.findById(serviceOffering.getDiskOfferingId());
+        if (diskOffering == null) {
+            String msg = String.format("Cannot find disk offering with ID %s that belongs to the service offering %s",
+                    serviceOffering.getDiskOfferingId(), serviceOffering.getName());
+            logger.error(msg);
+            throw new CloudRuntimeException(msg);
+        }
+        return diskOffering.getTags();
+    }
+
+    private DataStoreTO getPrimaryStorageLocationTO(StoragePoolVO storagePool) {
+        DataStore dataStore = dataStoreManager.getPrimaryDataStore(storagePool.getId());
+        if (dataStore == null) {
+            String msg = String.format("Cannot resolve primary datastore for storage pool %s (%s) used by ablestack-v2k conversion",
+                    storagePool.getName(), storagePool.getUuid());
+            logger.error(msg);
+            throw new CloudRuntimeException(msg);
+        }
+        DataStoreTO dataStoreTO = dataStore.getTO();
+        if (dataStoreTO == null) {
+            String msg = String.format("Primary datastore TO is null for storage pool %s (%s) used by ablestack-v2k conversion",
+                    storagePool.getName(), storagePool.getUuid());
+            logger.error(msg);
+            throw new CloudRuntimeException(msg);
+        }
+        return dataStoreTO;
+    }
+
+    protected String getAblestackV2KTargetFormat(DataStoreTO targetStorageLocation) {
+        Storage.StoragePoolType poolType = getAblestackV2KPoolType(targetStorageLocation);
+        if (Storage.StoragePoolType.RBD.equals(poolType)) {
+            return "raw";
+        }
+        if (Storage.StoragePoolType.SharedMountPoint.equals(poolType)) {
+            return "qcow2";
+        }
+        throw new CloudRuntimeException(String.format("Unsupported primary storage pool type %s for ablestack-v2k conversion", poolType));
+    }
+
+    protected String getAblestackV2KTargetStorage(DataStoreTO targetStorageLocation) {
+        Storage.StoragePoolType poolType = getAblestackV2KPoolType(targetStorageLocation);
+        if (Storage.StoragePoolType.RBD.equals(poolType)) {
+            return "rbd";
+        }
+        if (Storage.StoragePoolType.SharedMountPoint.equals(poolType)) {
+            return "file";
+        }
+        throw new CloudRuntimeException(String.format("Unsupported primary storage pool type %s for ablestack-v2k conversion", poolType));
+    }
+
+    protected String buildAblestackV2KTargetMapJson(String vmName, UnmanagedInstanceTO sourceVmwareInstance,
+                                                    DataStoreTO targetStorageLocation, Date importTaskCreatedTime) {
+        Storage.StoragePoolType poolType = getAblestackV2KPoolType(targetStorageLocation);
+        if (!Storage.StoragePoolType.RBD.equals(poolType)) {
+            return null;
+        }
+        if (sourceVmwareInstance == null || CollectionUtils.isEmpty(sourceVmwareInstance.getDisks())) {
+            throw new CloudRuntimeException(String.format("Unable to build ablestack-v2k target disk mapping for VM %s without source disk information", vmName));
+        }
+        String rbdPoolName = getAblestackV2KRbdPoolName(targetStorageLocation);
+        String timestampSuffix = getAblestackV2KTargetDiskTimestamp(importTaskCreatedTime, vmName);
+        Map<String, String> targetMap = new LinkedHashMap<>();
+        for (int index = 0; index < sourceVmwareInstance.getDisks().size(); index++) {
+            targetMap.put(String.format("scsi0:%d", index),
+                    String.format("rbd:%s/%s-disk%d-%s", rbdPoolName, vmName, index, timestampSuffix));
+        }
+        return gson.toJson(targetMap);
+    }
+
+    private String getAblestackV2KTargetDiskTimestamp(Date importTaskCreatedTime, String vmName) {
+        if (importTaskCreatedTime == null) {
+            throw new CloudRuntimeException(String.format("Import VM task created timestamp is null while building ablestack-v2k target map for VM %s",
+                    vmName));
+        }
+        return DateUtil.getDateDisplayString(TimeZone.getDefault(), importTaskCreatedTime, ABLESTACK_V2K_TARGET_DISK_TIMESTAMP_FORMAT);
+    }
+
+    private ImportVMTaskVO getImportTaskWithCreatedTimestamp(ImportVmTask importVMTask, String vmName) {
+        if (importVMTask == null) {
+            throw new CloudRuntimeException(String.format("Import VM task is null while preparing ablestack-v2k conversion for VM %s", vmName));
+        }
+        ImportVMTaskVO persistedTask = importVMTaskDao.findById(importVMTask.getId());
+        if (persistedTask == null) {
+            throw new CloudRuntimeException(String.format("Unable to find persisted import VM task with ID %s while preparing ablestack-v2k conversion for VM %s",
+                    importVMTask.getId(), vmName));
+        }
+        if (persistedTask.getCreated() == null) {
+            throw new CloudRuntimeException(String.format("Import VM task %s does not have created timestamp required for stable ablestack-v2k target disk naming",
+                    persistedTask.getUuid()));
+        }
+        return persistedTask;
+    }
+
+    protected String getAblestackV2KWorkingDirectory(String vmName) {
+        return "/var/lib/libvirt/images" + File.separator + vmName;
+    }
+
+    private Storage.StoragePoolType getAblestackV2KPoolType(DataStoreTO targetStorageLocation) {
+        if (!(targetStorageLocation instanceof PrimaryDataStoreTO)) {
+            throw new CloudRuntimeException("Ablestack-v2k conversion requires a primary datastore target");
+        }
+        return ((PrimaryDataStoreTO) targetStorageLocation).getPoolType();
+    }
+
+    private String getAblestackV2KRbdPoolName(DataStoreTO targetStorageLocation) {
+        PrimaryDataStoreTO primaryDataStoreTO = (PrimaryDataStoreTO) targetStorageLocation;
+        String poolName = StringUtils.defaultIfBlank(primaryDataStoreTO.getPath(), primaryDataStoreTO.getUuid());
+        return StringUtils.removeStart(poolName, File.separator);
+    }
+
+    protected void startAblestackV2KConversionProcess(Command convertInstanceCommand, HostVO convertHost, String sourceVM) {
+        Answer convertAnswer;
+        try {
+            convertAnswer = agentManager.send(convertHost.getId(), convertInstanceCommand);
+        } catch (AgentUnavailableException | OperationTimedoutException e) {
+            String err = String.format("Could not send the ablestack-v2k convert instance command to host %s due to: %s",
+                    convertHost, e.getMessage());
+            logger.error(err, e);
+            throw new CloudRuntimeException(err);
+        }
+
+        if (!convertAnswer.getResult()) {
+            String err = String.format("The ablestack-v2k convert process failed to start for instance %s on host %s: %s",
+                    sourceVM, convertHost, convertAnswer.getDetails());
+            logger.error(err);
+            throw new CloudRuntimeException(err);
+        }
+    }
+
+    protected Map<String, Long> getTaskNicNetworkMap(ImportVMTaskVO task) {
+        Map<String, Map<String, String>> nicSelectionMap = deserializeMap(task.getNicNetworkMap(),
+                new TypeToken<Map<String, Map<String, String>>>() {
+                }.getType());
+        if (MapUtils.isEmpty(nicSelectionMap)) {
+            throw new CloudRuntimeException(String.format("Import VM task %s does not include NIC/network selection context from phase1", task.getUuid()));
+        }
+
+        Map<String, Long> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, String>> entry : nicSelectionMap.entrySet()) {
+            String nicId = entry.getKey();
+            Map<String, String> selection = entry.getValue();
+            String networkUuid = selection != null ? StringUtils.defaultIfBlank(selection.get(VmDetailConstants.NETWORK), selection.get(VmDetailConstants.NIC)) : null;
+            if (StringUtils.isBlank(networkUuid)) {
+                throw new CloudRuntimeException(String.format("Missing network mapping for NIC %s in import task %s", nicId, task.getUuid()));
+            }
+            NetworkVO network = networkDao.findByUuid(networkUuid);
+            if (network == null) {
+                throw new CloudRuntimeException(String.format("Cannot find network %s for NIC %s in import task %s", networkUuid, nicId, task.getUuid()));
+            }
+            result.put(nicId, network.getId());
+        }
+        return result;
+    }
+
+    protected Map<String, Network.IpAddresses> getTaskNicIpAddressMap(ImportVMTaskVO task) {
+        Map<String, Map<String, String>> nicSelectionMap = deserializeMap(task.getNicNetworkMap(),
+                new TypeToken<Map<String, Map<String, String>>>() {
+                }.getType());
+        Map<String, Network.IpAddresses> result = new LinkedHashMap<>();
+        if (MapUtils.isEmpty(nicSelectionMap)) {
+            return result;
+        }
+        for (Map.Entry<String, Map<String, String>> entry : nicSelectionMap.entrySet()) {
+            String nicId = entry.getKey();
+            Map<String, String> selection = entry.getValue();
+            String ipAddress = selection != null ? StringUtils.defaultIfBlank(selection.get(VmDetailConstants.IP4_ADDRESS), selection.get("ip4address")) : null;
+            if (StringUtils.isBlank(ipAddress)) {
+                continue;
+            }
+            result.put(nicId, new Network.IpAddresses(ipAddress, null));
+        }
+        return result;
+    }
+
+    protected <T> T deserializeMap(String serializedMap, Type type) {
+        if (StringUtils.isBlank(serializedMap)) {
+            return null;
+        }
+        return gson.fromJson(serializedMap, type);
+    }
+
+    protected void markAblestackV2KTaskCompleted(ImportVMTaskVO task, Long vmId) {
+        ImportVMTaskVO latestTask = importVMTaskDao.findById(task.getId());
+        if (latestTask == null) {
+            throw new CloudRuntimeException(String.format("Unable to find import VM task %s while marking completion", task.getUuid()));
+        }
+        Date updatedDate = DateUtil.now();
+        latestTask.setVmId(vmId);
+        latestTask.setV2kStep(ImportVmTask.V2KStep.Completed.name());
+        latestTask.setState(ImportVmTask.TaskState.Completed);
+        latestTask.setUpdated(updatedDate);
+        latestTask.setDescription(buildDescriptionWithV2KStatusPrefix(latestTask.getDescription(),
+                String.format("Managed instance import succeeded (vmId=%s)", vmId)));
+        if (latestTask.getCreated() != null) {
+            latestTask.setDuration(Duration.between(latestTask.getCreated().toInstant(), updatedDate.toInstant()).toMillis());
+        }
+        importVMTaskDao.update(latestTask.getId(), latestTask);
+    }
+
+    private String buildDescriptionWithV2KStatusPrefix(String currentDescription, String message) {
+        String statusLine = getV2KStatusLine(currentDescription);
+        String normalizedMessage = StringUtils.trimToNull(message);
+        if (StringUtils.isBlank(statusLine)) {
+            return StringUtils.defaultString(normalizedMessage);
+        }
+        if (normalizedMessage == null) {
+            return statusLine;
+        }
+        return String.format("%s%n%s", statusLine, normalizedMessage);
+    }
+
+    private String getV2KStatusLine(String description) {
+        String normalized = StringUtils.defaultString(description);
+        if (StringUtils.isBlank(normalized)) {
+            return null;
+        }
+        for (String line : normalized.split("\\R")) {
+            String trimmedLine = StringUtils.trimToEmpty(line);
+            if (StringUtils.startsWith(trimmedLine, V2K_STATUS_PREFIX)) {
+                return trimmedLine;
+            }
+        }
+        return null;
+    }
+
+    protected void cleanupAblestackV2KDomain(ImportVMTaskVO task, HostVO convertHost) {
+        if (task == null || convertHost == null || StringUtils.isBlank(task.getSourceVMName())) {
+            return;
+        }
+
+        AblestackV2KUndefineDomainCommand cleanupCommand = new AblestackV2KUndefineDomainCommand(task.getSourceVMName(), true);
+        cleanupCommand.setWait(60);
+        try {
+            Answer answer = agentManager.send(convertHost.getId(), cleanupCommand);
+            if (answer == null || !answer.getResult()) {
+                logger.warn("Unable to cleanup ablestack-v2k domain {} on host {}: {}",
+                        task.getSourceVMName(), convertHost.getName(), answer != null ? answer.getDetails() : "no answer");
+                return;
+            }
+            logger.debug("Successfully cleaned up ablestack-v2k domain {} on host {}",
+                    task.getSourceVMName(), convertHost.getName());
+        } catch (AgentUnavailableException | OperationTimedoutException e) {
+            logger.warn("Could not cleanup ablestack-v2k domain {} on host {} due to: {}",
+                    task.getSourceVMName(), convertHost.getName(), e.getMessage());
+        }
+    }
+
+    protected void cleanupAblestackV2KDomain(ImportVMTaskVO task) {
+        if (task == null || task.getConvertHostId() == null) {
+            return;
+        }
+        HostVO convertHost = hostDao.findById(task.getConvertHostId());
+        cleanupAblestackV2KDomain(task, convertHost);
+    }
+    private boolean isDefaultVmImportTemplate(VirtualMachineTemplate template, Hypervisor.HypervisorType hypervisorType) {
+        if (template == null || StringUtils.isBlank(template.getName())) {
+            return false;
+        }
+        if (Hypervisor.HypervisorType.KVM.equals(hypervisorType)) {
+            return KVM_VM_IMPORT_DEFAULT_TEMPLATE_NAME.equals(template.getName());
+        }
+        return VM_IMPORT_DEFAULT_TEMPLATE_NAME.equals(template.getName());
+    }
+
+    @Override
+    @ActionEvent(eventType = EventTypes.EVENT_VM_IMPORT, eventDescription = "importing VM through ablestack-v2k", async = true)
+    public UserVmResponse importVmForAblestackV2K(ImportUnmanagedInstanceForAblestackV2KCmd cmd) {
+        if (cmd == null) {
+            throw new InvalidParameterValueException("Import command cannot be null");
+        }
+        if (!ImportSource.VMWARE.toString().equalsIgnoreCase(cmd.getImportSource())) {
+            throw new InvalidParameterValueException("importsource must be VMWARE for importUnmanagedInstanceForAblestackV2K");
+        }
+        startAblestackV2KVmImport(cmd);
+        return new UserVmResponse();
+    }
+
+    protected void startAblestackV2KVmImport(ImportUnmanagedInstanceForAblestackV2KCmd cmd) {
+        if (StringUtils.equalsIgnoreCase(cmd.getSplitMode(), "phase2") && StringUtils.isNotBlank(cmd.getImportVmTaskId())) {
+            continueAblestackV2KVmImport(cmd);
+            return;
+        }
+        basicParametersCheckForImportInstance(cmd.getName(), cmd.getDomainId(), cmd.getAccountName());
+
+        final String instanceName = cmd.getName();
+        Cluster cluster = basicAccessChecks(cmd.getClusterId());
+        if (!cluster.getAllocationState().equals(Cluster.AllocationState.Enabled)) {
+            throw new InvalidParameterValueException(String.format("Cluster [%s] is not enabled.", cluster));
+        }
+
+        final DataCenter zone = dataCenterDao.findById(cluster.getDataCenterId());
+        final Account owner = accountService.getActiveAccountById(cmd.getEntityOwnerId());
+        long userId = getUserIdForImportInstance(owner);
+
+        ServiceOfferingVO serviceOffering = getServiceOfferingForImportInstance(cmd.getServiceOfferingId(), owner, zone);
+        String displayName = getDisplayNameForImportInstance(cmd.getDisplayName(), instanceName);
+        String hostName = getHostNameForImportInstance(cmd.getHostName(), cluster.getHypervisorType(), instanceName, displayName);
+        checkVmwareInstanceNameForImportInstance(cluster.getHypervisorType(), instanceName, hostName, zone);
+        Map<String, Long> nicNetworkMap = cmd.getNicNetworkList();
+        Map<String, Network.IpAddresses> nicIpAddressMap = cmd.getNicIpAddressList();
+        Map<String, String> serviceOfferingDetails = cmd.getDetails();
+
+        ActionEventUtils.onStartedActionEvent(userId, owner.getId(), EventTypes.EVENT_VM_IMPORT,
+                cmd.getEventDescription(), null, null, true, 0);
+        try {
+            startVmwareToKvmConversionWithAblestackV2K(zone, cluster, instanceName, displayName, hostName, owner, userId,
+                    serviceOffering, nicNetworkMap, nicIpAddressMap, serviceOfferingDetails, cmd, cmd.isForced());
+            ActionEventUtils.onCompletedActionEvent(userId, owner.getId(), EventVO.LEVEL_INFO, EventTypes.EVENT_VM_IMPORT,
+                    cmd.getEventDescription(), null, ApiCommandResourceType.VirtualMachine.toString(), 0);
+        } catch (RuntimeException e) {
+            ActionEventUtils.onCompletedActionEvent(userId, owner.getId(), EventVO.LEVEL_ERROR, EventTypes.EVENT_VM_IMPORT,
+                    cmd.getEventDescription(), null, null, 0);
+            throw e;
+        }
+    }
+
+    protected String getImportedDiskPath(UnmanagedInstanceTO.Disk disk) {
+        String fileBaseName = StringUtils.trimToNull(disk.getFileBaseName());
+        if (fileBaseName != null) {
+            return fileBaseName;
+        }
+
+        String imagePath = StringUtils.trimToNull(disk.getImagePath());
+        if (imagePath == null) {
+            return null;
+        }
+
+        String normalizedPath = imagePath;
+        if (StringUtils.startsWithIgnoreCase(normalizedPath, "rbd:")) {
+            normalizedPath = StringUtils.substringAfter(normalizedPath, "rbd:");
+        }
+        normalizedPath = StringUtils.removeEnd(normalizedPath, "/");
+
+        String imageName = StringUtils.substringAfterLast(normalizedPath, "/");
+        imageName = StringUtils.substringBefore(imageName, "@");
+        if (StringUtils.isNotBlank(imageName)) {
+            return imageName;
+        }
+
+        return normalizedPath;
+    }
+
+    private UnmanagedInstanceTO getSourceVmwareUnmanagedInstanceWithoutClone(String vcenter, String datacenterName, String username,
+                                                                             String password, String clusterName, String sourceHostName,
+                                                                             String sourceVM, ServiceOfferingVO serviceOffering) {
+        HypervisorGuru vmwareGuru = hypervisorGuruManager.getGuru(Hypervisor.HypervisorType.VMware);
+
+        Map<String, String> params = createParamsForTemplateFromVmwareVmMigration(vcenter, datacenterName,
+                username, password, clusterName, sourceHostName, sourceVM);
+        addServiceOfferingDetailsToParams(params, serviceOffering);
+
+        return vmwareGuru.getHypervisorVMOutOfBand(sourceHostName, sourceVM, params);
     }
 
     @Override

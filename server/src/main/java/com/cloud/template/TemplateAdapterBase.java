@@ -223,7 +223,6 @@ public abstract class TemplateAdapterBase extends AdapterBase implements Templat
                 writableImageStores.stream().anyMatch(store -> store.getId() == imageStore.getId());
     }
 
-
     /**
      * If the template/ISO is marked as private, then it is allocated to a random secondary storage; otherwise, allocates to every storage pool in every zone given by the
      * {@link TemplateProfile#getZoneIdList()}.

@@ -1453,6 +1453,37 @@ public class VMwareGuru extends HypervisorGuruBase implements HypervisorGuru, Co
         }
     }
 
+    @Override
+    public UnmanagedInstanceTO getHypervisorVMOutOfBand(String hostIp, String vmName, Map<String, String> params) {
+        String vcenter = params.get(VmDetailConstants.VMWARE_VCENTER_HOST);
+        String datacenter = params.get(VmDetailConstants.VMWARE_DATACENTER_NAME);
+        String username = params.get(VmDetailConstants.VMWARE_VCENTER_USERNAME);
+        String password = params.get(VmDetailConstants.VMWARE_VCENTER_PASSWORD);
+        Integer requestedCpuNumber = params.containsKey(VmDetailConstants.CPU_NUMBER) ? Integer.parseInt(params.get(VmDetailConstants.CPU_NUMBER)) : null;
+        Integer requestedCpuSpeed = params.containsKey(VmDetailConstants.CPU_SPEED) ? Integer.parseInt(params.get(VmDetailConstants.CPU_SPEED)) : null;
+        Integer requestedMemory = params.containsKey(VmDetailConstants.MEMORY) ? Integer.parseInt(params.get(VmDetailConstants.MEMORY)) : null;
+
+        try {
+            VmwareContext context = connectToVcenter(vcenter, username, password);
+            DatacenterMO dataCenterMO = new DatacenterMO(context, datacenter);
+            VirtualMachineMO vmMo = dataCenterMO.findVm(vmName);
+            if (vmMo == null) {
+                String err = String.format("Cannot find VM with name %s on vCenter %s/%s", vmName, vcenter, datacenter);
+                logger.error(err);
+                throw new CloudRuntimeException(err);
+            }
+
+            checkSourceVmResourcesAgainstSelectedOfferingResources(vmMo, requestedCpuNumber, requestedCpuSpeed, requestedMemory);
+            return VmwareHelper.getUnmanagedInstance(vmMo.getRunningHost(), vmMo);
+        } catch (CloudRuntimeException cre) {
+            throw cre;
+        } catch (Exception e) {
+            String err = String.format("Error while finding VM: %s from vCenter %s: %s", vmName, vcenter, e.getMessage());
+            logger.error(err, e);
+            throw new CloudRuntimeException(err, e);
+        }
+    }
+
     protected void checkSourceVmResourcesAgainstSelectedOfferingResources(VirtualMachineMO vmMo, Integer requestedCpuNumber, Integer requestedCpuSpeed, Integer requestedMemory) throws Exception {
         if (ObjectUtils.allNull(requestedCpuNumber, requestedCpuSpeed, requestedMemory)) {
             return;
