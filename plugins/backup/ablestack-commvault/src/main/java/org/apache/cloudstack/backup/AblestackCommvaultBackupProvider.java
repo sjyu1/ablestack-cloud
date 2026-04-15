@@ -1359,7 +1359,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 restoreCommand.setVmExists(null);
                 restoreCommand.setVmState(vmNameAndState.second());
                 restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
-                restoreCommand.setRestorePlan(createRestorePlan(AblestackBackupFrameworkUtils.requiresRunningVmAttach(vmNameAndState.second())));
+                restoreCommand.setRestorePlan(createRestorePlan(false));
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setCacheMode(cacheMode);
                 restoreCommand.setHostName(null);
@@ -1380,23 +1380,32 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     } catch (Exception e) {
                         throw new CloudRuntimeException("Unable to create restored volume due to: " + e);
                     }
+                    LOG.info("Successfully restored volume {} from backup {} on the Commvault Backup Provider. Restored volume UUID: {}",
+                            backupVolumeInfo.getUuid(), backup, restoredVolume.getUuid());
                     return new Pair<>(answer.getResult(), answer.getDetails());
                 } else {
                     final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
                     Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
                     String command = String.format(RM_COMMAND, restoreSourcePath);
                     executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
+                    return new Pair<>(false, StringUtils.defaultIfBlank(answer.getDetails(),
+                            String.format("Restore agent returned failure for volume [%s] on host [%s]", backupVolumeInfo.getUuid(), restoreHost.getName())));
                 }
                 } else {
-                    LOG.error("Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job status is " + jobStatus);
+                    String errorMessage = "Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job status is " + jobStatus;
+                    LOG.error(errorMessage);
+                    return new Pair<>(false, errorMessage);
                 }
             } else {
-                LOG.error("Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job commvault api");
+                String errorMessage = "Failed to restore backup for VM " + vmNameAndState.first() + " to restore backup job commvault api";
+                LOG.error(errorMessage);
+                return new Pair<>(false, errorMessage);
             }
         } finally {
             cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
         }
-        return new Pair<>(false, null);
+        return new Pair<>(false, String.format("Failed to restore volume [%s] from backup [%s] on the Commvault Backup Provider",
+                backupVolumeInfo.getUuid(), backup.getUuid()));
     }
 
     private Optional<Backup.VolumeInfo> getBackedUpVolumeInfo(List<Backup.VolumeInfo> backedUpVolumes, String volumeUuid) {

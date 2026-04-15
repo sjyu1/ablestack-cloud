@@ -1637,6 +1637,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     result = backupProvider.restoreBackedUpVolume(backup, backupVolumeInfo, hostData, datastoreData, new Pair<>(vm.getName(), vm.getState()));
 
                     if (BooleanUtils.isTrue(result.first())) {
+                        logger.info("Successfully restored volume [UUID: {}] using host [{}] and datastore [{}] through backup provider [{}]. Result details: [{}]",
+                                backupVolumeInfo.getUuid(), hostData, datastoreData, backupProvider.getName(), result.second());
                         return result;
                     }
                 } catch (Exception e) {

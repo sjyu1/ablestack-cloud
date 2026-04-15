@@ -178,12 +178,6 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
                     String.format(FILE_PATH_PLACEHOLDER, mountDirectory, backupPath), 0, true)) {
                 throw new CloudRuntimeException(String.format("Unable to restore backup from volume [%s].", volumePath));
             }
-            if (AblestackBackupFrameworkUtils.hasRestoreStage(restorePlan, BackupRestoreStage.ATTACH_VOLUME)
-                    && VirtualMachine.State.Running.equals(vmNameAndState.second())) {
-                if (!attachVolumeToVm(storagePoolMgr, vmNameAndState.first(), restoreVolumePool, volumePath, cacheMode)) {
-                    throw new CloudRuntimeException(String.format("Failed to attach volume to VM: %s", vmNameAndState.first()));
-                }
-            }
         } finally {
             cleanupMountedBackupDirectory(mountDirectory, restorePlan);
         }
