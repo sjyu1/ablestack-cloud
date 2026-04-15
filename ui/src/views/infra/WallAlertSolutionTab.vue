@@ -120,7 +120,7 @@
 </template>
 
 <script>
-import { api } from '@/api'
+import { getAPI } from '@/api'
 import { ClockCircleOutlined } from '@ant-design/icons-vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
@@ -312,7 +312,7 @@ export default {
 
       this.loading = true
       try {
-        const resp = await api('listWallAlertRules', { uid })
+        const resp = await getAPI('listWallAlertRules', { uid })
         const rule = this.pickFirstRule(resp)
 
         if (rule) {
@@ -390,7 +390,7 @@ export default {
 
       this.saving = true
       try {
-        await api(
+        await getAPI(
           'updateWallAlertRuleAnnotations',
           { uid },
           'post',

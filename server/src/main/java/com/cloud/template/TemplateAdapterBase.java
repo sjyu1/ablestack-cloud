@@ -187,6 +187,11 @@ public abstract class TemplateAdapterBase extends AdapterBase implements Templat
             return false;
         }
 
+        if (!isWritableImageStore(imageStore, zoneId)) {
+            logger.info("Image store [{}] is readonly. Skip downloading template to this image store.", imageStore);
+            return false;
+        }
+
         if (!_statsCollector.imageStoreHasEnoughCapacity(imageStore)) {
             logger.info("Image store doesn't have enough capacity. Skip downloading template to this image store [{}].", imageStore);
             return false;

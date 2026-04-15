@@ -206,6 +206,7 @@ public class KVMStorageProcessor implements StorageProcessor {
     private static final String DOMJOBINFO_COMPLETED_COMMAND = "virsh domjobinfo --domain %s --completed";
 
     private static final String DOMJOBABORT_COMMAND = "virsh domjobabort --domain %s";
+    private static final int DOMAIN_AFFECT_LIVE = 1;
 
     private static final String DUMMY_VM_XML = "<domain type='qemu'>\n" +
             "  <name>%s</name>\n" +
@@ -1211,7 +1212,7 @@ public class KVMStorageProcessor implements StorageProcessor {
         }
 
         final List<DiskDef> disks = resource.getDisks(conn, vmName);
-        attachOrDetachDevice(conn, true, vmName, iso);
+        updateOrAttachIsoDevice(conn, vmName, iso);
         if (!isAttach) {
             for (final DiskDef disk : disks) {
                 if (disk.getDeviceType() == DiskDef.DeviceType.CDROM) {
@@ -1219,6 +1220,36 @@ public class KVMStorageProcessor implements StorageProcessor {
                 }
             }
 
+        }
+    }
+
+    protected synchronized void updateOrAttachIsoDevice(final Connect conn, final String vmName, final DiskDef iso) throws LibvirtException, InternalErrorException {
+        try {
+            updateDevice(conn, vmName, iso);
+        } catch (final LibvirtException e) {
+            logger.debug(String.format("Failed to update existing CD-ROM device on VM [%s], will try attachDevice fallback.", vmName), e);
+            attachOrDetachDevice(conn, true, vmName, iso);
+        }
+    }
+
+    protected synchronized void updateDevice(final Connect conn, final String vmName, final DiskDef diskDef) throws LibvirtException {
+        Domain dm = null;
+        final String diskXml = diskDef.toString();
+        try {
+            dm = conn.domainLookupByName(vmName);
+            logger.debug("Updating device: " + diskXml);
+            dm.updateDeviceFlags(diskXml, DOMAIN_AFFECT_LIVE);
+        } catch (final LibvirtException e) {
+            logger.warn("Failed to update device on " + vmName + ": " + e.getMessage());
+            throw e;
+        } finally {
+            if (dm != null) {
+                try {
+                    dm.free();
+                } catch (final LibvirtException l) {
+                    logger.trace("Ignoring libvirt error.", l);
+                }
+            }
         }
     }
 
