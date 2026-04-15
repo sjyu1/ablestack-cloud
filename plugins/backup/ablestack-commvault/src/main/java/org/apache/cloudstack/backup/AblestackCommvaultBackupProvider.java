@@ -1306,6 +1306,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 if (pool == null) {
                     throw new CloudRuntimeException(String.format("Unable to find primary storage pool for restore target [%s]", dataStoreUuid));
                 }
+                HostVO vmHost = hostDao.findByIp(hostIp);
+                if (vmHost == null) {
+                    vmHost = hostDao.findByName(hostIp);
+                }
+                if (vmHost == null) {
+                    throw new CloudRuntimeException(String.format("Unable to find VM host [%s] for Commvault volume restore", hostIp));
+                }
                 // 복원된 호스트 정의
                 HostVO restoreHost = hostDao.findByName(clientName);
                 if (restoreHost == null) {
@@ -1359,15 +1366,15 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 restoreCommand.setVmExists(null);
                 restoreCommand.setVmState(vmNameAndState.second());
                 restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
-                restoreCommand.setRestorePlan(createRestorePlan(false));
+                restoreCommand.setRestorePlan(createRestorePlan(AblestackBackupFrameworkUtils.requiresRunningVmAttach(vmNameAndState.second())));
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setCacheMode(cacheMode);
-                restoreCommand.setHostName(null);
+                restoreCommand.setHostName(restoreHost.getName());
                 restoreCommand.setBackupSourceHosts(additionalSourceHosts);
 
                 BackupAnswer answer;
                 try {
-                    answer = (BackupAnswer) agentManager.send(restoreHost.getId(), restoreCommand);
+                    answer = (BackupAnswer) agentManager.send(vmHost.getId(), restoreCommand);
                 } catch (AgentUnavailableException e) {
                     throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
                 } catch (OperationTimedoutException e) {

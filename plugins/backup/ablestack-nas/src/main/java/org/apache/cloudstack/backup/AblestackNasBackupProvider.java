@@ -898,24 +898,39 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     public Pair<Boolean, String> restoreBackedUpVolume(Backup backup, Backup.VolumeInfo backupVolumeInfo, String hostIp, String dataStoreUuid, Pair<String, VirtualMachine.State> vmNameAndState) {
         final VolumeVO volume = volumeDao.findByUuid(backupVolumeInfo.getUuid());
         final DiskOffering diskOffering = diskOfferingDao.findByUuid(backupVolumeInfo.getDiskOfferingId());
+        if (diskOffering == null) {
+            throw new CloudRuntimeException(String.format("Unable to find disk offering [%s] for backed up volume [%s]",
+                    backupVolumeInfo.getDiskOfferingId(), backupVolumeInfo.getUuid()));
+        }
         String cacheMode = null;
         final VMInstanceVO vm = vmInstanceDao.findVMByInstanceName(vmNameAndState.first());
+        if (vm == null) {
+            throw new CloudRuntimeException(String.format("Unable to find VM [%s] for NAS volume restore", vmNameAndState.first()));
+        }
         List<VolumeVO> listVolumes = volumeDao.findByInstanceAndType(vm.getId(), Type.ROOT);
         if(CollectionUtils.isNotEmpty(listVolumes)) {
             VolumeVO rootDisk = listVolumes.get(0);
             DiskOffering baseDiskOffering = diskOfferingDao.findById(rootDisk.getDiskOfferingId());
-            if (baseDiskOffering.getCacheMode() != null) {
+            if (baseDiskOffering != null && baseDiskOffering.getCacheMode() != null) {
                 cacheMode = baseDiskOffering.getCacheMode().toString();
             }
         }
         StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
         if (pool == null) {
             List<StoragePoolVO> pools = primaryDataStoreDao.findPoolByName(dataStoreUuid);
-            pool = pools.get(0);
+            if (CollectionUtils.isNotEmpty(pools)) {
+                pool = pools.get(0);
+            }
         }
-        HostVO hostVO = hostDao.findByIp(hostIp);
-        if (hostVO == null) {
-            hostVO = hostDao.findByName(hostIp);
+        if (pool == null) {
+            throw new CloudRuntimeException(String.format("Unable to find primary storage pool for restore target [%s]", dataStoreUuid));
+        }
+        HostVO vmHost = hostDao.findByIp(hostIp);
+        if (vmHost == null) {
+            vmHost = hostDao.findByName(hostIp);
+        }
+        if (vmHost == null) {
+            throw new CloudRuntimeException(String.format("Unable to find VM host [%s] for NAS volume restore", hostIp));
         }
 
         Backup.VolumeInfo matchingVolume = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), volume.getUuid());
@@ -957,8 +972,12 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         restoreCommand.setVmName(vmNameAndState.first());
         restoreCommand.setRestoreVolumePaths(Collections.singletonList(String.format("%s/%s", getVolumePathPrefix(pool), volumeUUID)));
         DataStore dataStore = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
+        if (dataStore == null) {
+            throw new CloudRuntimeException(String.format("Unable to get primary datastore TO for pool [%s] while restoring volume [%s]",
+                    pool.getUuid(), backupVolumeInfo.getUuid()));
+        }
         restoreCommand.setRestoreVolumePools(Collections.singletonList(dataStore != null ? (PrimaryDataStoreTO)dataStore.getTO() : null));
-        restoreCommand.setDiskType(backupVolumeInfo.getType().name().toLowerCase(Locale.ROOT));
+        restoreCommand.setDiskType(matchingVolume.getType().name().toLowerCase(Locale.ROOT));
         restoreCommand.setMountOptions(backupRepository.getMountOptions());
         restoreCommand.setVmExists(null);
         restoreCommand.setVmState(vmNameAndState.second());
@@ -973,7 +992,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
         BackupAnswer answer;
         try {
-            answer = (BackupAnswer) agentManager.send(hostVO.getId(), restoreCommand);
+            LOG.info("Restoring volume {} from backup {} on the NAS Backup Provider using VM host [{}]",
+                    backupVolumeInfo.getUuid(), backup, vmHost.getName());
+            answer = (BackupAnswer) agentManager.send(vmHost.getId(), restoreCommand);
         } catch (AgentUnavailableException e) {
             throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
         } catch (OperationTimedoutException e) {
@@ -983,6 +1004,8 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         if (answer.getResult()) {
             try {
                 volumeDao.persist(restoredVolume);
+                LOG.info("Successfully restored volume {} from backup {} on the NAS Backup Provider. Restored volume UUID: {}",
+                        backupVolumeInfo.getUuid(), backup, restoredVolume.getUuid());
             } catch (Exception e) {
                 throw new CloudRuntimeException("Unable to create restored volume due to: " + e);
             }
