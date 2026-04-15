@@ -1404,8 +1404,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         } finally {
             cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
         }
-        return new Pair<>(false, String.format("Failed to restore volume [%s] from backup [%s] on the Commvault Backup Provider",
-                backupVolumeInfo.getUuid(), backup.getUuid()));
     }
 
     private Optional<Backup.VolumeInfo> getBackedUpVolumeInfo(List<Backup.VolumeInfo> backedUpVolumes, String volumeUuid) {
