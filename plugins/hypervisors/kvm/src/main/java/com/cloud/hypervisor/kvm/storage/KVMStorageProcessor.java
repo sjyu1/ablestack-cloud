@@ -1424,7 +1424,7 @@ public class KVMStorageProcessor implements StorageProcessor {
             throws LibvirtException, InternalErrorException {
         attachOrDetachDisk(conn, attach, vmName, attachingDisk, devId, serial, bytesReadRate, bytesReadRateMax, bytesReadRateMaxLength,
                 bytesWriteRate, bytesWriteRateMax, bytesWriteRateMaxLength, iopsReadRate, iopsReadRateMax, iopsReadRateMaxLength, iopsWriteRate,
-                iopsWriteRateMax, iopsWriteRateMaxLength, cacheMode, encryptDetails, provider, krbdpath, shareable, kvdoEnable, details, controllerInfo);
+                iopsWriteRateMax, iopsWriteRateMaxLength, cacheMode, encryptDetails, provider, krbdpath, shareable, kvdoEnable, 0l, details, controllerInfo);
     }
 
     /**
