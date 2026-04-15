@@ -1450,6 +1450,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         long totalBytes = 0L;
         Backup current = backup;
         while (current != null) {
+            loadBackupDetailsIfNeeded(current);
             String currentPath = parseExternalId(current.getExternalId()).first();
             if (restoreSourcePaths.contains(currentPath)) {
                 totalBytes += Math.max(current.getSize(), 0L);
