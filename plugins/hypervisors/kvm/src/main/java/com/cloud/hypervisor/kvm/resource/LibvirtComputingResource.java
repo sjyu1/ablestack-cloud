@@ -344,7 +344,7 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
     // ovftool --version => sample output: VMware ovftool 4.6.0 (build-21452615)
     public static final String OVF_EXPORT_TOOl_GET_VERSION_CMD = "ovftool --version | awk '{print $3}'";
 
-    public static final String WINDOWS_GUEST_CONVERSION_SUPPORTED_CHECK_CMD = "rpm -qa | grep -i virtio-win";
+    public static final String WINDOWS_GUEST_CONVERSION_SUPPORTED_PACKAGE = "virtio-win";
     public static final String UBUNTU_WINDOWS_GUEST_CONVERSION_SUPPORTED_CHECK_CMD = "dpkg -l virtio-win";
     public static final String UBUNTU_NBDKIT_PKG_CHECK_CMD = "dpkg -l nbdkit";
 
@@ -6157,12 +6157,27 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
         return exitValue == 0;
     }
 
+    public int runPackageQueryWithFallback(final String packageName, final long timeout) {
+        int exitValue = runPackageQuery("aspkg", packageName, timeout);
+        if (exitValue == 0) {
+            return exitValue;
+        }
+        return runPackageQuery("rpm", packageName, timeout);
+    }
+
+    private int runPackageQuery(final String packageManager, final String packageName, final long timeout) {
+        List<String[]> commands = new ArrayList<>();
+        commands.add(new String[]{Script.getExecutableAbsolutePath(packageManager), "-qa"});
+        commands.add(new String[]{Script.getExecutableAbsolutePath("grep"), "-i", packageName});
+        return Script.executePipedCommands(commands, timeout).first();
+    }
+
     public boolean hostSupportsWindowsGuestConversion() {
         if (isUbuntuHost()) {
             int exitValue = Script.runSimpleBashScriptForExitValue(UBUNTU_WINDOWS_GUEST_CONVERSION_SUPPORTED_CHECK_CMD);
             return exitValue == 0;
         }
-        int exitValue = Script.runSimpleBashScriptForExitValue(WINDOWS_GUEST_CONVERSION_SUPPORTED_CHECK_CMD);
+        int exitValue = runPackageQueryWithFallback(WINDOWS_GUEST_CONVERSION_SUPPORTED_PACKAGE, getCmdsTimeout());
         return exitValue == 0;
     }
 
