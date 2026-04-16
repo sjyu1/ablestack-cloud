@@ -50,6 +50,17 @@
                   <a-button size="small" @click.stop="goToAlertRulesMenu">
                     {{ tr('label.goto.the.alertRules') }}
                   </a-button>
+
+                  <a-button
+                    size="small"
+                    type="text"
+                    :aria-label="tr('label.close')"
+                    @click.stop="markAllAsRead"
+                  >
+                    <template #icon>
+                      <CloseOutlined />
+                    </template>
+                  </a-button>
                 </a-space>
               </div>
             </div>
@@ -166,9 +177,6 @@
                                     >
                                       {{ lnk.label }}
                                     </a>
-                                    <span v-if="lnk.valueText" class="target-value-metric">
-                                      ({{ lnk.valueText }})
-                                    </span>
                                   </div>
                                 </template>
 
@@ -185,9 +193,6 @@
                                     >
                                       {{ lnk.label }}
                                     </a>
-                                    <span v-if="lnk.valueText" class="target-value-metric">
-                                      ({{ lnk.valueText }})
-                                    </span>
                                   </div>
                                 </template>
 
@@ -204,9 +209,6 @@
                                     >
                                       {{ lnk.label }}
                                     </a>
-                                    <span v-if="lnk.valueText" class="target-value-metric">
-                                      ({{ lnk.valueText }})
-                                    </span>
                                   </div>
                                 </template>
 
@@ -223,9 +225,6 @@
                                     >
                                       {{ lnk.label }}
                                     </a>
-                                    <span v-if="lnk.valueText" class="target-value-metric">
-                                      ({{ lnk.valueText }})
-                                    </span>
                                   </div>
                                 </template>
                               </div>
@@ -643,7 +642,7 @@ import {
   nextTick,
   getCurrentInstance
 } from 'vue'
-import { ExclamationCircleFilled, SoundOutlined, PauseCircleOutlined, LinkOutlined } from '@ant-design/icons-vue'
+import { ExclamationCircleFilled, SoundOutlined, PauseCircleOutlined, LinkOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { getAPI } from '@/api'
 import MarkdownIt from 'markdown-it'
@@ -656,6 +655,7 @@ export default {
     SoundOutlined,
     PauseCircleOutlined,
     LinkOutlined,
+    CloseOutlined,
     RuleSilenceModal: defineAsyncComponent(() => import('@/views/infra/RuleSilenceModal.vue')),
     RulePauseModal: defineAsyncComponent(() => import('@/views/infra/RulePauseModal.vue'))
   },
@@ -1388,6 +1388,25 @@ export default {
       // 0~1 사이 비율(0.1533)을 %로 전달하는 케이스 보정합니다.
       if (unit === '%' && v >= 0 && v <= 1) { v = v * 100 }
 
+      // bytes/sec 계열은 값만 자동 축약하고, 제목의 원 단위는 그대로 둡니다.
+      if (unit && /^(bytes?|b)(\/sec|\/s)$/i.test(String(unit).trim())) {
+        const absBytes = Math.abs(v)
+        const scales = [
+          { div: 1024 * 1024 * 1024, unit: 'GB/s' },
+          { div: 1024 * 1024, unit: 'MB/s' },
+          { div: 1024, unit: 'KB/s' }
+        ]
+
+        for (let i = 0; i < scales.length; i += 1) {
+          const scale = scales[i]
+          if (absBytes >= scale.div) {
+            const scaled = v / scale.div
+            const decimals = Math.abs(scaled) >= 100 ? 0 : (Math.abs(scaled) >= 10 ? 1 : 2)
+            return `${String(scaled.toFixed(decimals)).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')} ${scale.unit}`
+          }
+        }
+      }
+
       const abs = Math.abs(v)
       let s = ''
 
@@ -1423,9 +1442,19 @@ export default {
       return `${s}${sep}${unit}`
     }
 
+    const isStateLikeRule = (it) => {
+      const r = it && it.rule ? it.rule : it
+      const title = String(takeFirst(it && it.title, r && r.title, r && r.name) || '').toLowerCase()
+      return /(상태|status|sensor|health|agent|에이전트|collector|수집기)/i.test(title)
+    }
+
+    const isDiscreteTargetRule = (it) => {
+      return isBinaryTargetRule(it) || isStateLikeRule(it)
+    }
+
     const drawerItemMetricInlineText = (it) => {
       // 상태형(0/1) 규칙은 숫자 표시 대신 상태만 표시합니다.
-      if (isBinaryTargetRule(it)) {
+      if (isDiscreteTargetRule(it)) {
         const hasBad = breachedKeysOf(it).length > 0
         return hasBad ? tr('label.current.bad') : tr('label.current.ok')
       }
@@ -1471,7 +1500,7 @@ export default {
     }
 
     const drawerItemMetricLineText = (it) => {
-      if (isBinaryTargetRule(it)) {
+      if (isDiscreteTargetRule(it)) {
         const hasBad = breachedKeysOf(it).length > 0
         return hasBad ? tr('label.current.state.bad') : tr('label.current.state.ok')
       }
@@ -1509,7 +1538,7 @@ export default {
 
     const drawerItemMetricUi = (it) => {
       // 템플릿에서 부분 스타일 적용이 가능하도록, 현재/임계값을 분리한 구조를 반환합니다.
-      if (isBinaryTargetRule(it)) {
+      if (isDiscreteTargetRule(it)) {
         const hasBad = breachedKeysOf(it).length > 0
         return {
           kind: 'binary',
@@ -2258,7 +2287,7 @@ export default {
     }
 
     const breachedLabelText = (it) => {
-      if (isBinaryTargetRule(it)) {
+      if (isDiscreteTargetRule(it)) {
         return tr('label.targets.failed')
       }
       return tr('label.targets.breached')
@@ -2269,7 +2298,7 @@ export default {
       const parentKind = isCloudKind(parentKindRaw) ? 'cloud' : (isVmKind(parentKindRaw) ? 'vm' : (isStorageKind(parentKindRaw) ? 'storage' : 'host'))
 
       const unit = metricUnitOf(it)
-      const binary = isBinaryTargetRule(it)
+      const binary = isDiscreteTargetRule(it)
       const out = []
       const seen = new Set()
 
@@ -3277,13 +3306,6 @@ export default {
 
 .target-value-link:hover {
   text-decoration: underline;
-}
-
-.target-value-metric {
-  margin-left: 4px;
-  color: rgba(0, 0, 0, 0.65);
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .target-sep {

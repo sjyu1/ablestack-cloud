@@ -1432,7 +1432,7 @@ export default {
     },
     handleContextAction (action) {
       this.closeContextQuickView()
-      this.$parent.execAction(action)
+      this.$parent.execAction(action, false)
     },
     generateRowKeyValue (record) {
       return record.uid || (record.metadata && record.metadata.rule_uid) || record.id || record.name || record.usageType

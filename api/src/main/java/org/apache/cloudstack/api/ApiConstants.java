@@ -1414,6 +1414,10 @@ public class ApiConstants {
     public static final String LISTHOSTDEVICES = "listhostdevices";
     public static final String HOSTDEVICES_NAME = "hostdevicesname";
     public static final String HOSTDEVICES_TEXT = "hostdevicestext";
+    public static final String HOSTDEVICES_TYPE = "hostdevicestype";
+    public static final String DEVICE_TYPE = "devicetype";
+    public static final String LUN_PATH_MODE = "lunpathmode";
+
     // Object Storage related
     public static final String BUCKET_AVAILABLE = "bucketavailable";
     public static final String BUCKET_LIMIT = "bucketlimit";
@@ -1423,8 +1427,6 @@ public class ApiConstants {
     public static final String OBJECT_STORAGE_AVAILABLE = "objectstorageavailable";
     public static final String OBJECT_STORAGE_LIMIT = "objectstoragelimit";
     public static final String OBJECT_STORAGE_TOTAL = "objectstoragetotal";
-    public static final String HOSTDEVICES_TYPE = "hostdevicestype";
-    public static final String DEVICE_TYPE = "devicetype";
 
     public static final String PARAMETER_DESCRIPTION_ACTIVATION_RULE = "Quota tariff's activation rule. It can receive a JS script that results in either " +
             "a boolean or a numeric value: if it results in a boolean value, the tariff value will be applied according to the result; if it results in a numeric value, the " +
