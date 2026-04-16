@@ -3958,7 +3958,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
     }
 
     protected void cleanupAblestackV2KDomain(ImportVMTaskVO task) {
-        if (task == null || task.getConvertHostId() == 0L) {
+        if (task == null || task.getConvertHostId() <= 0) {
             return;
         }
         HostVO convertHost = hostDao.findById(task.getConvertHostId());
