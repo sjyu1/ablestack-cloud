@@ -379,7 +379,7 @@ public class ImportVmTasksManagerImpl implements ImportVmTasksManager {
     }
 
     private void cleanupAblestackV2KDomain(ImportVMTaskVO task) {
-        if (task == null || task.getConvertHostId() == null || StringUtils.isBlank(task.getSourceVMName())) {
+        if (task == null || task.getConvertHostId() <= 0 || StringUtils.isBlank(task.getSourceVMName())) {
             return;
         }
         HostVO convertHost = hostDao.findById(task.getConvertHostId());
