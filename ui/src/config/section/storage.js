@@ -292,9 +292,12 @@ export default {
           message: 'message.action.delete.volume',
           dataView: true,
           show: (record, store) => {
+            const isDetached = !record.virtualmachineid
+            const isDetachedAllocatedRoot = record.state === 'Allocated' && record.type === 'ROOT' && isDetached
             return ['Expunging', 'Expunged', 'UploadError'].includes(record.state) ||
-                ['Allocated', 'Uploaded'].includes(record.state) && record.type !== 'ROOT' && !record.virtualmachineid ||
-                (record.state === 'Ready' && record.type !== 'ROOT' && !record.virtualmachineid) ||
+                ['Allocated', 'Uploaded'].includes(record.state) && record.type !== 'ROOT' && isDetached ||
+                (record.state === 'Ready' && record.type !== 'ROOT' && isDetached) ||
+                isDetachedAllocatedRoot ||
                 ((['Admin', 'DomainAdmin'].includes(store.userInfo.roletype) || store.features.allowuserexpungerecovervolume) && record.state === 'Destroy')
           },
           groupAction: true,
