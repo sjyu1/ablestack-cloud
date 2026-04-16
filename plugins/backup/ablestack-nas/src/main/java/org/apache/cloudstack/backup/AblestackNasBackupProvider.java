@@ -740,7 +740,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
                 .filter(backup -> {
                     BackupOffering offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
-                    return offering != null && Objects.equals(getName(), offering.getProvider());
+                    return offering != null && BackupProviderNameUtils.isNasFamily(offering.getProvider());
                 })
                 .peek(backupDao::loadDetails)
                 .max(Comparator.comparing(BackupVO::getDate))
@@ -1122,7 +1122,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public Pair<Long, Long> getBackupStorageStats(Long zoneId) {
-        final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, getName());
+        final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, BackupProviderNameUtils.toDisplayName(getName()));
         Long totalSize = 0L;
         Long usedSize = 0L;
         for (final BackupRepository repository : repositories) {
@@ -1138,7 +1138,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public void syncBackupStorageStats(Long zoneId) {
-        final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, getName());
+        final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, BackupProviderNameUtils.toDisplayName(getName()));
         final Host host = resourceManager.findOneRandomRunningHostByHypervisor(Hypervisor.HypervisorType.KVM, zoneId);
         for (final BackupRepository repository : repositories) {
             GetBackupStorageStatsCommand command = new GetBackupStorageStatsCommand(repository.getType(), repository.getAddress(), repository.getMountOptions());
@@ -1156,7 +1156,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public List<BackupOffering> listBackupOfferings(Long zoneId) {
-        final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, getName());
+        final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, BackupProviderNameUtils.toDisplayName(getName()));
         final List<BackupOffering> offerings = new ArrayList<>();
         for (final BackupRepository repository : repositories) {
             offerings.add(new AblestackNasBackupOffering(repository.getName(), repository.getUuid()));
