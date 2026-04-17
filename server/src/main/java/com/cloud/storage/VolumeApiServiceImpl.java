@@ -4043,7 +4043,6 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         }
 
         _accountMgr.checkAccess(caller, null, true, volume);
-        validateNoBackupActivityOrHistoryForVolumeSnapshot(volumeId, "create");
 
         if (volume.getState() != Volume.State.Ready) {
             throw new InvalidParameterValueException(String.format("Volume: %s is not in %s state but %s. Cannot take snapshot.", volume.getVolume(), Volume.State.Ready, volume.getState()));
@@ -4146,7 +4145,6 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         }
 
         _accountMgr.checkAccess(caller, null, true, volume);
-        validateNoBackupActivityOrHistoryForVolumeSnapshot(volumeId, "create");
 
         if (volume.getState() != Volume.State.Ready) {
             throw new InvalidParameterValueException(String.format("Volume: %s is not in %s state but %s. Cannot take snapshot.", volume.getVolume(), Volume.State.Ready, volume.getState()));
@@ -4424,6 +4422,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
                 }
             }
         }
+        validateNoBackupActivityOrHistoryForVolumeSnapshot(volumeId, "create");
         return snapshotMgr.allocSnapshot(volumeId, policyId, snapshotName, locationType, false, zoneIds);
     }
 
@@ -4504,6 +4503,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
             throw new InvalidParameterValueException("Cannot perform this operation, unsupported VM snapshot type.");
         }
 
+        validateNoBackupActivityOrHistoryForVolumeSnapshot(volumeId, "create");
         return snapshotMgr.allocSnapshot(volumeId, Snapshot.MANUAL_POLICY_ID, snapshotName, null, true, null);
     }
 
