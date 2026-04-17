@@ -78,6 +78,34 @@
 - Resolution notes:
   - `None`
 
+## Applied Records
+
+### Record 001 - EL10 python six compatibility packaging fix
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `80ee7f183f` Fix six package incompatiblity with EL10 (#12799)
+- Summary:
+  - Add EL packaging requirements for `python3-six` and `python3-protobuf`
+  - Bundle compatible `mysql_connector_python` wheels for both Python 3.6 and Python 3.8+
+  - Install the matching wheel in `%post management` based on detected Python version
+- Functional impact:
+  - Prevent EL10 package installation/runtime issues caused by Python dependency mismatch
+  - Preserve EL8 compatibility by keeping the Python 3.6-compatible connector path
+- Validation:
+  - Apache patch applied cleanly on `main` with no manual conflict resolution
+  - Staged diff only touches `packaging/el8/cloud.spec`
+- Europa cherry-pick status:
+  - `Applied with manual conflict resolution`
+- Conflict notes:
+  - `main` change targeted `packaging/el8/cloud.spec`, but Europa mapped the patch onto `packaging/centos7/cloud.spec`
+  - Europa already carried a custom `%post management` step for `pip3 install urllib3`
+- Resolution notes:
+  - Keep the Europa `centos7` spec path and preserve `pip3 install urllib3`
+  - Adopt the Apache fix intent by switching to RPM-provided `python3-six` and `python3-protobuf`
+  - Use Python-version-based `mysql_connector_python` wheel selection to cover both Python 3.6 and Python 3.8+ runtimes
+
 ## Initial Candidate Notes
 
 ### B00 - Metadata / CI / docs housekeeping
