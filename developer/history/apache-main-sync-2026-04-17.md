@@ -430,6 +430,30 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 016 - enforce secondary storage limits during download flows
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `03dfe4d1f3` secondary storage resource limit for download
+- Summary:
+  - Track `LIMIT_REACHED` as a first-class download error state and stop persisting bogus size values for failed downloads
+  - Use actual downloaded bytes as the fallback template size signal during secondary storage download progress
+  - Recalculate secondary storage counts after template registration callbacks so final counters match persisted store-ref state
+- Functional impact:
+  - Prevents template and volume downloads from silently overrunning secondary storage limits during in-progress updates
+  - Keeps template store size accounting consistent when download answers only report physical size or fail due to limit exhaustion
+- Validation:
+  - All download-state, resource-limit, and secondary-storage manager files applied cleanly on `main`
+  - `HypervisorTemplateAdapter` required a manual merge because the local branch still used an older callback structure that increments counts before recalculation
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`

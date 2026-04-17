@@ -413,8 +413,8 @@ public class HypervisorTemplateAdapter extends TemplateAdapterBase {
         CreateTemplateContext<TemplateApiResult> context) {
         TemplateApiResult result = callback.getResult();
         TemplateInfo template = context.template;
-        if (result.isSuccess()) {
-            VMTemplateVO tmplt = _tmpltDao.findById(template.getId());
+        VMTemplateVO tmplt = _tmpltDao.findById(template.getId());
+        if (result.isSuccess() && tmplt != null) {
             // need to grant permission for public templates
             if (tmplt.isPublicTemplate()) {
                 _messageBus.publish(_name, TemplateManager.MESSAGE_REGISTER_PUBLIC_TEMPLATE_EVENT, PublishScope.LOCAL, tmplt.getId());
@@ -450,6 +450,11 @@ public class HypervisorTemplateAdapter extends TemplateAdapterBase {
                 }
                 _resourceLimitMgr.incrementResourceCount(accountId, ResourceType.secondary_storage, template.getSize());
             }
+        }
+        if (tmplt != null) {
+            long accountId = tmplt.getAccountId();
+            Account account = _accountDao.findById(accountId);
+            _resourceLimitMgr.recalculateResourceCount(accountId, account.getDomainId(), ResourceType.secondary_storage.getOrdinal());
         }
 
         return null;
