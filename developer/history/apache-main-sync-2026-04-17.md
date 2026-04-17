@@ -694,6 +694,29 @@
   - Kept the local `backup_interval_type` drop and added only the Apache null-type backfill, without reintroducing unrelated upstream migration context
   - Preserved the Apache non-admin error for disallowed template upload requests and removed the now-redundant Europa-era ISO fallback branch after keeping the earlier ISO early return
 
+### Record 026 - show full network offering labels in add-tier dropdown
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `120a43648b` set width of dropdown select items for Network Offering during add tier dialog
+- Summary:
+  - Add a `title` attribute to network offering select options in `VpcTiersTab.vue`
+  - Reformat the option markup for readability while keeping the same displayed label text
+- Functional impact:
+  - Lets operators see the full network offering label on hover when the add-tier dropdown truncates long entries
+  - Improves network offering selection confidence in crowded UI environments without changing API or backend behavior
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `ui/src/views/network/VpcTiersTab.vue`
+  - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
