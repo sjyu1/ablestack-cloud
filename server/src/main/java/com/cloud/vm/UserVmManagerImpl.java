@@ -9472,8 +9472,13 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             Long hostId = vm.getHostId() != null ? vm.getHostId() : vm.getLastHostId();
 
             if (hostId != null) {
-                VolumeInfo volumeInfo = volFactory.getVolume(root.getId());
                 Host host = _hostDao.findById(hostId);
+                if (host == null) {
+                    logger.warn("Host {} not found", hostId);
+                    return;
+                }
+
+                VolumeInfo volumeInfo = volFactory.getVolume(root.getId());
 
                 final Command cmd;
 

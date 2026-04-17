@@ -212,11 +212,33 @@
   - Apache cherry-pick required manual conflict resolution on `main`
   - Verified the resolved method keeps the Apache condition for `userconcentratedpod_random` and the expanded logging changes
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied cleanly`
 - Conflict notes:
-  - `main` had diverged in `reorderStoragePoolsBasedOnAlgorithm`, where `userconcentratedpod_random` handling was missing and the log level differed
+  - `None on europa`
 - Resolution notes:
-  - Kept the Apache behavior by routing `userconcentratedpod_random` through the random reorder branch and preserving the newer logging
+  - `Europa received the same resolved logic before main was backfilled`
+
+### Record 007 - managed storage restore host null guard
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `84676afd5c` Check for null host before proceeding with VM volume operations in managed storage while restoring VM (#12879)
+- Summary:
+  - Guard managed-storage restore cleanup when the VM host lookup returns `null`
+  - Skip detach/delete command construction instead of dereferencing a missing host
+- Functional impact:
+  - Prevents restore-time failures caused by null host dereference during managed storage volume handling
+  - Allows the restore flow to exit this cleanup path safely when the previous host record is unavailable
+- Validation:
+  - Applied as a focused manual port on `main` to avoid unrelated formatting churn from the Apache patch
+  - Logic inspected in `handleManagedStorage`
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None on europa`
+- Resolution notes:
+  - `Cherry-pick applied on europa without manual edits`
 
 ### Observed Already Satisfied
 
