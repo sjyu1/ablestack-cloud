@@ -79,6 +79,10 @@ public interface BackupProvider {
      */
     Pair<Boolean, Backup> takeBackup(VirtualMachine vm, Boolean quiesceVM);
 
+    default Pair<Boolean, Backup> takeBackup(VirtualMachine vm, Boolean quiesceVM, Long backupScheduleId) {
+        return takeBackup(vm, quiesceVM);
+    }
+
     /**
      * Delete an existing backup
      * @param backup The backup to exclude

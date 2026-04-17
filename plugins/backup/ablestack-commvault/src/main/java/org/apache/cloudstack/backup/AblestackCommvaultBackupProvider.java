@@ -70,7 +70,6 @@ import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupDetailsDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDaoImpl;
-import org.apache.cloudstack.backup.dao.BackupScheduleDao;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -240,8 +239,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     @Inject
     private DiskOfferingDao diskOfferingDao;
 
-    @Inject
-    private BackupScheduleDao backupScheduleDao;
 
     private Long getClusterIdFromRootVolume(VirtualMachine vm) {
         VolumeVO rootVolume = volumeDao.getInstanceRootVolume(vm.getId());
@@ -301,6 +298,11 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Override
     public Pair<Boolean, Backup> takeBackup(VirtualMachine vm, Boolean quiesceVM) {
+        return takeBackup(vm, quiesceVM, null);
+    }
+
+    @Override
+    public Pair<Boolean, Backup> takeBackup(VirtualMachine vm, Boolean quiesceVM, Long backupScheduleId) {
         final Host vmHost = getVMHypervisorHostForBackup(vm);
         final HostVO vmHostVO = hostDao.findById(vmHost.getId());
         validateNoKvmFileBasedVmSnapshots(vm);
@@ -338,7 +340,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final Backup latestBackup = getLatestBackedUpBackup(vm);
-        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost, vmVolumes);
+        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost, vmVolumes, backupScheduleId != null);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, backupContentPath, vmVolumes, volumePoolsAndPaths,
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
@@ -362,7 +364,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 .orElse(null);
     }
 
-    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, Host vmHost, List<VolumeVO> vmVolumes) {
+    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, Host vmHost, List<VolumeVO> vmVolumes, boolean scheduledBackup) {
         if (latestBackup == null) {
             return false;
         }
@@ -385,18 +387,11 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             sealBackupChain(latestBackup, "stage-host-mismatch");
             return false;
         }
-        if (getBackupChainSize(vm, latestBackup) >= getEffectiveIncrementalLimit(vm)) {
+        if (getBackupChainSize(vm, latestBackup) >= BackupChainSize.value()) {
             sealBackupChain(latestBackup, "chain-size-limit");
             return false;
         }
         return true;
-    }
-
-    private int getEffectiveIncrementalLimit(VirtualMachine vm) {
-        List<Integer> scheduleMaxBackups = backupScheduleDao.listByVM(vm.getId()).stream()
-                .map(BackupScheduleVO::getMaxBackups)
-                .collect(Collectors.toList());
-        return AblestackBackupFrameworkUtils.getEffectiveIncrementalLimit(BackupChainSize.value(), scheduleMaxBackups);
     }
 
     private boolean canContinueIncrementalChain(VirtualMachine vm, Backup latestBackup, Host vmHost) {

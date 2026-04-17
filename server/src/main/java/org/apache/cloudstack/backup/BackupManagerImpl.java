@@ -947,7 +947,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 vmId, ApiCommandResourceType.VirtualMachine.toString(),
                 true, 0);
 
-        Pair<Boolean, Backup> result = backupProvider.takeBackup(vm, cmd.getQuiesceVM());
+        Pair<Boolean, Backup> result = backupProvider.takeBackup(vm, cmd.getQuiesceVM(), backupScheduleId);
         if (!result.first()) {
             throw new CloudRuntimeException("Failed to create VM backup");
         }
@@ -1025,37 +1025,145 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             return;
         }
 
-        logger.debug("Checking if it is required to delete the oldest backups from the schedule with ID [{}], to meet its retention requirement of [{}] backups.", backupScheduleId, backupScheduleVO.getMaxBackups());
+        logger.debug("Checking if it is required to delete the oldest backup chains from the schedule with ID [{}], to meet its retention requirement of [{}] chains.", backupScheduleId, backupScheduleVO.getMaxBackups());
         List<BackupVO> backups = backupDao.listBySchedule(backupScheduleId);
-        int amountOfBackupsToDelete = backups.size() - backupScheduleVO.getMaxBackups();
-        if (amountOfBackupsToDelete > 0) {
-            deleteExcessBackups(backups, amountOfBackupsToDelete, backupScheduleId);
+        List<List<BackupVO>> backupChains = getBackupChainsForSchedule(backups);
+        int amountOfChainsToDelete = backupChains.size() - backupScheduleVO.getMaxBackups();
+        if (amountOfChainsToDelete > 0) {
+            deleteExcessBackups(backupChains, amountOfChainsToDelete, backupScheduleId);
         } else {
-            logger.debug("Not required to delete any backups from the schedule [ID: {}]: [backups size: {}] and [retention: {}].", backupScheduleId, backups.size(), backupScheduleVO.getMaxBackups());
+            logger.debug("Not required to delete any backup chains from the schedule [ID: {}]: [chain count: {}] and [retention: {}].", backupScheduleId, backupChains.size(), backupScheduleVO.getMaxBackups());
         }
     }
 
     /**
      * Deletes a certain number of backups associated with a schedule.
      *
-     * @param backups List of backups associated with a schedule
-     * @param amountOfBackupsToDelete Number of backups to be deleted from the list of backups
+     * @param backupChains List of backup chains associated with a schedule
+     * @param amountOfChainsToDelete Number of backup chains to be deleted from the list of chains
      * @param backupScheduleId ID of the backup schedule associated with the backups
      */
-    protected void deleteExcessBackups(List<BackupVO> backups, int amountOfBackupsToDelete, long backupScheduleId) {
-        logger.debug("Deleting the [{}] oldest backups from the schedule [ID: {}].", amountOfBackupsToDelete, backupScheduleId);
+    protected void deleteExcessBackups(List<List<BackupVO>> backupChains, int amountOfChainsToDelete, long backupScheduleId) {
+        logger.debug("Deleting up to [{}] oldest backup chains from the schedule [ID: {}].", amountOfChainsToDelete, backupScheduleId);
 
-        for (int i = 0; i < amountOfBackupsToDelete; i++) {
-            BackupVO backup = backups.get(i);
-            if (deleteBackup(backup.getId(), false)) {
-                String eventDescription = String.format("Successfully deleted backup for VM [ID: %s], suiting the retention specified in the backup schedule [ID: %s]", backup.getVmId(), backupScheduleId);
-                logger.info(eventDescription);
-                ActionEventUtils.onCompletedActionEvent(
-                        User.UID_SYSTEM, backup.getAccountId(), EventVO.LEVEL_INFO,
-                        EventTypes.EVENT_VM_BACKUP_DELETE, eventDescription, backup.getId(), ApiCommandResourceType.Backup.toString(), 0
-                );
+        int deletedChains = 0;
+        for (int i = 0; i < amountOfChainsToDelete && i < backupChains.size(); i++) {
+            if (deleteBackupChain(backupChains.get(i), backupScheduleId)) {
+                deletedChains++;
             }
         }
+
+        if (deletedChains < amountOfChainsToDelete) {
+            logger.warn("Retention cleanup for schedule [ID: {}] deleted [{}] chains out of the requested [{}]. The remaining chains could not be deleted safely.",
+                    backupScheduleId, deletedChains, amountOfChainsToDelete);
+        }
+    }
+
+    private boolean deleteBackupChain(List<BackupVO> chain, long backupScheduleId) {
+        if (CollectionUtils.isEmpty(chain)) {
+            return true;
+        }
+
+        List<BackupVO> remainingBackups = chain.stream()
+                .sorted(Comparator.comparing(BackupVO::getDate))
+                .collect(Collectors.toCollection(ArrayList::new));
+        int deletedBackups = 0;
+
+        while (!remainingBackups.isEmpty()) {
+            List<BackupVO> leafBackups = getLeafBackups(remainingBackups);
+            if (CollectionUtils.isEmpty(leafBackups)) {
+                logger.warn("Could not find a deletable leaf while removing an obsolete backup chain for schedule [ID: {}].", backupScheduleId);
+                return false;
+            }
+
+            for (BackupVO backup : leafBackups) {
+                try {
+                    if (!deleteBackup(backup.getId(), false)) {
+                        logger.warn("Failed to delete backup [ID: {}, UUID: {}] while deleting a chain for schedule [ID: {}].", backup.getId(), backup.getUuid(), backupScheduleId);
+                        return false;
+                    }
+                    String eventDescription = String.format("Successfully deleted backup for VM [ID: %s], suiting the retention specified in the backup schedule [ID: %s]", backup.getVmId(), backupScheduleId);
+                    logger.info(eventDescription);
+                    ActionEventUtils.onCompletedActionEvent(
+                            User.UID_SYSTEM, backup.getAccountId(), EventVO.LEVEL_INFO,
+                            EventTypes.EVENT_VM_BACKUP_DELETE, eventDescription, backup.getId(), ApiCommandResourceType.Backup.toString(), 0
+                    );
+                    deletedBackups++;
+                    remainingBackups.remove(backup);
+                } catch (Exception e) {
+                    logger.warn("Skipping retention deletion for backup [ID: {}, UUID: {}] on schedule [ID: {}] because it is not currently safe to remove: {}",
+                            backup.getId(), backup.getUuid(), backupScheduleId, e.getMessage());
+                    return false;
+                }
+            }
+        }
+
+        logger.info("Deleted [{}] backups from an obsolete backup chain for schedule [ID: {}].", deletedBackups, backupScheduleId);
+        return true;
+    }
+
+    private List<List<BackupVO>> getBackupChainsForSchedule(List<BackupVO> backups) {
+        if (CollectionUtils.isEmpty(backups)) {
+            return new ArrayList<>();
+        }
+
+        Map<String, BackupVO> backupsByUuid = backups.stream()
+                .collect(Collectors.toMap(BackupVO::getUuid, backup -> backup, (left, right) -> left, LinkedHashMap::new));
+        Map<String, List<BackupVO>> chainsByRootUuid = new LinkedHashMap<>();
+
+        for (BackupVO backup : backups) {
+            String rootUuid = getRootBackupUuid(backup, backupsByUuid);
+            chainsByRootUuid.computeIfAbsent(rootUuid, ignored -> new ArrayList<>()).add(backup);
+        }
+
+        return chainsByRootUuid.values().stream()
+                .map(chain -> chain.stream()
+                        .sorted(Comparator.comparing(BackupVO::getDate))
+                        .collect(Collectors.toCollection(ArrayList::new)))
+                .sorted(Comparator.comparing(chain -> chain.get(0).getDate()))
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private String getRootBackupUuid(BackupVO backup, Map<String, BackupVO> backupsByUuid) {
+        BackupVO current = backup;
+        Set<String> visitedBackups = new HashSet<>();
+
+        while (current != null && visitedBackups.add(current.getUuid())) {
+            String parentBackupUuid = getParentBackupUuid(current);
+            if (StringUtils.isBlank(parentBackupUuid) || !backupsByUuid.containsKey(parentBackupUuid)) {
+                return current.getUuid();
+            }
+            current = backupsByUuid.get(parentBackupUuid);
+        }
+
+        return backup.getUuid();
+    }
+
+    private List<BackupVO> getLeafBackups(List<BackupVO> backups) {
+        Set<String> parentBackupUuids = backups.stream()
+                .map(this::getParentBackupUuid)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toSet());
+
+        return backups.stream()
+                .filter(backup -> !parentBackupUuids.contains(backup.getUuid()))
+                .sorted(Comparator.comparing(BackupVO::getDate).reversed())
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private String getParentBackupUuid(BackupVO backup) {
+        backupDao.loadDetails(backup);
+        Map<String, String> details = backup.getDetails();
+        if (details == null || details.isEmpty()) {
+            return null;
+        }
+
+        return details.entrySet().stream()
+                .filter(entry -> StringUtils.endsWith(entry.getKey(), ".parent.backup.uuid"))
+                .map(Map.Entry::getValue)
+                .filter(StringUtils::isNotBlank)
+                .findFirst()
+                .orElse(null);
     }
 
     @Override
