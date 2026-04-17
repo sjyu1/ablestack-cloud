@@ -330,6 +330,7 @@ backup_running_vm() {
 
 backup_rbd_volumes() {
   mkdir -p "$dest/checkpoints" || { echo "Failed to create backup directory $dest"; exit 1; }
+  backup_domain_information "$VM"
   local index=0
   while IFS= read -r disk_path; do
     [[ -z "$disk_path" ]] && continue
