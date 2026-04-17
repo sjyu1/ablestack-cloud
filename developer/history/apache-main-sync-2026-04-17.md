@@ -604,11 +604,43 @@
   - The change is limited to `UserVmManagerImpl.setupVmForPvlan`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied cleanly`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
-  - `N/A`
+  - Cherry-pick applied on europa without manual edits
+
+### Record 023 - validate VM compute details only when the offering allows it
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `c6936889f5` server: prevent adding vm compute details when not applicable
+- Summary:
+  - Tighten `validateCustomParameters` so empty custom-parameter maps only fail for dynamic offerings, not for fixed offerings
+  - Use `isCustomCpuSpeedSupported()` when validating CPU speed overrides and surface a clearer fixed-speed error message
+  - Reject CPU, memory, and CPU speed detail updates up front in `verifyVmLimits` when the current offering is not dynamic
+  - Add unit coverage for fixed-offering rejection and constrained custom-offering CPU speed validation
+- Functional impact:
+  - Prevents update flows from silently treating fixed offerings like custom offerings when VM compute detail keys are present
+  - Stops non-applicable VM compute detail writes earlier, with more accurate error messages for operators and API callers
+  - Keeps dynamic offering validation aligned with the offering's real CPU-speed customization capability on this branch
+- Validation:
+  - `UserVmManagerImpl` picked up the functional change on `main`
+  - `UserVmManagerImplTest` and `KVMGuruTest` required manual merge because this branch already had additional test scaffolding and uses `isLimitCpuUse()` in the KVM guru path
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - `UserVmManagerImpl` import blocks diverged because the local branch already carried lease and snapshot-policy support alongside newer Apache scheduling and reservation imports
+  - `KVMGuruTest` conflicted because upstream expected `getLimitCpuUse()` while this branch still exercises `isLimitCpuUse()`
+  - `UserVmManagerImplTest` had a long trailing test block unique to this branch, so the upstream helper tests for dynamic offering validation landed inside an end-of-file conflict
+  - On `ablestack-europa`, `validateCustomParameters` still used the older `serviceOffering.isCustomized()` gate, so the opening condition of the method conflicted with the Apache dynamic-offering guard
+- Resolution notes:
+  - Kept the Apache validation logic, but preserved local imports needed by lease and snapshot-policy features
+  - Retained the Apache config-key preservation in `KVMGuruTest` while binding it to the branch's `isLimitCpuUse()` API
+  - Kept all existing local tests and appended the new dynamic-offering validation cases after the current tail section
+  - Replaced the Europa-era empty-map/customized check with the Apache `MapUtils.isEmpty(customParameters) && serviceOffering.isDynamic()` guard while keeping branch-specific imports such as `ManagementServer`
 
 ### Observed Already Satisfied
 
