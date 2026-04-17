@@ -17,6 +17,8 @@
 // under the License.
 package org.apache.cloudstack.backup;
 
+import java.util.Date;
+
 import com.cloud.api.query.dao.UserVmJoinDao;
 import com.cloud.api.query.vo.UserVmJoinVO;
 import com.cloud.alert.AlertManager;
