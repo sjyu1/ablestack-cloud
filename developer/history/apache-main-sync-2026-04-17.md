@@ -586,6 +586,30 @@
   - Preserved the Apache reserved-detail filtering logic without changing the branch-specific allowed-details response path
   - Retained the Europa `VbmcDao` wiring and restored `@Inject` on `ExtensionHelper` so the local DAO dependencies stay intact after the cherry-pick
 
+### Record 022 - harden PVLAN VM setup against null inputs
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `e10c066cc1` Fix NPE during VM setup for pvlan
+- Summary:
+  - Guard `setupVmForPvlan` against null NIC profiles and null broadcast URIs before dereferencing them
+  - Skip PVLAN setup cleanly when the broadcast URI scheme is not `pvlan`
+  - Return early when the target host lookup fails instead of continuing into agent command construction
+- Functional impact:
+  - Prevents VM deploy/start/stop paths from failing with a null-pointer exception when PVLAN metadata is incomplete or absent
+  - Turns bad or missing PVLAN state into an explicit skip path with diagnostic logging, which is safer for mixed network environments
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `UserVmManagerImpl.setupVmForPvlan`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
