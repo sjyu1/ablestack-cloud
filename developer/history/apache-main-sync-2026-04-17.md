@@ -196,6 +196,28 @@
 - Resolution notes:
   - `Cherry-pick applied on europa without manual edits`
 
+### Record 006 - storage pool reorder logging and random compatibility
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `161b4177c2` Add logs for storage pools reordering (#10419)
+- Summary:
+  - Improve storage pool allocator logging around reordering, shuffle, disk provisioning, and search start/end
+  - Treat `userconcentratedpod_random` the same as `random` in the volume allocation reorder path
+- Functional impact:
+  - Improves observability when debugging allocator decisions and storage pool ordering
+  - Preserves random reordering behavior for configurations that still use `userconcentratedpod_random`
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main`
+  - Verified the resolved method keeps the Apache condition for `userconcentratedpod_random` and the expanded logging changes
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `main` had diverged in `reorderStoragePoolsBasedOnAlgorithm`, where `userconcentratedpod_random` handling was missing and the log level differed
+- Resolution notes:
+  - Kept the Apache behavior by routing `userconcentratedpod_random` through the random reorder branch and preserving the newer logging
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
