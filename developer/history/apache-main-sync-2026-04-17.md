@@ -642,6 +642,31 @@
   - Kept all existing local tests and appended the new dynamic-offering validation cases after the current tail section
   - Replaced the Europa-era empty-map/customized check with the Apache `MapUtils.isEmpty(customParameters) && serviceOffering.isDynamic()` guard while keeping branch-specific imports such as `ManagementServer`
 
+### Record 024 - fix template type handling during ISO upload
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `c3d6a8cff7` server: fix templatetype during iso upload
+- Summary:
+  - Treat `GetUploadParamsForIsoCmd` as a user-template upload path so template-type validation returns `TemplateType.USER`
+  - Switch the user-VM system-template guard to `TemplateType.SYSTEM.equals(...)` to avoid dereferencing a null template type
+- Functional impact:
+  - Prevents ISO upload-parameter requests from being misclassified as unsupported template-type operations
+  - Removes a null-sensitive comparison in the user VM deploy path, making template-type validation safer when template metadata is incomplete
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `TemplateManagerImpl.validateTemplateType` and the system-template gate in `UserVmManagerImpl`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - `None observed on main`
+  - On `ablestack-europa`, `TemplateManagerImpl.validateTemplateType` already handled ISO upload requests and template upload defaults in a branch-local shape, so the Apache early return collided with existing logic
+- Resolution notes:
+  - Kept the Apache null-safe `TemplateType.SYSTEM.equals(...)` guard in `UserVmManagerImpl`
+  - Realigned `TemplateManagerImpl.validateTemplateType` to the Apache early-return structure for ISO uploads without duplicating the Europa branch's already-present upload defaulting logic
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
