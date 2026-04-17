@@ -667,6 +667,33 @@
   - Kept the Apache null-safe `TemplateType.SYSTEM.equals(...)` guard in `UserVmManagerImpl`
   - Realigned `TemplateManagerImpl.validateTemplateType` to the Apache early-return structure for ISO uploads without duplicating the Europa branch's already-present upload defaulting logic
 
+### Record 025 - default upload template types and backfill null template records
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `470812100e` server: set template type to ROUTING or USER if template type is not specified when upload a template
+- Summary:
+  - Default `GetUploadParamsForTemplateCmd` uploads to `ROUTING` or `USER` when `templatetype` is omitted, using the existing `isrouting` flag
+  - Reject non-admin upload-parameter requests for non-user template types with a specific API error
+  - Backfill `cloud.vm_template.type` from `NULL` to `USER` in the 4.22.0 to 4.22.1 schema migration
+- Functional impact:
+  - Makes template upload-parameter requests behave like template registration, so omitted `templatetype` values no longer fall through as `null`
+  - Prevents inconsistent permission handling between upload-parameter generation and later template registration paths
+  - Reduces runtime ambiguity for older template rows that still carry a null `type`
+- Validation:
+  - `TemplateManagerImpl` picked up the functional change on `main`
+  - `schema-42200to42210.sql` required a manual merge because this branch already dropped `backup_interval_type` in the same tail section
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - The schema migration tail diverged on `main` because local backup cleanup SQL replaced the upstream context around the new `vm_template.type` backfill
+  - On `ablestack-europa`, `TemplateManagerImpl.validateTemplateType` had already been realigned by `Record 024`, but it still carried a branch-local `GetUploadParamsForIsoCmd` fallback later in the method, so the Apache upload-defaulting hunk overlapped with existing logic
+- Resolution notes:
+  - Kept the local `backup_interval_type` drop and added only the Apache null-type backfill, without reintroducing unrelated upstream migration context
+  - Preserved the Apache non-admin error for disallowed template upload requests and removed the now-redundant Europa-era ISO fallback branch after keeping the earlier ISO early return
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`

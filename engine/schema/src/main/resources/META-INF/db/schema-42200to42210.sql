@@ -28,3 +28,6 @@ CALL `cloud_usage`.`IDEMPOTENT_ADD_COLUMN`('cloud_usage.usage_volume','vm_id', '
 
 -- Drops the unused "backup_interval_type" column of the "cloud.backups" table
 ALTER TABLE `cloud`.`backups` DROP COLUMN `backup_interval_type`;
+
+-- Update existing vm_template records with NULL type to "USER"
+UPDATE `cloud`.`vm_template` SET `type` = 'USER' WHERE `type` IS NULL;
