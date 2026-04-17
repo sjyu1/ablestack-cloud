@@ -333,6 +333,31 @@
 - Resolution notes:
   - Kept the Europa-specific `cacheMode` flow intact, then manually ported the Apache timeout semantics so `rsync` uses the timeout-aware script overload and `QemuImg` consumes milliseconds directly without changing the existing restore behavior
 
+### Record 012 - clear backup schedule references before schedule deletion
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `27e4d979f1` Clean up backup references to their schedules when the schedules are deleted (#12401)
+- Summary:
+  - Null out `backups.backup_schedule_id` before removing a backup schedule row
+  - Move backup schedule response construction out of `BackupScheduleDaoImpl` and into `ApiResponseHelper`
+  - Drop the unused `backup_interval_type` column from `cloud.backups`
+- Functional impact:
+  - Prevents deleted schedules from leaving stale schedule references behind on existing backups
+  - Keeps backup schedule API responses working without coupling DAO code to VM lookup concerns
+  - Removes an unused schema column so the backup table matches current runtime behavior
+- Validation:
+  - Java-side DAO and API response changes applied cleanly on `main`
+  - The schema upgrade file required a manual merge because this branch does not yet include unrelated Apache `vm_template` updates that were present in the parent context of the patch
+  - Database migration and Maven-based Java tests could not be run because no DB harness and no `mvn`/`mvnw` are available in this environment
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - Europa's `schema-42200to42210.sql` is further behind `main` and lacks surrounding upstream statements, so applying the full hunk would have pulled unrelated schema updates together with the backup cleanup change
+- Resolution notes:
+  - Kept the Java-side cleanup changes as-is, then manually added only the `backup_interval_type` drop statement to the local schema file so unrelated schema updates remain isolated to their own sync commits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
