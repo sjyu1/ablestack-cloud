@@ -478,6 +478,30 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 018 - follow up secondary storage limit review fixes
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `23b19a9776` review comments
+- Summary:
+  - Fix null-size and null-account edge cases in download and upload limit updates
+  - Add size guards around template copy reservations so secondary storage reservations are only created when template size is known
+  - Carry the same Apache review cleanup for project reservation code paths that live in the same upstream commit
+- Functional impact:
+  - Prevents limit-check helpers from miscounting when DB size fields or owner lookups are temporarily null
+  - Avoids unnecessary reservation attempts for zone copy operations when template size has not been resolved yet
+- Validation:
+  - `DownloadListener` and `ImageStoreUploadMonitorImpl` review fixes applied cleanly on `main`
+  - `ProjectManagerImpl` and `TemplateManagerImpl` required manual merges because the current branch had older pre-review reservation blocks in those exact sections
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
