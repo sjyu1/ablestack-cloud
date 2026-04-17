@@ -263,6 +263,29 @@
 - Resolution notes:
   - `Cherry-pick applied on europa without manual edits`
 
+### Record 009 - block backup deletion during pending restore/create jobs
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `7ba5240b31` Block backup deletion while create-VM-from-backup or restore jobs are in progress (#12792)
+- Summary:
+  - Check for pending async jobs tied to a backup before allowing deletion
+  - Block deletion while create-from-backup or restore flows are still running
+  - Add unit coverage for the pending-job rejection path
+- Functional impact:
+  - Prevents destructive races between backup deletion and active backup restore/create operations
+  - Reduces the chance of partial restore/create failures caused by deleting the source backup mid-flight
+- Validation:
+  - `BackupManagerImpl` change applied cleanly on `main`
+  - `BackupManagerTest` needed a small mock-field merge to accommodate the new `AsyncJobManager` dependency
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
