@@ -225,6 +225,38 @@ parent_checkpoint_name=$parent_checkpoint_name
 EOF
 }
 
+backup_domain_information() {
+  local vm_name="$1"
+
+  [[ -z "$vm_name" ]] && return 0
+
+  mkdir -p "$dest/checkpoints" || {
+    echo "Failed to create checkpoint directory $dest/checkpoints"
+    exit 1
+  }
+
+  if virsh -c qemu:///system dominfo "$vm_name" > /dev/null 2>&1; then
+    virsh -c qemu:///system dumpxml "$vm_name" > "$dest/domain-config.xml" 2>/dev/null || true
+    virsh -c qemu:///system dominfo "$vm_name" > "$dest/dominfo.xml" 2>/dev/null || true
+    virsh -c qemu:///system domiflist "$vm_name" > "$dest/domiflist.xml" 2>/dev/null || true
+    virsh -c qemu:///system domblklist "$vm_name" > "$dest/domblklist.xml" 2>/dev/null || true
+
+    if [[ -n "$CHECKPOINT_NAME" ]]; then
+      cat > "$dest/checkpoints/$CHECKPOINT_NAME.meta" <<EOF
+checkpoint_name=$CHECKPOINT_NAME
+backup_type=$BACKUP_TYPE
+vm_name=$vm_name
+disk_paths=$DISK_PATHS
+backup_files=$BACKUP_FILES
+EOF
+    fi
+
+    log -ne "Backed up domain information for VM [$vm_name]"
+  else
+    log -ne "VM [$vm_name] not found in libvirt; skipped domain metadata backup"
+  fi
+}
+
 backup_running_vm() {
   mkdir -p "$dest/checkpoints" || { echo "Failed to create backup directory $dest"; exit 1; }
   local parent_checkpoint_file=""
@@ -272,6 +304,8 @@ backup_running_vm() {
     cleanup
     exit 1
   fi
+
+  backup_domain_information "$VM"
 
   while true; do
     status=$(virsh -c qemu:///system domjobinfo "$VM" --completed --keep-completed | awk '/Job type:/ {print $3}')

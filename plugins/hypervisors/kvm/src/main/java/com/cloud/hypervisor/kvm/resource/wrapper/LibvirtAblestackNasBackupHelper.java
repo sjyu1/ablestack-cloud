@@ -222,7 +222,6 @@ class LibvirtAblestackNasBackupHelper {
             }
 
             dumpCheckpointXml(dummyVmName, command.getCheckpointName(), dest);
-            backupDomainInformation(dummyVmName, dest, command, diskPaths);
 
             Files.deleteIfExists(backupXml);
             Files.deleteIfExists(checkpointXml);
@@ -400,27 +399,6 @@ class LibvirtAblestackNasBackupHelper {
         Script.runSimpleBashScriptForExitValue(String.format(
                 "virsh -c qemu:///system checkpoint-dumpxml --domain %s --checkpointname %s --no-domain > %s 2>/dev/null",
                 shellQuote(vmName), shellQuote(checkpointName), shellQuote(checkpointDest.toString())));
-    }
-
-    private void backupDomainInformation(String vmName, Path dest, AblestackNasTakeBackupCommand command, List<String> diskPaths) {
-        runCommand(String.format("virsh -c qemu:///system dumpxml %s > %s 2>/dev/null || true",
-                shellQuote(vmName), shellQuote(dest.resolve("domain-config.xml").toString())));
-        runCommand(String.format("virsh -c qemu:///system dominfo %s > %s 2>/dev/null || true",
-                shellQuote(vmName), shellQuote(dest.resolve("dominfo.xml").toString())));
-        runCommand(String.format("virsh -c qemu:///system domiflist %s > %s 2>/dev/null || true",
-                shellQuote(vmName), shellQuote(dest.resolve("domiflist.xml").toString())));
-        runCommand(String.format("virsh -c qemu:///system domblklist %s > %s 2>/dev/null || true",
-                shellQuote(vmName), shellQuote(dest.resolve("domblklist.xml").toString())));
-        Path checkpointMeta = dest.resolve("checkpoints").resolve(command.getCheckpointName() + ".meta");
-        String metadata = "checkpoint_name=" + command.getCheckpointName() + "\n" +
-                "backup_type=" + command.getBackupType() + "\n" +
-                "vm_name=" + vmName + "\n" +
-                "disk_paths=" + String.join(",", diskPaths) + "\n" +
-                "backup_files=" + String.join(",", Objects.requireNonNullElse(command.getBackupFiles(), List.of())) + "\n";
-        try {
-            Files.writeString(checkpointMeta, metadata, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        } catch (IOException ignored) {
-        }
     }
 
     private String listTopLevelFileSizes(Path dest) throws IOException {
