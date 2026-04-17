@@ -250,7 +250,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final BackupVO latestBackup = getLatestBackedUpBackup(vm);
-        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmVolumes, backupScheduleId != null);
+        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmVolumes, backupScheduleId);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup,
                 incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
@@ -433,8 +433,12 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 .orElse(null);
     }
 
-    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, List<VolumeVO> vmVolumes, boolean scheduledBackup) {
+    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, List<VolumeVO> vmVolumes, Long backupScheduleId) {
         if (latestBackup == null) {
+            return false;
+        }
+
+        if (backupScheduleId != null && !hasBackedUpBackupForSchedule(backupScheduleId)) {
             return false;
         }
 
@@ -457,6 +461,11 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             return false;
         }
         return true;
+    }
+
+    private boolean hasBackedUpBackupForSchedule(Long backupScheduleId) {
+        return backupDao.listBySchedule(backupScheduleId).stream()
+                .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
     }
 
     private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {

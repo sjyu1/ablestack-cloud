@@ -340,7 +340,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
         final Backup latestBackup = getLatestBackedUpBackup(vm);
-        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost, vmVolumes, backupScheduleId != null);
+        final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost, vmVolumes, backupScheduleId);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, backupContentPath, vmVolumes, volumePoolsAndPaths,
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
@@ -364,11 +364,15 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 .orElse(null);
     }
 
-    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, Host vmHost, List<VolumeVO> vmVolumes, boolean scheduledBackup) {
+    private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, Host vmHost, List<VolumeVO> vmVolumes, Long backupScheduleId) {
         if (latestBackup == null) {
             return false;
         }
         loadBackupDetailsIfNeeded(latestBackup);
+
+        if (backupScheduleId != null && !hasBackedUpBackupForSchedule(backupScheduleId)) {
+            return false;
+        }
 
         Long clusterId = getClusterIdFromRootVolume(vm);
         if (clusterId == null) {
@@ -392,6 +396,11 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
         return true;
+    }
+
+    private boolean hasBackedUpBackupForSchedule(Long backupScheduleId) {
+        return backupDao.listBySchedule(backupScheduleId).stream()
+                .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
     }
 
     private boolean canContinueIncrementalChain(VirtualMachine vm, Backup latestBackup, Host vmHost) {

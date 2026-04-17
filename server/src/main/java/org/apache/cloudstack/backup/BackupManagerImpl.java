@@ -1044,7 +1044,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
      * @param backupScheduleId ID of the backup schedule associated with the backups
      */
     protected void deleteExcessBackups(List<List<BackupVO>> backupChains, int amountOfChainsToDelete, long backupScheduleId) {
-        logger.debug("Deleting up to [{}] oldest backup chains from the schedule [ID: {}].", amountOfChainsToDelete, backupScheduleId);
+        String cleanupTarget = backupScheduleId > 0 ? String.format("schedule [ID: %s]", backupScheduleId) : "VM retention policy";
+        logger.debug("Deleting up to [{}] oldest backup chains from {}.", amountOfChainsToDelete, cleanupTarget);
 
         int deletedChains = 0;
         for (int i = 0; i < amountOfChainsToDelete && i < backupChains.size(); i++) {
@@ -1054,8 +1055,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
 
         if (deletedChains < amountOfChainsToDelete) {
-            logger.warn("Retention cleanup for schedule [ID: {}] deleted [{}] chains out of the requested [{}]. The remaining chains could not be deleted safely.",
-                    backupScheduleId, deletedChains, amountOfChainsToDelete);
+            logger.warn("Retention cleanup for {} deleted [{}] chains out of the requested [{}]. The remaining chains could not be deleted safely.",
+                    cleanupTarget, deletedChains, amountOfChainsToDelete);
         }
     }
 
@@ -1063,6 +1064,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         if (CollectionUtils.isEmpty(chain)) {
             return true;
         }
+
+        String cleanupTarget = backupScheduleId > 0 ? String.format("schedule [ID: %s]", backupScheduleId) : "VM retention policy";
 
         List<BackupVO> remainingBackups = chain.stream()
                 .sorted(Comparator.comparing(BackupVO::getDate))
@@ -1072,17 +1075,19 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         while (!remainingBackups.isEmpty()) {
             List<BackupVO> leafBackups = getLeafBackups(remainingBackups);
             if (CollectionUtils.isEmpty(leafBackups)) {
-                logger.warn("Could not find a deletable leaf while removing an obsolete backup chain for schedule [ID: {}].", backupScheduleId);
+                logger.warn("Could not find a deletable leaf while removing an obsolete backup chain for {}.", cleanupTarget);
                 return false;
             }
 
             for (BackupVO backup : leafBackups) {
                 try {
                     if (!deleteBackup(backup.getId(), false)) {
-                        logger.warn("Failed to delete backup [ID: {}, UUID: {}] while deleting a chain for schedule [ID: {}].", backup.getId(), backup.getUuid(), backupScheduleId);
+                        logger.warn("Failed to delete backup [ID: {}, UUID: {}] while deleting a chain for {}.", backup.getId(), backup.getUuid(), cleanupTarget);
                         return false;
                     }
-                    String eventDescription = String.format("Successfully deleted backup for VM [ID: %s], suiting the retention specified in the backup schedule [ID: %s]", backup.getVmId(), backupScheduleId);
+                    String eventDescription = backupScheduleId > 0
+                            ? String.format("Successfully deleted backup for VM [ID: %s], suiting the retention specified in the backup schedule [ID: %s]", backup.getVmId(), backupScheduleId)
+                            : String.format("Successfully deleted backup for VM [ID: %s], suiting the retention specified by the VM backup schedules", backup.getVmId());
                     logger.info(eventDescription);
                     ActionEventUtils.onCompletedActionEvent(
                             User.UID_SYSTEM, backup.getAccountId(), EventVO.LEVEL_INFO,
@@ -1091,14 +1096,14 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     deletedBackups++;
                     remainingBackups.remove(backup);
                 } catch (Exception e) {
-                    logger.warn("Skipping retention deletion for backup [ID: {}, UUID: {}] on schedule [ID: {}] because it is not currently safe to remove: {}",
-                            backup.getId(), backup.getUuid(), backupScheduleId, e.getMessage());
+                    logger.warn("Skipping retention deletion for backup [ID: {}, UUID: {}] on {} because it is not currently safe to remove: {}",
+                            backup.getId(), backup.getUuid(), cleanupTarget, e.getMessage());
                     return false;
                 }
             }
         }
 
-        logger.info("Deleted [{}] backups from an obsolete backup chain for schedule [ID: {}].", deletedBackups, backupScheduleId);
+        logger.info("Deleted [{}] backups from an obsolete backup chain for {}.", deletedBackups, cleanupTarget);
         return true;
     }
 
