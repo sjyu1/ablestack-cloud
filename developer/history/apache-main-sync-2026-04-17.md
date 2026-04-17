@@ -382,6 +382,30 @@
 - Resolution notes:
   - Preserved the local pending backup job protection and Europa provider selection, then wrapped the delete path with the Apache reservation-based limit checks
 
+### Record 014 - review fixes for backup and bucket reservation flow
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `13842a626d` Address reviews
+- Summary:
+  - Let bucket delete and backup delete paths propagate `ResourceAllocationException`
+  - Simplify backup reservation error handling so scheduled-backup alerts trigger only for actual limit exceptions
+  - Tighten retention-cleanup method signatures and related unit tests for the reservation-aware backup flow
+- Functional impact:
+  - Prevents reservation failures from being swallowed inside generic runtime exceptions on backup and bucket operations
+  - Keeps scheduled backup limit alerts focused on real quota violations instead of unrelated runtime failures
+- Validation:
+  - All review follow-up files applied cleanly on `main` except `DeleteBucketCmd`
+  - `DeleteBucketCmd` needed a small manual merge to keep the local event-detail formatting while adding `ResourceAllocationException` to the API contract
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`

@@ -163,13 +163,6 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
                         (cmd.getQuota() * Resource.ResourceType.bytesToGiB));
             }
             return bucket;
-        } catch (Exception e) {
-            if (e instanceof ResourceAllocationException) {
-                throw (ResourceAllocationException)e;
-            } else if (e instanceof CloudRuntimeException) {
-                throw (CloudRuntimeException)e;
-            }
-            throw new CloudRuntimeException(String.format("Failed to create bucket due to: %s", e.getMessage()), e);
         }
     }
 
@@ -238,7 +231,7 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
 
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_BUCKET_DELETE, eventDescription = "deleting bucket")
-    public boolean deleteBucket(long bucketId, Account caller) {
+    public boolean deleteBucket(long bucketId, Account caller) throws ResourceAllocationException {
         Bucket bucket = _bucketDao.findById(bucketId);
         if (bucket == null) {
             throw new InvalidParameterValueException("Unable to find bucket with ID: " + bucketId);
@@ -249,7 +242,7 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
         return deleteCheckedBucket(objectStore, bucket, objectStoreVO);
     }
 
-    private boolean deleteCheckedBucket(ObjectStoreEntity objectStore, Bucket bucket, ObjectStoreVO objectStoreVO) {
+    private boolean deleteCheckedBucket(ObjectStoreEntity objectStore, Bucket bucket, ObjectStoreVO objectStoreVO) throws ResourceAllocationException {
         Account owner = _accountMgr.getAccount(bucket.getAccountId());
         try (CheckedReservation bucketReservation = new CheckedReservation(owner, Resource.ResourceType.bucket,
                 bucket.getId(), null, -1L, reservationDao, resourceLimitManager);
@@ -267,11 +260,6 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
                 return true;
             }
             return false;
-        } catch (Exception e) {
-            if (e instanceof CloudRuntimeException) {
-                throw (CloudRuntimeException) e;
-            }
-            throw new CloudRuntimeException(String.format("Failed to delete bucket due to: %s", e.getMessage()), e);
         }
     }
 
