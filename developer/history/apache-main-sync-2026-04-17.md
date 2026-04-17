@@ -174,6 +174,28 @@
 - Resolution notes:
   - `Cherry-pick applied on europa without manual edits`
 
+### Record 005 - countVgpuVMs prepared statement ordering fix
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `6516f7f1aa` Fix query execution in countVgpuVMs (#12713)
+- Summary:
+  - Delay preparation and parameter binding of the second vGPU count query until after the legacy query has finished executing
+  - Avoid mixing statement preparation/binding across the two query paths
+- Functional impact:
+  - Prevents erroneous query execution in `countVgpuVMs`
+  - Improves correctness of aggregated vGPU VM counting used by scheduling or capacity-related paths
+- Validation:
+  - Apache patch applied cleanly on `main`
+  - Cached diff is limited to prepared statement ordering changes in `VMInstanceDaoImpl`
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None on europa`
+- Resolution notes:
+  - `Cherry-pick applied on europa without manual edits`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
