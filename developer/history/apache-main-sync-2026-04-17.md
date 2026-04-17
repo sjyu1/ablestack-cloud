@@ -129,6 +129,36 @@
 - Resolution notes:
   - `Cherry-pick applied on europa without manual edits`
 
+### Record 003 - async jobs filtering by resource type without resource id
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `38abe2df0b` Allow list async jobs by resource type alone (#13011)
+- Summary:
+  - Allow `listAsyncJobs` to filter by `resourceType` without requiring `resourceId`
+  - Only apply the `instanceUuid` filter when a valid `resourceId` is supplied
+  - Clarify the validation error when `resourceId` is used without `resourceType`
+- Functional impact:
+  - Expands `listAsyncJobs` API usability for callers that want job lists for a resource class without a specific resource UUID
+  - Prevents unnecessary validation failure when only `resourceType` is provided
+- Validation:
+  - Apache patch required manual conflict resolution on `main` because the surrounding `QueryManagerImpl` method had drifted
+  - `mvn` / `mvnw` unavailable in this workspace, so targeted `server` module compile could not be run
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None on europa`
+- Resolution notes:
+  - `Cherry-pick applied on europa without manual edits`
+
+### Observed Already Satisfied
+
+- `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
+  - Current branch state already has `gatewayId` without `required = true`
+  - Treat as already satisfied instead of creating a duplicate local commit
+  - Re-check on `ablestack-europa` before final range reconciliation
+
 ## Initial Candidate Notes
 
 ### B00 - Metadata / CI / docs housekeeping
