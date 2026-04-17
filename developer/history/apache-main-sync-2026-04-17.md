@@ -152,10 +152,36 @@
 - Resolution notes:
   - `Cherry-pick applied on europa without manual edits`
 
+### Record 004 - backup list keyword filter correction
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `86c9f7bd94` Fix backup list
+- Summary:
+  - Keep backup name keyword filtering inside the existing `and` condition chain instead of opening a new `or` group
+  - Preserve the `backupOfferingId` filter when listing backups with a keyword
+- Functional impact:
+  - Prevents `listBackups` keyword searches from returning rows that bypass the selected backup offering constraint
+  - Narrows results to the intended offering-scoped backup set
+- Validation:
+  - Apache patch applied cleanly on `main`
+  - Cached diff is limited to a single logical change in `BackupManagerImpl`
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None on europa`
+- Resolution notes:
+  - `Cherry-pick applied on europa without manual edits`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
   - Current branch state already has `gatewayId` without `required = true`
+  - Treat as already satisfied instead of creating a duplicate local commit
+  - Re-check on `ablestack-europa` before final range reconciliation
+- `59b6c32b60` `[UI] Fix create backup notification (#12903)`
+  - Current branch state already uses `label.create.backup` in `StartBackup.vue`
   - Treat as already satisfied instead of creating a duplicate local commit
   - Re-check on `ablestack-europa` before final range reconciliation
 
