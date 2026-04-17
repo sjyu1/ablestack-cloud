@@ -556,6 +556,36 @@
   - Added a conditional GPU reservation to preserve the branch's existing resource-limit coverage and keep start/destroy accounting behavior symmetric
   - Moved the Europa disaster recovery start validation into `startVirtualMachineUnchecked` so the branch-only guard remains enforced after the method split
 
+### Record 021 - reserve extension-managed resource details
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `95816b44e9` extensions: allow reserved resource details
+- Summary:
+  - Add `reservedresourcedetails` support to create/update/list extension API and UI flows so operators can declare extension-owned VM detail keys
+  - Persist reserved detail names in extension hidden details, including built-in defaults for matching in-built extensions such as Proxmox
+  - Extend VM detail filtering and VM update validation so non-admin users cannot view or mutate extension-reserved detail keys on extension-backed instances
+  - Expose template extension linkage in `user_vm_view` and `UserVmJoinVO` so response filtering can decide which extension reservations apply
+- Functional impact:
+  - Lets extension authors reserve metadata keys that must stay under extension control instead of being visible or editable by tenants
+  - Prevents end-user VM detail APIs and responses from leaking or overwriting extension-managed identifiers such as hypervisor-side instance metadata
+  - Surfaces the reserved-detail configuration through the extension admin UI and API so the policy is manageable without direct DB edits
+- Validation:
+  - Most Apache files applied cleanly on `main`, including API constants, extension manager, schema view, and UI changes
+  - `UserVmJoinDaoImpl` and `UserVmJoinDaoImplTest` required a manual merge because this branch already carried deploy-as-is response handling through `VMTemplateDao`
+  - Maven and UI build execution have not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - `UserVmJoinDaoImpl` already injected `VMTemplateDao` for deploy-as-is allowed-details handling in the same field block where Apache added `ExtensionHelper`
+  - The corresponding unit test mock block diverged for the same reason
+  - On `ablestack-europa`, the same DAO also keeps a branch-specific `VbmcDao` import and field block, so the helper injection landed in the middle of an existing local wiring section
+- Resolution notes:
+  - Kept the existing deploy-as-is response behavior and injected `ExtensionHelper` alongside `VMTemplateDao`
+  - Preserved the Apache reserved-detail filtering logic without changing the branch-specific allowed-details response path
+  - Retained the Europa `VbmcDao` wiring and restored `@Inject` on `ExtensionHelper` so the local DAO dependencies stay intact after the cherry-pick
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`

@@ -138,6 +138,7 @@ import org.apache.cloudstack.engine.subsystem.api.storage.VolumeDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeInfo;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeService;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeService.VolumeApiResult;
+import org.apache.cloudstack.extension.ExtensionHelper;
 import org.apache.cloudstack.framework.async.AsyncCallFuture;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.Configurable;
@@ -691,6 +692,9 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
     @Inject
     SnapshotDataFactory snapshotDataFactory;
+
+    @Inject
+    ExtensionHelper extensionHelper;
 
     private ScheduledExecutorService _executor = null;
     private ScheduledExecutorService _flattenExecutor = null;
@@ -3097,6 +3101,11 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 .map(item -> (item).trim())
                 .collect(Collectors.toList());
         userDenyListedSettings.addAll(QueryService.RootAdminOnlyVmSettings);
+        if (template != null && template.getExtensionId() != null) {
+            userDenyListedSettings.addAll(extensionHelper.getExtensionReservedResourceDetails(
+                    template.getExtensionId()));
+        }
+
         final List<String> userReadOnlySettings = Stream.of(QueryService.UserVMReadOnlyDetails.value().split(","))
                 .map(item -> (item).trim())
                 .collect(Collectors.toList());
