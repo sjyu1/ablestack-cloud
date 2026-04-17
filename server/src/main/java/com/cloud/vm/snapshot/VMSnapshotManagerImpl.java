@@ -452,9 +452,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             throw new CloudRuntimeException("There are other active Instance Snapshot tasks on the Instance, please try again later");
         }
 
-        if (backupDao.listByVmId(null, vmId).stream().anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))) {
-            throw new CloudRuntimeException("Creating Instance Snapshot failed because the Instance has a backup chain.");
-        }
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "create");
 
         VMSnapshot.Type vmSnapshotType = VMSnapshot.Type.Disk;
         if (snapshotMemory && userVmVo.getState() == VirtualMachine.State.Running)
@@ -655,6 +653,20 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         return activeVMSnapshots.size() > 0;
     }
 
+    private void validateNoBackupActivityOrHistoryForVMSnapshot(Long vmId, String operation) {
+        boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) || Backup.Status.Restoring.equals(backup.getStatus()));
+        if (hasBackupInProgress) {
+            throw new InvalidParameterValueException(String.format("Instance Snapshot %s failed because a backup or restore is currently in progress for the Instance.", operation));
+        }
+
+        boolean hasExistingBackup = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
+        if (hasExistingBackup) {
+            throw new InvalidParameterValueException(String.format("Instance Snapshot %s failed because the Instance has backups.", operation));
+        }
+    }
+
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_SNAPSHOT_DELETE, eventDescription = "Delete Instance Snapshots", async = true)
     public boolean deleteVMSnapshot(Long vmSnapshotId) {
@@ -680,6 +692,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             else
                 throw new InvalidParameterValueException("There are other active Instance Snapshot tasks on the Instance, please try again later");
         }
+
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmSnapshot.getVmId(), "delete");
 
         // serialize VM operation
         AsyncJobExecutionContext jobContext = AsyncJobExecutionContext.getCurrentExecutionContext();
@@ -745,6 +759,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             else
                 throw new InvalidParameterValueException("There are other active Instance Snapshot tasks on the Instance, please try again later");
         }
+
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmSnapshot.getVmId(), "delete");
 
         annotationDao.removeByEntityType(AnnotationService.EntityType.VM_SNAPSHOT.name(), vmSnapshot.getUuid());
         if (vmSnapshot.getState() == VMSnapshot.State.Allocated) {
@@ -927,6 +943,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             throw new InvalidParameterValueException("There is other active Instance Snapshot tasks on the Instance, please try again later");
         }
 
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "revert");
+
         Account caller = getCaller();
         _accountMgr.checkAccess(caller, null, true, vmSnapshotVo);
 
@@ -1058,6 +1076,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
 
     @Override
     public boolean deleteAllVMSnapshots(long vmId, VMSnapshot.Type type) {
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "delete");
         // serialize VM operation
         AsyncJobExecutionContext jobContext = AsyncJobExecutionContext.getCurrentExecutionContext();
         if (jobContext.isJobDispatchedBy(VmWorkConstants.VM_WORK_JOB_DISPATCHER)) {
@@ -1102,6 +1121,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     }
 
     private boolean orchestrateDeleteAllVMSnapshots(long vmId, VMSnapshot.Type type) {
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "delete");
         boolean result = true;
         List<VMSnapshotVO> listVmSnapshots = _vmSnapshotDao.findByVm(vmId);
         if (listVmSnapshots == null || listVmSnapshots.isEmpty()) {
