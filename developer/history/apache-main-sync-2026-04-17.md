@@ -106,6 +106,29 @@
   - Adopt the Apache fix intent by switching to RPM-provided `python3-six` and `python3-protobuf`
   - Use Python-version-based `mysql_connector_python` wheel selection to cover both Python 3.6 and Python 3.8+ runtimes
 
+### Record 002 - xcpng integration test cleanup hardening
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `7cdcf571fa` Fix xcpng test failures (#12812)
+- Summary:
+  - Wrap zone, pod, and network preparation/cleanup flows in `try/finally`
+  - Re-enable disabled resources even when intermediate test steps fail
+  - Reduce cascading failures across integration test scenarios
+- Functional impact:
+  - No runtime product behavior change
+  - Improves repeatability of xcpng-related integration tests by preventing leaked disabled resources
+- Validation:
+  - Apache patch applied cleanly on `main` with no manual conflict resolution
+  - `python3 -m py_compile test/integration/component/maint/test_redundant_router_deployment_planning.py test/integration/smoke/test_public_ip_range.py`
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None`
+- Resolution notes:
+  - `Cherry-pick applied on europa without manual edits`
+
 ## Initial Candidate Notes
 
 ### B00 - Metadata / CI / docs housekeeping
