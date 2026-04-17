@@ -27,6 +27,8 @@ import com.cloud.hypervisor.Hypervisor;
 import com.cloud.offering.DiskOffering;
 import com.cloud.resource.ResourceManager;
 import com.cloud.storage.DataStoreRole;
+import com.cloud.storage.Snapshot;
+import com.cloud.storage.SnapshotVO;
 import com.cloud.storage.ScopeType;
 import com.cloud.storage.Storage;
 import com.cloud.storage.Volume;
@@ -34,6 +36,7 @@ import com.cloud.storage.Volume.Type;
 import com.cloud.storage.VolumeApiServiceImpl;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
+import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.StoragePoolHostDao;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.utils.Pair;
@@ -137,6 +140,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Inject
     private VolumeDao volumeDao;
+
+    @Inject
+    private SnapshotDao snapshotDao;
 
     @Inject
     private StoragePoolHostDao storagePoolHostDao;
@@ -582,6 +588,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     }
 
     private Pair<Boolean, String> restoreVMBackup(VirtualMachine vm, Backup backup) {
+        validateNoKvmFileBasedVmSnapshots(vm);
         List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
         List<String> backedVolumesUUIDs = backupVolumes.stream()
                 .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
@@ -1086,6 +1093,10 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             logger.warn("VM [{}] has VM snapshots using the KvmFileBasedStorageVmSnapshot Strategy; this provider does not support backups on VMs with these snapshots!", vm);
             return false;
         }
+        if (hasVolumeSnapshots(vm)) {
+            logger.warn("VM [{}] has volume snapshots; this provider does not support backups on VMs with volume snapshots!", vm);
+            return false;
+        }
 
         return Hypervisor.HypervisorType.KVM.equals(vm.getHypervisorType());
     }
@@ -1095,12 +1106,26 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             logger.warn("VM [{}] has VM snapshots using the KvmFileBasedStorageVmSnapshot Strategy; backup cannot be started.", vm);
             throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has KVM file-based VM snapshots.", vm.getUuid()));
         }
+        if (hasVolumeSnapshots(vm)) {
+            logger.warn("VM [{}] has volume snapshots; backup cannot be started.", vm);
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has volume snapshots.", vm.getUuid()));
+        }
     }
 
     private boolean hasKvmFileBasedVmSnapshots(VirtualMachine vm) {
         for (VMSnapshotVO vmSnapshotVO : vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.Disk)) {
             List<VMSnapshotDetailsVO> vmSnapshotDetails = vmSnapshotDetailsDao.listDetails(vmSnapshotVO.getId());
             if (vmSnapshotDetails.stream().anyMatch(vmSnapshotDetailsVO -> VolumeApiServiceImpl.KVM_FILE_BASED_STORAGE_SNAPSHOT.equals(vmSnapshotDetailsVO.getName()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasVolumeSnapshots(VirtualMachine vm) {
+        for (VolumeVO volume : volumeDao.findByInstance(vm.getId())) {
+            List<SnapshotVO> snapshots = snapshotDao.listByVolumeId(volume.getId());
+            if (snapshots.stream().anyMatch(snapshot -> !Snapshot.State.Destroyed.equals(snapshot.getState()))) {
                 return true;
             }
         }
