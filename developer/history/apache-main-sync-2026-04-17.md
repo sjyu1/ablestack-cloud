@@ -358,6 +358,30 @@
 - Resolution notes:
   - Kept the Java-side cleanup changes as-is, then manually added only the `backup_interval_type` drop statement to the local schema file so unrelated schema updates remain isolated to their own sync commits
 
+### Record 013 - reserve backup and bucket limits during create and delete operations
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `19b4ef1069` server: reserve backup, bucket resource limits during operations
+- Summary:
+  - Wrap backup create/delete resource checks with `CheckedReservation` for `backup` and `backup_storage`
+  - Reserve `bucket` and `object_storage` limits during bucket allocation and deletion paths
+  - Extend unit coverage for reservation-aware backup and bucket workflows
+- Functional impact:
+  - Prevents concurrent backup and bucket operations from passing limit checks and only failing after counters are updated too late
+  - Keeps backup and object storage counters aligned with the actual success or failure of create/delete operations
+- Validation:
+  - `BucketApiServiceImpl` and its tests applied cleanly on `main`
+  - `BackupManagerImpl` and `BackupManagerTest` required a manual merge because this branch already carries local backup safety changes around pending restore/create jobs
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - Europa keeps a provider-specific backup lookup (`getBackupProvider(offering.getProvider())`) in delete flow, while the `main` patch context used zone-based provider selection around the same block
+- Resolution notes:
+  - Preserved the local pending backup job protection and Europa provider selection, then wrapped the delete path with the Apache reservation-based limit checks
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
@@ -368,6 +392,53 @@
   - Current branch state already uses `label.create.backup` in `StartBackup.vue`
   - Treat as already satisfied instead of creating a duplicate local commit
   - Re-check on `ablestack-europa` before final range reconciliation
+
+## Refined Resource-Limit Batches
+
+### R01 - Backup / Bucket Reservation Core
+
+- Apache commits:
+  - `19b4ef1069`, `13842a626d`, `2511fdffaa`
+- Scope:
+  - Reservation-aware limit checks for backup create/delete and bucket alloc/delete/update flows
+- Why grouped:
+  - These three commits evolve the same operational path from initial reservation support to review fixes and `updateBucket` completion
+
+### R02 - Secondary Storage Transfer Limits
+
+- Apache commits:
+  - `03dfe4d1f3`, `81a8ac8e1f`
+- Scope:
+  - Download/upload resource counting and reservation behavior on secondary storage transfer paths
+- Why grouped:
+  - Both commits govern transient secondary storage consumption during template/image movement and are likely to share supporting context
+
+### R03 - Snapshot Copy Reservation Concurrency
+
+- Apache commits:
+  - `8608b4edd0`
+- Scope:
+  - Snapshot copy concurrency handling for resource limit reservations
+- Why separate:
+  - Touches snapshot management only and can be validated independently from backup/object storage flows
+
+### R04 - VM Start Reservation Validation
+
+- Apache commits:
+  - `4bcd509193`
+- Scope:
+  - Reservation and limit validation during `StartVirtualMachine`
+- Why separate:
+  - High runtime sensitivity and likely overlap with Europa VM lifecycle customizations
+
+### R05 - Reserved Resource Details Exposure
+
+- Apache commits:
+  - `95816b44e9`
+- Scope:
+  - API/UI exposure of reserved resource details for extensions and VM views
+- Why separate:
+  - This is an API/UI visibility change rather than a backend reservation enforcement change
 
 ## Initial Candidate Notes
 
