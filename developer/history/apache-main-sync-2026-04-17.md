@@ -502,6 +502,30 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 019 - guard snapshot copy reservations against concurrency races
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `8608b4edd0` Fix snapshot copy resource limit concurrency
+- Summary:
+  - Wrap snapshot copy-to-zone flow with `CheckedReservation` instead of a separate pre-check
+  - Pass an explicit `shouldCheckResourceLimits` flag so snapshot-chain copies do not double-reserve secondary storage
+  - Update snapshot copy tests to reflect reservation-based behavior instead of direct `checkResourceLimit` mocking
+- Functional impact:
+  - Prevents concurrent snapshot copy operations from passing standalone checks and then racing on secondary storage quota updates
+  - Keeps snapshot copy reservations aligned with the real copy lifecycle, including chain-copy and KVM incremental snapshot cases
+- Validation:
+  - Applied cleanly on `main`
+  - Snapshot manager and snapshot copy test updates are limited to reservation flow and test expectation changes
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
