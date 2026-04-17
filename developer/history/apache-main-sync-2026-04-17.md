@@ -406,6 +406,30 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 015 - validate bucket quota growth with reservations during update
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `2511fdffaa` Implement limit validations on updateBucket
+- Summary:
+  - Move bucket quota-delta handling into a dedicated `updateBucketQuota` helper
+  - Use `CheckedReservation` when bucket quota increases so `object_storage` growth is reserved before counters are incremented
+  - Keep quota decreases as immediate counter decrements and allocated-size adjustments
+- Functional impact:
+  - Closes the remaining gap where `updateBucket` could increase object-storage quota without reservation-aware limit protection
+  - Makes bucket quota updates consistent with the create/delete reservation model introduced in the previous two commits
+- Validation:
+  - Applied cleanly on `main`
+  - Logic review confirms quota increases now reserve `object_storage` before incrementing counts
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
