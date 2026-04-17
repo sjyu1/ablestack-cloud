@@ -240,6 +240,29 @@
 - Resolution notes:
   - `Cherry-pick applied on europa without manual edits`
 
+### Record 008 - ACL metadata for backup-based restore and create APIs
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `24fd440ee7` Fix create VM from backup
+  - `8ce1c9876e` fix restore volume from backup and attach
+- Summary:
+  - Add `@ACL` metadata to `backupId` in `CreateVMFromBackupCmd`
+  - Add `@ACL` metadata to `backupId`, `volumeUuid`, and `vmId` in `RestoreVolumeFromBackupAndAttachToVMCmd`
+- Functional impact:
+  - Improves API ACL enforcement and parameter-level access checks for backup-driven restore/create flows
+  - Aligns backup resource parameters with existing ACL-aware command patterns
+- Validation:
+  - Both Apache patches applied cleanly on `main`
+  - Cached diff is limited to ACL annotations and one import addition
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None on europa`
+- Resolution notes:
+  - `Cherry-pick applied on europa without manual edits`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
