@@ -362,7 +362,15 @@ public class LibvirtRestoreBackupCommandWrapperTest {
 
             try (MockedStatic<Script> scriptMock = mockStatic(Script.class)) {
                 scriptMock.when(() -> Script.runSimpleBashScriptForExitValue(anyString(), anyInt(), any(Boolean.class)))
-                        .thenReturn(0); // Mount success
+                        .thenAnswer(invocation -> {
+                            String command = invocation.getArgument(0);
+                            if (command.contains("mount")) {
+                                return 0; // mount success
+                            } else if (command.contains("rsync")) {
+                                return 1; // Rsync failure
+                            }
+                            return 0; // Other commands success
+                        });
                 scriptMock.when(() -> Script.runSimpleBashScriptForExitValue(anyString()))
                         .thenAnswer(invocation -> {
                             String command = invocation.getArgument(0);
@@ -370,8 +378,6 @@ public class LibvirtRestoreBackupCommandWrapperTest {
                                 return 0; // File exists
                             } else if (command.contains("qemu-img check")) {
                                 return 0; // File is valid
-                            } else if (command.contains("rsync")) {
-                                return 1; // Rsync failure
                             }
                             return 0; // Other commands success
                         });
@@ -411,7 +417,15 @@ public class LibvirtRestoreBackupCommandWrapperTest {
 
             try (MockedStatic<Script> scriptMock = mockStatic(Script.class)) {
                 scriptMock.when(() -> Script.runSimpleBashScriptForExitValue(anyString(), anyInt(), any(Boolean.class)))
-                        .thenReturn(0); // Mount success
+                        .thenAnswer(invocation -> {
+                            String command = invocation.getArgument(0);
+                            if (command.contains("mount")) {
+                                return 0; // Mount success
+                            } else if (command.contains("rsync")) {
+                                return 0; // Rsync success
+                            }
+                            return 0; // Other commands success
+                        });
                 scriptMock.when(() -> Script.runSimpleBashScriptForExitValue(anyString()))
                         .thenAnswer(invocation -> {
                             String command = invocation.getArgument(0);
@@ -419,8 +433,6 @@ public class LibvirtRestoreBackupCommandWrapperTest {
                                 return 0; // File exists
                             } else if (command.contains("qemu-img check")) {
                                 return 0; // File is valid
-                            } else if (command.contains("rsync")) {
-                                return 0; // Rsync success
                             } else if (command.contains("virsh attach-disk")) {
                                 return 1; // Attach failure
                             }
@@ -499,10 +511,10 @@ public class LibvirtRestoreBackupCommandWrapperTest {
             filesMock.when(() -> Files.createTempDirectory(anyString())).thenReturn(tempPath);
 
             try (MockedStatic<Script> scriptMock = mockStatic(Script.class)) {
-                scriptMock.when(() -> Script.runSimpleBashScriptForExitValue(anyString(), anyInt(), any(Boolean.class)))
-                        .thenReturn(0); // Mount success
                 scriptMock.when(() -> Script.runSimpleBashScriptForExitValue(anyString()))
-                        .thenReturn(0); // All other commands success
+                        .thenReturn(0); // All commands success
+                scriptMock.when(() -> Script.runSimpleBashScriptForExitValue(anyString(), anyInt(), any(Boolean.class)))
+                        .thenReturn(0); // All commands success
 
                 filesMock.when(() -> Files.deleteIfExists(any(Path.class))).thenReturn(true);
 

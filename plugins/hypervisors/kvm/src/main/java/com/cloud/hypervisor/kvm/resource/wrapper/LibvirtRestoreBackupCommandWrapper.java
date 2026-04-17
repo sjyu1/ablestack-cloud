@@ -73,7 +73,7 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         List<String> restoreVolumePaths = command.getRestoreVolumePaths();
         // String restoreVolumeUuid = command.getRestoreVolumeUUID();
         Integer mountTimeout = command.getMountTimeout() * 1000;
-        int timeout = command.getWait();
+        int timeout = command.getWait() > 0 ? command.getWait() * 1000 : serverResource.getCmdsTimeout();
         String cacheMode = command.getCacheMode();
         KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();
         List<String> volumePaths = command.getVolumePaths();
@@ -234,7 +234,7 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
 
     private boolean replaceVolumeWithBackup(KVMStoragePoolManager storagePoolMgr, PrimaryDataStoreTO volumePool, String volumePath, String backupPath, int timeout, boolean createTargetVolume) {
         if (volumePool.getPoolType() != Storage.StoragePoolType.RBD) {
-            int exitValue = Script.runSimpleBashScriptForExitValue(String.format(RSYNC_COMMAND, backupPath, volumePath));
+            int exitValue = Script.runSimpleBashScriptForExitValue(String.format(RSYNC_COMMAND, backupPath, volumePath), timeout, false);
             return exitValue == 0;
         }
 
@@ -245,7 +245,7 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
         QemuImg qemu;
         try {
-            qemu = new QemuImg(timeout * 1000, true, false);
+            qemu = new QemuImg(timeout, true, false);
             if (!createTargetVolume) {
                 KVMPhysicalDisk rdbDisk = volumeStoragePool.getPhysicalDisk(volumePath);
                 logger.debug("Restoring RBD volume: {}", rdbDisk.toString());

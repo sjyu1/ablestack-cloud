@@ -309,6 +309,30 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 011 - honor backup command timeout for NAS create and restore
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `68bd056306` Support timeout configuration for Create and Restore NAS backup (#12964)
+- Summary:
+  - Use `command.getWait()` as a millisecond timeout for NAS backup create and restore operations
+  - Fall back to `commands.timeout` from `LibvirtComputingResource` when the command-specific wait is not set
+  - Update restore-side unit mocks so `rsync` failures are asserted through the timeout-aware script path
+- Functional impact:
+  - Prevents NAS backup create and restore flows from timing out too early when backup operations legitimately run longer
+  - Aligns KVM backup execution with the configured command timeout behavior already used by other libvirt command wrappers
+- Validation:
+  - `LibvirtTakeBackupCommandWrapper` and the restore tests applied cleanly on `main`
+  - `LibvirtRestoreBackupCommandWrapper` required a manual port because the Apache patch was based on a newer block-device helper structure than the current branch
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - Europa already extends the restore path with `cacheMode` handling, and the Apache timeout variable rewrite overlapped with that customization while the branch still uses the older RBD-only helper structure
+- Resolution notes:
+  - Kept the Europa-specific `cacheMode` flow intact, then manually ported the Apache timeout semantics so `rsync` uses the timeout-aware script overload and `QemuImg` consumes milliseconds directly without changing the existing restore behavior
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
