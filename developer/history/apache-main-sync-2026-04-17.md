@@ -454,6 +454,30 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 017 - enforce secondary storage limits during upload flows
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `81a8ac8e1f` secondary storage resource limit for upload
+- Summary:
+  - Add abort-aware upload status polling so the management server can stop uploads after limit failures
+  - Reserve `secondary_storage` usage during template and volume upload progress updates
+  - Keep upload channels and SSVM-side state in sync when uploads are aborted or fail due to limit exhaustion
+- Functional impact:
+  - Prevents template and volume uploads from continuing after the management server detects secondary storage quota exhaustion
+  - Makes upload-side secondary storage accounting consistent with the download-side reservation flow
+- Validation:
+  - Upload command, SSVM resource handler, and secondary-storage resource changes applied cleanly on `main`
+  - `ImageStoreUploadMonitorImpl` required a manual merge because the current branch did not yet carry the reservation/account helper dependencies used by the Apache upload monitor changes
+  - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
