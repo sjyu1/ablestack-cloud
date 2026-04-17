@@ -286,6 +286,29 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 010 - preload backup architecture during create-from-backup
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `1ff9eec997` Load arch data for backup from template during create instance from backup (#12801)
+- Summary:
+  - Load the backup source template or ISO architecture before opening the create-from-backup flow
+  - Pre-fill `selectedArchitecture` from backup metadata instead of resetting to the zone default
+  - Pass the fetched backup architecture through `CreateVMFromBackup` into `DeployVMFromBackup`
+- Functional impact:
+  - Prevents backup-based instance creation from silently defaulting to the wrong architecture on multi-arch zones
+  - Keeps create-from-backup requests aligned with the source template or ISO architecture during restore-driven provisioning
+- Validation:
+  - Applied cleanly on `main` with changes limited to `DeployVMFromBackup.vue` and `CreateVMFromBackup.vue`
+  - Frontend build or lint verification has not been run in this environment yet
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - None on europa
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
