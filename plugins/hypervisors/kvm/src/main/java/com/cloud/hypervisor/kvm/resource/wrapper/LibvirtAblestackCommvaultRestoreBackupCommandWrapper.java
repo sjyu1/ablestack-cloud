@@ -468,10 +468,13 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             Map<String, String> baseMetadata = readRbdBackupMetadata(backupPaths.get(0));
             String baseCheckpoint = baseMetadata.get("checkpoint_name");
             if (StringUtils.isNotBlank(baseCheckpoint)) {
-                if (!ensureRbdSnapshotExists(volumeStoragePool, normalizedVolumePath, baseCheckpoint, timeout)) {
+                boolean createdBaseCheckpoint = ensureRbdSnapshotExists(volumeStoragePool, normalizedVolumePath, baseCheckpoint, timeout);
+                if (!rbdSnapshotExists(volumeStoragePool, normalizedVolumePath, baseCheckpoint, timeout)) {
                     return false;
                 }
-                restoreSnapshots.add(baseCheckpoint);
+                if (createdBaseCheckpoint) {
+                    restoreSnapshots.add(baseCheckpoint);
+                }
             }
 
             for (int index = 1; index < backupPaths.size(); index++) {
@@ -495,10 +498,13 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
                             importDiffResult.exitCode, importDiffResult.output);
                     return false;
                 }
-                if (!ensureRbdSnapshotExists(volumeStoragePool, normalizedVolumePath, checkpoint, timeout)) {
+                boolean createdCheckpoint = ensureRbdSnapshotExists(volumeStoragePool, normalizedVolumePath, checkpoint, timeout);
+                if (!rbdSnapshotExists(volumeStoragePool, normalizedVolumePath, checkpoint, timeout)) {
                     return false;
                 }
-                restoreSnapshots.add(checkpoint);
+                if (createdCheckpoint) {
+                    restoreSnapshots.add(checkpoint);
+                }
             }
             return true;
         } finally {
@@ -583,10 +589,13 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             Map<String, String> baseMetadata = readRbdBackupMetadata(backupPaths.get(0));
             String baseCheckpoint = baseMetadata.get("checkpoint_name");
             if (StringUtils.isNotBlank(baseCheckpoint)) {
-                if (!ensureRbdSnapshotExists(sourceImage, tempImage, baseCheckpoint, timeout)) {
+                boolean createdBaseCheckpoint = ensureRbdSnapshotExists(sourceImage, tempImage, baseCheckpoint, timeout);
+                if (!rbdSnapshotExists(sourceImage, tempImage, baseCheckpoint, timeout)) {
                     return false;
                 }
-                restoreSnapshots.add(baseCheckpoint);
+                if (createdBaseCheckpoint) {
+                    restoreSnapshots.add(baseCheckpoint);
+                }
             }
             for (int index = 1; index < backupPaths.size(); index++) {
                 String backupPath = backupPaths.get(index);
@@ -609,10 +618,13 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
                             importDiffResult.exitCode, importDiffResult.output);
                     return false;
                 }
-                if (!ensureRbdSnapshotExists(sourceImage, tempImage, checkpoint, timeout)) {
+                boolean createdCheckpoint = ensureRbdSnapshotExists(sourceImage, tempImage, checkpoint, timeout);
+                if (!rbdSnapshotExists(sourceImage, tempImage, checkpoint, timeout)) {
                     return false;
                 }
-                restoreSnapshots.add(checkpoint);
+                if (createdCheckpoint) {
+                    restoreSnapshots.add(checkpoint);
+                }
             }
             return true;
         } finally {
@@ -638,7 +650,7 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
 
     private boolean ensureRbdSnapshotExists(KVMStoragePool storagePool, String volumePath, String snapshotName, int timeout) {
         if (rbdSnapshotExists(storagePool, volumePath, snapshotName, timeout)) {
-            return true;
+            return false;
         }
         String createSnapshotCommand = buildRbdSnapshotCommand(storagePool, "snap create", volumePath + "@" + snapshotName);
         CommandExecutionResult createSnapshotResult = executeBashCommandWithResult(createSnapshotCommand, timeout, "Create RBD snapshot on target volume");
@@ -652,7 +664,7 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
 
     private boolean ensureRbdSnapshotExists(RbdImageSpec imageSpec, String image, String snapshotName, int timeout) {
         if (rbdSnapshotExists(imageSpec, image, snapshotName, timeout)) {
-            return true;
+            return false;
         }
         String createSnapshotCommand = imageSpec.buildRbdCommand("snap", "create", quote(image + "@" + snapshotName));
         CommandExecutionResult createSnapshotResult = executeBashCommandWithResult(createSnapshotCommand, timeout, "Create RBD snapshot on temporary image");

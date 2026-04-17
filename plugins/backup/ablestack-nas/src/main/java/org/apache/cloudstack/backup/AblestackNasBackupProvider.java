@@ -236,7 +236,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             throw new CloudRuntimeException("No valid backup repository found for the VM, please check the attached backup offering");
         }
 
-        validateNoVmSnapshots(vm);
+        validateNoKvmFileBasedVmSnapshots(vm);
         List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
@@ -362,13 +362,6 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private String buildBackupPath(VirtualMachine vm) {
         return String.format("%s/%s", vm.getInstanceName(),
                 new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date()));
-    }
-
-    private void validateNoVmSnapshots(VirtualMachine vm) {
-        if (CollectionUtils.isNotEmpty(vmSnapshotDao.findByVm(vm.getId()))) {
-            logger.debug("NAS backup provider cannot take backups of a VM [{}] with VM snapshots.", vm);
-            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has VM snapshots.", vm.getUuid()));
-        }
     }
 
     private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, String checkpointName, String backupEngine, Backup parentBackup,
@@ -1089,15 +1082,29 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean assignVMToBackupOffering(VirtualMachine vm, BackupOffering backupOffering) {
-        for (VMSnapshotVO vmSnapshotVO : vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.Disk)) {
-            List<VMSnapshotDetailsVO> vmSnapshotDetails = vmSnapshotDetailsDao.listDetails(vmSnapshotVO.getId());
-            if (vmSnapshotDetails.stream().anyMatch(vmSnapshotDetailsVO -> VolumeApiServiceImpl.KVM_FILE_BASED_STORAGE_SNAPSHOT.equals(vmSnapshotDetailsVO.getName()))) {
-                logger.warn("VM [{}] has VM snapshots using the KvmFileBasedStorageVmSnapshot Strategy; this provider does not support backups on VMs with these snapshots!");
-                return false;
-            }
+        if (hasKvmFileBasedVmSnapshots(vm)) {
+            logger.warn("VM [{}] has VM snapshots using the KvmFileBasedStorageVmSnapshot Strategy; this provider does not support backups on VMs with these snapshots!", vm);
+            return false;
         }
 
         return Hypervisor.HypervisorType.KVM.equals(vm.getHypervisorType());
+    }
+
+    private void validateNoKvmFileBasedVmSnapshots(VirtualMachine vm) {
+        if (hasKvmFileBasedVmSnapshots(vm)) {
+            logger.warn("VM [{}] has VM snapshots using the KvmFileBasedStorageVmSnapshot Strategy; backup cannot be started.", vm);
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has KVM file-based VM snapshots.", vm.getUuid()));
+        }
+    }
+
+    private boolean hasKvmFileBasedVmSnapshots(VirtualMachine vm) {
+        for (VMSnapshotVO vmSnapshotVO : vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.Disk)) {
+            List<VMSnapshotDetailsVO> vmSnapshotDetails = vmSnapshotDetailsDao.listDetails(vmSnapshotVO.getId());
+            if (vmSnapshotDetails.stream().anyMatch(vmSnapshotDetailsVO -> VolumeApiServiceImpl.KVM_FILE_BASED_STORAGE_SNAPSHOT.equals(vmSnapshotDetailsVO.getName()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

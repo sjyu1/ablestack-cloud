@@ -33,6 +33,7 @@ import com.cloud.storage.ScopeType;
 import com.cloud.storage.Storage;
 import com.cloud.storage.Volume;
 import com.cloud.storage.Volume.Type;
+import com.cloud.storage.VolumeApiServiceImpl;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.StoragePoolHostDao;
@@ -51,7 +52,11 @@ import com.cloud.event.EventTypes;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine;
 import com.cloud.vm.dao.VMInstanceDao;
+import com.cloud.vm.snapshot.VMSnapshot;
+import com.cloud.vm.snapshot.VMSnapshotDetailsVO;
+import com.cloud.vm.snapshot.VMSnapshotVO;
 import com.cloud.vm.snapshot.dao.VMSnapshotDao;
+import com.cloud.vm.snapshot.dao.VMSnapshotDetailsDao;
 import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.datastore.db.SnapshotDataStoreDao;
@@ -209,9 +214,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private AgentManager agentManager;
 
     @Inject
-    private VMSnapshotDao vmSnapshotDao;
-
-    @Inject
     private PrimaryDataStoreDao primaryDataStoreDao;
 
     @Inject
@@ -222,6 +224,12 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Inject
     ResourceManager resourceManager;
+
+    @Inject
+    private VMSnapshotDao vmSnapshotDao;
+
+    @Inject
+    private VMSnapshotDetailsDao vmSnapshotDetailsDao;
 
     @Inject
     private DiskOfferingDao diskOfferingDao;
@@ -289,8 +297,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     public Pair<Boolean, Backup> takeBackup(VirtualMachine vm, Boolean quiesceVM) {
         final Host vmHost = getVMHypervisorHostForBackup(vm);
         final HostVO vmHostVO = hostDao.findById(vmHost.getId());
-        validateNoVmSnapshots(vm);
-
+        validateNoKvmFileBasedVmSnapshots(vm);
         try {
             String commvaultServer = getUrlDomain(CommvaultUrl.value());
         } catch (URISyntaxException e) {
@@ -553,13 +560,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             throw new CloudRuntimeException(String.format("Invalid Commvault backup externalId format: [%s]", externalId));
         }
         return new Pair<>(path, jobId);
-    }
-
-    private void validateNoVmSnapshots(VirtualMachine vm) {
-        if (CollectionUtils.isNotEmpty(vmSnapshotDao.findByVm(vm.getId()))) {
-            LOG.debug("Commvault backup provider cannot take backups of a VM [{}] with VM snapshots.", vm);
-            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has VM snapshots.", vm.getUuid()));
-        }
     }
 
     private BackupExecutionResult executeBackup(VirtualMachine vm, Boolean quiesceVM, Host vmHost, HostVO vmHostVO, AblestackCommvaultClient client,
@@ -1530,11 +1530,32 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Override
     public boolean assignVMToBackupOffering(VirtualMachine vm, BackupOffering backupOffering) {
+        if (hasKvmFileBasedVmSnapshots(vm)) {
+            logger.warn("VM [{}] has VM snapshots using the KvmFileBasedStorageVmSnapshot Strategy; this provider does not support backups on VMs with these snapshots!", vm);
+            return false;
+        }
         final AblestackCommvaultClient client = getClient(vm.getDataCenterId());
         final Host host = getVMHypervisorHostForBackup(vm);
         String clientId = client.getClientId(host.getName());
         String applicationId = client.getApplicationId(clientId);
         return client.createBackupSet(vm.getInstanceName(), applicationId, clientId, backupOffering.getExternalId());
+    }
+
+    private void validateNoKvmFileBasedVmSnapshots(VirtualMachine vm) {
+        if (hasKvmFileBasedVmSnapshots(vm)) {
+            logger.warn("VM [{}] has VM snapshots using the KvmFileBasedStorageVmSnapshot Strategy; backup cannot be started.", vm);
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has KVM file-based VM snapshots.", vm.getUuid()));
+        }
+    }
+
+    private boolean hasKvmFileBasedVmSnapshots(VirtualMachine vm) {
+        for (VMSnapshotVO vmSnapshotVO : vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.Disk)) {
+            List<VMSnapshotDetailsVO> vmSnapshotDetails = vmSnapshotDetailsDao.listDetails(vmSnapshotVO.getId());
+            if (vmSnapshotDetails.stream().anyMatch(vmSnapshotDetailsVO -> VolumeApiServiceImpl.KVM_FILE_BASED_STORAGE_SNAPSHOT.equals(vmSnapshotDetailsVO.getName()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
