@@ -526,6 +526,36 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 020 - reserve start VM limits with host-tag aware reservations
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `4bcd509193` Fix resource limit reservation and check during StartVirtualMachine
+- Summary:
+  - Extract the deployment-heavy portion of `startVirtualMachine` into a helper so reservation handling wraps only the limit-sensitive path
+  - Replace standalone `checkVmResourceLimit` usage with `CheckedReservation` blocks for `user_vm`, `cpu`, and `memory` during running-only resource counting
+  - Preserve current branch GPU accounting by reserving `gpu` resources when the service offering declares GPU capacity
+- Functional impact:
+  - Prevents concurrent `StartVirtualMachine` requests from passing a pre-check and then overshooting runtime VM resource limits during actual deployment
+  - Aligns host-tag-aware start reservations with the same tagged resource accounting already used by deploy and destroy flows
+  - Keeps GPU quota behavior symmetric on this branch so start reservations do not weaken existing GPU limit enforcement
+- Validation:
+  - `UserVmManagerImpl` is the only touched source file on `main`
+  - The Apache patch required a manual merge because the local branch still carried the monolithic start method and a different VM details DAO field name
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - The Apache patch split `startVirtualMachine` into a helper while the local branch still had the older inline deployment flow, so the full method body conflicted
+  - The extracted helper referenced `userVmDetailsDao`, but this branch uses `vmInstanceDetailsDao`
+  - The pre-existing local `checkVmResourceLimit` path already covered GPU limits, while the Apache reservation patch only reserved VM, CPU, and memory
+  - On `ablestack-europa`, the legacy inline start path also carried a branch-specific disaster recovery start guard, which collided with the helper extraction during cherry-pick
+- Resolution notes:
+  - Kept the Apache helper extraction and reservation structure, then adapted the helper to the local DAO field name
+  - Added a conditional GPU reservation to preserve the branch's existing resource-limit coverage and keep start/destroy accounting behavior symmetric
+  - Moved the Europa disaster recovery start validation into `startVirtualMachineUnchecked` so the branch-only guard remains enforced after the method split
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
