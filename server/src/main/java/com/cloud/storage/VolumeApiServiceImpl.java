@@ -4043,6 +4043,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         }
 
         _accountMgr.checkAccess(caller, null, true, volume);
+        validateNoBackupActivityOrHistoryForVolumeSnapshot(volumeId, "create");
 
         if (volume.getState() != Volume.State.Ready) {
             throw new InvalidParameterValueException(String.format("Volume: %s is not in %s state but %s. Cannot take snapshot.", volume.getVolume(), Volume.State.Ready, volume.getState()));
@@ -4145,6 +4146,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         }
 
         _accountMgr.checkAccess(caller, null, true, volume);
+        validateNoBackupActivityOrHistoryForVolumeSnapshot(volumeId, "create");
 
         if (volume.getState() != Volume.State.Ready) {
             throw new InvalidParameterValueException(String.format("Volume: %s is not in %s state but %s. Cannot take snapshot.", volume.getVolume(), Volume.State.Ready, volume.getState()));
@@ -4218,6 +4220,26 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
             payload.setBackup(backup);
             volume.addPayload(payload);
             return volService.takeSnapshot(volume);
+        }
+    }
+
+    private void validateNoBackupActivityOrHistoryForVolumeSnapshot(Long volumeId, String operation) {
+        VolumeVO volume = _volsDao.findById(volumeId);
+        if (volume == null || volume.getInstanceId() == null) {
+            return;
+        }
+
+        Long vmId = volume.getInstanceId();
+        boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) || Backup.Status.Restoring.equals(backup.getStatus()));
+        if (hasBackupInProgress) {
+            throw new InvalidParameterValueException(String.format("Snapshot %s failed because a backup or restore is currently in progress for the Instance.", operation));
+        }
+
+        boolean hasExistingBackup = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
+        if (hasExistingBackup) {
+            throw new InvalidParameterValueException(String.format("Snapshot %s failed because the Instance has backups.", operation));
         }
     }
 

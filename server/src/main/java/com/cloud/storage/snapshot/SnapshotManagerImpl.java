@@ -520,7 +520,6 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
 
         // does the caller have the authority to act on this volume
         _accountMgr.checkAccess(CallContext.current().getCallingAccount(), null, true, volume);
-        validateNoBackupActivityOrHistoryForVolumeSnapshot(volumeId, "create");
 
         SnapshotInfo snapshot = snapshotFactory.getSnapshotOnPrimaryStore(snapshotId);
         if (snapshot == null) {
