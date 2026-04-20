@@ -282,18 +282,22 @@ class LibvirtAblestackNasBackupHelper {
         StringBuilder xml = new StringBuilder();
         xml.append("<domain type='qemu'>")
                 .append("<name>").append(vmName).append("</name>")
-                .append("<memory unit='MiB'>128</memory>")
+                .append("<memory unit='MiB'>256</memory>")
+                .append("<currentMemory unit='MiB'>256</currentMemory>")
                 .append("<vcpu>1</vcpu>")
-                .append("<os><type arch='").append(arch).append("' machine='").append(machine).append("'>hvm</type></os>")
+                .append("<os><type arch='").append(arch).append("' machine='").append(machine)
+                .append("'>hvm</type><boot dev='hd'/></os>")
                 .append("<devices><emulator>").append(emulator).append("</emulator>");
         for (int i = 0; i < diskPaths.size(); i++) {
             char letter = (char) ('a' + i);
             xml.append("<disk type='file' device='disk'>")
+                    .append("<driver name='qemu' type='qcow2' cache='none'/>")
                     .append("<source file='").append(diskPaths.get(i)).append("'/>")
                     .append("<target dev='vd").append(letter).append("' bus='virtio'/>")
                     .append("</disk>");
         }
-        xml.append("</devices></domain>");
+        xml.append("<graphics type='vnc' port='-1'/>")
+                .append("</devices></domain>");
         return xml.toString();
     }
 
