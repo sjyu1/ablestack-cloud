@@ -368,11 +368,11 @@ class LibvirtAblestackNasBackupHelper {
 
         String parentCheckpointName = getParentCheckpointName(checkpointPath);
         if (parentCheckpointName != null) {
-            Path parentCheckpointPath = checkpointPath.resolveSibling(parentCheckpointName + ".xml");
-            if (!Files.exists(parentCheckpointPath)) {
+            Path parentCheckpointPath = findCheckpointPath(getCheckpointSearchRoot(checkpointPath), parentCheckpointName);
+            if (parentCheckpointPath == null) {
                 throw new IOException(formatScriptStyleLog(String.format(
-                        "Missing parent checkpoint XML [%s] referenced by [%s]",
-                        parentCheckpointPath, checkpointPath)));
+                        "Missing parent checkpoint XML for checkpoint [%s] referenced by [%s] under search root [%s]",
+                        parentCheckpointName, checkpointPath, getCheckpointSearchRoot(checkpointPath))));
             }
             redefineCheckpointChainIfNeeded(vmName, parentCheckpointPath, visitedCheckpointNames);
         }
@@ -408,6 +408,24 @@ class LibvirtAblestackNasBackupHelper {
             return parentName.trim();
         } catch (XPathExpressionException | SAXException | RuntimeException | javax.xml.parsers.ParserConfigurationException e) {
             throw new IOException("Failed to parse checkpoint XML " + checkpointPath, e);
+        }
+    }
+
+    private Path getCheckpointSearchRoot(Path checkpointPath) {
+        Path checkpointsDir = checkpointPath.getParent();
+        Path backupDir = checkpointsDir != null ? checkpointsDir.getParent() : null;
+        Path vmBackupRoot = backupDir != null ? backupDir.getParent() : null;
+        return vmBackupRoot != null ? vmBackupRoot : checkpointPath.getParent();
+    }
+
+    private Path findCheckpointPath(Path searchRoot, String checkpointName) throws IOException {
+        if (searchRoot == null || checkpointName == null || checkpointName.isBlank() || !Files.exists(searchRoot)) {
+            return null;
+        }
+
+        try (var stream = Files.find(searchRoot, 5,
+                (path, attrs) -> attrs.isRegularFile() && (checkpointName + ".xml").equals(path.getFileName().toString()))) {
+            return stream.findFirst().orElse(null);
         }
     }
 
