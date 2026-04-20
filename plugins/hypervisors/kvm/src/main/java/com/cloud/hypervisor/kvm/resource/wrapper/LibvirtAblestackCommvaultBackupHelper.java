@@ -29,26 +29,39 @@ import com.cloud.utils.Pair;
 import com.cloud.utils.script.Script;
 import org.apache.cloudstack.backup.AblestackCommvaultTakeBackupCommand;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
+import org.apache.cloudstack.utils.security.ParserUtils;
 import org.libvirt.Connect;
 import org.libvirt.Domain;
 import org.libvirt.DomainInfo.DomainState;
 import org.libvirt.LibvirtException;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
+import org.w3c.dom.Document;
+import org.xml.sax.SAXException;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
 
 class LibvirtAblestackCommvaultBackupHelper {
     protected Logger LOGGER = LogManager.getLogger(LibvirtAblestackCommvaultBackupHelper.class);
     static final Integer EXIT_CLEANUP_FAILED = 20;
     private static final int BACKUP_JOB_POLL_INTERVAL_MS = 10000;
+    private static final DateTimeFormatter SCRIPT_LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss>");
 
     enum BackupExecutionMode {
         RUNNING("backup-running"),
@@ -171,9 +184,13 @@ class LibvirtAblestackCommvaultBackupHelper {
             String backupBeginCommand = String.format("virsh -c qemu:///system backup-begin --domain %s --backupxml %s --checkpointxml %s",
                     shellQuote(dummyVmName), shellQuote(backupXml.toString()), shellQuote(checkpointXml.toString()));
             LOGGER.debug("Starting stopped VM Commvault backup-begin command=[{}]", backupBeginCommand);
-            if (Script.runSimpleBashScriptForExitValue(backupBeginCommand, resource.getCmdsTimeout(), false) != 0) {
-                LOGGER.error("Failed to start backup for stopped VM Commvault dummy domain [{}]", dummyVmName);
-                return new Pair<>(1, "Failed to start backup for dummy VM " + dummyVmName);
+            Pair<Integer, String> backupBeginResult = runCommandWithOutput(backupBeginCommand);
+            if (backupBeginResult.first() != 0) {
+                String failureDetails = formatScriptStyleLog(String.format(
+                        "Failed to start stopped VM Commvault backup for dummy domain [%s]: %s",
+                        dummyVmName, sanitizeCommandOutput(backupBeginResult.second())));
+                LOGGER.error(failureDetails);
+                return new Pair<>(backupBeginResult.first(), failureDetails);
             }
 
             try {
@@ -218,7 +235,7 @@ class LibvirtAblestackCommvaultBackupHelper {
             char letter = (char) ('a' + i);
             String diskPath = diskPaths.get(i);
             xml.append("<disk type='file' device='disk'>")
-                    .append("<driver name='qemu' type='qcow2'/>")
+                    .append("<driver name='qemu' type='qcow2' cache='none'/>")
                     .append("<source file='").append(diskPath).append("'/>")
                     .append("<target dev='vd").append(letter).append("' bus='virtio'/></disk>");
         }
@@ -232,22 +249,91 @@ class LibvirtAblestackCommvaultBackupHelper {
         }
     }
 
+    private Pair<Integer, String> runCommandWithOutput(String command) {
+        String wrappedCommand = String.format("set +e; %s 2>&1; rc=$?; echo __CMD_EXIT__=$rc", command);
+        String output = Script.runSimpleBashScriptWithFullResult(wrappedCommand, resource.getCmdsTimeout());
+        if (output == null) {
+            return new Pair<>(-1, "");
+        }
+
+        List<String> lines = new ArrayList<>(Arrays.asList(output.split("\n")));
+        int exitCode = -1;
+        if (!lines.isEmpty()) {
+            String lastLine = lines.get(lines.size() - 1).trim();
+            if (lastLine.startsWith("__CMD_EXIT__=")) {
+                exitCode = Integer.parseInt(lastLine.substring("__CMD_EXIT__=".length()));
+                lines.remove(lines.size() - 1);
+            }
+        }
+        return new Pair<>(exitCode, String.join("\n", lines).trim());
+    }
+
+    private String sanitizeCommandOutput(String output) {
+        if (output == null || output.isBlank()) {
+            return "no detailed error returned";
+        }
+        return output.replace('\n', ' ').trim();
+    }
+
+    private String formatScriptStyleLog(String message) {
+        return LocalDateTime.now().format(SCRIPT_LOG_TIME_FORMATTER) + " " + message;
+    }
+
     private void redefineCheckpointIfNeeded(String vmName, Path checkpointPath) throws IOException {
+        redefineCheckpointChainIfNeeded(vmName, checkpointPath, new HashSet<>());
+    }
+
+    private void redefineCheckpointChainIfNeeded(String vmName, Path checkpointPath, Set<String> visitedCheckpointNames) throws IOException {
         if (!Files.exists(checkpointPath)) {
             return;
         }
         String checkpointName = checkpointPath.getFileName().toString().replace(".xml", "");
+        if (!visitedCheckpointNames.add(checkpointName)) {
+            return;
+        }
+
+        String parentCheckpointName = getParentCheckpointName(checkpointPath);
+        if (parentCheckpointName != null) {
+            Path parentCheckpointPath = checkpointPath.resolveSibling(parentCheckpointName + ".xml");
+            if (!Files.exists(parentCheckpointPath)) {
+                throw new IOException(formatScriptStyleLog(String.format(
+                        "Missing parent checkpoint XML [%s] referenced by [%s]",
+                        parentCheckpointPath, checkpointPath)));
+            }
+            redefineCheckpointChainIfNeeded(vmName, parentCheckpointPath, visitedCheckpointNames);
+        }
+
         int infoExit = Script.runSimpleBashScriptForExitValue(String.format(
                 "virsh -c qemu:///system checkpoint-info --domain %s --checkpointname %s > /dev/null 2>&1",
                 shellQuote(vmName), shellQuote(checkpointName)));
         if (infoExit == 0) {
             return;
         }
-        int redefineExit = Script.runSimpleBashScriptForExitValue(String.format(
+        String redefineCommand = String.format(
                 "virsh -c qemu:///system checkpoint-create --domain %s --xmlfile %s --redefine > /dev/null 2>&1",
-                shellQuote(vmName), shellQuote(checkpointPath.toString())));
-        if (redefineExit != 0) {
-            throw new IOException("Failed to redefine checkpoint " + checkpointName + " on domain " + vmName);
+                shellQuote(vmName), shellQuote(checkpointPath.toString()));
+        Pair<Integer, String> redefineResult = runCommandWithOutput(redefineCommand);
+        if (redefineResult.first() != 0) {
+            String failureDetails = formatScriptStyleLog(String.format(
+                    "Failed to redefine checkpoint [%s] on domain [%s] using [%s]: %s",
+                    checkpointName, vmName, checkpointPath, sanitizeCommandOutput(redefineResult.second())));
+            LOGGER.error(failureDetails);
+            throw new IOException(failureDetails);
+        }
+    }
+
+    private String getParentCheckpointName(Path checkpointPath) throws IOException {
+        try {
+            Document checkpointDocument = ParserUtils.getSaferDocumentBuilderFactory().newDocumentBuilder().parse(checkpointPath.toFile());
+            XPath xpath = XPathFactory.newInstance().newXPath();
+            String parentName = (String) xpath.compile("/domaincheckpoint/parent/name/text()")
+                    .evaluate(checkpointDocument, XPathConstants.STRING);
+            if (parentName == null || parentName.isBlank()) {
+                return null;
+            }
+            return parentName.trim();
+        } catch (XPathExpressionException | SAXException | RuntimeException | javax.xml.parsers.ParserConfigurationException e) {
+            throw new IOException("Failed to parse checkpoint XML " + checkpointPath, e);
         }
     }
 
