@@ -53,9 +53,13 @@ public class LibvirtAblestackNasTakeBackupCommandWrapper extends CommandWrapper<
             return answer;
         }
 
-        long backupSize = backupHelper.parseBackupSize(result.second(), diskPaths);
         BackupAnswer answer = new BackupAnswer(command, true, result.second().trim());
-        answer.setSize(backupSize);
+        try {
+            answer.setSize(backupHelper.parseBackupSize(result.second(), diskPaths));
+        } catch (RuntimeException e) {
+            logger.warn("Failed to parse NAS backup size for vm=[{}], details=[{}]",
+                    command.getVmName(), result.second(), e);
+        }
         return answer;
     }
 }

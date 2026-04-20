@@ -115,20 +115,30 @@ class LibvirtAblestackNasBackupHelper {
     }
 
     long parseBackupSize(String output, List<String> diskPaths) {
-        if (CollectionUtils.isNullOrEmpty(diskPaths)) {
-            List<String> outputLines = Arrays.asList(output.trim().split("\n"));
-            if (!outputLines.isEmpty()) {
-                return Long.parseLong(outputLines.get(outputLines.size() - 1).trim());
-            }
+        if (output == null || output.isBlank()) {
             return 0L;
         }
 
-        long backupSize = 0L;
-        String[] outputLines = output.trim().split("\n");
-        for (String line : outputLines) {
-            backupSize += Long.parseLong(line.split(" ")[0].trim());
+        List<Long> parsedSizes = Arrays.stream(output.trim().split("\n"))
+                .map(String::trim)
+                .filter(this::isWholeNumber)
+                .map(Long::parseLong)
+                .collect(Collectors.toList());
+
+        if (parsedSizes.isEmpty()) {
+            LOGGER.warn("Unable to parse NAS backup size from output=[{}]", output);
+            return 0L;
         }
-        return backupSize;
+
+        if (CollectionUtils.isNullOrEmpty(diskPaths)) {
+            return parsedSizes.get(parsedSizes.size() - 1);
+        }
+
+        return parsedSizes.stream().mapToLong(Long::longValue).sum();
+    }
+
+    private boolean isWholeNumber(String value) {
+        return value != null && !value.isEmpty() && value.chars().allMatch(Character::isDigit);
     }
 
     private String[] buildBackupScriptCommand(AblestackNasTakeBackupCommand command, List<String> diskPaths, BackupExecutionMode executionMode) {
