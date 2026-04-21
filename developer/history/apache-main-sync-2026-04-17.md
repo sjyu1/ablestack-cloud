@@ -1153,6 +1153,29 @@
 - Resolution notes:
   - `N/A`
 
+### Record 044 - allow established and related traffic in routed VR forward chain
+
+- Local branch: `main`
+- Local commit: `166bb4304f`
+- Source Apache commits:
+  - `1fc4cb90bf` Routed VR: accept packets from related and established connections (#12986)
+- Summary:
+  - Add an nftables `ct state established,related accept` rule when creating `forward` chains in `CsNetfilter`
+  - Leave the existing input/output ICMP allowance behavior unchanged
+- Functional impact:
+  - Prevents routed VR forward chains from dropping reply traffic that belongs to already established or related connections
+  - Improves flow continuity for routed guest traffic without widening new-connection exposure
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to a 2-line `CsNetfilter.py` change in the `forward` hook path
+  - Runtime/systemvm test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
