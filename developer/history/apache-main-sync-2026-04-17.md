@@ -1083,6 +1083,29 @@
 - Resolution notes:
   - Preserved the local `idStateNeqSearch` initialization and added the Apache `idEqRoleEqStateInSearch` builder without changing the branch-local non-destroyed lookup behavior
 
+### Record 041 - pass snapshot CPG on Primera online copy
+
+- Local branch: `main`
+- Local commit: `e5e4e63261`
+- Source Apache commits:
+  - `8f3c6fad7a` set snapcpg config on copy (#12955)
+- Summary:
+  - Set `snapCpg` on Primera online copy parameters alongside the destination CPG
+  - Leave the existing online copy behavior unchanged apart from propagating the configured snapshot CPG
+- Functional impact:
+  - Ensures Primera online copy operations inherit the configured snapshot CPG instead of relying only on the destination CPG
+  - Reduces the risk of copy-time snapshot placement drifting from the storage policy expected by the Primera backend
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to a single `parms.setSnapCPG(snapCpg)` line in `PrimeraAdapter`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
