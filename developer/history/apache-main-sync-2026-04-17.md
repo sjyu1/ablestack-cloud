@@ -1772,7 +1772,7 @@
 ### Record 070 - align GitHub Actions checkout step on v6
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `01d5026710`
 - Source Apache commits:
   - `6bcbb008b4` Bump `actions/checkout` to `v6` (#12164)
 - Summary:
@@ -1786,11 +1786,36 @@
   - The staged diff only touches `.github/workflows/*.yml`
   - GitHub Actions execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied on ablestack-europa as ec243bba23 after resolving a branch-local workflow/path collision during cherry-pick`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
   - Applied the same checkout version normalization across the branch-local workflow set rather than limiting the change to upstream's single-file footprint
+  - On `ablestack-europa`, preserved the branch-local desktop-service `works.yml` content when a mis-targeted cherry-pick conflict surfaced, and only kept the intended workflow checkout-version updates
+
+### Record 071 - avoid unnecessary service-offering changes during VM snapshot revert
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b22dbbe2d7` Fix Revert Instance to Snapshot with custom service offering (#12885)
+- Summary:
+  - Split VM-snapshot revert validation so running instances reject disk-only snapshot revert and stopped instances reject disk-and-memory revert with clearer state-specific messages
+  - Refactor service-offering revert logic into `userVmServiceOfferingNeedsChange(...)` so dynamic offerings only trigger a revert-time offering change when CPU, memory, or speed actually differ from the snapshot payload
+  - Extend `VMSnapshotManagerTest` with explicit coverage for matching and non-matching dynamic offering details
+- Functional impact:
+  - Avoids unnecessary service-offering update attempts during snapshot revert when a dynamic offering still resolves to the same sizing that the instance already uses
+  - Produces more accurate revert validation for state/type combinations, reducing confusing revert failures around custom offerings and memory snapshots
+- Validation:
+  - Apache cherry-pick required a manual conflict resolution on `main` in `VMSnapshotManagerImpl` because the local branch already carried adjacent revert/custom-offering refactoring from the earlier snapshot record
+  - The resolved code keeps the branch-local descriptive Javadoc while preserving Apache's predicate-based revert decision and the added unit coverage in `VMSnapshotManagerTest`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `VMSnapshotManagerImpl` conflicted on the helper-method Javadoc block after the earlier local revert/custom-offering refactor had already landed nearby
+- Resolution notes:
+  - Kept the more descriptive local parameter comments and retained Apache's behavior change plus the new revert/offering tests
 
 ### Observed Already Satisfied
 
@@ -1802,6 +1827,9 @@
   - Treat as already satisfied instead of creating a duplicate local commit
 - `abdf926219` `Revert "Use lateral join (introduced in MySQL 8.0.14) with subquery on user_statistics table in account_view for netstats (#12631)" (#12965)`
   - Current branch state already splits network statistics into `cloud.account_netstats_view` and joins that view from `cloud.account_view`
+  - Treat as already satisfied instead of creating a duplicate local commit
+- `4ba4bd33c3` `replace GROUP_CONCAT with JSON_ARRAYAGG to avoid errors like Row 19 was cut by GROUP_CONCAT (#12777)`
+  - Current branch state already uses `JSON_ARRAYAGG` in the affected `schema-42010to42100.sql` upgrade view definitions
   - Treat as already satisfied instead of creating a duplicate local commit
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
   - Current branch state already wraps snapshot-chain copy reservation in `CheckedReservation` and routes per-snapshot copy through `copySnapshotToZone(..., shouldCheckResourceLimits)`
