@@ -1749,7 +1749,7 @@
 ### Record 069 - allow creating a volume directly on a selected storage pool
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `87af436ce2`
 - Source Apache commits:
   - `df7ff97271` Create volume on a specified storage pool (#12966)
 - Summary:
@@ -1763,11 +1763,34 @@
   - Staged diff spans the user API command, backend create-volume service path, and `CreateVolume.vue` plus locale text
   - Maven/UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied on ablestack-europa as 7562c347d1 after history-doc auto-merge`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 070 - align GitHub Actions checkout step on v6
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `6bcbb008b4` Bump `actions/checkout` to `v6` (#12164)
+- Summary:
+  - Update GitHub Actions workflows so checkout steps use `actions/checkout@v6`
+  - Normalize the same checkout version across the workflow set already carried by this branch
+- Functional impact:
+  - Keeps CI workflow dependencies aligned with the newer checkout action release without changing product runtime behavior
+  - Reduces maintenance drift between upstream workflow baselines and this fork's broader workflow matrix
+- Validation:
+  - Apache cherry-pick on `main` broadened beyond the single upstream workflow because this branch already carries additional workflow files using the same checkout action pin
+  - The staged diff only touches `.github/workflows/*.yml`
+  - GitHub Actions execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - Applied the same checkout version normalization across the branch-local workflow set rather than limiting the change to upstream's single-file footprint
 
 ### Observed Already Satisfied
 
