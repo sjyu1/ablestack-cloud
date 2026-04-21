@@ -1009,6 +1009,31 @@
 - Resolution notes:
   - `N/A`
 
+### Record 038 - avoid KVM domain lookup for non-running VM checks
+
+- Local branch: `main`
+- Local commit: `78a25f2a85`
+- Source Apache commits:
+  - `273699cf56` kvm: fix wrong CheckVirtualMachineAnswer when vm does not exist (#12928)
+- Summary:
+  - Only call `domainLookupByName(...)` when the VM power state is `PowerOn`
+  - Preserve the paused-domain special case for powered-on VMs, but avoid libvirt domain inspection for powered-off or missing VMs
+  - Add focused wrapper tests that cover running, paused, powered-off, unknown-state, null-VNC, and libvirt-exception paths
+- Functional impact:
+  - Prevents `CheckVirtualMachineCommand` from returning the wrong answer path when the VM no longer exists in libvirt
+  - Reduces false failures for non-running KVM VMs by skipping unnecessary domain lookup
+  - Improves regression coverage for the wrapper's error handling and paused-VM behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to the KVM check wrapper and its new unit test class
+  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
