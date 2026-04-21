@@ -2492,7 +2492,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `69055c5eec`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2515,7 +2515,7 @@
   - The remaining diff against the Apache source commit is limited to formatting/context differences, so this record is tracked as already satisfied
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `33cbfa1532`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2538,7 +2538,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the change
   - API doc generation has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `a60c247e47`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2561,7 +2561,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `e245f9e940`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2584,7 +2584,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - RPM build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `f04471f841`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2607,7 +2607,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `27fd9a023e`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2630,7 +2630,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `f5b7edfdc6`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2653,7 +2653,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `e99c249814`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2676,7 +2676,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `9ca8c24dc3`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2685,7 +2685,7 @@
 ### Record 110 - record the already-satisfied GPU domain parsing source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `fa3aad483d`
 - Source Apache commits:
   - `416679fae1` `Fix domain parsing for GPU & add Display controller in the supported PCI class (#12981)`
 - Summary:
@@ -2699,7 +2699,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `27c1f93f7e`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
