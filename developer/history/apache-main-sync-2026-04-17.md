@@ -2120,7 +2120,7 @@
 ### Record 085 - refresh unmanaged import test expectations after import cleanup changes
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `6e54ade3f9`
 - Source Apache commits:
   - `c6b20b8cc7` Fix failing tests
 - Summary:
@@ -2130,6 +2130,27 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff touches `UnmanagedVMsManagerImplTest` only
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 086 - remove redundant stubbings from maintenance manager tests
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `7f7d0b02e1` Remove unnecessary stubbings in ManagementServerMaintenanceManagerImplTest (#11914) (#12623)
+- Summary:
+  - Remove redundant Mockito stubbings from `ManagementServerMaintenanceManagerImplTest`
+- Functional impact:
+  - Reduces unit-test noise and brittle stubbing without affecting runtime behavior
+- Validation:
+  - Attempting the Apache cherry-pick on `main` showed no remaining code delta because the current branch test already matches the simplified stubbing pattern
+  - This local commit therefore records the satisfied upstream state in the history document
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
