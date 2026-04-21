@@ -1915,7 +1915,7 @@
 ### Record 076 - add the GitHub Actions ecosystem to Dependabot
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `177ee3b036`
 - Source Apache commits:
   - `cf9bda2050` [CI] Add github-actions ecosystem to Dependabot (#12823)
 - Summary:
@@ -1928,6 +1928,29 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff touches `.github/dependabot.yml` only
   - GitHub Actions execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 077 - refresh codespell configuration and hook versions
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `5d61ba3538` [CI] Create `.codespellrc`; upgrade codespell hook; fix typos (#12824)
+- Summary:
+  - Add a repository-level `.codespellrc` and update the codespell hook configuration in `.pre-commit-config.yaml`
+  - Carry the small typo fixes that align the codebase and docs with the refreshed spelling checks
+- Functional impact:
+  - Improves repository linting hygiene and reduces repeated false positives or manual local overrides for spelling checks
+  - Does not change product runtime behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff spans `.codespellrc`, `.pre-commit-config.yaml`, and a handful of typo-only source/doc updates
+  - Pre-commit execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
