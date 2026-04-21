@@ -2708,7 +2708,7 @@
 ### Record 111 - record the already-satisfied password reset mail template source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `e521155877`
 - Source Apache commits:
   - `5013cf2af6` `Fix user password reset mail template value (#12882)`
 - Summary:
@@ -2721,6 +2721,29 @@
   - Inspection of `schema-42200to42210.sql` confirmed the multiline `CONCAT_WS` update statement for `user.password.reset.mail.template` is already present
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the SQL change
   - Schema migration execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 112 - record the already-satisfied force-delete cross-management-server propagation source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `160876c6d7` `Fix: API Thread held forever during force deleting across MS (#12968)`
+- Summary:
+  - Record that the current branch already propagates `forced` and `forceDeleteStorage` flags through `PropagateResourceEventCommand` for cross-management-server host event handling
+  - Confirm that the local `ResourceManagerImpl` path already uses the extended command constructor and peer propagation flow expected by the upstream fix
+- Functional impact:
+  - Avoids duplicating a clustered resource-management fix whose behavior is already present in the current branch
+  - Preserves upstream traceability for the force-delete propagation change that prevents stuck API threads across management servers
+- Validation:
+  - Inspection of `PropagateResourceEventCommand` and `ResourceManagerImpl.propagateResourceEvent(...)` confirmed the current branch already includes the extra force-delete flags and the corresponding propagation path
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
