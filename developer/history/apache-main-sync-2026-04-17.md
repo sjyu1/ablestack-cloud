@@ -764,6 +764,31 @@
 - Resolution notes:
   - Kept the Europa alert-spacing markup and the existing local table/view adjustments, while preserving the Apache `/template` redirect in `handleCancel()` to avoid the stale detail-route 404
 
+### Record 029 - show security group selection for Basic zones and owner-scoped SG lists
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `71daf84c9e` Show security group selection in Basic zone VM deployment and fix SG listing for cross-domain deployments
+- Summary:
+  - Always show the security-group step for Basic zones in `DeployVM.vue`
+  - Pass the selected owner context (`domainId`, `account`, `projectId`) into `SecurityGroupSelection.vue`
+  - Refresh the listed security groups when the owner context changes, and query `listSecurityGroups` with that owner context instead of always using the current session defaults
+- Functional impact:
+  - Restores security-group selection during VM deployment in Basic zones where the UI previously hid the step
+  - Prevents cross-domain deployments from showing the wrong security-group list when the VM owner differs from the logged-in operator
+  - Clears stale security-group selections when the deployment owner changes, reducing accidental carry-over between accounts or projects
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `ui/src/views/compute/DeployVM.vue` and `ui/src/views/compute/wizard/SecurityGroupSelection.vue`
+  - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
