@@ -2361,7 +2361,7 @@
 ### Record 096 - record the already-satisfied KVM incremental snapshot rebase retry improvement
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `83fef55597`
 - Source Apache commits:
   - `7c7b2ae75d` `Fix KVM incremental volume snapshot creation (#12666)`
 - Summary:
@@ -2380,6 +2380,30 @@
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 097 - fix revert-to-VM-snapshot service offering changes for custom offerings
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b22dbbe2d7` `Fix Revert Instance to Snapshot with custom service offering (#12885)`
+- Summary:
+  - Split the revert validation messages so running instances reject disk-only snapshots and stopped instances reject memory snapshots with clearer state-specific guidance
+  - Introduce `userVmServiceOfferingNeedsChange(...)` so revert only upgrades the service offering when the snapshot offering actually differs or dynamic offering CPU/memory/speed values changed
+  - Extend `VMSnapshotManagerTest` coverage for same-offering, changed-offering, and dynamic-offering revert cases
+- Functional impact:
+  - Prevents unnecessary service-offering upgrades during revert-to-snapshot for custom/dynamic offerings while still preserving resource validation when the effective offering changed
+  - Makes invalid revert combinations easier to diagnose by returning state-specific error messages
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `VMSnapshotManagerImpl` because the local branch already carried more specific helper parameter documentation at the same comment block
+  - The resolved code keeps the local documentation wording and preserves Apache's service-offering decision logic and test additions
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `VMSnapshotManagerImpl` conflicted in the helper documentation block where Apache and the local branch edited the same nearby comment context
+- Resolution notes:
+  - Kept the local parameter descriptions in the helper comment and retained Apache's runtime logic and unit-test updates unchanged
 
 ### Observed Already Satisfied
 
