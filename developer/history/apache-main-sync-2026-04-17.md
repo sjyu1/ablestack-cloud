@@ -2039,7 +2039,7 @@
   - The resolved code keeps the local import behavior and applies Apache's resource-count guard only to the affected import allocation paths
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `c8f413e09e`
 - Conflict notes:
   - `VirtualMachineManagerImpl` conflicted where Apache added the new `incrementResourceCount` flag and the local branch had already customized data disk naming/device-id handling and `EXTERNAL` format root-volume skipping
   - `UnmanagedVMsManagerImpl` conflicted where Apache's import cleanup adjustments overlapped the branch-local unmanaged/external KVM import extensions
@@ -2064,7 +2064,7 @@
   - The staged diff is limited to `BucketTO`, the MinIO object-store driver, and its focused test
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `ecfa5d8ea9`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2088,7 +2088,7 @@
   - The resolved test file keeps the local coverage and appends Apache's expunge-to-error tests without dropping either set
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `a5a586e631`
 - Conflict notes:
   - `UserVmManagerImplTest` conflicted where Apache appended new expunge-failure tests and the local branch had already grown an unrelated block of trailing tests
 - Resolution notes:
@@ -2111,7 +2111,7 @@
   - The resolved code keeps the local `idEqRoleEqStateInSearch` builder and replaces the old single-state exclusion search with Apache's `NOTIN` variant
   - Marvin/integration tests have not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `2e2600d5fc`
 - Conflict notes:
   - `SnapshotDataStoreDaoImpl` conflicted where Apache renamed the non-destroyed-state search builder and the local branch had already added a second builder for hidden snapshot refs
 - Resolution notes:
@@ -2132,7 +2132,7 @@
   - The staged diff touches `UnmanagedVMsManagerImplTest` only
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `c116e07b1e`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2153,7 +2153,7 @@
   - This local commit therefore records the satisfied upstream state in the history document
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `5b9a74fe08`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2174,7 +2174,7 @@
   - The staged diff is limited to whitespace-only cleanup and the corresponding `.pre-commit-config.yaml` normalization
   - Pre-commit execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `07fd1ad56c`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2195,7 +2195,7 @@
   - The staged diff touches `.asf.yaml` only
   - Metadata effects are external to this local environment and were not separately validated here
 - Europa cherry-pick status:
-  - `Pending`
+  - `705777c3f9`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2216,7 +2216,7 @@
   - The staged diff touches `.asf.yaml` only
   - Metadata effects are external to this local environment and were not separately validated here
 - Europa cherry-pick status:
-  - `Pending`
+  - `43c0263bd1`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2225,7 +2225,7 @@
 ### Record 090 - apply the latest upstream `.asf.yaml` metadata adjustment
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `47ff0094d3`
 - Source Apache commits:
   - `d8f748ad0e` Update `.asf.yaml`
 - Summary:
@@ -2236,6 +2236,29 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff touches `.asf.yaml` only
   - Metadata effects are external to this local environment and were not separately validated here
+- Europa cherry-pick status:
+  - `8550a818d4`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 091 - record the already-satisfied direct-download temporary filename hardening backport
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `46a6bbad27` `Fix: KVM Direct Download URL injection (#60)`
+- Summary:
+  - Record that the current branch already uses UUID-based temporary filenames for direct template downloads instead of reusing the source URL basename
+  - Confirm that direct, metalink, and NFS download paths all route through the same temporary filename hardening
+- Functional impact:
+  - Avoids path/filename reuse issues during direct download staging without introducing a duplicate code change
+  - Keeps the branch aligned with the older backport while preserving the newer direct-download handling already merged here
+- Validation:
+  - Comparing the upstream backport against the current branch showed no remaining code delta in `DirectTemplateDownloaderImpl`, `MetalinkDirectTemplateDownloader`, or `NfsDirectTemplateDownloader`
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
