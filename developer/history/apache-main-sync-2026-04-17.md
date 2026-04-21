@@ -789,6 +789,34 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 030 - allow configurable default UI language
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `ed575cc0a1` New config.json variable to set the ACS default language
+- Summary:
+  - Allow `defaultLanguage` as a GUI theme primitive property and add the sample key to `ui/public/config.json`
+  - Use `defaultLanguage` when initializing `TranslationMenu.vue` if the user has no saved `LOCALE`
+  - Let `guiTheme.js` propagate a theme- or config-provided default language into runtime config and local storage, then load that language pack
+- Functional impact:
+  - Makes the initial UI locale configurable through static config and dynamic GUI theme customization, instead of hard-coding a single fallback in the header component
+  - Aligns first-load language selection across login, theme application, and later locale switches
+  - Gives operators a supported way to preseed the portal language for new browsers or cleared storage sessions
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `GuiThemeServiceImpl`, `ui/public/config.json`, `TranslationMenu.vue`, and `ui/src/utils/guiTheme.js`
+  - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - `None observed on main`
+  - On `ablestack-europa`, `TranslationMenu.vue` already carried a branch-local Korean default (`ko_KR`) and `ui/public/config.json` had additional local keys after the announcement banner, so the upstream default-language addition overlapped with existing locale policy and tail JSON structure
+- Resolution notes:
+  - Kept the Apache `defaultLanguage` support in GUI theme handling and runtime locale initialization
+  - Set `ui/public/config.json` to `defaultLanguage: "ko_KR"` on europa so the new feature preserves the branch's existing default language policy
+  - Updated `TranslationMenu.vue` to prefer saved `LOCALE`, then `vueProps.$config?.defaultLanguage`, and finally fall back to `ko_KR`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
