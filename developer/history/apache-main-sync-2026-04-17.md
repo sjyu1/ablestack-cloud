@@ -1312,6 +1312,30 @@
   - Cached diff is limited to `NsxApiClient.java` and `NsxApiClientTest.java`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
+  - `Applied on ablestack-europa as af6a324516 after history-doc conflict resolution`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 051 - fetch all NSX paged list results instead of truncating at the first page
+
+- Local branch: `main`
+- Local commit: `10751b2efb`
+- Source Apache commits:
+  - `e0fe953791` fix: NSX SDK list operations are pageable: the API returns a non-null and non-empty (#12834)
+- Summary:
+  - Introduce a reusable `PagedFetcher` helper that follows NSX cursor-based pagination and merges items across pages
+  - Update `NsxApiClient` list retrieval paths to use complete paged results for sites, enforcement points, locale services, and policy-group members
+  - Add focused unit tests that cover single-page, empty-cursor, multi-page, and null-first-page-item flows
+- Functional impact:
+  - Prevents NSX-backed operations from acting on incomplete inventories when the NSX API returns more than one page of results
+  - Makes NSX group, locale-service, and enforcement-point lookups deterministic in environments with larger object counts
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to `NsxApiClient`, the new `PagedFetcher`, and its dedicated test class
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
   - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
 - Conflict notes:
   - `None observed on main`
