@@ -1058,8 +1058,37 @@
 - Resolution notes:
   - Preserved the europa `snapshotInfo.setVmSnapshotName(...)` behavior and added Apache's early `snapshotsForRollback.add(snapshotInfo)` registration alongside it
 
+### Record 040 - include hidden image-store refs when resolving Xen snapshot chains
+
+- Local branch: `main`
+- Local commit: `bb635f652f`
+- Source Apache commits:
+  - `2a60305792` Fix snapshot chaining on Xen (#12597)
+- Summary:
+  - Add a DAO method that lists snapshot-store refs by snapshot id, role, and a set of states
+  - Update `DefaultSnapshotStrategy.getSnapshotImageStoreRef(...)` to consider both `Ready` and `Hidden` image-store refs
+  - Align the unit test with the new DAO method and remove the redundant null-path stubbing
+- Functional impact:
+  - Preserves Xen incremental snapshot chain lookup even when a parent snapshot is hidden on secondary storage
+  - Reduces the chance of losing the expected parent chain and falling back to an incorrect full backup path
+  - Keeps snapshot image-store lookup limited to the target zone while widening the acceptable persisted states
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` only in `SnapshotDataStoreDaoImpl` because this branch already carried a local `idStateNeqSearch` builder for non-destroyed snapshot lookups
+  - The resolved DAO keeps the local `idStateNeqSearch` behavior and adds Apache's `idEqRoleEqStateInSearch` path for `Ready`/`Hidden` image-store lookup
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `SnapshotDataStoreDaoImpl` conflicted on `main` because Apache adds a new state-in search builder in the same initialization block where this branch already introduced `idStateNeqSearch`
+- Resolution notes:
+  - Preserved the local `idStateNeqSearch` initialization and added the Apache `idEqRoleEqStateInSearch` builder without changing the branch-local non-destroyed lookup behavior
+
 ### Observed Already Satisfied
 
+- `8608b4edd0` `Fix snapshot copy resource limit concurrency`
+  - Current branch state already wraps snapshot-chain copy reservation in `CheckedReservation` and routes per-snapshot copy through `copySnapshotToZone(..., shouldCheckResourceLimits)`
+  - `SnapshotManagerImplTest` no longer stubs the removed direct `checkResourceLimit(...)` call in the covered copy flow
+  - Treat as already satisfied instead of creating a duplicate local commit
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
   - Current branch state already has `gatewayId` without `required = true`
   - Treat as already satisfied instead of creating a duplicate local commit
