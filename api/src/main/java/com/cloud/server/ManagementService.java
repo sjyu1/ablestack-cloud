@@ -15,7 +15,61 @@
 // specific language governing permissions and limitations
 // under the License.
 package com.cloud.server;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
+import org.apache.cloudstack.api.command.admin.cluster.ListClustersCmd;
+import org.apache.cloudstack.api.command.admin.config.ListCfgGroupsByCmd;
+import org.apache.cloudstack.api.command.admin.config.ListCfgsByCmd;
+import org.apache.cloudstack.api.command.admin.config.UpdateHypervisorCapabilitiesCmd;
+import org.apache.cloudstack.api.command.admin.guest.AddGuestOsCategoryCmd;
+import org.apache.cloudstack.api.command.admin.guest.AddGuestOsCmd;
+import org.apache.cloudstack.api.command.admin.guest.AddGuestOsMappingCmd;
+import org.apache.cloudstack.api.command.admin.guest.DeleteGuestOsCategoryCmd;
+import org.apache.cloudstack.api.command.admin.guest.GetHypervisorGuestOsNamesCmd;
+import org.apache.cloudstack.api.command.admin.guest.ListGuestOsMappingCmd;
+import org.apache.cloudstack.api.command.admin.guest.RemoveGuestOsCmd;
+import org.apache.cloudstack.api.command.admin.guest.RemoveGuestOsMappingCmd;
+import org.apache.cloudstack.api.command.admin.guest.UpdateGuestOsCategoryCmd;
+import org.apache.cloudstack.api.command.admin.guest.UpdateGuestOsCmd;
+import org.apache.cloudstack.api.command.admin.guest.UpdateGuestOsMappingCmd;
+import org.apache.cloudstack.api.command.admin.host.ListHostsCmd;
+import org.apache.cloudstack.api.command.admin.host.UpdateHostPasswordCmd;
+import org.apache.cloudstack.api.command.admin.management.RemoveManagementServerCmd;
+import org.apache.cloudstack.api.command.admin.pod.ListPodsByCmd;
+import org.apache.cloudstack.api.command.admin.resource.ArchiveAlertsCmd;
+import org.apache.cloudstack.api.command.admin.resource.DeleteAlertsCmd;
+import org.apache.cloudstack.api.command.admin.resource.ListAlertsCmd;
+import org.apache.cloudstack.api.command.admin.resource.ListCapacityCmd;
+import org.apache.cloudstack.api.command.admin.resource.UploadCustomCertificateCmd;
+import org.apache.cloudstack.api.command.admin.systemvm.DestroySystemVmCmd;
+import org.apache.cloudstack.api.command.admin.systemvm.ListSystemVMsCmd;
+import org.apache.cloudstack.api.command.admin.systemvm.PatchSystemVMCmd;
+import org.apache.cloudstack.api.command.admin.systemvm.RebootSystemVmCmd;
+import org.apache.cloudstack.api.command.admin.systemvm.ScaleSystemVMCmd;
+import org.apache.cloudstack.api.command.admin.systemvm.StopSystemVmCmd;
+import org.apache.cloudstack.api.command.admin.systemvm.UpgradeSystemVMCmd;
+import org.apache.cloudstack.api.command.admin.vlan.ListVlanIpRangesCmd;
+import org.apache.cloudstack.api.command.user.address.ListPublicIpAddressesCmd;
+import org.apache.cloudstack.api.command.user.config.ListCapabilitiesCmd;
+import org.apache.cloudstack.api.command.user.event.ArchiveEventsCmd;
+import org.apache.cloudstack.api.command.user.event.DeleteEventsCmd;
+import org.apache.cloudstack.api.command.user.guest.ListGuestOsCategoriesCmd;
+import org.apache.cloudstack.api.command.user.guest.ListGuestOsCmd;
+import org.apache.cloudstack.api.command.user.ssh.CreateSSHKeyPairCmd;
+import org.apache.cloudstack.api.command.user.ssh.DeleteSSHKeyPairCmd;
+import org.apache.cloudstack.api.command.user.ssh.ListSSHKeyPairsCmd;
+import org.apache.cloudstack.api.command.user.ssh.RegisterSSHKeyPairCmd;
+import org.apache.cloudstack.api.command.user.userdata.DeleteCniConfigurationCmd;
+import org.apache.cloudstack.api.command.user.userdata.DeleteUserDataCmd;
+import org.apache.cloudstack.api.command.user.userdata.ListUserDataCmd;
+import org.apache.cloudstack.api.command.user.userdata.RegisterCniConfigurationCmd;
+import org.apache.cloudstack.api.command.user.userdata.RegisterUserDataCmd;
+import org.apache.cloudstack.api.command.user.vm.GetVMPasswordCmd;
+import org.apache.cloudstack.api.command.user.vmgroup.UpdateVMGroupCmd;
+import org.apache.cloudstack.config.Configuration;
+import org.apache.cloudstack.config.ConfigurationGroup;
 import com.cloud.alert.Alert;
 import com.cloud.capacity.Capacity;
 import com.cloud.dc.Pod;
@@ -139,14 +193,6 @@ import org.apache.cloudstack.framework.config.ConfigKey;
  */
 public interface ManagementService {
     static final String Name = "management-server";
-
-    ConfigKey<Boolean> JsInterpretationEnabled = new ConfigKey<>("Hidden"
-            , Boolean.class
-            , "js.interpretation.enabled"
-            , "false"
-            , "Enable/Disable all JavaScript interpretation related functionalities to create or update Javascript rules."
-            , false
-            , ConfigKey.Scope.Global);
 
     /**
      * returns the a map of the names/values in the configuration table
@@ -593,7 +639,5 @@ public interface ManagementService {
     LicenseCheckerResponse checkLicense(LicenseCheckCmd cmd);
 
     boolean removeManagementServer(RemoveManagementServerCmd cmd);
-
-    void checkJsInterpretationAllowedIfNeededForParameterValue(String paramName, boolean paramValue);
 
 }

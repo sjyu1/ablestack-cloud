@@ -846,6 +846,38 @@
   - Added only the new delete-protection DAO methods and search builders required by the Apache account/domain deletion guard
   - Preserved the Apache service-layer validations in `AccountManagerImpl` and `DomainManagerImpl` without changing the surrounding europa deletion flow
 
+### Record 032 - unhide and centralize JavaScript interpretation gating
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `9f57a4dd19` Unhide setting `js.interpretation.enabled`
+- Summary:
+  - Move `js.interpretation.enabled` ownership from `ManagementService` into `JsInterpreterHelper` as a normal configurable system setting
+  - Unhide the setting during the `4.22.1.0 -> 4.23.0.0` upgrade by migrating its stored value, category, component, and dynamic flag
+  - Replace scattered `ManagementService`/`QuotaService` checks with `JsInterpreterHelper.ensureInterpreterEnabledIfParameterProvided(...)` in host, storage, secondary-storage selector, and quota tariff flows
+  - Always register the secondary storage selector commands, but gate their JS-bearing parameters at validation time instead of hiding the commands entirely
+- Functional impact:
+  - Makes `js.interpretation.enabled` visible and manageable as a standard system setting instead of a hidden internal knob
+  - Centralizes enable/disable enforcement for JS-backed parameters, reducing drift between quota, host-tag, storage-pool, and selector validation paths
+  - Preserves safety when JS interpretation is disabled by rejecting only the parameters that require it, rather than removing whole APIs from discovery
+- Validation:
+  - `QuotaResponseBuilderImpl` required a manual merge on `main` because this branch still had the older `_quotaService.isJsInterpretationEnabled()` activation-rule guard in the same field block where Apache now keeps the quota-summary role set
+  - The final `main` state uses `jsInterpreterHelper` for activation-rule validation and removes the old quota-service helper path
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - `QuotaResponseBuilderImpl` conflicted on `main` because the local branch still carried `checkActivationRulesAllowed()` and `_quotaService.isJsInterpretationEnabled()`-based gating
+  - On `ablestack-europa`, `ManagementService` and `ManagementServerImpl` still carried the older `JsInterpretationEnabled` constant and `checkJsInterpretationAllowedIfNeededForParameterValue()` path
+  - `ResourceManagerImpl` conflicted because europa's `updateHost(...)` signature already had a branch-specific `migrationIp` parameter while Apache added the new helper call in the shorter signature
+  - `QuotaResponseBuilderImpl` also conflicted on europa for the same reason as `main`: the branch still had `_quotaService.isJsInterpretationEnabled()`-based activation-rule validation
+- Resolution notes:
+  - Dropped the old quota-service activation-rule helper and kept the Apache `jsInterpreterHelper.ensureInterpreterEnabledIfParameterProvided(...)` checks as the single validation path
+  - Removed `JsInterpretationEnabled` and the old management-service validation hook from the europa API/service layer, while keeping the branch's wider API surface intact
+  - Preserved the europa `updateHost(..., migrationIp)` signature and inserted the Apache helper guard at method entry instead of reverting the local parameter extension
+  - Kept the europa `getConfigKeys()` shape and removed only the legacy JS interpretation config entry, so the helper-owned config becomes the single source of truth
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
