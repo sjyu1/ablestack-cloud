@@ -2869,7 +2869,7 @@
 ### Record 118 - record the already-satisfied nexthop static-route source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `ad2b713279`
 - Source Apache commits:
   - `83f705ddc5` `Static Routes with nexthop non-functional for private gateways (#12859)`
 - Summary:
@@ -2882,6 +2882,29 @@
   - Inspection of `CsAddress.py` and `CsStaticRoutes.py` confirmed the current branch already contains the nexthop route ACL/PBR handling introduced by the source commit
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - SystemVM runtime verification has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 119 - record the already-satisfied backup pending-job test merge-forward source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `f5e75771bc` `merge forwards fix`
+- Summary:
+  - Record that the current branch already carries the pending-job backup-delete protection covered by the upstream merge-forward test tweak
+  - Note that the exact test method signature differs locally, but the guarded delete-backup behavior and surrounding test coverage are already present
+- Functional impact:
+  - Avoids duplicating a test-only merge-forward adjustment while preserving the fact that the underlying guarded behavior is already covered in the current branch
+  - Keeps the upstream follow-up commit explicitly visible in the sync history
+- Validation:
+  - The current `BackupManagerTest` still covers deletion blocked by pending jobs, and the underlying backup-delete guard is already present from earlier backup reservation work
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the test-only signature tweak
+  - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
