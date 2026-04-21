@@ -2616,7 +2616,7 @@
 ### Record 107 - record the already-satisfied NSX delete-NAT comparison source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `fd40b07fe3`
 - Source Apache commits:
   - `30dd234b00` `fix: NsxResource.executeRequest DeleteNsxNatRuleCommand comparison bug (#12833)`
 - Summary:
@@ -2627,6 +2627,29 @@
   - Preserves explicit upstream traceability for the serialized-command comparison bugfix
 - Validation:
   - Inspection of `NsxResource.executeRequest(DeleteNsxNatRuleCommand)` confirmed the current branch already compares against `Network.Service.*.getName()`
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 108 - record the already-satisfied SharedMountPoint import volume-check source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b0b3dc91f5` `fix: support SharedMountPoint volume checks for importVm (#12946)`
+- Summary:
+  - Record that the current branch already allows `CheckVolumeCommand` on `SharedMountPoint` pools in the KVM wrapper
+  - Note that the local branch has since widened the supported set further, so the upstream source change is fully subsumed by the current implementation
+- Functional impact:
+  - Avoids duplicating a KVM import compatibility fix that is already present in the current branch
+  - Keeps the upstream source commit explicitly tracked even though the local implementation now supports a superset of storage pool types
+- Validation:
+  - Inspection of `LibvirtCheckVolumeCommandWrapper.STORAGE_POOL_TYPES_SUPPORTED` confirmed `SharedMountPoint` is already included
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
