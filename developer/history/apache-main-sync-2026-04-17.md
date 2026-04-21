@@ -2524,7 +2524,7 @@
 ### Record 103 - record the already-satisfied physical-network isolation description source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `fc2c7c112f`
 - Source Apache commits:
   - `faaf7669c5` `Update isolation methods description for physical network (#12759)`
 - Summary:
@@ -2537,6 +2537,29 @@
   - Reverse-applying the Apache patch on the current branch showed the updated isolation-method description is already present in `CreatePhysicalNetworkCmd`
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the change
   - API doc generation has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 104 - record the already-satisfied non-KVM SystemVM template arch registration source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `6f1aa96b4c` `engine/schema: fix new systemvm template is not registered during upgrade if hypervisor is not KVM (#12952)`
+- Summary:
+  - Record that the current branch already treats non-KVM hypervisors as `amd64` when iterating system VM template registrations during upgrade
+  - Confirm that the matching unit-test expectation for VMware/system VM metadata architecture is already present as well
+- Functional impact:
+  - Avoids reapplying a source-level SystemVM upgrade fix whose behavior is already absorbed by the current branch
+  - Keeps upstream traceability for the specific source commit that led to the already-present registration behavior
+- Validation:
+  - Inspection of `SystemVmTemplateRegistration.hypervisorList` and `SystemVmTemplateRegistrationTest` confirmed the non-KVM hypervisors already use `CPU.CPUArch.amd64`
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
