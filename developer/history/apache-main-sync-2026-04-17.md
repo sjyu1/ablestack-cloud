@@ -1200,11 +1200,38 @@
 - Resolution notes:
   - Kept the existing `ArrayUtils` import and added Apache's `BooleanUtils` import so the shared helper and the local code both compile cleanly
 
+### Record 046 - enable default SystemVM template registration on 4.20.2 -> 4.20.3 upgrade
+
+- Local branch: `main`
+- Local commit: `3422f7d5da`
+- Source Apache commits:
+  - `e2497cfc4d` backport: default system vm template update implementation (#12935)
+- Summary:
+  - Remove the empty `updateSystemVmTemplates(...)` override from `Upgrade42020to42030`
+  - Let the upgrade path inherit the shared default implementation from `DbUpgradeSystemVmTemplate`
+- Functional impact:
+  - Restores automatic SystemVM template lookup/registration during the 4.20.2.0 -> 4.20.3.0 upgrade path
+  - Prevents the upgrade from silently skipping the default SystemVM template update logic for that release jump
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The branch already carried the interface-side default implementation, so the net change is the removal of the stale no-op override in `Upgrade42020to42030`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
   - Current branch state already wraps snapshot-chain copy reservation in `CheckedReservation` and routes per-snapshot copy through `copySnapshotToZone(..., shouldCheckResourceLimits)`
   - `SnapshotManagerImplTest` no longer stubs the removed direct `checkResourceLimit(...)` call in the covered copy flow
+  - Treat as already satisfied instead of creating a duplicate local commit
+- `470812100e` `server: set template type to ROUTING or USER if template type is not specified when upload a template (#12768)`
+  - Current branch state already handles `GetUploadParamsForTemplateCmd` in `TemplateManagerImpl.validateTemplateType(...)`
+  - The `schema-42200to42210.sql` backfill for `vm_template.type IS NULL -> USER` is also already present
   - Treat as already satisfied instead of creating a duplicate local commit
 - `e10c066cc1` `Fix NPE during VM setup for pvlan (#12781)`
   - Current branch state already guards `setupVmForPvlan(...)` against null NICs, null broadcast URIs, non-PVLAN schemes, and missing hosts
