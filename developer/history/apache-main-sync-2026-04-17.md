@@ -1454,11 +1454,36 @@
   - The resolved migration keeps both the local backup cleanup and the Apache Public-network sanitization SQL
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+  - `Applied on ablestack-europa as f93d0dde9b after history-doc conflict resolution`
 - Conflict notes:
   - `schema-42200to42210.sql` conflicted on `main` because prior local migration work already rewrote the same tail section
 - Resolution notes:
   - Preserved the existing `backup_interval_type` drop and inserted only the Apache Public-network cleanup statements beside it
+
+### Record 057 - propagate forced delete flags across management servers
+
+- Local branch: `main`
+- Local commit: `a4baa35318`
+- Source Apache commits:
+  - `160876c6d7` Fix: API Thread held forever during force deleting across MS (#12968)
+- Summary:
+  - Extend `PropagateResourceEventCommand` with `forced` and `forceDeleteStorage` flags
+  - Pass those flags through `ResourceManagerImpl.deleteHost(...)`, cross-MS propagation, and peer-side `executeUserRequest(...)`
+  - Return peer-side runtime failure details as an explicit failed answer instead of letting the caller wait indefinitely
+  - Add focused tests that verify delete-host overloads preserve the force flags
+- Functional impact:
+  - Prevents force-delete host operations routed through another management server from silently losing the force semantics
+  - Turns peer-side propagated failures into deterministic API errors instead of threads hanging while waiting for a result that never arrives
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to resource event propagation classes plus focused resource-manager tests
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 
