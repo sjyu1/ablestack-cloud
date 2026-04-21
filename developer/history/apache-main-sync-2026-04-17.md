@@ -2593,7 +2593,7 @@
 ### Record 106 - record the already-satisfied backup schedule cleanup source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `193095aede`
 - Source Apache commits:
   - `27e4d979f1` `Clean up backup references to their schedules when the schedules are deleted (#12401)`
 - Summary:
@@ -2604,6 +2604,29 @@
   - Keeps explicit upstream traceability for the source commit behind the existing cleanup behavior
 - Validation:
   - Inspection of `schema-42200to42210.sql` and `ApiResponseHelper.createBackupScheduleResponse(...)` confirmed the column removal and response-building logic are already present
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 107 - record the already-satisfied NSX delete-NAT comparison source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `30dd234b00` `fix: NsxResource.executeRequest DeleteNsxNatRuleCommand comparison bug (#12833)`
+- Summary:
+  - Record that the current branch already avoids serialized `Network.Service` identity mismatches during NSX NAT deletion by comparing the service name rather than relying on object identity
+  - Confirm that the existing NSX delete path already distinguishes `StaticNat` and `PortForwarding` using the stable service-name value
+- Functional impact:
+  - Avoids reapplying a source-level NSX fix whose runtime behavior is already present in the current branch
+  - Preserves explicit upstream traceability for the serialized-command comparison bugfix
+- Validation:
+  - Inspection of `NsxResource.executeRequest(DeleteNsxNatRuleCommand)` confirmed the current branch already compares against `Network.Service.*.getName()`
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
