@@ -2260,7 +2260,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `18234309b0`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2283,7 +2283,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `598c6c63a5`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2306,7 +2306,7 @@
   - This local commit therefore records the intentional already-reverted state in the history document instead of reapplying the lateral-join change
   - Schema migration execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `37ba105d50`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2329,7 +2329,7 @@
   - The staged diff is limited to `BaseImageStoreDriverImpl`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `f0b2d71f4e`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2352,7 +2352,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the test change
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `78a9ab466d`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2375,7 +2375,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `69efbc0036`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2398,7 +2398,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `f3222d5ddf`
 - Conflict notes:
   - `VMSnapshotManagerImpl` conflicted only in the helper documentation block where Apache and the local branch edited the same nearby comment context
 - Resolution notes:
@@ -2422,7 +2422,7 @@
   - The staged diff is limited to the Kubernetes service util, bootstrap YAML, ISO helper script, and dashboard help UI
   - Maven/UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `16fdb49f92`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2445,7 +2445,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven/UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `1621924b65`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2454,7 +2454,7 @@
 ### Record 100 - tighten public IP limit validation for dedicated ranges and reservation-backed allocation
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `746ac3e1de`
 - Source Apache commits:
   - `9db630932e` `Address public IP limit validations`
 - Summary:
@@ -2469,7 +2469,7 @@
   - The resolved code keeps the local imports and applies Apache's nullable VLAN owner lookup plus reservation-backed public IP validation logic
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `00835167b6`
 - Conflict notes:
   - `ConfigurationManagerImpl` conflicted in the import block where Apache introduced reservation-related dependencies and the local branch already had extra local imports nearby
 - Resolution notes:
