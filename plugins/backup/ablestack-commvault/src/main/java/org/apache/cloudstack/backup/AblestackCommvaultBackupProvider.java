@@ -173,6 +173,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             "backup.plugin.commvault.client.verbosity", "false",
             "Produce Verbose logs in Hypervisor", true, ConfigKey.Scope.Zone);
 
+    private ConfigKey<Boolean> CommvaultQcow2IncrementalEnabled = new ConfigKey<>("Advanced", Boolean.class,
+            "backup.plugin.commvault.qcow2.incremental.enabled", "false",
+            "Enable QCOW2 incremental backups for the Commvault backup provider.", true, ConfigKey.Scope.Zone);
+
     private ConfigKey<Integer> CommvaultBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
             "commvault.backup.restore.timeout",
             "1800",
@@ -429,8 +433,33 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return true;
         }
 
-        String stageHost = getBackupDetail(latestBackup, DETAIL_STAGE_HOST);
-        return Objects.equals(stageHost, vmHost.getName());
+        if (!Boolean.TRUE.equals(CommvaultQcow2IncrementalEnabled.valueIn(vm.getDataCenterId()))) {
+            LOG.debug("Commvault QCOW2 incremental backup is disabled in zone [{}], falling back to full backup for VM [{}]",
+                    vm.getDataCenterId(), vm.getInstanceName());
+            return false;
+        }
+
+        return hasMatchingQcow2StageHostChain(vm, latestBackup, vmHost);
+    }
+
+    private boolean hasMatchingQcow2StageHostChain(VirtualMachine vm, Backup latestBackup, Host vmHost) {
+        final String currentHostName = vmHost.getName();
+        Backup current = latestBackup;
+        while (current != null) {
+            loadBackupDetailsIfNeeded(current);
+            final String stageHost = getBackupDetail(current, DETAIL_STAGE_HOST);
+            if (!Objects.equals(stageHost, currentHostName)) {
+                LOG.debug("Commvault QCOW2 incremental backup for VM [{}] cannot continue on host [{}] because backup [{}] belongs to stage host [{}]",
+                        vm.getInstanceName(), currentHostName, current.getUuid(), stageHost);
+                return false;
+            }
+            final String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (StringUtils.isBlank(parentBackupUuid)) {
+                break;
+            }
+            current = backupDao.findByUuid(parentBackupUuid);
+        }
+        return true;
     }
 
     private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {
@@ -601,6 +630,18 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
         final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup,
                 BACKUP_TYPE_INCREMENTAL.equalsIgnoreCase(requestedBackupType), vmHost.getName());
+        final List<String> preparedIncrementalSourcePaths;
+        if (incrementalBackup && BACKUP_ENGINE_QCOW2.equals(backupEngine) && latestBackup != null) {
+            try {
+                preparedIncrementalSourcePaths = prepareQcow2IncrementalSources(client, latestBackup, vmHost.getName());
+            } catch (RuntimeException e) {
+                LOG.warn("Failed to prepare Commvault QCOW2 incremental source chain for VM [{}] on host [{}]: {}",
+                        vm.getInstanceName(), vmHost.getName(), e.getMessage(), e);
+                return BackupExecutionResult.failure("Failed to prepare Commvault incremental source chain: " + e.getMessage(), null);
+            }
+        } else {
+            preparedIncrementalSourcePaths = Collections.emptyList();
+        }
 
         BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         AblestackCommvaultTakeBackupCommand command = new AblestackCommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
@@ -727,6 +768,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 LOG.warn("Failed to cleanup incomplete Commvault backup entry [{}] after unexpected error", backupVO.getUuid(), cleanupException);
             }
             throw e;
+        } finally {
+            cleanupBackupPathsOnHost(vmHostVO, preparedIncrementalSourcePaths);
         }
     }
 
@@ -735,6 +778,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
         if (StringUtils.contains(result.details, MISSING_PARENT_RBD_SNAPSHOT_ERROR)) {
+            return true;
+        }
+        if (StringUtils.containsIgnoreCase(result.details, "Failed to prepare Commvault incremental source chain")) {
             return true;
         }
         return vmVolumes.size() > 1;
@@ -991,6 +1037,26 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return restoreSourcePaths;
     }
 
+    private List<String> getQcow2IncrementalSourcePathsForStageHost(Backup backup, String stageHost) {
+        List<String> restoreSourcePaths = new ArrayList<>();
+        Backup current = backup;
+        while (current != null) {
+            loadBackupDetailsIfNeeded(current);
+            if (Objects.equals(getBackupDetail(current, DETAIL_STAGE_HOST), stageHost)) {
+                String backupPath = parseExternalId(current.getExternalId()).first();
+                if (!restoreSourcePaths.contains(backupPath)) {
+                    restoreSourcePaths.add(0, backupPath);
+                }
+            }
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (StringUtils.isBlank(parentBackupUuid)) {
+                break;
+            }
+            current = backupDao.findByUuid(parentBackupUuid);
+        }
+        return restoreSourcePaths;
+    }
+
     private void loadBackupDetailsIfNeeded(Backup backup) {
         if (backup instanceof BackupVO && backup.getDetails() == null) {
             backupDao.loadDetails((BackupVO) backup);
@@ -1075,6 +1141,16 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
     }
 
+    private List<String> prepareQcow2IncrementalSources(AblestackCommvaultClient client, Backup latestBackup, String executionHostName) {
+        List<String> restoreSourcePaths = getQcow2IncrementalSourcePathsForStageHost(latestBackup, executionHostName);
+        if (restoreSourcePaths.isEmpty()) {
+            throw new CloudRuntimeException(String.format("No Commvault QCOW2 parent chain paths were found for execution host [%s]", executionHostName));
+        }
+        ensureStageHostHasCapacityForRestore(latestBackup, executionHostName, restoreSourcePaths);
+        restoreBackupPathsOnStageHost(client, latestBackup, restoreSourcePaths);
+        return restoreSourcePaths;
+    }
+
     private void cleanupBackupPathOnAdditionalHosts(List<String> hostNames, String backupPath) {
         if (hostNames == null || hostNames.isEmpty()) {
             return;
@@ -1094,6 +1170,24 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort, command);
             } catch (Exception e) {
                 LOG.warn("Failed to cleanup Commvault restore source path [{}] on host [{}]", backupPath, hostName, e);
+            }
+        }
+    }
+
+    private void cleanupBackupPathsOnHost(HostVO host, List<String> backupPaths) {
+        if (host == null || CollectionUtils.isEmpty(backupPaths)) {
+            return;
+        }
+        int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
+        Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
+        for (String backupPath : backupPaths) {
+            if (StringUtils.isBlank(backupPath)) {
+                continue;
+            }
+            try {
+                executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort, String.format(RM_COMMAND, backupPath));
+            } catch (Exception e) {
+                LOG.warn("Failed to cleanup prepared Commvault incremental source path [{}] on host [{}]", backupPath, host.getName(), e);
             }
         }
     }
@@ -1680,7 +1774,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 CommvaultPassword,
                 CommvaultValidateSSLSecurity,
                 CommvaultApiRequestTimeout,
-                CommvaultClientVerboseLogs
+                CommvaultClientVerboseLogs,
+                CommvaultQcow2IncrementalEnabled
         };
     }
 
