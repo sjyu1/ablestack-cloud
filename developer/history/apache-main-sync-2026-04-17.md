@@ -2662,7 +2662,7 @@
 ### Record 109 - record the already-satisfied SharedMountPoint import/unmanage source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `2e40988604`
 - Source Apache commits:
   - `b1bc5380a2` `fix: support SharedMountPoint for KVM volume import and unmanage (#12956)`
 - Summary:
@@ -2673,6 +2673,29 @@
   - Preserves source-level traceability for the upstream SharedMountPoint enhancement
 - Validation:
   - Reverse-applying the Apache patch on the current branch succeeded, showing the SharedMountPoint import/unmanage support is already present
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 110 - record the already-satisfied GPU domain parsing source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `416679fae1` `Fix domain parsing for GPU & add Display controller in the supported PCI class (#12981)`
+- Summary:
+  - Record that the current branch already carries the improved GPU domain parsing and the added Display controller support in KVM GPU discovery
+  - Confirm that the earlier GPU compatibility work in this branch already absorbed the upstream source change and its behavioral outcome
+- Functional impact:
+  - Avoids duplicating a GPU discovery source change whose functionality is already present in the current branch
+  - Keeps explicit upstream traceability for the source commit behind the existing GPU parsing behavior
+- Validation:
+  - Reverse-applying the Apache patch on the current branch succeeded, showing the GPU parsing/discovery update is already present
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
