@@ -2097,7 +2097,7 @@
 ### Record 084 - align snapshot datastore CI fixes with current hidden-ref search builders
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `5c10b983e7`
 - Source Apache commits:
   - `3b42fbf3b2` Fixing CI failures (#12789)
 - Summary:
@@ -2116,6 +2116,27 @@
   - `SnapshotDataStoreDaoImpl` conflicted where Apache renamed the non-destroyed-state search builder and the local branch had already added a second builder for hidden snapshot refs
 - Resolution notes:
   - Retained both search use-cases by keeping the local hidden-ref builder and adopting Apache's `NOTIN` builder for the generic non-destroyed lookup helpers
+
+### Record 085 - refresh unmanaged import test expectations after import cleanup changes
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `c6b20b8cc7` Fix failing tests
+- Summary:
+  - Update `UnmanagedVMsManagerImplTest` mocks to match the expanded `allocateRawVolume(...)` signature used by the import cleanup work
+- Functional impact:
+  - Keeps the unmanaged-import unit tests aligned with the newer import volume-allocation contract without changing product behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `UnmanagedVMsManagerImplTest` only
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 

@@ -614,7 +614,7 @@ public class UnmanagedVMsManagerImplTest {
         DeployDestination mockDest = Mockito.mock(DeployDestination.class);
         when(deploymentPlanningManager.planDeployment(any(), any(), any(), any())).thenReturn(mockDest);
         DiskProfile diskProfile = Mockito.mock(DiskProfile.class);
-        when(volumeManager.allocateRawVolume(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        when(volumeManager.allocateRawVolume(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(diskProfile);
         Map<Volume, StoragePool> storage = new HashMap<>();
         VolumeVO volume = Mockito.mock(VolumeVO.class);
@@ -848,7 +848,7 @@ public class UnmanagedVMsManagerImplTest {
         DeployDestination mockDest = Mockito.mock(DeployDestination.class);
         when(deploymentPlanningManager.planDeployment(any(), any(), any(), any())).thenReturn(mockDest);
         DiskProfile diskProfile = Mockito.mock(DiskProfile.class);
-        when(volumeManager.allocateRawVolume(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        when(volumeManager.allocateRawVolume(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                         .thenReturn(diskProfile);
         Map<Volume, StoragePool> storage = new HashMap<>();
         VolumeVO volume = Mockito.mock(VolumeVO.class);
