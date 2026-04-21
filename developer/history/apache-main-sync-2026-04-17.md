@@ -1820,7 +1820,7 @@
 ### Record 072 - support Linstor primary storage in NAS backup restore flows
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `1fbd528784`
 - Source Apache commits:
   - `03de62bf38` Support Linstor Primary Storage for NAS BnR (#12796)
 - Summary:
@@ -1841,6 +1841,30 @@
 - Resolution notes:
   - Kept the branch-local timeout-aware `rsync` and `QemuImg` invocation path, then layered Apache's Linstor-specific device-path, connect, create-target, and raw-attach handling on top
 
+### Record 073 - allow import and unmanage of backing-file volumes behind a config gate
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `e93ae1a4f4` New config key "allow.import.volume.with.backing.file" to skip volume backing (#12809)
+- Summary:
+  - Make `VolumeImportUnmanageService` configurable and add the global advanced setting `allow.import.volume.with.backing.file`
+  - Gate backing-file rejection in both volume import/unmanage and unmanaged VM import paths behind the new setting instead of rejecting such volumes unconditionally
+  - Expose the new config key from `VolumeImportUnmanageManagerImpl` so the behavior can be toggled without code changes
+- Functional impact:
+  - Gives operators a controlled way to import or unmanage QCOW2 volumes that still reference a backing file when their environment explicitly allows that workflow
+  - Preserves the safer default behavior by keeping the check enabled unless the new global setting is turned on
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff is limited to the service/config surface and the two backing-file validation call sites
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `273699cf56` `kvm: fix wrong CheckVirtualMachineAnswer when vm does not exist (#12928)`
@@ -1851,6 +1875,15 @@
   - Treat as already satisfied instead of creating a duplicate local commit
 - `abdf926219` `Revert "Use lateral join (introduced in MySQL 8.0.14) with subquery on user_statistics table in account_view for netstats (#12631)" (#12965)`
   - Current branch state already splits network statistics into `cloud.account_netstats_view` and joins that view from `cloud.account_view`
+  - Treat as already satisfied instead of creating a duplicate local commit
+- `68bd056306` `Support timeout configuration for Create and Restore NAS backup (#12964)`
+  - Current branch state already uses the timeout-aware restore wrapper path and test adjustments after the earlier NAS timeout work plus the Linstor restore merge
+  - Treat as already satisfied instead of creating a duplicate local commit
+- `1ff9eec997` `Load arch data for backup from template during create instance from backup (#12801)`
+  - Current branch state already preloads backup architecture in the create-from-backup UI flow and no additional code delta remained when applying the Apache change
+  - Treat as already satisfied instead of creating a duplicate local commit
+- `e2497cfc4d` `backport: default system vm template update implementation (#12935)`
+  - Current branch state already carries the default SystemVM template update implementation after the earlier upgrade-path fixes for 4.20.3 and non-KVM architecture handling
   - Treat as already satisfied instead of creating a duplicate local commit
 - `4ba4bd33c3` `replace GROUP_CONCAT with JSON_ARRAYAGG to avoid errors like Row 19 was cut by GROUP_CONCAT (#12777)`
   - Current branch state already uses `JSON_ARRAYAGG` in the affected `schema-42010to42100.sql` upgrade view definitions
