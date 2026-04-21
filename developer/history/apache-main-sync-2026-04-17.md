@@ -2292,7 +2292,7 @@
 ### Record 093 - record the intentionally reverted account netstats lateral-join change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `6121050871`
 - Source Apache commits:
   - `58916eb608` `Use lateral join (introduced in MySQL 8.0.14) with subquery on user_statistics table in account_view for netstats (#12631)`
 - Summary:
@@ -2305,6 +2305,29 @@
   - Comparing the original lateral-join change against the current branch confirmed that `cloud.account_view` still joins `cloud.account_netstats_view` and the standalone `cloud.account_netstats_view.sql` remains present
   - This local commit therefore records the intentional already-reverted state in the history document instead of reapplying the lateral-join change
   - Schema migration execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 094 - avoid wiping volume size metadata on failed download states
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `d0f6730157` `volume download fix`
+- Summary:
+  - Update the volume-download completion handler to persist size and physical-size metadata only when the download finishes in a non-error state
+  - Reuse `VMTemplateStorageResourceAssoc.ERROR_DOWNLOAD_STATES` for the error-path check instead of repeating the individual status comparisons
+- Functional impact:
+  - Prevents failed or abandoned volume downloads from overwriting stored size metadata with invalid values
+  - Keeps the error-path handling for download callbacks aligned with the shared error-state list
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff is limited to `BaseImageStoreDriverImpl`
+  - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
