@@ -99,7 +99,14 @@ function packaging() {
         fi
     fi
 
-    VERSION=$(cd $PWD/../; $MVN org.apache.maven.plugins:maven-help-plugin:2.1.1:evaluate -Dexpression=project.version | grep --color=none '^[0-9]\.')
+    VERSION=$(cd $PWD/../; $MVN -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)
+    if ! echo "$VERSION" | grep -q '^[0-9]\.' ; then
+        VERSION=$(cd $PWD/../; $MVN org.apache.maven.plugins:maven-help-plugin:2.1.1:evaluate -Dexpression=project.version | grep --color=none '^[0-9]\.' | tail -1)
+    fi
+    if [ -z "$VERSION" ] ; then
+        echo -e "Unable to determine project version from Maven\n RPM Build Failed"
+        exit 2
+    fi
     REALVER=$(echo "$VERSION" | cut -d '-' -f 1)
 
     if [ -n "$5" ]; then
