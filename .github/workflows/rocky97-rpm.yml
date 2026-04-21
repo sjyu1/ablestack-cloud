@@ -18,6 +18,15 @@
 name: Rocky 9.7 RPM Packaging
 
 on:
+  push:
+    branches:
+      - ablestack-europa
+    paths:
+      - '.github/workflows/rocky97-rpm.yml'
+      - 'packaging/**'
+      - 'tools/build/rocky97-rpm-build.sh'
+      - 'ui/**'
+      - 'pom.xml'
   workflow_dispatch:
     inputs:
       pack:
