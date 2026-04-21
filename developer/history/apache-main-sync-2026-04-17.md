@@ -817,6 +817,35 @@
   - Set `ui/public/config.json` to `defaultLanguage: "ko_KR"` on europa so the new feature preserves the branch's existing default language policy
   - Updated `TranslationMenu.vue` to prefer saved `LOCALE`, then `vueProps.$config?.defaultLanguage`, and finally fall back to `ko_KR`
 
+### Record 031 - block account and domain deletion when delete-protected VMs remain
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b196e97cc3` Prevent deletion of account and domain if either of them has deleted protected instance
+- Summary:
+  - Add DAO helpers to find active delete-protected VMs by account and by a set of domain IDs
+  - Validate account deletion in `AccountManagerImpl` before destructive cleanup starts
+  - Validate domain deletion in `DomainManagerImpl` across the full domain hierarchy, including child domains
+  - Extend `DomainManagerImplTest` stubs so delete-domain tests continue to model an empty delete-protected VM result set
+- Functional impact:
+  - Prevents operators from deleting an account or domain while delete-protected instances still exist beneath it
+  - Makes delete protection effective beyond direct VM delete calls by enforcing the same guard on higher-level ownership cleanup paths
+  - Limits false positives to active VMs only by filtering out removed instances in the DAO layer
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `VMInstanceDao`, `VMInstanceDaoImpl`, `AccountManagerImpl`, `DomainManagerImpl`, and `DomainManagerImplTest`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - `None observed on main`
+  - On `ablestack-europa`, `VMInstanceDao` and `VMInstanceDaoImpl` already carried the branch's `listByIdsIncludingRemoved` API, so the Apache DAO hunk overlapped with an existing method declaration and implementation block
+- Resolution notes:
+  - Kept the existing europa `listByIdsIncludingRemoved` contract and implementation
+  - Added only the new delete-protection DAO methods and search builders required by the Apache account/domain deletion guard
+  - Preserved the Apache service-layer validations in `AccountManagerImpl` and `DomainManagerImpl` without changing the surrounding europa deletion flow
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
