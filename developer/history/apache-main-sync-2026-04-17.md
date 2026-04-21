@@ -2204,11 +2204,32 @@
 ### Record 089 - add upstream contributor metadata to `.asf.yaml`
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `d203c9647a`
 - Source Apache commits:
   - `9bbd32a8ef` Add DaanHoogland to the list of contributors
 - Summary:
   - Add the upstream contributor metadata update to `.asf.yaml`
+- Functional impact:
+  - Keeps repository metadata aligned without changing product behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `.asf.yaml` only
+  - Metadata effects are external to this local environment and were not separately validated here
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 090 - apply the latest upstream `.asf.yaml` metadata adjustment
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `d8f748ad0e` Update `.asf.yaml`
+- Summary:
+  - Apply the remaining upstream `.asf.yaml` metadata adjustment on top of the collaborator/contributor sync
 - Functional impact:
   - Keeps repository metadata aligned without changing product behavior
 - Validation:
