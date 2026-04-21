@@ -1034,6 +1034,30 @@
 - Resolution notes:
   - `N/A`
 
+### Record 039 - rollback disk snapshots on VM snapshot failure
+
+- Local branch: `main`
+- Local commit: `d1ebe5062b`
+- Source Apache commits:
+  - `d75acb6efc` Fix rollback disk snapshots on instance snapshot failure (#12949)
+- Summary:
+  - Add each created disk snapshot to the rollback list before invoking the snapshot strategy
+  - Guard rollback cleanup against `null` `SnapshotInfo` and missing `SnapshotVO` rows
+  - Keep the VM snapshot unit test aligned with the renamed rollback list parameter
+- Functional impact:
+  - Prevents partially created per-volume snapshots from being left behind when a later VM snapshot disk step fails
+  - Makes rollback cleanup tolerant of partially persisted or already-removed snapshot metadata during failure handling
+  - Reduces orphaned snapshot state in KVM VM snapshot error paths
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after manual conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `StorageVMSnapshotStrategy.createDiskSnapshot(...)` conflicted on `ablestack-europa` because the local branch already calls `snapshotInfo.setVmSnapshotName(vmSnapshot.getName())` at the same insertion point where Apache adds rollback registration
+- Resolution notes:
+  - Preserved the europa `snapshotInfo.setVmSnapshotName(...)` behavior and added Apache's early `snapshotsForRollback.add(snapshotInfo)` registration alongside it
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
