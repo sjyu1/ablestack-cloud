@@ -2777,7 +2777,7 @@
 ### Record 114 - record the already-satisfied updateBucket limit-validation source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `876f207ba4`
 - Source Apache commits:
   - `2511fdffaa` `Implement limit validations on updateBucket`
 - Summary:
@@ -2790,6 +2790,29 @@
   - Reverse-applying the Apache patch on the current branch succeeded, showing the updateBucket limit-validation change is already present
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 115 - record the already-satisfied Routed VR related/established source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `1fc4cb90bf` `Routed VR: accept packets from related and established connections (#12986)`
+- Summary:
+  - Record that the current branch already adds the `RELATED,ESTABLISHED` acceptance path to the routed VR forwarding rules
+  - Confirm that the current SystemVM network filter flow already reflects the upstream source fix for routed VR traffic handling
+- Functional impact:
+  - Avoids duplicating a SystemVM source change whose routed VR packet-handling behavior is already present in the branch
+  - Preserves explicit upstream traceability for the related/established rule addition
+- Validation:
+  - Inspection of `systemvm/debian/opt/cloud/bin/cs/CsNetfilter.py` confirmed the routed VR state-match rule already uses the `RELATED,ESTABLISHED` handling introduced by the source fix
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - SystemVM runtime verification has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
