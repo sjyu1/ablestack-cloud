@@ -1868,7 +1868,7 @@
 ### Record 074 - harden KVM direct-download URL handling
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `1a0561f603`
 - Source Apache commits:
   - `0edd577f4b` Fix: KVM Direct Download URL injection
 - Summary:
@@ -1887,6 +1887,30 @@
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 075 - preserve camelCase `domainId` handling in login/auth flows
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `56dc11980f` test_accounts.py failure fix - keep the camelCase parameter "domainId" (#12689)
+- Summary:
+  - Add `ApiServerService.getDomainId(...)` and implement the fallback in `ApiServer` so login/auth flows can read either `domainid` or camelCase `domainId`
+  - Update both default login and OAuth login authenticators to use the shared helper instead of reading only the legacy parameter key directly
+  - Carry the matching OAuth command test update with the API/auth changes
+- Functional impact:
+  - Prevents login failures for clients or tests that still submit the camelCase `domainId` parameter name
+  - Centralizes the parameter fallback so auth entrypoints behave consistently instead of each flow drifting independently
+- Validation:
+  - Apache cherry-pick required a manual conflict resolution on `main` in `ApiServerService` because this branch already exposes an additional service method on the same interface
+  - The resolved code keeps the branch-local interface method and layers Apache's shared `getDomainId(...)` helper plus auth-call-site updates alongside it
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `ApiServerService` conflicted where Apache added `getDomainId(...)` and the local branch had already added `isPostRequestsAndTimestampsEnforced()`
+- Resolution notes:
+  - Kept both interface methods and applied Apache's camelCase domain-id fallback everywhere else unchanged
 
 ### Observed Already Satisfied
 
