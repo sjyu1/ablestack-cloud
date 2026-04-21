@@ -1655,7 +1655,7 @@
 ### Record 065 - replace GROUP_CONCAT backup volume serialization with JSON aggregation
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `4d2401d7e7`
 - Source Apache commits:
   - `4ba4bd33c3` replace GROUP_CONCAT with JSON_ARRAYAGG to avoid errors like Row 19 was cut by GROUP_CONCAT (#12777)
 - Summary:
@@ -1668,6 +1668,30 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - Staged diff only updates the SQL migration logic in `schema-42010to42100.sql`
   - Database migration execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa as 6f1bd5d2f8 after history-doc auto-merge`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 066 - improve KVM GPU domain parsing and support Display controller class
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `416679fae1` Fix domain parsing for GPU & add Display controller in the supported PCI class (#12981)
+- Summary:
+  - Tighten KVM GPU domain parsing in `LibvirtGpuDef` so discovery handles vendor output more reliably
+  - Extend `gpudiscovery.sh` to treat Display controller PCI class entries as GPU-capable devices in addition to the previously supported classes
+  - Add focused unit coverage for the updated GPU definition parsing behavior
+- Functional impact:
+  - Improves GPU discovery accuracy on hosts where PCI domain values or `lspci` output formatting previously caused parser failures
+  - Enables detection of accelerator cards exposed through the Display controller class, including newer AMD Instinct-style hardware
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Staged diff spans the GPU parser, the KVM discovery script, and new `LibvirtGpuDefTest` coverage
+  - Maven-based Java test execution and script-level runtime validation have not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
