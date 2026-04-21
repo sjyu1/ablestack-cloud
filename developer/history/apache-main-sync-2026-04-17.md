@@ -1609,7 +1609,7 @@
 ### Record 063 - support SharedMountPoint volume checks during importVm preflight
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `dae6777b00`
 - Source Apache commits:
   - `b0b3dc91f5` fix: support SharedMountPoint volume checks for importVm (#12946)
 - Summary:
@@ -1621,6 +1621,29 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - Staged diff only updates the supported pool-type list in `LibvirtCheckVolumeCommandWrapper`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa as 0f43c06318 after code and history-doc conflict resolution`
+- Conflict notes:
+  - `LibvirtCheckVolumeCommandWrapper` conflicted on `ablestack-europa` because the branch already carried `RBD` in the same supported pool-type list
+- Resolution notes:
+  - Preserved Europa's existing `RBD` support and added Apache's `SharedMountPoint` support alongside it
+
+### Record 064 - support SharedMountPoint storage discovery for KVM import and unmanage
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b1bc5380a2` fix: support SharedMountPoint for KVM volume import and unmanage (#12956)
+- Summary:
+  - Add SharedMountPoint to the supported KVM storage-pool types exposed by the import/unmanage API contract
+  - Align the KVM volume listing wrapper's qemu-img-compatible storage-pool list with the same SharedMountPoint support
+- Functional impact:
+  - Lets KVM import and unmanage flows enumerate volumes on SharedMountPoint pools instead of excluding them as unsupported
+  - Keeps API-level validation and hypervisor-side storage discovery consistent for the same storage backend
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Staged diff updates one API interface constant and one KVM wrapper constant
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
