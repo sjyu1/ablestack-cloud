@@ -1223,6 +1223,29 @@
 - Resolution notes:
   - `N/A`
 
+### Record 047 - register new SystemVM templates for non-KVM hypervisors with amd64 arch
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `6f1aa96b4c` engine/schema: fix new systemvm template is not registered during upgrade if hypervisor is not KVM (#12952)
+- Summary:
+  - Assign `CPU.CPUArch.amd64` to non-KVM hypervisors in `SystemVmTemplateRegistration.hypervisorList`
+  - Update the registration test so VMware template metadata is expected with `amd64` instead of a null/default arch assumption
+- Functional impact:
+  - Prevents upgrade-time SystemVM template registration from skipping VMware, XenServer, Hyper-V, LXC, and OVM3 entries because their architecture was previously unspecified
+  - Makes the registration map deterministic for non-KVM hypervisors
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` only in `SystemVmTemplateRegistrationTest` because this branch already refactored the test to call `getMetadataTemplateDetails(...)` directly
+  - The resolved test keeps the branch-local helper call and adopts Apache's explicit `amd64` expectation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `SystemVmTemplateRegistrationTest` conflicted on `main` because the local branch had already changed the VMware metadata lookup helper call while Apache updates the expected arch in the same assertion block
+- Resolution notes:
+  - Preserved the branch-local helper-based test structure and updated the asserted VMware arch to `CPU.CPUArch.amd64`
+
 ### Observed Already Satisfied
 
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
