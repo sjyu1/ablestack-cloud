@@ -1264,6 +1264,30 @@
   - Cached diff is limited to downloader/helper call sites plus the new shared user-agent utility class
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
+  - `Applied on ablestack-europa as 1f8ff5cbad after history-doc conflict resolution`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 049 - apply nexthop static routes to PBR tables and interface ACL chains
+
+- Local branch: `main`
+- Local commit: `994506d3ec`
+- Source Apache commits:
+  - `83f705ddc5` Static Routes with nexthop non-functional for private gateways (#12859)
+- Summary:
+  - Add `CsHelper.find_device_for_gateway(...)` to map a gateway IP to the matching router interface subnet
+  - Update `CsStaticRoutes` so route add/delete operations touch both the main routing table and the matching interface-specific PBR table when a nexthop belongs to a private gateway subnet
+  - Extend `CsAddress` firewall generation to emit the same inbound/outbound ACL chains for nexthop-based static routes as for legacy `ip_address`-based routes
+- Functional impact:
+  - Fixes VPC router traffic drops where static routes configured with a gateway/nexthop were installed only in the main routing table while policy-based routing uses interface-specific tables
+  - Restores ACL and PREROUTING/FORWARD rule generation for nexthop-based static routes, so traffic can traverse private gateway paths consistently
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to `CsAddress.py`, `CsHelper.py`, and `CsStaticRoutes.py`
+  - Runtime/systemvm test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
   - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
 - Conflict notes:
   - `None observed on main`
