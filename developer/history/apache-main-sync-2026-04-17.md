@@ -2073,7 +2073,7 @@
 ### Record 083 - transition expunging VMs to error when expunge fails
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `d27f93ae8c`
 - Source Apache commits:
   - `bce55945ec` Mark VMs in error state when expunge fails during destroy operation (#12749)
 - Summary:
@@ -2093,6 +2093,29 @@
   - `UserVmManagerImplTest` conflicted where Apache appended new expunge-failure tests and the local branch had already grown an unrelated block of trailing tests
 - Resolution notes:
   - Preserved the local test block and added Apache's new transition tests after it, while leaving the service/DAO changes themselves unchanged
+
+### Record 084 - align snapshot datastore CI fixes with current hidden-ref search builders
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `3b42fbf3b2` Fixing CI failures (#12789)
+- Summary:
+  - Switch the snapshot datastore search builder used by non-destroyed snapshot lookups from a single-state exclusion to a `NOTIN` builder that also fits the hidden-state filtering path
+  - Carry the secondary-storage smoke test polling fix so SSVM readiness waits are more tolerant and less timing-sensitive
+- Functional impact:
+  - Keeps snapshot-store lookups consistent with the newer hidden-ref handling already present in this branch
+  - Reduces flaky SSVM readiness failures in the smoke test flow without changing product runtime behavior
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `SnapshotDataStoreDaoImpl` because this branch already carries the hidden-ref `state IN` search builder used by Xen snapshot chaining fixes
+  - The resolved code keeps the local `idEqRoleEqStateInSearch` builder and replaces the old single-state exclusion search with Apache's `NOTIN` variant
+  - Marvin/integration tests have not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `SnapshotDataStoreDaoImpl` conflicted where Apache renamed the non-destroyed-state search builder and the local branch had already added a second builder for hidden snapshot refs
+- Resolution notes:
+  - Retained both search use-cases by keeping the local hidden-ref builder and adopting Apache's `NOTIN` builder for the generic non-destroyed lookup helpers
 
 ### Observed Already Satisfied
 

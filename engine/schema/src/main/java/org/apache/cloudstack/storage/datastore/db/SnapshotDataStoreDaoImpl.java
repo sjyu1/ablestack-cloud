@@ -69,7 +69,6 @@ public class SnapshotDataStoreDaoImpl extends GenericDaoBase<SnapshotDataStoreVO
     protected SearchBuilder<SnapshotDataStoreVO> searchFilteringStoreIdEqStateEqStoreRoleEqIdEqUpdateCountEqSnapshotIdEqVolumeIdEq;
     private SearchBuilder<SnapshotDataStoreVO> stateSearch;
     private SearchBuilder<SnapshotDataStoreVO> idStateNinSearch;
-    private SearchBuilder<SnapshotDataStoreVO> idStateNeqSearch;
     private SearchBuilder<SnapshotDataStoreVO> idEqRoleEqStateInSearch;
     protected SearchBuilder<SnapshotVO> snapshotVOSearch;
     private SearchBuilder<SnapshotDataStoreVO> snapshotCreatedSearch;
@@ -153,11 +152,6 @@ public class SnapshotDataStoreDaoImpl extends GenericDaoBase<SnapshotDataStoreVO
         idStateNinSearch.and(SNAPSHOT_ID, idStateNinSearch.entity().getSnapshotId(), SearchCriteria.Op.EQ);
         idStateNinSearch.and(STATE, idStateNinSearch.entity().getState(), SearchCriteria.Op.NOTIN);
         idStateNinSearch.done();
-
-        idStateNeqSearch = createSearchBuilder();
-        idStateNeqSearch.and(SNAPSHOT_ID, idStateNeqSearch.entity().getSnapshotId(), SearchCriteria.Op.EQ);
-        idStateNeqSearch.and(STATE, idStateNeqSearch.entity().getState(), SearchCriteria.Op.NEQ);
-        idStateNeqSearch.done();
 
         idEqRoleEqStateInSearch = createSearchBuilder();
         idEqRoleEqStateInSearch.and(SNAPSHOT_ID, idEqRoleEqStateInSearch.entity().getSnapshotId(), SearchCriteria.Op.EQ);
