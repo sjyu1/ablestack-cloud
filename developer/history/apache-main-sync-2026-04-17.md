@@ -2431,7 +2431,7 @@
 ### Record 099 - record the already-satisfied create-volume-on-storage-pool flow
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `b198b1c4c9`
 - Source Apache commits:
   - `df7ff97271` `Create volume on a specified storage pool (#12966)`
 - Summary:
@@ -2450,6 +2450,30 @@
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 100 - tighten public IP limit validation for dedicated ranges and reservation-backed allocation
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `9db630932e` `Address public IP limit validations`
+- Summary:
+  - Allow account/domain VLAN map lookups to accept nullable owners so public IP validation can correctly fall back from account ownership to domain/system-account evaluation
+  - Expose the system account through `ApiDBUtils` and teach `CheckedReservation` to use it when a domain-scoped reservation has no concrete account owner
+  - Wrap public IP allocation and VLAN range creation in reservation-aware limit checks so dedicated and non-dedicated public IP flows apply the right resource accounting path
+- Functional impact:
+  - Prevents public IP limit validation from miscounting or skipping checks when the allocation path uses domain-scoped ownership or reservation-backed VLAN creation
+  - Keeps dedicated public IP reservations from incrementing account public IP counts incorrectly while still enforcing limits for normal allocations
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `ConfigurationManagerImpl` because the local branch already carried additional imports around the VLAN creation path (`DomainHelper`, SystemVM-related managers) in the same import block
+  - The resolved code keeps the local imports and applies Apache's nullable VLAN owner lookup plus reservation-backed public IP validation logic
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `ConfigurationManagerImpl` conflicted in the import block where Apache introduced reservation-related dependencies and the local branch already had extra local imports nearby
+- Resolution notes:
+  - Kept the local import set intact and added Apache's reservation-related imports and logic without changing the local VLAN creation flow structure
 
 ### Observed Already Satisfied
 
