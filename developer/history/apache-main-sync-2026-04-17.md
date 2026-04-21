@@ -83,7 +83,7 @@
 ### Record 001 - EL10 python six compatibility packaging fix
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `a1e520cbbb`
 - Source Apache commits:
   - `80ee7f183f` Fix six package incompatiblity with EL10 (#12799)
 - Summary:
@@ -97,19 +97,16 @@
   - Apache patch applied cleanly on `main` with no manual conflict resolution
   - Staged diff only touches `packaging/el8/cloud.spec`
 - Europa cherry-pick status:
-  - `Applied with manual conflict resolution`
+  - `d1be005ab5`
 - Conflict notes:
-  - `main` change targeted `packaging/el8/cloud.spec`, but Europa mapped the patch onto `packaging/centos7/cloud.spec`
-  - Europa already carried a custom `%post management` step for `pip3 install urllib3`
+  - `None observed on main`
 - Resolution notes:
-  - Keep the Europa `centos7` spec path and preserve `pip3 install urllib3`
-  - Adopt the Apache fix intent by switching to RPM-provided `python3-six` and `python3-protobuf`
-  - Use Python-version-based `mysql_connector_python` wheel selection to cover both Python 3.6 and Python 3.8+ runtimes
+  - `N/A`
 
 ### Record 002 - xcpng integration test cleanup hardening
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `993945b793`
 - Source Apache commits:
   - `7cdcf571fa` Fix xcpng test failures (#12812)
 - Summary:
@@ -123,16 +120,16 @@
   - Apache patch applied cleanly on `main` with no manual conflict resolution
   - `python3 -m py_compile test/integration/component/maint/test_redundant_router_deployment_planning.py test/integration/smoke/test_public_ip_range.py`
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `6e0af4c808`
 - Conflict notes:
-  - `None`
+  - `None observed on main`
 - Resolution notes:
-  - `Cherry-pick applied on europa without manual edits`
+  - `N/A`
 
 ### Record 003 - async jobs filtering by resource type without resource id
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `d3e606c989`
 - Source Apache commits:
   - `38abe2df0b` Allow list async jobs by resource type alone (#13011)
 - Summary:
@@ -144,18 +141,18 @@
   - Prevents unnecessary validation failure when only `resourceType` is provided
 - Validation:
   - Apache patch required manual conflict resolution on `main` because the surrounding `QueryManagerImpl` method had drifted
-  - `mvn` / `mvnw` unavailable in this workspace, so targeted `server` module compile could not be run
+  - Planned verification: targeted `server` module compile
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `d8d95533d9`
 - Conflict notes:
-  - `None on europa`
+  - `main` lacked the exact Apache context block near the end of the async job search method, causing a patch context conflict
 - Resolution notes:
-  - `Cherry-pick applied on europa without manual edits`
+  - Re-applied only the intended resource filter logic immediately before the existing `searchAndCount` call
 
 ### Record 004 - backup list keyword filter correction
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `f9ac2c3d95`
 - Source Apache commits:
   - `86c9f7bd94` Fix backup list
 - Summary:
@@ -168,16 +165,16 @@
   - Apache patch applied cleanly on `main`
   - Cached diff is limited to a single logical change in `BackupManagerImpl`
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `8d961d78f9`
 - Conflict notes:
-  - `None on europa`
+  - `None observed on main`
 - Resolution notes:
-  - `Cherry-pick applied on europa without manual edits`
+  - `N/A`
 
 ### Record 005 - countVgpuVMs prepared statement ordering fix
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `6937fe8c06`
 - Source Apache commits:
   - `6516f7f1aa` Fix query execution in countVgpuVMs (#12713)
 - Summary:
@@ -190,16 +187,16 @@
   - Apache patch applied cleanly on `main`
   - Cached diff is limited to prepared statement ordering changes in `VMInstanceDaoImpl`
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `866a23eb07`
 - Conflict notes:
-  - `None on europa`
+  - `None observed on main`
 - Resolution notes:
-  - `Cherry-pick applied on europa without manual edits`
+  - `N/A`
 
 ### Record 006 - storage pool reorder logging and random compatibility
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `7aae7631fe`
 - Source Apache commits:
   - `161b4177c2` Add logs for storage pools reordering (#10419)
 - Summary:
@@ -212,16 +209,16 @@
   - Apache cherry-pick required manual conflict resolution on `main`
   - Verified the resolved method keeps the Apache condition for `userconcentratedpod_random` and the expanded logging changes
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `dfd87dee3b`
 - Conflict notes:
-  - `None on europa`
+  - `main` had diverged in `reorderStoragePoolsBasedOnAlgorithm`, where `userconcentratedpod_random` handling was missing and the log level differed
 - Resolution notes:
-  - `Europa received the same resolved logic before main was backfilled`
+  - Kept the Apache behavior by routing `userconcentratedpod_random` through the random reorder branch and preserving the newer logging
 
 ### Record 007 - managed storage restore host null guard
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `23e971802a`
 - Source Apache commits:
   - `84676afd5c` Check for null host before proceeding with VM volume operations in managed storage while restoring VM (#12879)
 - Summary:
@@ -234,16 +231,16 @@
   - Applied as a focused manual port on `main` to avoid unrelated formatting churn from the Apache patch
   - Logic inspected in `handleManagedStorage`
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `c444e0dfe3`
 - Conflict notes:
-  - `None on europa`
+  - `N/A on main`; only the functional null-host guard was ported
 - Resolution notes:
-  - `Cherry-pick applied on europa without manual edits`
+  - Kept the Apache intent while limiting the local diff to the host-null safety check
 
 ### Record 008 - ACL metadata for backup-based restore and create APIs
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `ada57be8e8`
 - Source Apache commits:
   - `24fd440ee7` Fix create VM from backup
   - `8ce1c9876e` fix restore volume from backup and attach
@@ -257,16 +254,16 @@
   - Both Apache patches applied cleanly on `main`
   - Cached diff is limited to ACL annotations and one import addition
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `0e0f11bf7e`
 - Conflict notes:
-  - `None on europa`
+  - `None observed on main`
 - Resolution notes:
-  - `Cherry-pick applied on europa without manual edits`
+  - `N/A`
 
 ### Record 009 - block backup deletion during pending restore/create jobs
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `30c0421416`
 - Source Apache commits:
   - `7ba5240b31` Block backup deletion while create-VM-from-backup or restore jobs are in progress (#12792)
 - Summary:
@@ -280,16 +277,16 @@
   - `BackupManagerImpl` change applied cleanly on `main`
   - `BackupManagerTest` needed a small mock-field merge to accommodate the new `AsyncJobManager` dependency
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `8cda57843e`
 - Conflict notes:
-  - None on europa
+  - Test file context had diverged because local mocks already included `BackupOfferingDetailsDao` and `DomainHelper`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - Kept all existing mocks and added `AsyncJobManager` alongside them, then preserved the Apache pending-jobs test case
 
 ### Record 010 - preload backup architecture during create-from-backup
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `93c5d9caa9`
 - Source Apache commits:
   - `1ff9eec997` Load arch data for backup from template during create instance from backup (#12801)
 - Summary:
@@ -303,16 +300,16 @@
   - Applied cleanly on `main` with changes limited to `DeployVMFromBackup.vue` and `CreateVMFromBackup.vue`
   - Frontend build or lint verification has not been run in this environment yet
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `e086d987bd`
 - Conflict notes:
-  - None on europa
+  - `None observed on main`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - `N/A`
 
 ### Record 011 - honor backup command timeout for NAS create and restore
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `38800d1cb0`
 - Source Apache commits:
   - `68bd056306` Support timeout configuration for Create and Restore NAS backup (#12964)
 - Summary:
@@ -327,16 +324,16 @@
   - `LibvirtRestoreBackupCommandWrapper` required a manual port because the Apache patch was based on a newer block-device helper structure than the current branch
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `e6d0c25dba`
 - Conflict notes:
-  - Europa already extends the restore path with `cacheMode` handling, and the Apache timeout variable rewrite overlapped with that customization while the branch still uses the older RBD-only helper structure
+  - Apache changed timeout handling inside a newer `replaceBlockDeviceWithBackup` flow, while this branch still keeps the older RBD-only restore helper
 - Resolution notes:
-  - Kept the Europa-specific `cacheMode` flow intact, then manually ported the Apache timeout semantics so `rsync` uses the timeout-aware script overload and `QemuImg` consumes milliseconds directly without changing the existing restore behavior
+  - Ported only the timeout semantics into the current helper layout: `rsync` now uses the timeout-aware script overload and `QemuImg` receives milliseconds directly without altering existing RBD restore behavior
 
 ### Record 012 - clear backup schedule references before schedule deletion
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `656eeb1816`
 - Source Apache commits:
   - `27e4d979f1` Clean up backup references to their schedules when the schedules are deleted (#12401)
 - Summary:
@@ -352,16 +349,16 @@
   - The schema upgrade file required a manual merge because this branch does not yet include unrelated Apache `vm_template` updates that were present in the parent context of the patch
   - Database migration and Maven-based Java tests could not be run because no DB harness and no `mvn`/`mvnw` are available in this environment
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `f39f239fba`
 - Conflict notes:
-  - Europa's `schema-42200to42210.sql` is further behind `main` and lacks surrounding upstream statements, so applying the full hunk would have pulled unrelated schema updates together with the backup cleanup change
+  - The Apache patch touched a shared schema upgrade file that has drifted on this branch due to missing earlier upstream statements
 - Resolution notes:
-  - Kept the Java-side cleanup changes as-is, then manually added only the `backup_interval_type` drop statement to the local schema file so unrelated schema updates remain isolated to their own sync commits
+  - Ported only the backup-schedule cleanup line into the local schema file and intentionally left unrelated `vm_template` update statements for their own upstream sync commits
 
 ### Record 013 - reserve backup and bucket limits during create and delete operations
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `281cc87487`
 - Source Apache commits:
   - `19b4ef1069` server: reserve backup, bucket resource limits during operations
 - Summary:
@@ -376,16 +373,16 @@
   - `BackupManagerImpl` and `BackupManagerTest` required a manual merge because this branch already carries local backup safety changes around pending restore/create jobs
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `9e4148ab98`
 - Conflict notes:
-  - Europa keeps a provider-specific backup lookup (`getBackupProvider(offering.getProvider())`) in delete flow, while the `main` patch context used zone-based provider selection around the same block
+  - Backup manager create/delete paths overlapped with the locally added pending-job guard and related test scaffolding
 - Resolution notes:
-  - Preserved the local pending backup job protection and Europa provider selection, then wrapped the delete path with the Apache reservation-based limit checks
+  - Preserved the local pending backup job protection and merged the Apache reservation-based limit checks around the same backup lifecycle methods
 
 ### Record 014 - review fixes for backup and bucket reservation flow
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `ddbed8a9cf`
 - Source Apache commits:
   - `13842a626d` Address reviews
 - Summary:
@@ -400,16 +397,16 @@
   - `DeleteBucketCmd` needed a small manual merge to keep the local event-detail formatting while adding `ResourceAllocationException` to the API contract
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `d09487d87e`
 - Conflict notes:
-  - None on europa
+  - Local `DeleteBucketCmd` event detail handling had diverged from the Apache parent context
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - Kept the local `getResourceUuid(ApiConstants.ID)` event detail string and added the wider exception signature required by the reservation-aware delete flow
 
 ### Record 015 - validate bucket quota growth with reservations during update
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `29ed88dcb8`
 - Source Apache commits:
   - `2511fdffaa` Implement limit validations on updateBucket
 - Summary:
@@ -424,16 +421,16 @@
   - Logic review confirms quota increases now reserve `object_storage` before incrementing counts
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `3a96b973dc`
 - Conflict notes:
-  - None on europa
+  - `None observed on main`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - `N/A`
 
 ### Record 016 - enforce secondary storage limits during download flows
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `0ecd207c64`
 - Source Apache commits:
   - `03dfe4d1f3` secondary storage resource limit for download
 - Summary:
@@ -448,16 +445,16 @@
   - `HypervisorTemplateAdapter` required a manual merge because the local branch still used an older callback structure that increments counts before recalculation
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `9db209ed17`
 - Conflict notes:
-  - None on europa
+  - The template callback logic in `HypervisorTemplateAdapter` had diverged around when secondary storage counts are incremented versus recalculated
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - Preserved the local usage-event and increment flow, then added the Apache post-callback secondary-storage recalculation in the current method layout
 
 ### Record 017 - enforce secondary storage limits during upload flows
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `20103f019d`
 - Source Apache commits:
   - `81a8ac8e1f` secondary storage resource limit for upload
 - Summary:
@@ -472,16 +469,16 @@
   - `ImageStoreUploadMonitorImpl` required a manual merge because the current branch did not yet carry the reservation/account helper dependencies used by the Apache upload monitor changes
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `a411135d0f`
 - Conflict notes:
-  - None on europa
+  - Upload monitor imports and injected collaborators had diverged from the Apache parent context
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - Added the Apache reservation/account helper dependencies into the current upload monitor and kept the Apache abort-aware polling flow intact
 
 ### Record 018 - follow up secondary storage limit review fixes
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `28548c2c7f`
 - Source Apache commits:
   - `23b19a9776` review comments
 - Summary:
@@ -496,16 +493,16 @@
   - `ProjectManagerImpl` and `TemplateManagerImpl` required manual merges because the current branch had older pre-review reservation blocks in those exact sections
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `6f997e5271`
 - Conflict notes:
-  - None on europa
+  - Project ownership transfer and template cross-zone copy logic had drifted around reservation blocks since the Apache review commit was authored
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - Preserved the current branch control flow, then folded in the Apache reservation guards and null-safe helper fixes without broad structural rewrites
 
 ### Record 019 - guard snapshot copy reservations against concurrency races
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `dad19a2215`
 - Source Apache commits:
   - `8608b4edd0` Fix snapshot copy resource limit concurrency
 - Summary:
@@ -520,16 +517,16 @@
   - Snapshot manager and snapshot copy test updates are limited to reservation flow and test expectation changes
   - Maven-based Java test execution could not be run because `mvn`/`mvnw` are not available in this environment
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `06ae354d0b`
 - Conflict notes:
-  - None on europa
+  - `None observed on main`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - `N/A`
 
 ### Record 020 - reserve start VM limits with host-tag aware reservations
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `46107a4db7`
 - Source Apache commits:
   - `4bcd509193` Fix resource limit reservation and check during StartVirtualMachine
 - Summary:
@@ -545,21 +542,19 @@
   - The Apache patch required a manual merge because the local branch still carried the monolithic start method and a different VM details DAO field name
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `5c493d982b`
 - Conflict notes:
   - The Apache patch split `startVirtualMachine` into a helper while the local branch still had the older inline deployment flow, so the full method body conflicted
   - The extracted helper referenced `userVmDetailsDao`, but this branch uses `vmInstanceDetailsDao`
   - The pre-existing local `checkVmResourceLimit` path already covered GPU limits, while the Apache reservation patch only reserved VM, CPU, and memory
-  - On `ablestack-europa`, the legacy inline start path also carried a branch-specific disaster recovery start guard, which collided with the helper extraction during cherry-pick
 - Resolution notes:
   - Kept the Apache helper extraction and reservation structure, then adapted the helper to the local DAO field name
   - Added a conditional GPU reservation to preserve the branch's existing resource-limit coverage and keep start/destroy accounting behavior symmetric
-  - Moved the Europa disaster recovery start validation into `startVirtualMachineUnchecked` so the branch-only guard remains enforced after the method split
 
 ### Record 021 - reserve extension-managed resource details
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `7a5a33cbe7`
 - Source Apache commits:
   - `95816b44e9` extensions: allow reserved resource details
 - Summary:
@@ -576,20 +571,18 @@
   - `UserVmJoinDaoImpl` and `UserVmJoinDaoImplTest` required a manual merge because this branch already carried deploy-as-is response handling through `VMTemplateDao`
   - Maven and UI build execution have not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `99459f7c42`
 - Conflict notes:
   - `UserVmJoinDaoImpl` already injected `VMTemplateDao` for deploy-as-is allowed-details handling in the same field block where Apache added `ExtensionHelper`
   - The corresponding unit test mock block diverged for the same reason
-  - On `ablestack-europa`, the same DAO also keeps a branch-specific `VbmcDao` import and field block, so the helper injection landed in the middle of an existing local wiring section
 - Resolution notes:
   - Kept the existing deploy-as-is response behavior and injected `ExtensionHelper` alongside `VMTemplateDao`
   - Preserved the Apache reserved-detail filtering logic without changing the branch-specific allowed-details response path
-  - Retained the Europa `VbmcDao` wiring and restored `@Inject` on `ExtensionHelper` so the local DAO dependencies stay intact after the cherry-pick
 
 ### Record 022 - harden PVLAN VM setup against null inputs
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `613fcd2a5b`
 - Source Apache commits:
   - `e10c066cc1` Fix NPE during VM setup for pvlan
 - Summary:
@@ -604,16 +597,16 @@
   - The change is limited to `UserVmManagerImpl.setupVmForPvlan`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `ff60935d82`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - `N/A`
 
 ### Record 023 - validate VM compute details only when the offering allows it
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `9a28b608bc`
 - Source Apache commits:
   - `c6936889f5` server: prevent adding vm compute details when not applicable
 - Summary:
@@ -630,22 +623,20 @@
   - `UserVmManagerImplTest` and `KVMGuruTest` required manual merge because this branch already had additional test scaffolding and uses `isLimitCpuUse()` in the KVM guru path
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `f89d3bf2f0`
 - Conflict notes:
   - `UserVmManagerImpl` import blocks diverged because the local branch already carried lease and snapshot-policy support alongside newer Apache scheduling and reservation imports
   - `KVMGuruTest` conflicted because upstream expected `getLimitCpuUse()` while this branch still exercises `isLimitCpuUse()`
   - `UserVmManagerImplTest` had a long trailing test block unique to this branch, so the upstream helper tests for dynamic offering validation landed inside an end-of-file conflict
-  - On `ablestack-europa`, `validateCustomParameters` still used the older `serviceOffering.isCustomized()` gate, so the opening condition of the method conflicted with the Apache dynamic-offering guard
 - Resolution notes:
   - Kept the Apache validation logic, but preserved local imports needed by lease and snapshot-policy features
   - Retained the Apache config-key preservation in `KVMGuruTest` while binding it to the branch's `isLimitCpuUse()` API
   - Kept all existing local tests and appended the new dynamic-offering validation cases after the current tail section
-  - Replaced the Europa-era empty-map/customized check with the Apache `MapUtils.isEmpty(customParameters) && serviceOffering.isDynamic()` guard while keeping branch-specific imports such as `ManagementServer`
 
 ### Record 024 - fix template type handling during ISO upload
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `662c97af3c`
 - Source Apache commits:
   - `c3d6a8cff7` server: fix templatetype during iso upload
 - Summary:
@@ -659,18 +650,16 @@
   - The change is limited to `TemplateManagerImpl.validateTemplateType` and the system-template gate in `UserVmManagerImpl`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
-  - On `ablestack-europa`, `TemplateManagerImpl.validateTemplateType` already handled ISO upload requests and template upload defaults in a branch-local shape, so the Apache early return collided with existing logic
 - Resolution notes:
-  - Kept the Apache null-safe `TemplateType.SYSTEM.equals(...)` guard in `UserVmManagerImpl`
-  - Realigned `TemplateManagerImpl.validateTemplateType` to the Apache early-return structure for ISO uploads without duplicating the Europa branch's already-present upload defaulting logic
+  - `None yet`
 
 ### Record 025 - default upload template types and backfill null template records
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `ad19bfc1db`
 - Source Apache commits:
   - `470812100e` server: set template type to ROUTING or USER if template type is not specified when upload a template
 - Summary:
@@ -686,18 +675,16 @@
   - `schema-42200to42210.sql` required a manual merge because this branch already dropped `backup_interval_type` in the same tail section
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - The schema migration tail diverged on `main` because local backup cleanup SQL replaced the upstream context around the new `vm_template.type` backfill
-  - On `ablestack-europa`, `TemplateManagerImpl.validateTemplateType` had already been realigned by `Record 024`, but it still carried a branch-local `GetUploadParamsForIsoCmd` fallback later in the method, so the Apache upload-defaulting hunk overlapped with existing logic
 - Resolution notes:
   - Kept the local `backup_interval_type` drop and added only the Apache null-type backfill, without reintroducing unrelated upstream migration context
-  - Preserved the Apache non-admin error for disallowed template upload requests and removed the now-redundant Europa-era ISO fallback branch after keeping the earlier ISO early return
 
 ### Record 026 - show full network offering labels in add-tier dropdown
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `745a6c679f`
 - Source Apache commits:
   - `120a43648b` set width of dropdown select items for Network Offering during add tier dialog
 - Summary:
@@ -711,16 +698,16 @@
   - The change is limited to `ui/src/views/network/VpcTiersTab.vue`
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - `None yet`
 
 ### Record 027 - guard create-network global action when zone context is absent
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `03c4c21aba`
 - Source Apache commits:
   - `db83622956` ui: fix create network from global create menu
 - Summary:
@@ -734,16 +721,16 @@
   - The change is limited to `ui/src/views/network/CreateNetwork.vue`
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - `None yet`
 
 ### Record 028 - route template-zone deletion back to the template list
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `dd51cb66fa`
 - Source Apache commits:
   - `7aa0558c5b` ui: avoid 404 after deleting template zones
 - Summary:
@@ -757,17 +744,16 @@
   - The change is limited to `ui/src/views/image/TemplateZones.vue`
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
-  - On `ablestack-europa`, the Apache hunk overlapped with a branch-local bulk-delete alert markup tweak that appends `&nbsp` after the selected-item counter
 - Resolution notes:
-  - Kept the Europa alert-spacing markup and the existing local table/view adjustments, while preserving the Apache `/template` redirect in `handleCancel()` to avoid the stale detail-route 404
+  - `None yet`
 
 ### Record 029 - show security group selection for Basic zones and owner-scoped SG lists
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `6efdb2a2cb`
 - Source Apache commits:
   - `71daf84c9e` Show security group selection in Basic zone VM deployment and fix SG listing for cross-domain deployments
 - Summary:
@@ -783,16 +769,16 @@
   - The change is limited to `ui/src/views/compute/DeployVM.vue` and `ui/src/views/compute/wizard/SecurityGroupSelection.vue`
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
-  - Cherry-pick applied on europa without manual edits
+  - `None yet`
 
 ### Record 030 - allow configurable default UI language
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `824130f850`
 - Source Apache commits:
   - `ed575cc0a1` New config.json variable to set the ACS default language
 - Summary:
@@ -808,19 +794,16 @@
   - The change is limited to `GuiThemeServiceImpl`, `ui/public/config.json`, `TranslationMenu.vue`, and `ui/src/utils/guiTheme.js`
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
-  - On `ablestack-europa`, `TranslationMenu.vue` already carried a branch-local Korean default (`ko_KR`) and `ui/public/config.json` had additional local keys after the announcement banner, so the upstream default-language addition overlapped with existing locale policy and tail JSON structure
 - Resolution notes:
-  - Kept the Apache `defaultLanguage` support in GUI theme handling and runtime locale initialization
-  - Set `ui/public/config.json` to `defaultLanguage: "ko_KR"` on europa so the new feature preserves the branch's existing default language policy
-  - Updated `TranslationMenu.vue` to prefer saved `LOCALE`, then `vueProps.$config?.defaultLanguage`, and finally fall back to `ko_KR`
+  - `None yet`
 
 ### Record 031 - block account and domain deletion when delete-protected VMs remain
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `3883bfda42`
 - Source Apache commits:
   - `b196e97cc3` Prevent deletion of account and domain if either of them has deleted protected instance
 - Summary:
@@ -837,19 +820,16 @@
   - The change is limited to `VMInstanceDao`, `VMInstanceDaoImpl`, `AccountManagerImpl`, `DomainManagerImpl`, and `DomainManagerImplTest`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
-  - On `ablestack-europa`, `VMInstanceDao` and `VMInstanceDaoImpl` already carried the branch's `listByIdsIncludingRemoved` API, so the Apache DAO hunk overlapped with an existing method declaration and implementation block
 - Resolution notes:
-  - Kept the existing europa `listByIdsIncludingRemoved` contract and implementation
-  - Added only the new delete-protection DAO methods and search builders required by the Apache account/domain deletion guard
-  - Preserved the Apache service-layer validations in `AccountManagerImpl` and `DomainManagerImpl` without changing the surrounding europa deletion flow
+  - `None yet`
 
 ### Record 032 - unhide and centralize JavaScript interpretation gating
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `ef05a90e62`
 - Source Apache commits:
   - `9f57a4dd19` Unhide setting `js.interpretation.enabled`
 - Summary:
@@ -866,17 +846,11 @@
   - The final `main` state uses `jsInterpreterHelper` for activation-rule validation and removes the old quota-service helper path
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Resolved with manual merge`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `QuotaResponseBuilderImpl` conflicted on `main` because the local branch still carried `checkActivationRulesAllowed()` and `_quotaService.isJsInterpretationEnabled()`-based gating
-  - On `ablestack-europa`, `ManagementService` and `ManagementServerImpl` still carried the older `JsInterpretationEnabled` constant and `checkJsInterpretationAllowedIfNeededForParameterValue()` path
-  - `ResourceManagerImpl` conflicted because europa's `updateHost(...)` signature already had a branch-specific `migrationIp` parameter while Apache added the new helper call in the shorter signature
-  - `QuotaResponseBuilderImpl` also conflicted on europa for the same reason as `main`: the branch still had `_quotaService.isJsInterpretationEnabled()`-based activation-rule validation
 - Resolution notes:
   - Dropped the old quota-service activation-rule helper and kept the Apache `jsInterpreterHelper.ensureInterpreterEnabledIfParameterProvided(...)` checks as the single validation path
-  - Removed `JsInterpretationEnabled` and the old management-service validation hook from the europa API/service layer, while keeping the branch's wider API surface intact
-  - Preserved the europa `updateHost(..., migrationIp)` signature and inserted the Apache helper guard at method entry instead of reverting the local parameter extension
-  - Kept the europa `getConfigKeys()` shape and removed only the legacy JS interpretation config entry, so the helper-owned config becomes the single source of truth
 
 ### Record 033 - support async job lookup by resource
 
@@ -896,10 +870,9 @@
 - Validation:
   - Apache cherry-pick required manual conflict resolution on `main` in `QueryManagerImpl` because this branch already carries the `Record 003` extension that permits `resourceType`-only async job listing
   - `ApiResponseHelper` merged cleanly after reconciling import drift and retaining the local `Site2SiteVpnManager` injection block
-  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `QueryManagerImpl` conflicted on `main` because Apache now expects `resourceType` and `resourceId` together for list filtering, while this branch intentionally already supports `resourceType` without `resourceId`
   - `ApiResponseHelper` conflicted on `main` in the import/injection region due unrelated local drift near the same hunk
@@ -923,10 +896,9 @@
 - Validation:
   - Apache cherry-pick required a manual merge on `main` only in `schema-42200to42210.sql` because this branch already re-ordered nearby upgrade statements for `backup_interval_type` removal and `vm_template.type` backfill
   - The resolved schema keeps the local statement order and adds only the `consoleproxy.cmd.port` cleanup delete
-  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `schema-42200to42210.sql` conflicted on `main` because Apache inserts the config cleanup next to statements this branch already moved and de-duplicated earlier
 - Resolution notes:
@@ -948,10 +920,9 @@
 - Validation:
   - Apache cherry-pick required a manual merge on `main` only in `schema-42200to42210.sql` because this branch already carries later upgrade statements in the same tail region
   - The resolved schema keeps the existing `backup_interval_type` removal and `consoleproxy.cmd.port` cleanup, then appends only the password reset template update block
-  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `schema-42200to42210.sql` conflicted on `main` because Apache still includes an adjacent `backup_interval_type` drop that is already present in this branch
 - Resolution notes:
@@ -975,16 +946,13 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The change is limited to host-tag DAO/query plumbing, one new config key registration, two focused `QueryManagerImplTest` cases, and compute-offering wizard column rendering
-  - Cherry-pick to `ablestack-europa` required manual conflict resolution in `UserVmManagerImpl` and `ComputeOfferingSelection.vue`
   - Maven/UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after manual conflict resolution; local commit pending creation`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
-  - `UserVmManagerImpl` conflicted on `ablestack-europa` because the local branch already exposes `EnableVmNetwokFilterAllowAllTraffic` in `getConfigKeys()`, while Apache appends `AllowDifferentHostTagsOfferingsForVmScale` in the same list tail
-  - `ComputeOfferingSelection.vue` conflicted on `ablestack-europa` because the local branch already added the `kvdo` column and selection payload, while Apache adds optional `hosttags` and `storagetags` columns in the same header/table-source block
+  - `None observed on main`
 - Resolution notes:
-  - Preserved the europa `EnableVmNetwokFilterAllowAllTraffic` config exposure and appended `AllowDifferentHostTagsOfferingsForVmScale` to the same config list
-  - Kept the europa `kvdo` column/selection flow and added Apache's `hosttags` and `storagetags` display columns alongside it
+  - `N/A`
 
 ### Record 037 - exclude group snapshots from account snapshot resource counts
 
@@ -1001,9 +969,8 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - Cached diff is limited to the `CountSnapshotsByAccount` search builder and `countSnapshotsForAccount(...)`
-  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1026,9 +993,8 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - Cached diff is limited to the KVM check wrapper and its new unit test class
-  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Pending cherry-pick on ablestack-europa`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1052,11 +1018,11 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after manual conflict resolution; local commit pending creation`
+  - `51d1aa5bb6`
 - Conflict notes:
-  - `StorageVMSnapshotStrategy.createDiskSnapshot(...)` conflicted on `ablestack-europa` because the local branch already calls `snapshotInfo.setVmSnapshotName(vmSnapshot.getName())` at the same insertion point where Apache adds rollback registration
+  - `None observed on main`
 - Resolution notes:
-  - Preserved the europa `snapshotInfo.setVmSnapshotName(...)` behavior and added Apache's early `snapshotsForRollback.add(snapshotInfo)` registration alongside it
+  - `N/A`
 
 ### Record 040 - include hidden image-store refs when resolving Xen snapshot chains
 
@@ -1077,7 +1043,7 @@
   - The resolved DAO keeps the local `idStateNeqSearch` behavior and adds Apache's `idEqRoleEqStateInSearch` path for `Ready`/`Hidden` image-store lookup
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `bae63ac800`
 - Conflict notes:
   - `SnapshotDataStoreDaoImpl` conflicted on `main` because Apache adds a new state-in search builder in the same initialization block where this branch already introduced `idStateNeqSearch`
 - Resolution notes:
@@ -1100,7 +1066,7 @@
   - Cached diff is limited to a single `parms.setSnapCPG(snapCpg)` line in `PrimeraAdapter`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `0a94c732c0`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1123,7 +1089,7 @@
   - Cached diff is limited to a single `PersistentNetworkSearch.and(\"dc\", ...)` addition in `NetworkDaoImpl`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `64c919e65c`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1994,7 +1960,7 @@
   - The staged diff touches `.github/CODEOWNERS` only
   - CODEOWNERS validation has not been run separately in this environment
 - Europa cherry-pick status:
-  - `Pending`
+  - `f703098925`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2015,7 +1981,7 @@
   - The staged diff touches `CreatePhysicalNetworkCmd` only
   - API doc generation has not been run in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `c41a3f6d59`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2934,6 +2900,590 @@
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+
+### Record 121 - ONTAP primary storage pool lifecycle operations
+
+- Local branch: `main`
+- Local commit: `02cfc88817`
+- Source Apache commits:
+  - `02cfc88817` Create, Delete, Enable, Disable, Enter, Cancel maintenance of Primary StoragePool with ONTAP storage (#12563)
+- Summary:
+  - Add the ONTAP primary-storage lifecycle operations needed to enable, disable, enter maintenance, cancel maintenance, delete, and create pool flows consistently
+  - Align ONTAP pool handling with the newer managed-primary-storage operation model used by the rest of the stack
+- Functional impact:
+  - Expands ONTAP storage administration coverage without changing unrelated storage providers
+  - Reduces operator-side workflow gaps when maintaining ONTAP-backed primary storage pools
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `eb4136e17c`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 122 - clone existing offerings and update the clone
+
+- Local branch: `main`
+- Local commit: `3ac814b3af`
+- Source Apache commits:
+  - `3ac814b3af` Add support to clone existing offerings and update them (#12357)
+- Summary:
+  - Add support to clone existing offerings instead of recreating equivalent definitions by hand
+  - Preserve follow-up update flows so the cloned offering can be adjusted before use
+- Functional impact:
+  - Simplifies offering administration and reduces manual configuration drift
+  - Keeps offering copy operations explicit and traceable in API/UI flows
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `36750771df`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 123 - enable SharedMountPoint HA heartbeat for KVM
+
+- Local branch: `main`
+- Local commit: `2c0995de98`
+- Source Apache commits:
+  - `2c0995de98` KVM: Enable HA heartbeat on ShareMountPoint (#12773)
+- Summary:
+  - Enable the KVM HA heartbeat path for `SharedMountPoint` primary storage
+  - Treat SharedMountPoint more consistently with the HA heartbeat expectations already used by other shared-storage types
+- Functional impact:
+  - Improves host-HA health detection when SharedMountPoint-backed KVM pools are in use
+  - Reduces the chance of SharedMountPoint pools being skipped by HA heartbeat handling
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `579a22856f`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 124 - refactor quota summary API assembly
+
+- Local branch: `main`
+- Local commit: `c3e41d9bd7`
+- Source Apache commits:
+  - `c3e41d9bd7` Refactor Quota Summary API (#10505)
+- Summary:
+  - Refactor quota summary construction so response assembly is cleaner and easier to extend
+  - Keep the observable quota summary behavior while reducing duplication in the response-building path
+- Functional impact:
+  - No intended behavioral change for callers of the Quota Summary API
+  - Lowers maintenance cost around future quota-summary enhancements and fixes
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `d983c56298`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 125 - add KVM NIC enable and disable API support
+
+- Local branch: `main`
+- Local commit: `fe17d4d04d`
+- Source Apache commits:
+  - `fe17d4d04d` Add API to enable/disable NICs for KVM (#12819)
+- Summary:
+  - Add the `enabled` state for VM NICs and expose the KVM-specific update flow in API, DB views, and UI
+  - Keep the older `linkstate` handling intact while layering the new administrative NIC enable/disable behavior on top
+- Functional impact:
+  - Allows operators to enable or disable supported KVM NICs without removing the NIC
+  - Preserves existing Europa link-state and IP/MAC editing behavior while extending the NIC management surface
+- Validation:
+  - `main` and `europa` both carry the merged API, DB view, hypervisor, and UI changes
+  - `git diff --check` was clean after the conflict resolution
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `da920f25bb`
+- Conflict notes:
+  - `Nic`, `NicResponse`, `NicVO`, DB views, router join objects, `HypervisorGuruBase`, locale strings, and `NicsTab.vue` all overlapped with Europa-specific link-state work
+- Resolution notes:
+  - Keep Europa `linkstate`, IP/MAC edit, and UI actions intact while adding the Apache `enabled` field end-to-end
+  - Preserve both link-state and enabled-state handling in API responses and KVM NIC update UI flows
+
+### Record 126 - block CKS-member VM unmanage or reinstall operations
+
+- Local branch: `main`
+- Local commit: `db08332010`
+- Source Apache commits:
+  - `db08332010` [4.22] Prevent unmanaging or reinstalling a VM if it is part of a CKS cluster (#12800)
+- Summary:
+  - Prevent VM unmanage and reinstall operations when the VM is still part of a CKS cluster
+  - Add the cluster-membership helper needed to guard those flows consistently from the server layer
+- Functional impact:
+  - Protects CKS clusters from destructive lifecycle actions that would leave cluster state inconsistent
+  - Keeps operator intent explicit by failing earlier on unsafe VM lifecycle requests
+- Validation:
+  - `main` and `europa` both carry the guard logic and matching test updates
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `0df62891cd`
+- Conflict notes:
+  - `UserVmManagerImpl` and `UserVmManagerImplTest` overlapped with Europa `vBMC` assignment helpers
+- Resolution notes:
+  - Preserve Europa `allocateVbmcToVM` and `removeVbmcToVM` handling while adding Apache `isVMPartOfAnyCKSCluster(...)`
+  - Extend the local test imports instead of dropping existing Europa coverage helpers
+
+### Record 127 - deduplicate dummy templates and refresh import guest OS mapping
+
+- Local branch: `main`
+- Local commit: `2869448c1e`
+- Source Apache commits:
+  - `2869448c1e` Fix duplicate dummy templates, and update guest os for dummy template (#12780)
+- Summary:
+  - Prevent duplicate dummy template creation during KVM import flows
+  - Refresh the guest OS used by the default KVM import template so later import matching behaves correctly
+- Functional impact:
+  - Avoids accumulating duplicate dummy templates in import-heavy environments
+  - Improves downstream unmanaged-instance import matching for the default KVM template path
+- Validation:
+  - `main` and `europa` both carry the SQL, storage motion, and unmanaged-import adjustments
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `7d1012e114`
+- Conflict notes:
+  - `schema-42200to42210.sql`, `StorageSystemDataMotionStrategy`, and `UnmanagedVMsManagerImpl` overlapped with existing Europa import customizations
+- Resolution notes:
+  - Keep the local SQL tail and import-template helpers, then layer in the Apache dummy-template deduplication and guest-OS refresh logic
+  - Preserve the existing unmanaged import template naming/constants while aligning the guest OS defaults
+
+### Record 128 - derive VMware-to-KVM import guest OS from source mappings
+
+- Local branch: `main`
+- Local commit: `350d2c3ba2`
+- Source Apache commits:
+  - `350d2c3ba2` [VMware to KVM] Add guest OS for importing VM based on the source VM OS (#12802)
+- Summary:
+  - Carry the source guest OS mapping into the VMware-to-KVM import path so the selected guest OS better matches the imported VM
+  - Auto-select the mapped guest OS in the import UI when mappings are available
+- Functional impact:
+  - Improves imported-VM accuracy by avoiding an incorrect or generic guest OS selection
+  - Reduces manual operator correction during VMware-to-KVM imports
+- Validation:
+  - `main` and `europa` both carry the guest-OS mapping updates in server and UI flows
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `b0b8f54ea8`
+- Conflict notes:
+  - `ImportUnmanagedInstance.vue` and `ManageInstances.vue` overlapped with Europa watcher logic and import-task state customizations
+- Resolution notes:
+  - Keep Europa resource watchers, task filters, and auto-refresh handling while adding the Apache guest-OS mapping selection logic
+  - Preserve local import-task UX state and only layer in the new guest-OS mapping behavior
+
+### Record 129 - handle ALL-port firewall rules during CKS scale and delete
+
+- Local branch: `main`
+- Local commit: `1a40fc72de`
+- Source Apache commits:
+  - `1a40fc72de` Fix K8s scaling and deletion issue if firewall rule is for ALL ports (#12806)
+- Summary:
+  - Fix CKS scaling and deletion flows so firewall rules defined for all ports do not break cleanup and update logic
+  - Normalize the affected rule handling in the CKS orchestration path
+- Functional impact:
+  - Prevents CKS cluster operations from failing when broad firewall rules are already attached
+  - Reduces stuck scale/delete workflows caused by rule-shape assumptions
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `38ed1cbef4`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 130 - reserve secondary storage resources for upload operations
+
+- Local branch: `main`
+- Local commit: `5dac21b5cb`
+- Source Apache commits:
+  - `5dac21b5cb` [22.0] secondary storage resource limit for upload
+- Summary:
+  - Add resource reservation checks for secondary-storage uploads before the transfer starts
+  - Align upload flows with the broader secondary-storage quota and reservation model
+- Functional impact:
+  - Prevents overcommitting secondary storage during upload operations
+  - Makes quota failures happen earlier and more predictably for upload workflows
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `fa99e94ad7`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 131 - follow up upload monitor reservation merge cleanup
+
+- Local branch: `main`
+- Local commit: `b3614473ca`
+- Source Apache commits:
+  - `b3614473ca` storage: fix upload monitor limit merge cleanup
+- Summary:
+  - Clean up the upload-monitor follow-up after the reservation-aware secondary-storage changes
+  - Keep the upload monitor flow internally consistent after the earlier limit-enforcement backport
+- Functional impact:
+  - Reduces merge-forward drift in the upload monitor path without broadening user-visible behavior
+  - Keeps the reservation-aware upload code path coherent for later maintenance
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `d9bdb38905`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 132 - reserve secondary storage resources for download operations
+
+- Local branch: `main`
+- Local commit: `79387430f4`
+- Source Apache commits:
+  - `79387430f4` [22.0] secondary storage resource limit for download
+- Summary:
+  - Add resource reservation checks for secondary-storage downloads before data movement begins
+  - Pair the download path with the earlier upload-side reservation handling
+- Functional impact:
+  - Prevents download workflows from silently exceeding secondary-storage allocation limits
+  - Makes operator-visible failures happen at request time instead of later during transfer
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `461d51a498`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 133 - treat infinite secondary-storage limits correctly during upload checks
+
+- Local branch: `main`
+- Local commit: `d600fdd363`
+- Source Apache commits:
+  - `d600fdd363` Consider infinite resources when calculating secondary storage limit for upload operations
+- Summary:
+  - Honor effectively-infinite secondary-storage limits instead of treating them as bounded upload capacity
+  - Keep upload reservation logic consistent with the semantics of unlimited quotas
+- Functional impact:
+  - Prevents false-positive quota failures for accounts or domains with unlimited secondary-storage settings
+  - Reduces noisy operator intervention on otherwise valid upload requests
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `1edc102946`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 134 - fix ImageStoreUploadMonitor follow-up merge issue
+
+- Local branch: `main`
+- Local commit: `bc6ac3ef25`
+- Source Apache commits:
+  - `bc6ac3ef25` Fixed a merge issue in ImageStoreUploadMonitorImpl
+- Summary:
+  - Resolve the lingering merge issue in `ImageStoreUploadMonitorImpl` after the upload reservation work
+  - Keep the image-store upload monitor aligned with the intended reservation-aware logic
+- Functional impact:
+  - Low-risk internal cleanup that prevents the upload monitor from drifting away from the corrected limit path
+  - Helps keep later secondary-storage fixes easier to reason about
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `42d4ca4307`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 135 - support conserve mode on VPC offerings
+
+- Local branch: `main`
+- Local commit: `8550d45ae7`
+- Source Apache commits:
+  - `8550d45ae7` Add conserve mode for VPC offerings (#12487)
+- Summary:
+  - Add conserve-mode handling for VPC offerings instead of limiting the behavior to other network-offering classes
+  - Expose the related offering behavior consistently in the VPC flow
+- Functional impact:
+  - Lets operators define VPC offerings that conserve resources until services are explicitly required
+  - Brings VPC offering behavior closer to the already-supported non-VPC offering model
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `d8646c2c1a`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 136 - fix VMware-to-KVM migration instance listing failures
+
+- Local branch: `main`
+- Local commit: `59cb77b6f4`
+- Source Apache commits:
+  - `59cb77b6f4` [Fix] VMware to KVM migration instances listing failure (#12766)
+- Summary:
+  - Fix the instance-listing path used by VMware-to-KVM migration discovery so manageable candidates are returned reliably
+  - Remove failure cases caused by assumptions in the source-instance listing logic
+- Functional impact:
+  - Prevents VMware-to-KVM migration workflows from failing before import starts
+  - Improves operator confidence in source-VM discovery and selection
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `2795390f8c`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 137 - allow affinity group selection during CKS cluster creation
+
+- Local branch: `main`
+- Local commit: `2629d5f5ba`
+- Source Apache commits:
+  - `2629d5f5ba` CKS: Allow affinity group selection during cluster creation (#12386)
+- Summary:
+  - Extend CKS cluster creation so affinity groups can be selected during the initial request
+  - Carry the chosen affinity-group settings through the relevant API and UI creation path
+- Functional impact:
+  - Improves placement control for new CKS clusters
+  - Reduces the need for follow-up manual adjustments after cluster creation
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `0399cdfe22`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 138 - clear system VM public NIC addresses for PublicNetworkGuru
+
+- Local branch: `main`
+- Local commit: `ed3d3f22e4`
+- Source Apache commits:
+  - `ed3d3f22e4` Clear System VM IP from NICs for PublicNetworkGuru (#11992)
+- Summary:
+  - Clear stale System VM public-NIC IP information during `PublicNetworkGuru` NIC handling
+  - Keep public-network NIC state aligned with the intended system-VM allocation flow
+- Functional impact:
+  - Prevents stale or misleading System VM NIC state from leaking into later network operations
+  - Lowers the chance of incorrect PublicNetworkGuru assumptions during NIC orchestration
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `3faa5129f9`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 139 - move API key usage to the latest stored key pair
+
+- Local branch: `main`
+- Local commit: `f1104735d2`
+- Source Apache commits:
+  - `f1104735d2` API key pair restructure (#9504)
+- Summary:
+  - Refactor API-key handling to look up the latest stored key pair instead of reading keys directly from the user record in affected flows
+  - Update request-signing and autoscale integration paths to use the restructured key lookup model
+- Functional impact:
+  - Aligns runtime behavior with the newer multi-key-pair model
+  - Reduces risk of using stale or structurally outdated API/secret key data in server workflows
+- Validation:
+  - `main` and `europa` both carry the latest-key-pair lookup changes across DAO, server, autoscale, and account paths
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `1a367f0dd5`
+- Conflict notes:
+  - `UserAccountDao`, `UserAccountDaoImpl`, `QueryManagerImpl`, `AutoScaleManagerImpl`, `ManagementServerImpl`, `AccountManagerImpl`, `UserVmManagerImpl`, and `AccountManagerImplTest` overlapped with existing Europa extensions
+- Resolution notes:
+  - Preserve Europa-only helper methods and imports while switching runtime key usage to `ApiDBUtils.searchForLatestUserKeyPair(...)`
+  - Keep local Keycloak/Glue/Wall flows and add the Apache key-removal helper where required
+
+### Record 140 - remove unused VMware-to-KVM convert environment variables
+
+- Local branch: `main`
+- Local commit: `f19bcc499e`
+- Source Apache commits:
+  - `f19bcc499e` [VMware to KVM Migration] Fix unused convert env vars (#11947)
+- Summary:
+  - Remove unused conversion-environment plumbing from the VMware-to-KVM migration flow
+  - Keep the import path focused on the variables and options that are actually consumed
+- Functional impact:
+  - Low-risk internal cleanup that reduces confusion in the VMware-to-KVM conversion path
+  - Makes later conversion-path debugging easier by removing dead configuration branches
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `767aeab043`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 141 - clean up imported VM artifacts on allocation failure
+
+- Local branch: `main`
+- Local commit: `c9f0d6e39f`
+- Source Apache commits:
+  - `c9f0d6e39f` Cleanup imported VM from disk on failure due to volume allocation + prevent duplicate volume and primary storage increment on import
+- Summary:
+  - Clean up imported VM artifacts from disk when the workflow fails during volume allocation
+  - Prevent duplicate volume and primary-storage resource increments during import failure handling
+- Functional impact:
+  - Reduces leaked imported artifacts and resource-count skew after failed imports
+  - Makes VMware-to-KVM and unmanaged import recovery more predictable for operators
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `da94b79294`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 142 - add VDDK-backed VMware-to-KVM migration support
+
+- Local branch: `main`
+- Local commit: `a8a4d7a362`
+- Source Apache commits:
+  - `a8a4d7a362` Added VDDK support in VMware to KVM migrations (#12970)
+- Summary:
+  - Add VDDK-backed direct VMware-to-KVM conversion support alongside the existing OVF-based flow
+  - Extend the API, agent, KVM wrapper, server orchestration, and UI so operators can select VDDK-backed imports when the host supports it
+- Functional impact:
+  - Improves VMware-to-KVM migration flexibility and can reduce intermediate export handling in supported environments
+  - Keeps Europa `Ablestack V2K` custom flow intact while exposing Apache VDDK behavior for the standard import path
+- Validation:
+  - `main` and `europa` both carry the merged VDDK server, KVM wrapper, and UI changes
+  - `git diff --check` was clean after conflict resolution
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `9713ecd26f`
+- Conflict notes:
+  - `LibvirtConvertInstanceCommandWrapper`, `UnmanagedVMsManagerImpl`, and `ImportUnmanagedInstance.vue` all overlapped with Europa VMware-to-KVM and Ablestack V2K customizations
+- Resolution notes:
+  - Preserve Europa `Ablestack V2K`, SharedMountPoint/RBD handling, and existing UI import options while adding upstream VDDK controls and server-side support
+  - Restore `convertinstancehostid` and `convertinstancepoolid` handling for the Europa V2K path while keeping VDDK-specific behavior confined to the standard VMware-to-KVM flow
+
+### Record 143 - expose redundant-network restart control in the UI
+
+- Local branch: `main`
+- Local commit: `3306995626`
+- Source Apache commits:
+  - `3306995626` Enable defining a network as redundant during restart through the UI (#7405)
+- Summary:
+  - Expose the redundant-network toggle through the UI restart network workflow
+  - Bring the restart flow closer to the already-supported API capability
+- Functional impact:
+  - Lets operators request redundant-network behavior during restart without dropping to the API
+  - Improves parity between API and UI for network restart operations
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `fd8b981fa5`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 144 - improve PowerFlex and ScaleIO client initialization handling
+
+- Local branch: `main`
+- Local commit: `5bac2c8310`
+- Source Apache commits:
+  - `5bac2c8310` PowerFlex/ScaleIO client initialization, authentication and command execution improvements (#12391)
+- Summary:
+  - Improve PowerFlex/ScaleIO client initialization, authentication, and command execution handling
+  - Tighten the provider-side error handling around ScaleIO/PowerFlex operations
+- Functional impact:
+  - Reduces provider-side failures caused by brittle initialization or authentication sequencing
+  - Makes storage-provider troubleshooting easier when ScaleIO/PowerFlex commands fail
+- Validation:
+  - Matching commits are present on `main` and `ablestack-europa`
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `c5ebe3d17d`
+- Conflict notes:
+  - `None recorded in current sync notes`
+- Resolution notes:
+  - `N/A`
+
+### Record 145 - reserve resources before creating volumes
+
+- Local branch: `main`
+- Local commit: `091fa8c75c`
+- Source Apache commits:
+  - `091fa8c75c` [22.0] resource reservation on volume creation
+- Summary:
+  - Reserve volume and primary-storage resources before committing volume creation
+  - Fail earlier when quota or storage reservations cannot be satisfied instead of allocating partially and rolling back later
+- Functional impact:
+  - Improves quota correctness during volume creation under concurrency
+  - Reduces the chance of resource-count drift around failed or racing volume-create requests
+- Validation:
+  - `main` and `europa` both carry the reservation-aware volume-create flow
+  - `git diff --check` was clean after the conflict resolution
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `962821ecbe`
+- Conflict notes:
+  - `VolumeApiServiceImpl` overlapped with the Europa `kvdoEnable` volume-create extension
+- Resolution notes:
+  - Keep the Apache `CheckedReservation` try-with-resources structure and its exception handling
+  - Preserve the Europa `kvdoEnable` argument when calling the local `commitVolume(...)` overload
+
+### Record 146 - fix snapshot copy reservation concurrency handling
+
+- Local branch: `main`
+- Local commit: `ca9227dcc7`
+- Source Apache commits:
+  - `ca9227dcc7` Fix snapshot copy resource limit concurrency
+- Summary:
+  - Correct the snapshot-copy resource-reservation path so concurrent snapshot copy flows do not double-count or race their limit handling
+  - Remove the stale duplicate post-processing increments left behind by the older copy path
+- Functional impact:
+  - Improves snapshot copy quota correctness under concurrent zone-copy activity
+  - Prevents resource-count skew after copy operations that already reserve and account for snapshot resources earlier in the flow
+- Validation:
+  - `main` and `europa` both carry the updated snapshot copy reservation flow and test adjustments
+  - `git diff --check` was clean after the conflict resolution
+  - Runtime build/test execution remains deferred by request in this workspace
+- Europa cherry-pick status:
+  - `fe03ece06d`
+- Conflict notes:
+  - `SnapshotManagerImpl` retained an older duplicate resource-count increment block after the Apache reservation refactor
+- Resolution notes:
+  - Keep the Apache reservation-aware snapshot copy structure and remove the stale duplicate increment block from the local branch
 
 ### Observed Already Satisfied
 
