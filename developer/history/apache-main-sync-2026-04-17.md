@@ -1106,6 +1106,29 @@
 - Resolution notes:
   - `N/A`
 
+### Record 042 - scope persistent network lookup by zone
+
+- Local branch: `main`
+- Local commit: `2b5d1dc0d4`
+- Source Apache commits:
+  - `b805766f4b` Fix Host setup when persistent networks exist (#12751)
+- Summary:
+  - Add the data center filter to `PersistentNetworkSearch` in `NetworkDaoImpl`
+  - Align the search builder with the existing `getAllPersistentNetworksFromZone(...)` parameter binding
+- Functional impact:
+  - Prevents persistent network discovery for host setup from matching networks that share attributes across different zones
+  - Reduces the risk of reusing or counting persistent networks outside the requested data center when broadcast URI values overlap
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to a single `PersistentNetworkSearch.and(\"dc\", ...)` addition in `NetworkDaoImpl`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
