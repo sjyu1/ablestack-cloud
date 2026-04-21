@@ -1360,6 +1360,30 @@
   - Cached diff is limited to `ScaleIOStorageAdaptor.java`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
+  - `Applied on ablestack-europa as a0e88938be after history-doc conflict resolution`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 053 - skip already-covered upgrade hops when the source version is not explicit in the graph
+
+- Local branch: `main`
+- Local commit: `2ce5188d0c`
+- Source Apache commits:
+  - `4b7370a601` upgrade: skip the upgrade paths which are not needed (#12881)
+- Summary:
+  - Filter `DatabaseVersionHierarchy.getPath(...)` results so only upgrade steps with a version strictly newer than the source database version are returned
+  - Make the `Usage Server` configuration group insert idempotent in `schema-42000to42010.sql`
+  - Add a regression test that verifies `4.20.1.0 -> 4.20.3.0` resolves directly to the `4.20.2.0 -> 4.20.3.0` upgrader
+- Functional impact:
+  - Prevents upgrade planning from replaying obsolete path segments when the exact source version is not a direct node in the version hierarchy
+  - Makes the early 4.20 schema path safer on reruns by avoiding duplicate configuration-group insert failures
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to the upgrade path resolver, one schema SQL line, and one targeted regression test
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
   - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
 - Conflict notes:
   - `None observed on main`
