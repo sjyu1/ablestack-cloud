@@ -1552,14 +1552,41 @@
   - Cached diff spans HAProxy command/config generation, orchestration config plumbing, tests, and the systemvm health check script
   - Maven/UI/systemvm test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+  - `Applied on ablestack-europa as a8c29e8606 after history-doc conflict resolution`
 - Conflict notes:
   - `LoadBalancerConfigCommand` and `HAProxyConfigurator` conflicted on `ablestack-europa` where local HAProxy timeout customization already occupied the same command/config surfaces
 - Resolution notes:
   - Preserved the local `lbConnectTimeout` / `lbClientTimeout` / `lbServerTimeout` fields and layered Apache's `idleTimeout` as a client/server override when present
 
+### Record 061 - honor backup command timeout for NAS create and restore flows
+
+- Local branch: `main`
+- Local commit: `5803119a11`
+- Source Apache commits:
+  - `68bd056306` Support timeout configuration for Create and Restore NAS backup (#12964)
+- Summary:
+  - Use `command.wait` when provided, otherwise fall back to `commands.timeout`, for NAS backup create/restore KVM wrappers
+  - Apply the resolved timeout to `rsync`, `qemu-img`, and piped backup commands instead of relying on mixed default process timeouts
+  - Preserve the branch-local RBD restore helper flow while aligning its timeout handling with Apache's millisecond-based execution model
+- Functional impact:
+  - Prevents long-running NAS backup create/restore operations from timing out too early or ignoring operator-supplied wait values
+  - Makes backup command execution more predictable across create and restore paths by using the same timeout source consistently
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `LibvirtRestoreBackupCommandWrapper` because this branch already refactored the RBD restore helper structure
+  - The resolved code keeps the local RBD helper layout and applies Apache's timeout fallback logic to both restore and take-backup paths
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `LibvirtRestoreBackupCommandWrapper` conflicted on `main` where the branch already carried a different restore-helper shape around the same timeout-sensitive logic
+- Resolution notes:
+  - Preserved the local RBD restore helper path and merged Apache's `command.wait -> commands.timeout` fallback plus timeout-aware script execution
+
 ### Observed Already Satisfied
 
+- `273699cf56` `kvm: fix wrong CheckVirtualMachineAnswer when vm does not exist (#12928)`
+  - Current branch state already avoids `domainLookupByName(...)` for non-running VMs and already carries focused wrapper tests for the fixed behavior
+  - Treat as already satisfied instead of creating a duplicate local commit
 - `abdf926219` `Revert "Use lateral join (introduced in MySQL 8.0.14) with subquery on user_statistics table in account_view for netstats (#12631)" (#12965)`
   - Current branch state already splits network statistics into `cloud.account_netstats_view` and joins that view from `cloud.account_view`
   - Treat as already satisfied instead of creating a duplicate local commit
