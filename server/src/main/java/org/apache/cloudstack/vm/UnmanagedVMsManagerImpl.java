@@ -2884,7 +2884,6 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             }
             String rootVolumeName = String.format("ROOT-%s", userVm.getId());
             DiskProfile diskProfile = volumeManager.allocateRawVolume(Volume.Type.ROOT, rootVolumeName, diskOffering, null, null, null, userVm, template, owner, null, false);
-
             DiskProfile[] dataDiskProfiles = new DiskProfile[dataDisks.size()];
             int diskSeq = 0;
             for (UnmanagedInstanceTO.Disk disk : dataDisks) {
@@ -3063,7 +3062,6 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                 throw new CloudRuntimeException("Disk not found or is invalid");
             }
             diskProfile.setSize(checkVolumeAnswer.getSize());
-
             CheckedReservation primaryStorageReservation = new CheckedReservation(owner, Resource.ResourceType.primary_storage, resourceLimitStorageTags,
                     CollectionUtils.isNotEmpty(resourceLimitStorageTags) ? diskProfile.getSize() : 0L, reservationDao, resourceLimitService);
             reservations.add(primaryStorageReservation);
@@ -3087,9 +3085,6 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             publishVMUsageUpdateResourceCount(userVm, dummyOffering, template);
             return userVm;
 
-        } catch (InsufficientCapacityException ice) {
-            logger.error(String.format("Failed to import vm name: %s", instanceName), ice);
-            throw new ServerApiException(ApiErrorCode.INSUFFICIENT_CAPACITY_ERROR, ice.getMessage());
         } catch (ResourceAllocationException e) {
             cleanupFailedImportVM(userVm);
             throw e;

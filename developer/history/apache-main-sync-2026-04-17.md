@@ -2003,7 +2003,7 @@
 ### Record 080 - clarify isolation-method descriptions for physical network creation
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `315c86c260`
 - Source Apache commits:
   - `faaf7669c5` Update isolation methods description for physical network (#12759)
 - Summary:
@@ -2020,6 +2020,31 @@
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 081 - avoid duplicate resource count increments during KVM VM import from disk
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `497266270b` Cleanup imported VM from disk on failure due to volume allocation + prevent duplicate volume and primary storage increment on import
+- Summary:
+  - Extend `allocateRawVolume(...)` with an `incrementResourceCount` switch so import flows can allocate temporary/imported volumes without double-counting volume or primary-storage usage
+  - Update KVM VM import-from-disk and unmanaged external import paths to pass `false` for those pre-created volumes while keeping normal VM allocation paths on `true`
+  - Preserve the local branch's naming, device-id, and `EXTERNAL` image-format handling while adding cleanup on allocation-time `ResourceAllocationException`
+- Functional impact:
+  - Prevents imported VMs from over-incrementing volume or primary storage resource counts during staged disk allocation
+  - Improves failure cleanup when a resource-allocation check trips mid-import, reducing leaked partially imported VM state
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `VirtualMachineManagerImpl` and `UnmanagedVMsManagerImpl` because this branch already carries import-flow extensions, custom device naming, and additional template-format handling
+  - The resolved code keeps the local import behavior and applies Apache's resource-count guard only to the affected import allocation paths
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `VirtualMachineManagerImpl` conflicted where Apache added the new `incrementResourceCount` flag and the local branch had already customized data disk naming/device-id handling and `EXTERNAL` format root-volume skipping
+  - `UnmanagedVMsManagerImpl` conflicted where Apache's import cleanup adjustments overlapped the branch-local unmanaged/external KVM import extensions
+- Resolution notes:
+  - Kept the branch-local import flow structure and device naming, added the new boolean flag with `true` for normal allocations and `false` for import-only allocations, and preserved cleanup on allocation failures
 
 ### Observed Already Satisfied
 
