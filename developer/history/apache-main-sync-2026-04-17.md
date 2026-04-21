@@ -1336,6 +1336,30 @@
   - Cached diff is limited to `NsxApiClient`, the new `PagedFetcher`, and its dedicated test class
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
+  - `Applied on ablestack-europa as 3604e72e77 after history-doc conflict resolution`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 052 - add only missing PowerFlex MDMs when preparing the KVM SDC client
+
+- Local branch: `main`
+- Local commit: `c3d54c8797`
+- Source Apache commits:
+  - `71bd26ff7c` PowerFlex/ScaleIO storage - the MDMs validation improvements (#12893)
+- Summary:
+  - Filter the storage-pool MDM list down to only the addresses that are not already present in the SDC configuration
+  - Return a success path when all requested MDMs are already configured, instead of forcing a redundant add flow
+  - Report the exact missing MDM addresses when registration still fails after an add attempt
+- Functional impact:
+  - Prevents KVM ScaleIO/PowerFlex pool preparation from misclassifying a partially preconfigured MDM set as fully ready or fully failed based on the first address alone
+  - Makes repeated SDC preparation idempotent and easier to troubleshoot when only a subset of MDM endpoints is missing
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to `ScaleIOStorageAdaptor.java`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
   - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
 - Conflict notes:
   - `None observed on main`
@@ -1344,6 +1368,9 @@
 
 ### Observed Already Satisfied
 
+- `abdf926219` `Revert "Use lateral join (introduced in MySQL 8.0.14) with subquery on user_statistics table in account_view for netstats (#12631)" (#12965)`
+  - Current branch state already splits network statistics into `cloud.account_netstats_view` and joins that view from `cloud.account_view`
+  - Treat as already satisfied instead of creating a duplicate local commit
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
   - Current branch state already wraps snapshot-chain copy reservation in `CheckedReservation` and routes per-snapshot copy through `copySnapshotToZone(..., shouldCheckResourceLimits)`
   - `SnapshotManagerImplTest` no longer stubs the removed direct `checkResourceLimit(...)` call in the covered copy flow
