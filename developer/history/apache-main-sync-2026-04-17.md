@@ -2478,7 +2478,7 @@
 ### Record 101 - record the already-satisfied global create-network menu guard source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `e054627bab`
 - Source Apache commits:
   - `db83622956` `ui: fix create network from global create menu (#12677)`
 - Summary:
@@ -2490,6 +2490,29 @@
 - Validation:
   - Reverse-applying the Apache patch on the current branch showed the protective logic is already present in `CreateNetwork.vue`
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 102 - record the already-satisfied template-zone delete redirect source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `7aa0558c5b` `ui: avoid 404 after deleting template zones (#12681)`
+- Summary:
+  - Record that the current branch already routes template-zone deletion back to `/template` instead of relying on browser history when the last row disappears
+  - Note that the local UI result matches the Apache source intent even though the surrounding formatting and table markup differ
+- Functional impact:
+  - Prevents duplicate reapplication of a UI navigation fix that is already present in the current branch
+  - Makes the sync history explicit about the upstream source commit behind the already-absorbed behavior
+- Validation:
+  - Manual inspection of `TemplateZones.vue` confirmed `handleCancel()` already pushes to `/template` when no rows remain after deletion
+  - The remaining diff against the Apache source commit is limited to formatting/context differences, so this record is tracked as already satisfied
   - UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
