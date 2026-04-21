@@ -1844,7 +1844,7 @@
 ### Record 073 - allow import and unmanage of backing-file volumes behind a config gate
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `321effd42c`
 - Source Apache commits:
   - `e93ae1a4f4` New config key "allow.import.volume.with.backing.file" to skip volume backing (#12809)
 - Summary:
@@ -1857,6 +1857,29 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff is limited to the service/config surface and the two backing-file validation call sites
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 074 - harden KVM direct-download URL handling
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `0edd577f4b` Fix: KVM Direct Download URL injection
+- Summary:
+  - Tighten direct-download path handling so generated URL/location strings no longer rely on unsafe concatenation patterns that could be abused by crafted input
+  - Keep the fix scoped to the KVM direct-download implementations for standard, metalink, and NFS-backed flows
+- Functional impact:
+  - Reduces the risk of malformed or attacker-controlled download location input influencing direct-download execution paths on KVM
+  - Leaves normal template/image direct-download behavior unchanged for valid inputs
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff is limited to the three direct-download implementation classes
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
