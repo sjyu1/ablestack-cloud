@@ -1678,7 +1678,7 @@
 ### Record 066 - improve KVM GPU domain parsing and support Display controller class
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `a2baf8a85b`
 - Source Apache commits:
   - `416679fae1` Fix domain parsing for GPU & add Display controller in the supported PCI class (#12981)
 - Summary:
@@ -1693,11 +1693,35 @@
   - Staged diff spans the GPU parser, the KVM discovery script, and new `LibvirtGpuDefTest` coverage
   - Maven-based Java test execution and script-level runtime validation have not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied on ablestack-europa as f77bea5384 after history-doc auto-merge`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 067 - avoid custom offering NPEs during unmanaged and external VM import
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `2416db2a44` Fix NPE on external/unmanaged instance import using custom offerings (#12884)
+- Summary:
+  - Move unmanaged/external KVM import CPU and memory reservation checks into dedicated helper methods that can read values either from the offering or from runtime/import details when the offering is dynamic
+  - Add volume reservation helper coverage for external KVM import and wire the reservation lifecycle so conversions/imports close all temporary reservations safely
+  - Extend `UnmanagedVMsManagerImplTest` with focused checks for dynamic offering detail parsing and invalid integer detail handling
+- Functional impact:
+  - Prevents unmanaged or external VM import from dereferencing null CPU/memory values when custom offerings rely on runtime/detail-provided sizing
+  - Fails earlier and more cleanly when required import detail values are missing or malformed, instead of surfacing a later null-pointer failure
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `UnmanagedVMsManagerImpl` and `UnmanagedVMsManagerImplTest` because this branch already carries VMware import task tracking, extra-param validation, and adjacent import test coverage
+  - The resolved code keeps the branch-local VMware import task flow and extra-param tests while layering Apache's reservation helpers and new custom-offering regression tests
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `UnmanagedVMsManagerImpl` and `UnmanagedVMsManagerImplTest` conflicted on `main` where local import extensions and nearby tests occupied the same import-resource management sections
+- Resolution notes:
+  - Preserved local VMware import task bookkeeping and merged Apache's null-safe reservation helpers plus detail-parsing tests into the existing import flow
 
 ### Observed Already Satisfied
 
