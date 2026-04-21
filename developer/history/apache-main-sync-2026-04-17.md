@@ -2024,7 +2024,7 @@
 ### Record 081 - avoid duplicate resource count increments during KVM VM import from disk
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `a8996af5f3`
 - Source Apache commits:
   - `497266270b` Cleanup imported VM from disk on failure due to volume allocation + prevent duplicate volume and primary storage increment on import
 - Summary:
@@ -2045,6 +2045,30 @@
   - `UnmanagedVMsManagerImpl` conflicted where Apache's import cleanup adjustments overlapped the branch-local unmanaged/external KVM import extensions
 - Resolution notes:
   - Kept the branch-local import flow structure and device naming, added the new boolean flag with `true` for normal allocations and `false` for import-only allocations, and preserved cleanup on allocation failures
+
+### Record 082 - refresh MinIO canned policy membership when buckets are removed
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `7703fdacab` [minio] Handle user's canned policy when a bucket is deleted
+- Summary:
+  - Add `accountId` to `BucketTO` so bucket deletion has enough context to rebuild the owning account's canned policy
+  - Refactor MinIO policy generation into a shared helper and reuse it on both create and delete so bucket membership stays accurate
+  - Update the MinIO driver test to cover the new delete-time policy refresh path
+- Functional impact:
+  - Prevents deleted buckets from lingering in the account's MinIO canned policy and avoids stale access rules after bucket removal
+  - Keeps create and delete policy management behavior aligned instead of drifting between separate code paths
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff is limited to `BucketTO`, the MinIO object-store driver, and its focused test
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 
