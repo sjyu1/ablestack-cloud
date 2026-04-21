@@ -1331,6 +1331,11 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (backupsetGUID == null) {
             throw new CloudRuntimeException("Failed to get vm backup set guid commvault api");
         }
+        HostVO restoreHost = hostDao.findByName(clientName);
+        if (restoreHost == null) {
+            restoreHost = hostDao.findByIp(clientName);
+        }
+        final HostVO restoreHostVO = restoreHost != null ? hostDao.findById(restoreHost.getId()) : null;
         final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
         try {
@@ -1377,14 +1382,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                         throw new CloudRuntimeException(String.format("Unable to find VM host [%s] for Commvault volume restore", hostIp));
                     }
                     // 복원된 호스트 정의
-                    HostVO restoreHost = hostDao.findByName(clientName);
+                    restoreHost = hostDao.findByName(clientName);
                     if (restoreHost == null) {
                         restoreHost = hostDao.findByIp(clientName);
                     }
                     if (restoreHost == null) {
                         throw new CloudRuntimeException(String.format("Unable to find restore host [%s] for Commvault volume restore", clientName));
                     }
-                    final HostVO restoreHostVO = hostDao.findById(restoreHost.getId());
                     LOG.info(String.format("Restoring volume %s from backup %s on the Commvault Backup Provider", backupVolumeInfo.getUuid(), backup));
                     LOG.debug("Restoring vm volume {} from backup {} on the Commvault Backup Provider", backupVolumeInfo, backup);
                     VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
