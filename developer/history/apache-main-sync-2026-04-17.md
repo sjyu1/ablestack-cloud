@@ -2183,13 +2183,34 @@
 ### Record 088 - sync `.asf.yaml` collaborator list updates
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `d8e944983c`
 - Source Apache commits:
   - `608345d165` Update collaborators list in `.asf.yaml`
 - Summary:
   - Align the repository's `.asf.yaml` collaborator list with the upstream metadata cleanup
 - Functional impact:
   - Keeps ASF/GitHub repository metadata in sync without changing product behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `.asf.yaml` only
+  - Metadata effects are external to this local environment and were not separately validated here
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 089 - add upstream contributor metadata to `.asf.yaml`
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `9bbd32a8ef` Add DaanHoogland to the list of contributors
+- Summary:
+  - Add the upstream contributor metadata update to `.asf.yaml`
+- Functional impact:
+  - Keeps repository metadata aligned without changing product behavior
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff touches `.asf.yaml` only
