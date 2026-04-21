@@ -1251,7 +1251,17 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 continue;
             }
             loadBackupDetailsIfNeeded(backup);
-            if (hasNasBackupFiles(vm, backup)) {
+            try {
+                if (hasNasBackupFiles(vm, backup)) {
+                    continue;
+                }
+            } catch (CloudRuntimeException e) {
+                if (!isMissingBackupRepository(e)) {
+                    throw e;
+                }
+                LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp because its backup repository mapping is no longer valid",
+                        backup.getUuid(), vm.getInstanceName());
+                backupDao.remove(backup.getId());
                 continue;
             }
             LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp because no backup files were found in repository path [{}]",
@@ -1280,6 +1290,10 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         boolean incrementalBackup = BACKUP_TYPE_INCREMENTAL.equalsIgnoreCase(backup.getType());
         List<String> expectedBackupFiles = getExpectedBackupFiles(vmVolumes, backupEngine, incrementalBackup);
         return checkNasBackupFilesOnHost(hostVO, backupRepository, backup.getExternalId(), expectedBackupFiles);
+    }
+
+    private boolean isMissingBackupRepository(CloudRuntimeException e) {
+        return e.getMessage() != null && e.getMessage().contains("No valid backup repository found");
     }
 
     private List<String> getExpectedBackupFiles(List<VolumeVO> vmVolumes, String backupEngine, boolean incrementalBackup) {
