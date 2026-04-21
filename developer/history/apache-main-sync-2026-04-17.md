@@ -2570,7 +2570,7 @@
 ### Record 105 - record the already-satisfied EL10 packaging compatibility source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `0a6b159a4c`
 - Source Apache commits:
   - `80ee7f183f` `Fix six package incompatiblity with EL10 (#12799)`
 - Summary:
@@ -2583,6 +2583,29 @@
   - Inspection of `packaging/centos7/cloud.spec` confirmed the required Python package dependencies and Python-version-aware mysql connector install logic are already present
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - RPM build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 106 - record the already-satisfied backup schedule cleanup source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `27e4d979f1` `Clean up backup references to their schedules when the schedules are deleted (#12401)`
+- Summary:
+  - Record that the current branch already clears backup-to-schedule references during schedule cleanup, moves schedule response assembly into `ApiResponseHelper`, and drops the unused `backup_interval_type` column
+  - Confirm that the local branch already preserves the same user-visible API result while keeping the schedule cleanup path consistent
+- Functional impact:
+  - Avoids duplicating a backup schedule cleanup source change that is already present in the current branch
+  - Keeps explicit upstream traceability for the source commit behind the existing cleanup behavior
+- Validation:
+  - Inspection of `schema-42200to42210.sql` and `ApiResponseHelper.createBackupScheduleResponse(...)` confirmed the column removal and response-building logic are already present
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
