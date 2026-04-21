@@ -1585,7 +1585,7 @@
 ### Record 062 - avoid forcing custom service offering changes on VM snapshot revert
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `c778a082d4`
 - Source Apache commits:
   - `b22dbbe2d7` Fix Revert Instance to Snapshot with custom service offering (#12885)
 - Summary:
@@ -1600,11 +1600,34 @@
   - The resolved code keeps the Apache boolean gate, adds snapshot-detail map extraction, and only upgrades the VM offering inside the revert transaction when the snapshot truly requires it
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied on ablestack-europa as bf875bec57 after history-doc conflict resolution`
 - Conflict notes:
   - `VMSnapshotManagerImpl` and `VMSnapshotManagerTest` conflicted on `main` where the pre-existing logic upgraded the VM offering directly instead of deciding first whether a change was needed
 - Resolution notes:
   - Replaced the older direct-upgrade path with Apache's conditional change flow and preserved the branch-local DAO and test wiring already present in these classes
+
+### Record 063 - support SharedMountPoint volume checks during importVm preflight
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b0b3dc91f5` fix: support SharedMountPoint volume checks for importVm (#12946)
+- Summary:
+  - Extend the KVM `CheckVolumeCommand` wrapper so SharedMountPoint pools are treated as supported when validating volumes for import flows
+  - Keep the existing filesystem and NFS handling unchanged while broadening the accepted pool-type list
+- Functional impact:
+  - Prevents import-VM preflight checks from rejecting SharedMountPoint-backed volumes even though the hypervisor path can handle them
+  - Reduces false negatives when validating KVM import candidates stored on shared mount primary storage
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Staged diff only updates the supported pool-type list in `LibvirtCheckVolumeCommandWrapper`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 
