@@ -2049,7 +2049,7 @@
 ### Record 082 - refresh MinIO canned policy membership when buckets are removed
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `3e13406450`
 - Source Apache commits:
   - `7703fdacab` [minio] Handle user's canned policy when a bucket is deleted
 - Summary:
@@ -2069,6 +2069,30 @@
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 083 - transition expunging VMs to error when expunge fails
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `bce55945ec` Mark VMs in error state when expunge fails during destroy operation (#12749)
+- Summary:
+  - Add the `Expunging -> Error` VM state transition for `OperationFailedToError` and use it when expunge fails during destroy
+  - Capture external-volume lookup support in `VolumeDao` via `findByExternalUuid(...)`
+  - Extend `UserVmManagerImplTest` with focused coverage for the new `transitionExpungingToError(...)` helper behavior
+- Functional impact:
+  - Prevents a failed expunge from leaving user VMs stuck in `Expunging` without a recoverable/error signal
+  - Gives external-plugin flows a direct DAO lookup by external UUID without changing existing volume lookups
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `UserVmManagerImplTest` because the local branch already had a large block of adjacent VM configuration and limit-validation tests at the same file tail
+  - The resolved test file keeps the local coverage and appends Apache's expunge-to-error tests without dropping either set
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `UserVmManagerImplTest` conflicted where Apache appended new expunge-failure tests and the local branch had already grown an unrelated block of trailing tests
+- Resolution notes:
+  - Preserved the local test block and added Apache's new transition tests after it, while leaving the service/DAO changes themselves unchanged
 
 ### Observed Already Satisfied
 

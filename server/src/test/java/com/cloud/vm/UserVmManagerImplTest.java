@@ -65,6 +65,7 @@ import com.cloud.storage.StorageManager;
 import com.cloud.network.NetworkService;
 import com.cloud.domain.Domain;
 import com.cloud.storage.dao.SnapshotPolicyDao;
+import com.cloud.utils.fsm.NoTransitionException;
 import org.apache.cloudstack.acl.ControlledEntity;
 import org.apache.cloudstack.acl.SecurityChecker;
 import org.apache.cloudstack.api.ApiCommandResourceType;
@@ -4350,5 +4351,57 @@ public class UserVmManagerImplTest {
         InvalidParameterValueException ex = Assert.assertThrows(InvalidParameterValueException.class, () ->
                 userVmManagerImpl.verifyVmLimits(userVmVoMock, customParameters));
         Assert.assertTrue(ex.getMessage().startsWith("The CPU speed of this offering"));
+    }
+
+    @Test
+    public void testTransitionExpungingToErrorVmInExpungingState() throws Exception {
+        UserVmVO vm = mock(UserVmVO.class);
+        when(vm.getState()).thenReturn(VirtualMachine.State.Expunging);
+        when(vm.getUuid()).thenReturn("test-uuid");
+        when(userVmDao.findById(vmId)).thenReturn(vm);
+        when(virtualMachineManager.stateTransitTo(eq(vm), eq(VirtualMachine.Event.OperationFailedToError), eq(null))).thenReturn(true);
+
+        java.lang.reflect.Method method = UserVmManagerImpl.class.getDeclaredMethod("transitionExpungingToError", long.class);
+        method.setAccessible(true);
+        method.invoke(userVmManagerImpl, vmId);
+
+        Mockito.verify(virtualMachineManager).stateTransitTo(vm, VirtualMachine.Event.OperationFailedToError, null);
+    }
+
+    @Test
+    public void testTransitionExpungingToErrorVmNotInExpungingState() throws Exception {
+        UserVmVO vm = mock(UserVmVO.class);
+        when(vm.getState()).thenReturn(VirtualMachine.State.Stopped);
+        when(userVmDao.findById(vmId)).thenReturn(vm);
+
+        java.lang.reflect.Method method = UserVmManagerImpl.class.getDeclaredMethod("transitionExpungingToError", long.class);
+        method.setAccessible(true);
+        method.invoke(userVmManagerImpl, vmId);
+
+        Mockito.verify(virtualMachineManager, Mockito.never()).stateTransitTo(any(VirtualMachine.class), any(VirtualMachine.Event.class), any());
+    }
+
+    @Test
+    public void testTransitionExpungingToErrorVmNotFound() throws Exception {
+        when(userVmDao.findById(vmId)).thenReturn(null);
+
+        java.lang.reflect.Method method = UserVmManagerImpl.class.getDeclaredMethod("transitionExpungingToError", long.class);
+        method.setAccessible(true);
+        method.invoke(userVmManagerImpl, vmId);
+
+        Mockito.verify(virtualMachineManager, Mockito.never()).stateTransitTo(any(VirtualMachine.class), any(VirtualMachine.Event.class), any());
+    }
+
+    @Test
+    public void testTransitionExpungingToErrorHandlesNoTransitionException() throws Exception {
+        UserVmVO vm = mock(UserVmVO.class);
+        when(vm.getState()).thenReturn(VirtualMachine.State.Expunging);
+        when(userVmDao.findById(vmId)).thenReturn(vm);
+        when(virtualMachineManager.stateTransitTo(eq(vm), eq(VirtualMachine.Event.OperationFailedToError), eq(null)))
+                .thenThrow(new NoTransitionException("no transition"));
+
+        java.lang.reflect.Method method = UserVmManagerImpl.class.getDeclaredMethod("transitionExpungingToError", long.class);
+        method.setAccessible(true);
+        method.invoke(userVmManagerImpl, vmId);
     }
 }
