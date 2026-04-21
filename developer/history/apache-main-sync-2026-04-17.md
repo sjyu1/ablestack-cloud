@@ -2246,7 +2246,7 @@
 ### Record 091 - record the already-satisfied direct-download temporary filename hardening backport
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `c296a31b33`
 - Source Apache commits:
   - `46a6bbad27` `Fix: KVM Direct Download URL injection (#60)`
 - Summary:
@@ -2257,6 +2257,29 @@
   - Keeps the branch aligned with the older backport while preserving the newer direct-download handling already merged here
 - Validation:
   - Comparing the upstream backport against the current branch showed no remaining code delta in `DirectTemplateDownloaderImpl`, `MetalinkDirectTemplateDownloader`, or `NfsDirectTemplateDownloader`
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 092 - record the already-satisfied MinIO canned-policy delete refresh backport
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `3b987f21af` `[20.3] handle user's canned policy when a bucket is deleted`
+- Summary:
+  - Record that the current branch already refreshes MinIO canned policies after bucket deletion using the bucket owner's account context
+  - Confirm that the shared canned-policy regeneration helper is already used on both bucket create and delete paths
+- Functional impact:
+  - Prevents a duplicate backport from re-touching the MinIO object-store driver while preserving the correct post-delete access policy behavior
+  - Keeps the history aligned with the upstream maintenance branch that carried the same fix earlier than `apache/main`
+- Validation:
+  - Comparing the upstream backport against the current branch showed no remaining code delta in `BucketTO`, `MinIOObjectStoreDriverImpl`, or `MinIOObjectStoreDriverImplTest`
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
