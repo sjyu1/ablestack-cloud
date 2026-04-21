@@ -986,6 +986,29 @@
   - Preserved the europa `EnableVmNetwokFilterAllowAllTraffic` config exposure and appended `AllowDifferentHostTagsOfferingsForVmScale` to the same config list
   - Kept the europa `kvdo` column/selection flow and added Apache's `hosttags` and `storagetags` display columns alongside it
 
+### Record 037 - exclude group snapshots from account snapshot resource counts
+
+- Local branch: `main`
+- Local commit: `97a11d6e18`
+- Source Apache commits:
+  - `7b467496cb` Do not include snapshots with Group type in snapshots resource count (#12945)
+- Summary:
+  - Exclude `Snapshot.Type.GROUP` entries from `CountSnapshotsByAccount`
+  - Apply the exclusion only to snapshot resource counting, leaving the rest of snapshot DAO behavior untouched
+- Functional impact:
+  - Prevents group snapshots from inflating per-account snapshot resource counts
+  - Aligns snapshot quota/accounting behavior with the expectation that grouped snapshots should not be counted like regular per-volume snapshots
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to the `CountSnapshotsByAccount` search builder and `countSnapshotsForAccount(...)`
+  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
