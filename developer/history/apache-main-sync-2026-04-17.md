@@ -1288,6 +1288,30 @@
   - Cached diff is limited to `CsAddress.py`, `CsHelper.py`, and `CsStaticRoutes.py`
   - Runtime/systemvm test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
+  - `Applied on ablestack-europa as eb48668e0a after history-doc conflict resolution`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 050 - skip redundant NSX LB patch operations that trigger 404s
+
+- Local branch: `main`
+- Local commit: `aaa8d95329`
+- Source Apache commits:
+  - `05c59630e0` fix: LB Creation avoid 404 API errors due to non-needed patches (#12835)
+- Summary:
+  - Check for existing NSX LB pools before patching and skip the update when the pool members are unchanged
+  - Resolve monitor profile paths by direct lookup and create the monitor profile only when it is actually missing
+  - Avoid patching an NSX virtual server when it already exists, and add focused regression tests for the skip/patch decision points
+- Functional impact:
+  - Prevents LB create/update flows from sending redundant NSX patch requests that can fail with `404 Not Found` when the target object is already in the desired state
+  - Makes NSX LB provisioning more idempotent by distinguishing between genuinely missing objects and objects that already exist with the expected membership or monitor profile
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to `NsxApiClient.java` and `NsxApiClientTest.java`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
   - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
 - Conflict notes:
   - `None observed on main`
