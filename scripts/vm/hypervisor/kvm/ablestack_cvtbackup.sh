@@ -320,13 +320,6 @@ backup_running_vm() {
     sleep 5
   done
 
-  if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_BACKUP_DIR" ]]; then
-    while IFS= read -r backup_file; do
-      [[ -z "$backup_file" ]] && continue
-      qemu-img rebase -u -F qcow2 -b "$PARENT_BACKUP_DIR/$backup_file" "$dest/$backup_file" > /dev/null 2>&1 || true
-    done < <(split_csv "$BACKUP_FILES")
-  fi
-
   dump_checkpoint_xml "$VM"
   rm -f "$dest/backup.xml" "$dest/checkpoint.xml"
   sync

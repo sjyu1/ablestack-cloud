@@ -173,10 +173,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             "backup.plugin.commvault.client.verbosity", "false",
             "Produce Verbose logs in Hypervisor", true, ConfigKey.Scope.Zone);
 
-    private ConfigKey<Boolean> CommvaultQcow2IncrementalEnabled = new ConfigKey<>("Advanced", Boolean.class,
-            "backup.plugin.commvault.qcow2.incremental.enabled", "false",
-            "Enable QCOW2 incremental backups for the Commvault backup provider.", true, ConfigKey.Scope.Zone);
-
     private ConfigKey<Integer> CommvaultBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
             "commvault.backup.restore.timeout",
             "1800",
@@ -433,12 +429,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return true;
         }
 
-        if (!Boolean.TRUE.equals(CommvaultQcow2IncrementalEnabled.valueIn(vm.getDataCenterId()))) {
-            LOG.debug("Commvault QCOW2 incremental backup is disabled in zone [{}], falling back to full backup for VM [{}]",
-                    vm.getDataCenterId(), vm.getInstanceName());
-            return false;
-        }
-
         return hasMatchingQcow2StageHostChain(vm, latestBackup, vmHost);
     }
 
@@ -630,18 +620,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
         final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup,
                 BACKUP_TYPE_INCREMENTAL.equalsIgnoreCase(requestedBackupType), vmHost.getName());
-        final List<String> preparedIncrementalSourcePaths;
-        if (incrementalBackup && BACKUP_ENGINE_QCOW2.equals(backupEngine) && latestBackup != null) {
-            try {
-                preparedIncrementalSourcePaths = prepareQcow2IncrementalSources(client, latestBackup, vmHost.getName());
-            } catch (RuntimeException e) {
-                LOG.warn("Failed to prepare Commvault QCOW2 incremental source chain for VM [{}] on host [{}]: {}",
-                        vm.getInstanceName(), vmHost.getName(), e.getMessage(), e);
-                return BackupExecutionResult.failure("Failed to prepare Commvault incremental source chain: " + e.getMessage(), null);
-            }
-        } else {
-            preparedIncrementalSourcePaths = Collections.emptyList();
-        }
 
         BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         AblestackCommvaultTakeBackupCommand command = new AblestackCommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
@@ -768,8 +746,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 LOG.warn("Failed to cleanup incomplete Commvault backup entry [{}] after unexpected error", backupVO.getUuid(), cleanupException);
             }
             throw e;
-        } finally {
-            cleanupBackupPathsOnHost(vmHostVO, preparedIncrementalSourcePaths);
         }
     }
 
@@ -778,9 +754,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
         if (StringUtils.contains(result.details, MISSING_PARENT_RBD_SNAPSHOT_ERROR)) {
-            return true;
-        }
-        if (StringUtils.containsIgnoreCase(result.details, "Failed to prepare Commvault incremental source chain")) {
             return true;
         }
         return vmVolumes.size() > 1;
@@ -1009,10 +982,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     }
 
     private List<String> getRestoreSourcePathsForStageHost(Backup backup, String stageHost) {
-        if (!BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
-            return Collections.singletonList(getRestoreBackupRootPath(backup));
-        }
-
         List<String> restoreSourcePaths = new ArrayList<>();
         Backup current = backup;
         while (current != null) {
@@ -1037,26 +1006,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return restoreSourcePaths;
     }
 
-    private List<String> getQcow2IncrementalSourcePathsForStageHost(Backup backup, String stageHost) {
-        List<String> restoreSourcePaths = new ArrayList<>();
-        Backup current = backup;
-        while (current != null) {
-            loadBackupDetailsIfNeeded(current);
-            if (Objects.equals(getBackupDetail(current, DETAIL_STAGE_HOST), stageHost)) {
-                String backupPath = parseExternalId(current.getExternalId()).first();
-                if (!restoreSourcePaths.contains(backupPath)) {
-                    restoreSourcePaths.add(0, backupPath);
-                }
-            }
-            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
-            if (StringUtils.isBlank(parentBackupUuid)) {
-                break;
-            }
-            current = backupDao.findByUuid(parentBackupUuid);
-        }
-        return restoreSourcePaths;
-    }
-
     private void loadBackupDetailsIfNeeded(Backup backup) {
         if (backup instanceof BackupVO && backup.getDetails() == null) {
             backupDao.loadDetails((BackupVO) backup);
@@ -1077,7 +1026,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
             return java.nio.file.Path.of(backupPath).getFileName().resolve(filePath).toString();
         }
-        return filePath;
+        return java.nio.file.Path.of(backupPath, filePath).toString();
     }
 
     private boolean isLegacyBackup(Backup backup) {
@@ -1139,16 +1088,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (!jobStatus.equalsIgnoreCase("Completed")) {
             throw new CloudRuntimeException("Failed to restore Full VM commvault api resulted in " + jobStatus);
         }
-    }
-
-    private List<String> prepareQcow2IncrementalSources(AblestackCommvaultClient client, Backup latestBackup, String executionHostName) {
-        List<String> restoreSourcePaths = getQcow2IncrementalSourcePathsForStageHost(latestBackup, executionHostName);
-        if (restoreSourcePaths.isEmpty()) {
-            throw new CloudRuntimeException(String.format("No Commvault QCOW2 parent chain paths were found for execution host [%s]", executionHostName));
-        }
-        ensureStageHostHasCapacityForRestore(latestBackup, executionHostName, restoreSourcePaths);
-        restoreBackupPathsOnStageHost(client, latestBackup, restoreSourcePaths);
-        return restoreSourcePaths;
     }
 
     private void cleanupBackupPathOnAdditionalHosts(List<String> hostNames, String backupPath) {
@@ -1317,6 +1256,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 throw new CloudRuntimeException("Failed to restore Full VM commvault api");
             }
         } finally {
+            cleanupBackupPathsOnHost(restoreHostVO, restoreSourcePaths);
             cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
         }
     }
@@ -1532,6 +1472,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 return new Pair<>(false, errorMessage);
             }
         } finally {
+            cleanupBackupPathsOnHost(restoreHostVO, restoreSourcePaths);
             cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
         }
     }
@@ -1774,8 +1715,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 CommvaultPassword,
                 CommvaultValidateSSLSecurity,
                 CommvaultApiRequestTimeout,
-                CommvaultClientVerboseLogs,
-                CommvaultQcow2IncrementalEnabled
+                CommvaultClientVerboseLogs
         };
     }
 

@@ -48,7 +48,9 @@ import org.libvirt.LibvirtException;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -275,7 +277,7 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             if (backupPaths.stream().anyMatch(path -> path.endsWith(".rbdiff"))) {
                 return restoreIncrementalRbdBackupChainToFileVolume(volumePath, backupPaths, timeout, backupRootPath, backupIndex);
             }
-            return replaceFileVolumeWithBackup(volumePath, getLastExistingBackupPath(backupPaths), timeout);
+            return replaceFileVolumeWithBackup(volumePath, backupPaths, timeout);
         }
 
         return replaceRbdVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, createTargetVolume);
@@ -330,6 +332,62 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
             logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
             return false;
+        }
+    }
+
+    private boolean replaceFileVolumeWithBackup(String volumePath, List<String> backupPaths, int timeout) {
+        if (backupPaths == null || backupPaths.isEmpty()) {
+            return false;
+        }
+        if (backupPaths.size() == 1) {
+            return replaceFileVolumeWithBackup(volumePath, getLastExistingBackupPath(backupPaths), timeout);
+        }
+
+        Path tempDir = null;
+        try {
+            tempDir = Files.createTempDirectory("cs-cvt-qcow2-chain-");
+            Path latestChainFile = null;
+            Path previousChainFile = null;
+            for (int index = 0; index < backupPaths.size(); index++) {
+                String backupPath = backupPaths.get(index);
+                if (StringUtils.isBlank(backupPath)) {
+                    continue;
+                }
+                Path source = Paths.get(backupPath);
+                if (!Files.exists(source)) {
+                    throw new CloudRuntimeException(String.format("Missing QCOW2 backup chain file [%s] for restore", backupPath));
+                }
+                Path copiedChainFile = tempDir.resolve(String.format("%03d-%s", index, source.getFileName()));
+                Files.copy(source, copiedChainFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                if (previousChainFile != null) {
+                    rebaseBackupChainFile(copiedChainFile, previousChainFile, timeout);
+                }
+                previousChainFile = copiedChainFile;
+                latestChainFile = copiedChainFile;
+            }
+            if (latestChainFile == null) {
+                throw new CloudRuntimeException(String.format("No QCOW2 backup chain files were prepared for restore to volume [%s]", volumePath));
+            }
+            return replaceFileVolumeWithBackup(volumePath, latestChainFile.toString(), timeout);
+        } catch (IOException e) {
+            logger.error("Failed to reconstruct QCOW2 backup chain {} for volume {}: {}", backupPaths, volumePath, e.getMessage(), e);
+            return false;
+        } finally {
+            if (tempDir != null) {
+                try {
+                    FileUtils.deleteDirectory(tempDir.toFile());
+                } catch (IOException e) {
+                    logger.warn("Failed to delete temporary QCOW2 restore chain directory {}", tempDir, e);
+                }
+            }
+        }
+    }
+
+    private void rebaseBackupChainFile(Path child, Path parent, int timeout) throws IOException {
+        String command = String.format("qemu-img rebase -u -F qcow2 -b %s %s", quote(parent.toString()), quote(child.toString()));
+        CommandExecutionResult result = executeBashCommandWithResult(command, timeout, "Rebase QCOW2 restore chain");
+        if (result.exitCode != 0) {
+            throw new IOException(String.format("qemu-img rebase failed for %s with parent %s: %s", child, parent, result.output));
         }
     }
 
