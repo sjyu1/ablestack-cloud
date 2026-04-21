@@ -1407,11 +1407,35 @@
   - Cached diff is limited to `SAMLUtils.java` and `ui/src/permission.js`
   - Maven/UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+  - `Applied on ablestack-europa as 1aabbb1777 after history-doc conflict resolution`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 055 - avoid NAS backup provider crashes when no running KVM host is available
+
+- Local branch: `main`
+- Local commit: `e2bbf6a31f`
+- Source Apache commits:
+  - `6ca6aa1c3f` Fix NPE in NASBackupProvider when no running KVM host is available (#12805)
+- Summary:
+  - Guard `deleteBackup(...)` so it fails with a descriptive runtime exception when no running KVM host can be found in the target zone
+  - Short-circuit `syncBackupStorageStats(...)` when there are no repositories or no eligible running KVM host
+  - Keep the branch-local `commons-collections4` import while adopting Apache's host-null protections
+- Functional impact:
+  - Prevents the NAS backup sync background task from crashing with a null dereference during host outages or agent reconnect windows
+  - Makes forced backup deletion failures explicit when there is no execution host available instead of failing later with an opaque NPE
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` only in the `CollectionUtils` import because this branch already uses `org.apache.commons.collections4.CollectionUtils`
+  - The resolved file preserves Apache's null-host handling and repository-empty early return while keeping the local collections4 import
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `NASBackupProvider` conflicted on `main` only in the import block due to the branch's existing `commons-collections4` migration
+- Resolution notes:
+  - Kept the local `org.apache.commons.collections4.CollectionUtils` import and applied the Apache runtime guards unchanged
 
 ### Observed Already Satisfied
 
