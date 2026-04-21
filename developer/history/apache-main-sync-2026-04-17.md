@@ -2162,7 +2162,7 @@
 ### Record 087 - apply whitespace cleanup for pre-commit-managed files
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `082d4f4373`
 - Source Apache commits:
   - `5d95bdd0eb` pre-commit trailing whitespace auto clean up (#12841)
 - Summary:
@@ -2173,6 +2173,27 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff is limited to whitespace-only cleanup and the corresponding `.pre-commit-config.yaml` normalization
   - Pre-commit execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 088 - sync `.asf.yaml` collaborator list updates
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `608345d165` Update collaborators list in `.asf.yaml`
+- Summary:
+  - Align the repository's `.asf.yaml` collaborator list with the upstream metadata cleanup
+- Functional impact:
+  - Keeps ASF/GitHub repository metadata in sync without changing product behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `.asf.yaml` only
+  - Metadata effects are external to this local environment and were not separately validated here
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
