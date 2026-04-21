@@ -1479,6 +1479,30 @@
   - Cached diff is limited to resource event propagation classes plus focused resource-manager tests
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
+  - `Applied on ablestack-europa as d1abaedd51 after history-doc conflict resolution`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 058 - retry KVM incremental snapshot rebase after transient image locks
+
+- Local branch: `main`
+- Local commit: `eac20a6180`
+- Source Apache commits:
+  - `7c7b2ae75d` Fix KVM incremental volume snapshot creation (#12666)
+- Summary:
+  - Add `incremental.snapshot.retry.rebase.wait` to agent properties with a default 60-second backoff
+  - Retry the QCOW2 rebase once when the initial rebase fails specifically because another process still holds the image lock
+  - Preserve immediate failure behavior for non-lock-related rebase errors
+- Functional impact:
+  - Reduces transient KVM incremental snapshot failures caused by libvirt/qemu still holding the image lock immediately after snapshot operations
+  - Keeps other rebase failures explicit instead of masking them behind generic retry behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to agent property definitions and `KVMStorageProcessor`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
   - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
 - Conflict notes:
   - `None observed on main`
