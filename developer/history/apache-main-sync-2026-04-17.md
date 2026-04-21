@@ -1176,6 +1176,30 @@
 - Resolution notes:
   - `N/A`
 
+### Record 045 - validate zone local-storage enablement before creating file-based pools
+
+- Local branch: `main`
+- Local commit: `3c639d46fd`
+- Source Apache commits:
+  - `d38c1f8d12` Fix error message while creating local storage pool (#12767)
+- Summary:
+  - Reuse `isLocalStorageEnabledForZone(...)` when creating local storage
+  - Reject file-scheme storage pool creation early when local storage is disabled for the zone
+  - Replace duplicated zone-level local-storage checks with the shared helper
+- Functional impact:
+  - Returns a clearer validation failure when a local/file-backed primary storage pool is requested in a zone where local storage is disabled
+  - Prevents the create-pool flow from reaching a later, less accurate error path
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` only in `StorageManagerImpl` because this branch already imports `ArrayUtils` in the same block where Apache adds `BooleanUtils`
+  - The resolved file keeps the branch-local imports and preserves Apache's `isLocalStorageEnabledForZone(...)` guard in the create-pool path
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `StorageManagerImpl` conflicted on `main` only in the import section because the branch already had nearby local import additions
+- Resolution notes:
+  - Kept the existing `ArrayUtils` import and added Apache's `BooleanUtils` import so the shared helper and the local code both compile cleanly
+
 ### Observed Already Satisfied
 
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
