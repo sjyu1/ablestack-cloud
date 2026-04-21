@@ -1811,7 +1811,7 @@
   - This local commit therefore records the satisfied upstream state in the history document and backfills the previous record's final SHA
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `8d9e5cc095`
 - Conflict notes:
   - `N/A`
 - Resolution notes:
@@ -1835,7 +1835,7 @@
   - The resolved code keeps the branch-local millisecond timeout flow and merges Apache's Linstor block-device handling, restore-size propagation, and updated wrapper tests
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `8c47f676a8`
 - Conflict notes:
   - `LibvirtRestoreBackupCommandWrapper` conflicted where Apache's Linstor support overlapped the branch-local NAS timeout and restore helper changes
 - Resolution notes:
@@ -1859,7 +1859,7 @@
   - The staged diff is limited to the service/config surface and the two backing-file validation call sites
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `4227ac97a0`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1882,7 +1882,7 @@
   - The staged diff is limited to the three direct-download implementation classes
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `939a1f5f1f`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1906,7 +1906,7 @@
   - The resolved code keeps the branch-local interface method and layers Apache's shared `getDomainId(...)` helper plus auth-call-site updates alongside it
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `7d62faab7e`
 - Conflict notes:
   - `ApiServerService` conflicted where Apache added `getDomainId(...)` and the local branch had already added `isPostRequestsAndTimestampsEnforced()`
 - Resolution notes:
@@ -1929,7 +1929,7 @@
   - The staged diff touches `.github/dependabot.yml` only
   - GitHub Actions execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `819521ce4e`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1952,7 +1952,7 @@
   - The staged diff spans `.codespellrc`, `.pre-commit-config.yaml`, and a handful of typo-only source/doc updates
   - Pre-commit execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `f38d48b590`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1973,7 +1973,7 @@
   - The staged diff touches `ui/README.md` only
   - Documentation link verification has not been run separately in this environment
 - Europa cherry-pick status:
-  - `Pending`
+  - `40255d1472`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2722,7 +2722,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the SQL change
   - Schema migration execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `8033c4f682`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2745,7 +2745,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `f7fd36e378`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2768,7 +2768,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `cadcb40b42`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2791,7 +2791,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `8f61fdd046`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2814,7 +2814,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - SystemVM runtime verification has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `3afeeef158`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2837,7 +2837,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `0550ec4fa1`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2860,7 +2860,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - SystemVM/runtime verification has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `c4225d4ef2`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2883,7 +2883,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - SystemVM runtime verification has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `8614ecc20c`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2906,7 +2906,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the test-only signature tweak
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `8c110c3012`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -2915,7 +2915,7 @@
 ### Record 120 - record the already-satisfied NSX pagination source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `0478e72d09`
 - Source Apache commits:
   - `e0fe953791` `fix: NSX SDK list operations are pageable: the API returns a non-null and non-empty (#12834)`
 - Summary:
@@ -2929,7 +2929,7 @@
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `b22afa163a`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
