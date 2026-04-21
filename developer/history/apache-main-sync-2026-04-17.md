@@ -878,6 +878,35 @@
   - Preserved the europa `updateHost(..., migrationIp)` signature and inserted the Apache helper guard at method entry instead of reverting the local parameter extension
   - Kept the europa `getConfigKeys()` shape and removed only the legacy JS interpretation config entry, so the helper-owned config becomes the single source of truth
 
+### Record 033 - support async job lookup by resource
+
+- Local branch: `main`
+- Local commit: `893222e873`
+- Source Apache commits:
+  - `47c5bb8ee7` Support list/query async jobs by resource (#12983)
+- Summary:
+  - Add `resourceId` and `resourceType` filters to `listAsyncJobs` and `queryAsyncJobResult`
+  - Make `ApiCommandResourceType.fromString(...)` case-insensitive for resource-driven async job lookups
+  - Add `ResourceIdSupport` to centralize resource UUID parsing, resource-type validation, and access checks for async job resource filters
+  - Extend `AsyncJobDao` and `AsyncJobDaoImpl` so async jobs can be resolved by either job id or `(resource type, resource id)`
+- Functional impact:
+  - Allows operators to locate async jobs even when they only know the backing resource UUID and type, not the async job UUID
+  - Makes resource-type matching more tolerant of casing differences in API clients
+  - Preserves the earlier local `Record 003` behavior that allows `listAsyncJobs` to filter by `resourceType` alone without requiring `resourceId`
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `QueryManagerImpl` because this branch already carries the `Record 003` extension that permits `resourceType`-only async job listing
+  - `ApiResponseHelper` merged cleanly after reconciling import drift and retaining the local `Site2SiteVpnManager` injection block
+  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `QueryManagerImpl` conflicted on `main` because Apache now expects `resourceType` and `resourceId` together for list filtering, while this branch intentionally already supports `resourceType` without `resourceId`
+  - `ApiResponseHelper` conflicted on `main` in the import/injection region due unrelated local drift near the same hunk
+- Resolution notes:
+  - Kept the Apache `queryAsyncJobResult`, DAO lookup, case-insensitive resource-type parsing, and shared resource helper changes
+  - Preserved the local `listAsyncJobs` type-only filter so this sync does not silently regress `Record 003`
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
