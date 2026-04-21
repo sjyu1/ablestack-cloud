@@ -2547,7 +2547,7 @@
 ### Record 104 - record the already-satisfied non-KVM SystemVM template arch registration source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `c873a7a6e1`
 - Source Apache commits:
   - `6f1aa96b4c` `engine/schema: fix new systemvm template is not registered during upgrade if hypervisor is not KVM (#12952)`
 - Summary:
@@ -2560,6 +2560,29 @@
   - Inspection of `SystemVmTemplateRegistration.hypervisorList` and `SystemVmTemplateRegistrationTest` confirmed the non-KVM hypervisors already use `CPU.CPUArch.amd64`
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 105 - record the already-satisfied EL10 packaging compatibility source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `80ee7f183f` `Fix six package incompatiblity with EL10 (#12799)`
+- Summary:
+  - Record that the current branch already carries the EL10 packaging follow-up by depending on `python3-six` and `python3-protobuf` and by selecting the compatible mysql connector wheel at install time
+  - Note that the local branch keeps its `centos7` packaging path and `urllib3` handling while still preserving the upstream EL10 compatibility intent
+- Functional impact:
+  - Avoids duplicating a packaging/source change whose functional result is already present in the branch-specific RPM spec flow
+  - Keeps the upstream source commit explicitly tracked despite the local packaging path differing from upstream `el8`
+- Validation:
+  - Inspection of `packaging/centos7/cloud.spec` confirmed the required Python package dependencies and Python-version-aware mysql connector install logic are already present
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - RPM build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
