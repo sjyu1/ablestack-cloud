@@ -2269,7 +2269,7 @@
 ### Record 092 - record the already-satisfied MinIO canned-policy delete refresh backport
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `7dc5086883`
 - Source Apache commits:
   - `3b987f21af` `[20.3] handle user's canned policy when a bucket is deleted`
 - Summary:
@@ -2282,6 +2282,29 @@
   - Comparing the upstream backport against the current branch showed no remaining code delta in `BucketTO`, `MinIOObjectStoreDriverImpl`, or `MinIOObjectStoreDriverImplTest`
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 093 - record the intentionally reverted account netstats lateral-join change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `58916eb608` `Use lateral join (introduced in MySQL 8.0.14) with subquery on user_statistics table in account_view for netstats (#12631)`
+- Summary:
+  - Record that the current branch intentionally keeps the separate `cloud.account_netstats_view` model rather than reintroducing the lateral-join variant
+  - Note that this branch already matches the reverted end state later adopted upstream, so the original lateral-join change should stay unapplied here
+- Functional impact:
+  - Preserves compatibility with the branch's existing account network statistics view structure and avoids reintroducing a change that upstream subsequently backed out
+  - Keeps schema/view behavior stable while still tracking the upstream commit history explicitly
+- Validation:
+  - Comparing the original lateral-join change against the current branch confirmed that `cloud.account_view` still joins `cloud.account_netstats_view` and the standalone `cloud.account_netstats_view.sql` remains present
+  - This local commit therefore records the intentional already-reverted state in the history document instead of reapplying the lateral-join change
+  - Schema migration execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
