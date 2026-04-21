@@ -97,26 +97,20 @@ jobs:
       - name: Install host prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y xz-utils
+          sudo apt-get install -y skopeo xz-utils
 
       - name: Download Rocky 9.7 container archive
         run: |
           curl -fsSL -o /tmp/rocky97.tar.xz "$ROCKY97_URL"
           echo "$ROCKY97_SHA256  /tmp/rocky97.tar.xz" | sha256sum -c -
 
-      - name: Load Rocky 9.7 image into Docker
+      - name: Convert Rocky 9.7 OCI archive for Docker
         run: |
-          load_output=$(xz -dc /tmp/rocky97.tar.xz | docker load)
-          echo "$load_output"
-          image_ref=$(printf '%s\n' "$load_output" | awk -F': ' '/Loaded image: / {print $2; exit}')
-          if [ -z "$image_ref" ]; then
-            image_ref=$(printf '%s\n' "$load_output" | awk -F': ' '/Loaded image ID: / {print $2; exit}')
-          fi
-          if [ -z "$image_ref" ]; then
-            echo "Failed to determine loaded image reference"
-            exit 1
-          fi
-          docker tag "$image_ref" ablestack/rocky97-build:latest
+          xz -dc /tmp/rocky97.tar.xz > /tmp/rocky97.oci.tar
+          skopeo copy \
+            oci-archive:/tmp/rocky97.oci.tar \
+            docker-archive:/tmp/rocky97.docker.tar:ablestack/rocky97-build:latest
+          docker load -i /tmp/rocky97.docker.tar
           docker image inspect ablestack/rocky97-build:latest >/dev/null
 
       - name: Build RPM packages inside Rocky 9.7
