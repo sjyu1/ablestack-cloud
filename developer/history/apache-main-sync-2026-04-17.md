@@ -1982,7 +1982,7 @@
 ### Record 079 - add code owners for the NSX network elements plugin
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `95024da846`
 - Source Apache commits:
   - `b744824f65` Add code owners for nsx network elements plugin (#12838)
 - Summary:
@@ -1993,6 +1993,27 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff touches `.github/CODEOWNERS` only
   - CODEOWNERS validation has not been run separately in this environment
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 080 - clarify isolation-method descriptions for physical network creation
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `faaf7669c5` Update isolation methods description for physical network (#12759)
+- Summary:
+  - Refresh the isolation-method description text in `CreatePhysicalNetworkCmd` so the API help better reflects the supported physical-network modes
+- Functional impact:
+  - Improves admin/API documentation clarity without changing runtime behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `CreatePhysicalNetworkCmd` only
+  - API doc generation has not been run in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
