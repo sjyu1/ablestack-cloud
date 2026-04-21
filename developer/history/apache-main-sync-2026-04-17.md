@@ -740,6 +740,30 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 028 - route template-zone deletion back to the template list
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `7aa0558c5b` ui: avoid 404 after deleting template zones
+- Summary:
+  - Redirect `TemplateZones.vue` to `/template` when the delete flow leaves the current detail view without remaining rows
+  - Keep the surrounding table and modal behavior unchanged while avoiding a dead back-navigation path
+- Functional impact:
+  - Prevents the UI from landing on a stale detail route after the last template-zone entry is removed
+  - Gives operators a predictable post-delete destination instead of depending on browser history state
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `ui/src/views/image/TemplateZones.vue`
+  - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Resolved with manual merge`
+- Conflict notes:
+  - `None observed on main`
+  - On `ablestack-europa`, the Apache hunk overlapped with a branch-local bulk-delete alert markup tweak that appends `&nbsp` after the selected-item counter
+- Resolution notes:
+  - Kept the Europa alert-spacing markup and the existing local table/view adjustments, while preserving the Apache `/template` redirect in `handleCancel()` to avoid the stale detail-route 404
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
