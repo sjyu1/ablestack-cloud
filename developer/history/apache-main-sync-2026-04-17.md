@@ -1503,11 +1503,35 @@
   - Cached diff is limited to agent property definitions and `KVMStorageProcessor`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+  - `Applied on ablestack-europa as ec5184fc2d after history-doc conflict resolution`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
   - `N/A`
+
+### Record 059 - expose richer VM start failure details under an explicit config gate
+
+- Local branch: `main`
+- Local commit: `d5c5ff9455`
+- Source Apache commits:
+  - `68030df10b` VM start error handling improvements and config to expose error to users (#12894)
+- Summary:
+  - Add global config `expose.errors.to.user` and use it when deciding whether non-admin users may see detailed VM start errors
+  - Track the last known start failure reason through deployment retries so final errors can surface a meaningful cause
+  - Preserve the Europa-specific VirtualRouter network-unavailable message, but route its detail exposure through the same config gate
+- Functional impact:
+  - Gives operators and optionally end users clearer VM start failure messages instead of a generic “see management server log” response
+  - Makes repeated deployment retries easier to diagnose by surfacing the last concrete failure reason when capacity or resource allocation ultimately fails
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` only in `VirtualMachineManagerImpl.start(...)` because this branch already had a custom VirtualRouter-specific error message
+  - The resolved code keeps the local VirtualRouter wording but gates detailed exposure through Apache's new `canExposeError(...)` logic and config key
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `VirtualMachineManagerImpl` conflicted on `main` where the branch already customized the VirtualRouter resource-unavailable error path
+- Resolution notes:
+  - Kept the local `The Network for VM ... is unavailable` message and switched its detail exposure to use Apache's `canExposeError(...)` policy
 
 ### Observed Already Satisfied
 
