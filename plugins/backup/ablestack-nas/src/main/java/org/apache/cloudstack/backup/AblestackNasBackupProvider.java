@@ -180,11 +180,28 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     private Long getClusterIdFromRootVolume(VirtualMachine vm) {
         VolumeVO rootVolume = volumeDao.getInstanceRootVolume(vm.getId());
-        StoragePoolVO rootDiskPool = primaryDataStoreDao.findById(rootVolume.getPoolId());
-        if (rootDiskPool == null) {
-            return null;
+        if (rootVolume != null) {
+            StoragePoolVO rootDiskPool = primaryDataStoreDao.findById(rootVolume.getPoolId());
+            if (rootDiskPool != null && rootDiskPool.getClusterId() != null) {
+                return rootDiskPool.getClusterId();
+            }
         }
-        return rootDiskPool.getClusterId();
+
+        if (vm.getHostId() != null) {
+            HostVO host = hostDao.findById(vm.getHostId());
+            if (host != null && host.getClusterId() != null) {
+                return host.getClusterId();
+            }
+        }
+
+        if (vm.getLastHostId() != null) {
+            HostVO host = hostDao.findById(vm.getLastHostId());
+            if (host != null) {
+                return host.getClusterId();
+            }
+        }
+
+        return null;
     }
 
     protected Host getVMHypervisorHost(VirtualMachine vm) {
