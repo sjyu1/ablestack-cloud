@@ -39,9 +39,12 @@ import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.StoragePoolHostDao;
 import com.cloud.storage.dao.VolumeDao;
+import com.cloud.utils.NumbersUtil;
 import com.cloud.utils.Pair;
+import com.cloud.utils.Ternary;
 import com.cloud.utils.component.AdapterBase;
 import com.cloud.utils.exception.CloudRuntimeException;
+import com.cloud.utils.ssh.SshHelper;
 import com.cloud.vm.VirtualMachine;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.dao.VMInstanceDao;
@@ -104,6 +107,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_CHAIN_SEAL_REASON = "nas.chain.seal.reason";
     private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "nas.fallback.volume.uuids";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
+    private static final String KVM_BACKUP_CHECK_TMP_PREFIX = "/tmp/cs-nas-backup-check.";
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
             "nas.backup.restore.mount.timeout",
@@ -1239,6 +1243,107 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public void syncBackups(VirtualMachine vm) {
+        for (final Backup backup : backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
+            if (!(backup instanceof BackupVO)) {
+                continue;
+            }
+            if (!Backup.Status.BackingUp.equals(backup.getStatus())) {
+                continue;
+            }
+            loadBackupDetailsIfNeeded(backup);
+            if (!BACKUP_ENGINE_QCOW2.equalsIgnoreCase(getBackupDetail(backup, DETAIL_BACKUP_ENGINE, BACKUP_ENGINE_QCOW2))) {
+                continue;
+            }
+            if (hasNasQcow2BackupFiles(vm, backup)) {
+                continue;
+            }
+            LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp because no QCOW2 backup files were found in repository path [{}]",
+                    backup.getUuid(), vm.getInstanceName(), backup.getExternalId());
+            backupDao.remove(backup.getId());
+        }
+    }
+
+    private String getBackupDetail(Backup backup, String key, String defaultValue) {
+        String value = getBackupDetail(backup, key);
+        return value == null ? defaultValue : value;
+    }
+
+    private boolean hasNasQcow2BackupFiles(VirtualMachine vm, Backup backup) {
+        final BackupRepository backupRepository = getBackupRepository(backup);
+        final Host host = getVMHypervisorHost(vm);
+        final HostVO hostVO = hostDao.findById(host.getId());
+        if (hostVO == null) {
+            LOG.warn("Unable to find host information for VM [{}] while checking NAS backup [{}]", vm.getInstanceName(), backup.getUuid());
+            return false;
+        }
+
+        List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
+        vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
+        boolean incrementalBackup = BACKUP_TYPE_INCREMENTAL.equalsIgnoreCase(backup.getType());
+        List<String> expectedBackupFiles = buildBackupFileNames(vmVolumes, BACKUP_ENGINE_QCOW2, incrementalBackup);
+        return checkNasBackupFilesOnHost(hostVO, backupRepository, backup.getExternalId(), expectedBackupFiles);
+    }
+
+    private boolean checkNasBackupFilesOnHost(HostVO host, BackupRepository backupRepository, String backupPath, List<String> backupFiles) {
+        if (StringUtils.isBlank(backupPath) || CollectionUtils.isEmpty(backupFiles)) {
+            return false;
+        }
+        final int sshPort = NumbersUtil.parseInt("22", 22);
+        Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
+        String mountDirPattern = KVM_BACKUP_CHECK_TMP_PREFIX + "XXXXXX";
+        String mountOptions = backupRepository.getMountOptions();
+        if ("cifs".equalsIgnoreCase(backupRepository.getType())) {
+            mountOptions = StringUtils.isBlank(mountOptions) ? "nobrl" : mountOptions + ",nobrl";
+        }
+        StringBuilder command = new StringBuilder();
+        command.append("set -e; ")
+                .append("mount_dir=$(mktemp -d ").append(quoteForShell(mountDirPattern)).append("); ")
+                .append("cleanup(){ umount \"$mount_dir\" >/dev/null 2>&1 || true; rmdir \"$mount_dir\" >/dev/null 2>&1 || true; }; ")
+                .append("trap cleanup EXIT; ")
+                .append("mount -t ").append(quoteForShell(backupRepository.getType())).append(" ")
+                .append(quoteForShell(backupRepository.getAddress())).append(" \"$mount_dir\"");
+        if (StringUtils.isNotBlank(mountOptions)) {
+            command.append(" -o ").append(quoteForShell(mountOptions));
+        }
+        command.append("; ");
+        for (String backupFile : backupFiles) {
+            command.append("test -f \"$mount_dir\"/")
+                    .append(quotePathForDoubleQuotedShell(backupPath))
+                    .append("/")
+                    .append(quotePathForDoubleQuotedShell(backupFile))
+                    .append(" && exit 0; ");
+        }
+        command.append("exit 1");
+        try {
+            Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), sshPort,
+                    credentials.first(), null, credentials.second(), command.toString(), 120000, 120000, 3600000);
+            return response.first();
+        } catch (Exception e) {
+            LOG.warn("Failed to verify NAS backup files for path [{}] on host [{}]", backupPath, host.getName(), e);
+            return false;
+        }
+    }
+
+    protected Ternary<String, String, String> getKVMHyperisorCredentials(HostVO host) {
+        String username = null;
+        String password = null;
+
+        if (host != null && host.getHypervisorType() == Hypervisor.HypervisorType.KVM) {
+            hostDao.loadDetails(host);
+            password = host.getDetail("password");
+            username = host.getDetail("username");
+        }
+        return new Ternary<>(username, password, null);
+    }
+
+    private String quoteForShell(String value) {
+        return "'" + StringUtils.defaultString(value).replace("'", "'\"'\"'") + "'";
+    }
+
+    private String quotePathForDoubleQuotedShell(String value) {
+        return StringUtils.defaultString(value)
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
     }
 
     @Override
