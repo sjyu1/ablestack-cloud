@@ -108,6 +108,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "nas.fallback.volume.uuids";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String KVM_BACKUP_CHECK_TMP_PREFIX = "/tmp/cs-nas-backup-check.";
+    private static final long BACKING_UP_SYNC_GRACE_PERIOD_MS = 24L * 60L * 60L * 1000L;
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
             "nas.backup.restore.mount.timeout",
@@ -1267,6 +1268,11 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             if (!Backup.Status.BackingUp.equals(backup.getStatus())) {
                 continue;
             }
+            if (isWithinBackingUpSyncGracePeriod(backup)) {
+                LOG.debug("Skipping NAS stale-backup reconciliation for recent BackingUp backup [{}] on VM [{}]",
+                        backup.getUuid(), vm.getInstanceName());
+                continue;
+            }
             loadBackupDetailsIfNeeded(backup);
             try {
                 if (hasNasBackupFiles(vm, backup)) {
@@ -1285,6 +1291,13 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                     backup.getUuid(), vm.getInstanceName(), backup.getExternalId());
             backupDao.remove(backup.getId());
         }
+    }
+
+    private boolean isWithinBackingUpSyncGracePeriod(Backup backup) {
+        if (backup == null || backup.getDate() == null) {
+            return true;
+        }
+        return System.currentTimeMillis() - backup.getDate().getTime() < BACKING_UP_SYNC_GRACE_PERIOD_MS;
     }
 
     private String getBackupDetail(Backup backup, String key, String defaultValue) {

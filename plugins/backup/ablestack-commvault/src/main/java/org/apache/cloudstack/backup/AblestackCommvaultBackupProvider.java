@@ -135,6 +135,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final Pattern VERSION_PATTERN = Pattern.compile("^(\\d+)\\s*SP\\s*(\\d+)(?:\\.(\\d+))?$", Pattern.CASE_INSENSITIVE);
     private static final String COMMVAULT_DIRECTORY = "/tmp/mold/backup";
     private static final long STAGE_SPACE_BUFFER_BYTES = 10L * 1024L * 1024L * 1024L;
+    private static final long BACKING_UP_SYNC_GRACE_PERIOD_MS = 24L * 60L * 60L * 1000L;
 
     public ConfigKey<String> CommvaultUrl = new ConfigKey<>("Advanced", String.class,
             "backup.plugin.commvault.url", "https://localhost/commandcenter/api",
@@ -1758,6 +1759,11 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (!Backup.Status.BackingUp.equals(backup.getStatus())) {
             return false;
         }
+        if (isWithinBackingUpSyncGracePeriod(backup)) {
+            LOG.debug("Skipping Commvault stale-backup reconciliation for recent BackingUp backup [{}] on VM [{}]",
+                    backup.getUuid(), vm.getInstanceName());
+            return false;
+        }
         final String backupPath = backup.getExternalId();
         if (StringUtils.isBlank(backupPath) || backupPath.contains(",")) {
             return false;
@@ -1770,6 +1776,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return true;
         }
         return false;
+    }
+
+    private boolean isWithinBackingUpSyncGracePeriod(Backup backup) {
+        if (backup == null || backup.getDate() == null) {
+            return true;
+        }
+        return System.currentTimeMillis() - backup.getDate().getTime() < BACKING_UP_SYNC_GRACE_PERIOD_MS;
     }
 
     private void updateBackupAsCompleted(BackupVO backupVO, String externalId, String jobDetails, Map<String, String> backupDetails, String backedUpVolumes) {
