@@ -2705,6 +2705,29 @@
 - Resolution notes:
   - `N/A`
 
+### Record 111 - record the already-satisfied password reset mail template source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `5013cf2af6` `Fix user password reset mail template value (#12882)`
+- Summary:
+  - Record that the current branch already contains the finalized SQL update for `user.password.reset.mail.template`
+  - Confirm that the schema upgrade now rewrites legacy reset-link placeholder formats to the current `{{{resetLink}}}` form
+- Functional impact:
+  - Avoids duplicating a schema-only source change whose final behavior is already present in the current branch
+  - Keeps explicit upstream traceability for the password-reset mail template correction
+- Validation:
+  - Inspection of `schema-42200to42210.sql` confirmed the multiline `CONCAT_WS` update statement for `user.password.reset.mail.template` is already present
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the SQL change
+  - Schema migration execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `273699cf56` `kvm: fix wrong CheckVirtualMachineAnswer when vm does not exist (#12928)`
