@@ -957,6 +957,35 @@
 - Resolution notes:
   - Reused the existing schema tail order and inserted only the new template migration SQL to avoid duplicate DDL
 
+### Record 036 - allow service offering lookup across cluster host tags
+
+- Local branch: `main`
+- Local commit: `75874d825d`
+- Source Apache commits:
+  - `b5858029bb` Fix listing service offerings with different host tags (#12919)
+- Summary:
+  - Add `HostTagsDao.listByClusterId(...)` so service offering search can inspect all host tags defined on hosts inside a VM's current cluster
+  - Introduce `allow.different.host.tags.offerings.for.vm.scale` and register it through `UserVmManagerImpl.getConfigKeys()`
+  - When the new setting is enabled, extend scale-offering host-tag matching to include any tag found in the VM's current cluster instead of requiring the current offering's exact tag set
+  - Surface `hosttags` and `storagetags` columns in the compute offering wizard when the offering payload includes those fields
+- Functional impact:
+  - Lets operators list compatible target offerings for VM scale even when the offering uses a different host-tag subset that is still valid within the VM's cluster
+  - Keeps the previous strict host-tag behavior by default unless the new advanced setting is enabled
+  - Makes host and storage tag differences visible in the UI during compute offering selection
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The change is limited to host-tag DAO/query plumbing, one new config key registration, two focused `QueryManagerImplTest` cases, and compute-offering wizard column rendering
+  - Cherry-pick to `ablestack-europa` required manual conflict resolution in `UserVmManagerImpl` and `ComputeOfferingSelection.vue`
+  - Maven/UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after manual conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `UserVmManagerImpl` conflicted on `ablestack-europa` because the local branch already exposes `EnableVmNetwokFilterAllowAllTraffic` in `getConfigKeys()`, while Apache appends `AllowDifferentHostTagsOfferingsForVmScale` in the same list tail
+  - `ComputeOfferingSelection.vue` conflicted on `ablestack-europa` because the local branch already added the `kvdo` column and selection payload, while Apache adds optional `hosttags` and `storagetags` columns in the same header/table-source block
+- Resolution notes:
+  - Preserved the europa `EnableVmNetwokFilterAllowAllTraffic` config exposure and appended `AllowDifferentHostTagsOfferingsForVmScale` to the same config list
+  - Kept the europa `kvdo` column/selection flow and added Apache's `hosttags` and `storagetags` display columns alongside it
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
@@ -967,6 +996,10 @@
   - Current branch state already uses `label.create.backup` in `StartBackup.vue`
   - Treat as already satisfied instead of creating a duplicate local commit
   - Re-check on `ablestack-europa` before final range reconciliation
+- `c6936889f5` `server: prevent adding vm compute details when not applicable (#12637)`
+  - Current branch state already contains the Apache validation changes in `validateCustomParameters(...)` and `verifyVmLimits(...)`
+  - Matching regression tests are already present in `UserVmManagerImplTest`
+  - Treat as already satisfied instead of creating a duplicate local commit
 
 ## Refined Resource-Limit Batches
 
