@@ -1147,7 +1147,7 @@
   - Cached diff is limited to the NAT delete command, `NsxResource`, and one focused `NsxResourceTest`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Applied on ablestack-europa as 7ad9fbc1f0`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1170,7 +1170,7 @@
   - Cached diff is limited to a 2-line `CsNetfilter.py` change in the `forward` hook path
   - Runtime/systemvm test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Applied on ablestack-europa as 5681e66c42`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1194,7 +1194,7 @@
   - The resolved file keeps the branch-local imports and preserves Apache's `isLocalStorageEnabledForZone(...)` guard in the create-pool path
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Applied on ablestack-europa as 6fadfd9913`
 - Conflict notes:
   - `StorageManagerImpl` conflicted on `main` only in the import section because the branch already had nearby local import additions
 - Resolution notes:
@@ -1217,7 +1217,7 @@
   - The branch already carried the interface-side default implementation, so the net change is the removal of the stale no-op override in `Upgrade42020to42030`
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied cleanly on ablestack-europa; local commit pending creation`
+  - `Applied on ablestack-europa as a51d5eb639`
 - Conflict notes:
   - `None observed on main`
 - Resolution notes:
@@ -1226,7 +1226,7 @@
 ### Record 047 - register new SystemVM templates for non-KVM hypervisors with amd64 arch
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `76f1194d8c`
 - Source Apache commits:
   - `6f1aa96b4c` engine/schema: fix new systemvm template is not registered during upgrade if hypervisor is not KVM (#12952)
 - Summary:
@@ -1240,11 +1240,35 @@
   - The resolved test keeps the branch-local helper call and adopts Apache's explicit `amd64` expectation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied on ablestack-europa as f0af890272 before backfilling local/main`
 - Conflict notes:
   - `SystemVmTemplateRegistrationTest` conflicted on `main` because the local branch had already changed the VMware metadata lookup helper call while Apache updates the expected arch in the same assertion block
 - Resolution notes:
   - Preserved the branch-local helper-based test structure and updated the asserted VMware arch to `CPU.CPUArch.amd64`
+
+### Record 048 - add CloudStack user-agent headers to template download requests
+
+- Local branch: `main`
+- Local commit: `f051bdc876`
+- Source Apache commits:
+  - `4ebe3349b7` add user-agent header to template downloader request (#12791)
+- Summary:
+  - Introduce `HttpClientCloudStackUserAgent` as a shared CloudStack-branded user-agent string provider
+  - Set the shared user-agent on HTTP and HEAD requests issued by template downloaders, direct downloads, URL validation helpers, and QCOW2 size probing
+  - Reuse a common `UriUtils.USER_AGENT` constant for `HttpURLConnection`-based helper paths
+- Functional impact:
+  - Makes outbound template-download and remote-image probe traffic identify itself consistently to upstream HTTP servers
+  - Reduces the chance of providers applying different behavior to anonymous Java HTTP clients during template validation, download, or virtual-size inspection flows
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to downloader/helper call sites plus the new shared user-agent utility class
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 
