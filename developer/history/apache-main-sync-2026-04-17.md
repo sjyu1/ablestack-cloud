@@ -1702,7 +1702,7 @@
 ### Record 067 - avoid custom offering NPEs during unmanaged and external VM import
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `6683ae7a27`
 - Source Apache commits:
   - `2416db2a44` Fix NPE on external/unmanaged instance import using custom offerings (#12884)
 - Summary:
@@ -1717,11 +1717,34 @@
   - The resolved code keeps the branch-local VMware import task flow and extra-param tests while layering Apache's reservation helpers and new custom-offering regression tests
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Pending`
+  - `Applied on ablestack-europa as fdfa6bdde5 after history-doc auto-merge`
 - Conflict notes:
   - `UnmanagedVMsManagerImpl` and `UnmanagedVMsManagerImplTest` conflicted on `main` where local import extensions and nearby tests occupied the same import-resource management sections
 - Resolution notes:
   - Preserved local VMware import task bookkeeping and merged Apache's null-safe reservation helpers plus detail-parsing tests into the existing import flow
+
+### Record 068 - fix PowerFlex 4.x VM snapshot take/revert handling
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `131ea9f7ac` Fix PowerFlex 4.x issues with take & revert instance snapshots (#12880)
+- Summary:
+  - Adjust ScaleIO/PowerFlex VM snapshot strategy handling so multi-volume snapshot state updates and revert flows follow the newer PowerFlex 4.x expectations
+  - Update the ScaleIO gateway client logic to vary overwrite behavior based on PowerFlex version-specific API semantics
+- Functional impact:
+  - Fixes take/revert VM snapshot behavior for PowerFlex 4.x environments that would otherwise mis-handle multi-volume state updates or use the wrong overwrite semantics
+  - Improves compatibility across older and newer PowerFlex API variants without changing unrelated snapshot behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Staged diff touches `ScaleIOVMSnapshotStrategy` and `ScaleIOGatewayClientImpl` only
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 
