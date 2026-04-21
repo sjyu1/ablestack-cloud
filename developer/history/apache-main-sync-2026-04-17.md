@@ -2800,7 +2800,7 @@
 ### Record 115 - record the already-satisfied Routed VR related/established source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `9bc48de2e4`
 - Source Apache commits:
   - `1fc4cb90bf` `Routed VR: accept packets from related and established connections (#12986)`
 - Summary:
@@ -2813,6 +2813,29 @@
   - Inspection of `systemvm/debian/opt/cloud/bin/cs/CsNetfilter.py` confirmed the routed VR state-match rule already uses the `RELATED,ESTABLISHED` handling introduced by the source fix
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - SystemVM runtime verification has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 116 - record the already-satisfied NSX load-balancer patch-suppression source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `05c59630e0` `fix: LB Creation avoid 404 API errors due to non-needed patches (#12835)`
+- Summary:
+  - Record that the current branch already skips unnecessary NSX LB patch calls when the effective pool/service state is unchanged
+  - Confirm that the current NSX client already contains the patch-suppression logic and the related test coverage that avoid 404s on non-needed updates
+- Functional impact:
+  - Avoids duplicating an NSX source change whose runtime behavior is already present in the branch
+  - Preserves explicit upstream traceability for the LB patch-suppression fix
+- Validation:
+  - Inspection of `NsxApiClient` and `NsxApiClientTest` confirmed the current branch already contains the skip-patch logic and its associated tests
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
