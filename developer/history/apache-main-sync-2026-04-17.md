@@ -2338,7 +2338,7 @@
 ### Record 095 - record the already-satisfied unmanaged import test follow-up
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `0df74163d9`
 - Source Apache commits:
   - `e8f8aca694` `Fix failing tests`
 - Summary:
@@ -2350,6 +2350,29 @@
 - Validation:
   - Attempting the Apache cherry-pick on `main` produced no remaining staged code delta because `UnmanagedVMsManagerImplTest` already uses the updated matcher signature
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the test change
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 096 - record the already-satisfied KVM incremental snapshot rebase retry improvement
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `7c7b2ae75d` `Fix KVM incremental volume snapshot creation (#12666)`
+- Summary:
+  - Record that the current branch already exposes the incremental snapshot rebase retry wait property and retries rebase operations when libvirt still holds the image lock
+  - Confirm that the KVM storage processor already contains the follow-up retry helper and matching agent property wiring
+- Functional impact:
+  - Avoids duplicating an already-integrated KVM snapshot resiliency improvement while still tracking the upstream source commit explicitly
+  - Preserves the current retry-on-lock behavior for incremental snapshot rebases without introducing extra divergence
+- Validation:
+  - Comparing the upstream change against the current branch showed no remaining code delta in `agent.properties`, `AgentProperties`, or `KVMStorageProcessor`
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
