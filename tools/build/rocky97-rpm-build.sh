@@ -38,7 +38,6 @@ dnf --releasever=9.7 config-manager --set-enabled crb || true
     bash \
     bzip2 \
     ca-certificates \
-    curl \
     findutils \
     gcc \
     genisoimage \
