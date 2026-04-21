@@ -1527,11 +1527,36 @@
   - The resolved code keeps the local VirtualRouter wording but gates detailed exposure through Apache's new `canExposeError(...)` logic and config key
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+  - `Applied on ablestack-europa as bcc7a07225 after history-doc conflict resolution`
 - Conflict notes:
   - `VirtualMachineManagerImpl` conflicted on `main` where the branch already customized the VirtualRouter resource-unavailable error path
 - Resolution notes:
   - Kept the local `The Network for VM ... is unavailable` message and switched its detail exposure to use Apache's `canExposeError(...)` policy
+
+### Record 060 - expose and validate HAProxy idle timeout through load balancer orchestration
+
+- Local branch: `main`
+- Local commit: `32d8f85186`
+- Source Apache commits:
+  - `6e810989b6` HAProxy Configuration: network.loadbalancer.haproxy.idle.timeout (#12586)
+- Summary:
+  - Add `network.loadbalancer.haproxy.idle.timeout` as a configurable orchestration setting and propagate it through load balancer command construction
+  - Teach `LoadBalancerConfigCommand`/`HAProxyConfigurator` to render `timeout client` and `timeout server` when the idle timeout is positive, and to blank them when explicitly set to `0`
+  - Extend HAProxy health checks and tests so the new idle-timeout behavior is validated end to end
+- Functional impact:
+  - Gives operators a supported knob for HAProxy idle timeout without patching systemvm templates or generated configs by hand
+  - Keeps runtime and health-check expectations aligned so VR load balancer checks do not falsely fail when the timeout is customized
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Europa cherry-pick required manual conflict resolution in `LoadBalancerConfigCommand` and `HAProxyConfigurator` because this branch already carries `lbConnectTimeout`, `lbClientTimeout`, and `lbServerTimeout` command fields
+  - Cached diff spans HAProxy command/config generation, orchestration config plumbing, tests, and the systemvm health check script
+  - Maven/UI/systemvm test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `LoadBalancerConfigCommand` and `HAProxyConfigurator` conflicted on `ablestack-europa` where local HAProxy timeout customization already occupied the same command/config surfaces
+- Resolution notes:
+  - Preserved the local `lbConnectTimeout` / `lbClientTimeout` / `lbServerTimeout` fields and layered Apache's `idleTimeout` as a client/server override when present
 
 ### Observed Already Satisfied
 
