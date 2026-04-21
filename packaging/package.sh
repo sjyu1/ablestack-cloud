@@ -26,7 +26,7 @@ be used in the final generated package like: cloudstack-management-x.y.z.a-NAME.
 note that you can override/provide "branding" string with "-b, --brand" flag as well.
 
 Mandatory arguments:
-   -d, --distribution string               Build package for specified distribution ("centos7")
+   -d, --distribution string               Build package for specified distribution ("centos7"|"centos8"|"rocky9")
 
 Optional arguments:
    -p, --pack string                       Define which type of libraries to package ("oss"|"OSS"|"noredist"|"NOREDIST") (default "oss")
@@ -43,6 +43,7 @@ Other arguments:
 
 Examples:
    package.sh --distribution centos7
+   package.sh --distribution rocky9
    package.sh --distribution centos7 --pack oss
    package.sh --distribution centos7 --pack noredist
    package.sh --distribution centos7 --pack noredist -t "kvm,xen"
@@ -80,6 +81,14 @@ function packaging() {
     fi
 
     DISTRO=$3
+    case "$DISTRO" in
+        rocky9)
+            SPECDISTRO="centos8"
+            ;;
+        *)
+            SPECDISTRO="$DISTRO"
+            ;;
+    esac
 
     MVN=$(which mvn)
     if [ -z "$MVN" ] ; then
@@ -171,7 +180,7 @@ function packaging() {
     (cd "$RPMDIR/SOURCES/"; tar -czf "$PACK_PROJECT-$VERSION.tgz" "$PACK_PROJECT-$VERSION")
 
     echo ". executing rpmbuild"
-    cp "$PWD/$DISTRO/cloud.spec" "$RPMDIR/SPECS"
+    cp "$PWD/$SPECDISTRO/cloud.spec" "$RPMDIR/SPECS"
 
     (cd "$RPMDIR"; rpmbuild --define "_topdir ${RPMDIR}" "${DEFVER}" "${DEFFULLVER}" "${DEFREL}" ${DEFPRE+"$DEFPRE"} ${DEFOSSNOSS+"$DEFOSSNOSS"} ${DEFSIM+"$DEFSIM"} ${DEFTEMP+"$DEFTEMP"} -bb SPECS/cloud.spec)
     if [ $? -ne 0 ]; then
