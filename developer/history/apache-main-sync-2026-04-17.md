@@ -2892,7 +2892,7 @@
 ### Record 119 - record the already-satisfied backup pending-job test merge-forward source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `ea197ef934`
 - Source Apache commits:
   - `f5e75771bc` `merge forwards fix`
 - Summary:
@@ -2904,6 +2904,29 @@
 - Validation:
   - The current `BackupManagerTest` still covers deletion blocked by pending jobs, and the underlying backup-delete guard is already present from earlier backup reservation work
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the test-only signature tweak
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 120 - record the already-satisfied NSX pagination source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `e0fe953791` `fix: NSX SDK list operations are pageable: the API returns a non-null and non-empty (#12834)`
+- Summary:
+  - Record that the current branch already follows NSX cursor chains and merges paged results through `PagedFetcher`
+  - Confirm that the current NSX client already uses the pagination helper for list operations that return `cursor`-based result pages
+- Functional impact:
+  - Avoids duplicating an NSX list-pagination source change whose behavior is already present in the current branch
+  - Preserves explicit upstream traceability for the pagination fix that ensures complete NSX datasets are fetched
+- Validation:
+  - Inspection of `NsxApiClient`, `PagedFetcher`, and `PagedFetcherTest` confirmed the current branch already contains the cursor-following pagination helper and its test coverage
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
