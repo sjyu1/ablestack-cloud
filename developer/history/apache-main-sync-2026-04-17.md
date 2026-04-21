@@ -2846,7 +2846,7 @@
 ### Record 117 - record the already-satisfied HAProxy idle-timeout source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `8c3f389807`
 - Source Apache commits:
   - `6e810989b6` `HAProxy Configuration: network.loadbalancer.haproxy.idle.timeout (#12586)`
 - Summary:
@@ -2859,6 +2859,29 @@
   - Inspection of `HAProxyConfigurator` confirmed the current branch already processes the idle-timeout value and retains the related handling around HAProxy configuration
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - SystemVM/runtime verification has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 118 - record the already-satisfied nexthop static-route source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `83f705ddc5` `Static Routes with nexthop non-functional for private gateways (#12859)`
+- Summary:
+  - Record that the current branch already applies nexthop static routes to the required PBR and ACL paths in routed/VPC router handling
+  - Confirm that the local SystemVM scripts already carry the shared gateway-device lookup and the related FORWARD rule generation for nexthop routes
+- Functional impact:
+  - Avoids duplicating a routed-network source fix whose behavior is already present in the branch
+  - Preserves explicit upstream traceability for the nexthop static-route repair
+- Validation:
+  - Inspection of `CsAddress.py` and `CsStaticRoutes.py` confirmed the current branch already contains the nexthop route ACL/PBR handling introduced by the source commit
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - SystemVM runtime verification has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
