@@ -1891,7 +1891,7 @@
 ### Record 075 - preserve camelCase `domainId` handling in login/auth flows
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `7ed9e5f573`
 - Source Apache commits:
   - `56dc11980f` test_accounts.py failure fix - keep the camelCase parameter "domainId" (#12689)
 - Summary:
@@ -1911,6 +1911,29 @@
   - `ApiServerService` conflicted where Apache added `getDomainId(...)` and the local branch had already added `isPostRequestsAndTimestampsEnforced()`
 - Resolution notes:
   - Kept both interface methods and applied Apache's camelCase domain-id fallback everywhere else unchanged
+
+### Record 076 - add the GitHub Actions ecosystem to Dependabot
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `cf9bda2050` [CI] Add github-actions ecosystem to Dependabot (#12823)
+- Summary:
+  - Extend `.github/dependabot.yml` so Dependabot also tracks workflow action versions in the GitHub Actions ecosystem
+  - Keep the existing dependency-update structure and intervals intact while adding the extra ecosystem block
+- Functional impact:
+  - Improves CI maintenance coverage by letting Dependabot flag outdated GitHub Action references alongside the existing dependency sources
+  - Does not affect product runtime behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `.github/dependabot.yml` only
+  - GitHub Actions execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 
