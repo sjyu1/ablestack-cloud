@@ -1796,7 +1796,7 @@
 ### Record 071 - avoid unnecessary service-offering changes during VM snapshot revert
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `8b9a3455a9`
 - Source Apache commits:
   - `b22dbbe2d7` Fix Revert Instance to Snapshot with custom service offering (#12885)
 - Summary:
@@ -1807,15 +1807,39 @@
   - Avoids unnecessary service-offering update attempts during snapshot revert when a dynamic offering still resolves to the same sizing that the instance already uses
   - Produces more accurate revert validation for state/type combinations, reducing confusing revert failures around custom offerings and memory snapshots
 - Validation:
-  - Apache cherry-pick required a manual conflict resolution on `main` in `VMSnapshotManagerImpl` because the local branch already carried adjacent revert/custom-offering refactoring from the earlier snapshot record
-  - The resolved code keeps the branch-local descriptive Javadoc while preserving Apache's predicate-based revert decision and the added unit coverage in `VMSnapshotManagerTest`
+  - Attempting the Apache cherry-pick on `main` showed no remaining code delta after the earlier snapshot revert/custom-offering work already in this branch
+  - This local commit therefore records the satisfied upstream state in the history document and backfills the previous record's final SHA
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
-  - `VMSnapshotManagerImpl` conflicted on the helper-method Javadoc block after the earlier local revert/custom-offering refactor had already landed nearby
+  - `N/A`
 - Resolution notes:
-  - Kept the more descriptive local parameter comments and retained Apache's behavior change plus the new revert/offering tests
+  - No additional code merge was required because the current branch state already satisfied the upstream revert/offering behavior
+
+### Record 072 - support Linstor primary storage in NAS backup restore flows
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `03de62bf38` Support Linstor Primary Storage for NAS BnR (#12796)
+- Summary:
+  - Extend NAS backup restore path building so Linstor-backed volumes use the expected `/dev/drbd/by-res/cs-<uuid>/0` style device path while existing pool types keep their current path conventions
+  - Carry restore volume sizes through `RestoreBackupCommand` and use them in the KVM restore wrapper when a Linstor target volume must be created before `qemu-img convert`
+  - Update the KVM restore wrapper, script, and focused tests so block-device restore works for both RBD and Linstor while filesystem-backed restores still honor the branch-local timeout handling
+- Functional impact:
+  - Allows NAS backup restore to work against Linstor primary storage instead of assuming only filesystem or RBD-backed volume layouts
+  - Preserves existing timeout-controlled restore behavior for non-block storage while adding the extra size/connect steps Linstor requires
+- Validation:
+  - Apache cherry-pick required a manual conflict resolution on `main` in `LibvirtRestoreBackupCommandWrapper` because this branch already carried NAS timeout handling and earlier restore-path adjustments in the same helper methods
+  - The resolved code keeps the branch-local millisecond timeout flow and merges Apache's Linstor block-device handling, restore-size propagation, and updated wrapper tests
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `LibvirtRestoreBackupCommandWrapper` conflicted where Apache's Linstor support overlapped the branch-local NAS timeout and restore helper changes
+- Resolution notes:
+  - Kept the branch-local timeout-aware `rsync` and `QemuImg` invocation path, then layered Apache's Linstor-specific device-path, connect, create-target, and raw-attach handling on top
 
 ### Observed Already Satisfied
 
