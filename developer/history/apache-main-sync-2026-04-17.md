@@ -932,6 +932,31 @@
 - Resolution notes:
   - Preserved the local upgrade order, avoided duplicating the existing `backups.backup_interval_type` drop, and inserted only the new configuration cleanup
 
+### Record 035 - update password reset mail template default value
+
+- Local branch: `main`
+- Local commit: `21c8b313df`
+- Source Apache commits:
+  - `5013cf2af6` Fix user password reset mail template value (#12882)
+- Summary:
+  - Update the `user.password.reset.mail.template` upgrade SQL to the new `{{{resetLink}}}` format
+  - Migrate only legacy template values that still use the old `http://{{{resetLink}}}` or `{{{domainUrl}}}{{{resetLink}}}` placeholders
+  - Use `CONCAT_WS('\n', ...)` so the stored template matches the multiline string expected by the newer password reset flow
+- Functional impact:
+  - Aligns upgraded deployments with the current password reset mail rendering logic
+  - Avoids leaving stale default template values that generate the wrong reset URL in notification emails
+- Validation:
+  - Apache cherry-pick required a manual merge on `main` only in `schema-42200to42210.sql` because this branch already carries later upgrade statements in the same tail region
+  - The resolved schema keeps the existing `backup_interval_type` removal and `consoleproxy.cmd.port` cleanup, then appends only the password reset template update block
+  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `schema-42200to42210.sql` conflicted on `main` because Apache still includes an adjacent `backup_interval_type` drop that is already present in this branch
+- Resolution notes:
+  - Reused the existing schema tail order and inserted only the new template migration SQL to avoid duplicate DDL
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
