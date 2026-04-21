@@ -2315,7 +2315,7 @@
 ### Record 094 - avoid wiping volume size metadata on failed download states
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `4a2853d2b4`
 - Source Apache commits:
   - `d0f6730157` `volume download fix`
 - Summary:
@@ -2327,6 +2327,29 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff is limited to `BaseImageStoreDriverImpl`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 095 - record the already-satisfied unmanaged import test follow-up
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `e8f8aca694` `Fix failing tests`
+- Summary:
+  - Record that the current branch already carries the `allocateRawVolume(..., anyBoolean())` matcher updates needed by the expanded unmanaged-import allocation signature
+  - Note that the follow-up test-only change is already covered by the earlier unmanaged import cleanup work in this branch
+- Functional impact:
+  - Avoids duplicating a no-op test-only backport while keeping the source commit explicitly tracked in the sync history
+  - Confirms that unmanaged import tests remain aligned with the boolean-extended allocation method signature
+- Validation:
+  - Attempting the Apache cherry-pick on `main` produced no remaining staged code delta because `UnmanagedVMsManagerImplTest` already uses the updated matcher signature
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the test change
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
