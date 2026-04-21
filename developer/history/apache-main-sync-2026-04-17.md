@@ -2501,7 +2501,7 @@
 ### Record 102 - record the already-satisfied template-zone delete redirect source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `cddd3442c4`
 - Source Apache commits:
   - `7aa0558c5b` `ui: avoid 404 after deleting template zones (#12681)`
 - Summary:
@@ -2514,6 +2514,29 @@
   - Manual inspection of `TemplateZones.vue` confirmed `handleCancel()` already pushes to `/template` when no rows remain after deletion
   - The remaining diff against the Apache source commit is limited to formatting/context differences, so this record is tracked as already satisfied
   - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 103 - record the already-satisfied physical-network isolation description source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `faaf7669c5` `Update isolation methods description for physical network (#12759)`
+- Summary:
+  - Record that the current branch already contains the upstream wording cleanup for physical network isolation method descriptions
+  - Confirm that the local API help text matches the clarified upstream description for the supported isolation methods
+- Functional impact:
+  - Avoids duplicating a documentation-only API text change that is already present in the current branch
+  - Preserves explicit upstream traceability for the wording change in the sync history
+- Validation:
+  - Reverse-applying the Apache patch on the current branch showed the updated isolation-method description is already present in `CreatePhysicalNetworkCmd`
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the change
+  - API doc generation has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
