@@ -1576,16 +1576,43 @@
   - The resolved code keeps the local RBD helper layout and applies Apache's timeout fallback logic to both restore and take-backup paths
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+  - `Applied on ablestack-europa as c37ef5e0f1 after history-doc conflict resolution`
 - Conflict notes:
   - `LibvirtRestoreBackupCommandWrapper` conflicted on `main` where the branch already carried a different restore-helper shape around the same timeout-sensitive logic
 - Resolution notes:
   - Preserved the local RBD restore helper path and merged Apache's `command.wait -> commands.timeout` fallback plus timeout-aware script execution
 
+### Record 062 - avoid forcing custom service offering changes on VM snapshot revert
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b22dbbe2d7` Fix Revert Instance to Snapshot with custom service offering (#12885)
+- Summary:
+  - Split VM snapshot revert service-offering handling into a boolean "needs change" decision and only perform an upgrade when the snapshot actually differs from the current VM configuration
+  - Compare dynamic compute offering CPU, memory, and speed against values stored in VM snapshot details so revert paths do not trigger unnecessary custom offering changes
+  - Use snapshot detail values, not live VM detail values, when a service offering change is required during revert
+- Functional impact:
+  - Prevents revert-to-snapshot from forcing an unnecessary service offering change when the current VM already matches the snapshot's custom offering
+  - Keeps dynamic custom offering reverts aligned with the snapshot's captured CPU and memory settings instead of whatever the VM happens to expose at revert time
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` in `VMSnapshotManagerImpl` and `VMSnapshotManagerTest` because this branch still carried the older inline upgrade flow
+  - The resolved code keeps the Apache boolean gate, adds snapshot-detail map extraction, and only upgrades the VM offering inside the revert transaction when the snapshot truly requires it
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `VMSnapshotManagerImpl` and `VMSnapshotManagerTest` conflicted on `main` where the pre-existing logic upgraded the VM offering directly instead of deciding first whether a change was needed
+- Resolution notes:
+  - Replaced the older direct-upgrade path with Apache's conditional change flow and preserved the branch-local DAO and test wiring already present in these classes
+
 ### Observed Already Satisfied
 
 - `273699cf56` `kvm: fix wrong CheckVirtualMachineAnswer when vm does not exist (#12928)`
   - Current branch state already avoids `domainLookupByName(...)` for non-running VMs and already carries focused wrapper tests for the fixed behavior
+  - Treat as already satisfied instead of creating a duplicate local commit
+- `7ba5240b31` `Block backup deletion while create-VM-from-backup or restore jobs are in progress (#12792)`
+  - Current branch state already blocks backup deletion when pending create-from-backup or restore jobs exist, and the matching regression test coverage is already present in `BackupManagerTest`
   - Treat as already satisfied instead of creating a duplicate local commit
 - `abdf926219` `Revert "Use lateral join (introduced in MySQL 8.0.14) with subquery on user_statistics table in account_view for netstats (#12631)" (#12965)`
   - Current branch state already splits network statistics into `cloud.account_netstats_view` and joins that view from `cloud.account_view`
