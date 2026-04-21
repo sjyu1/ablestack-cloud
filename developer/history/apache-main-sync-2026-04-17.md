@@ -2754,7 +2754,7 @@
 ### Record 113 - record the already-satisfied backup and bucket review follow-up source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `552317a397`
 - Source Apache commits:
   - `13842a626d` `Address reviews`
 - Summary:
@@ -2765,6 +2765,29 @@
   - Keeps the upstream review-adjustment source commit explicitly tracked in the sync history
 - Validation:
   - Current branch state in `BackupManagerImpl`, `BucketApiServiceImpl`, and `DeleteBucketCmd` already reflects the post-review API and reservation behavior documented in the earlier local bucket/backup records
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 114 - record the already-satisfied updateBucket limit-validation source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `2511fdffaa` `Implement limit validations on updateBucket`
+- Summary:
+  - Record that the current branch already validates object-storage quota changes during `updateBucket(...)`
+  - Confirm that the update flow now uses reservation-backed quota adjustment instead of changing bucket quota without limit checks
+- Functional impact:
+  - Avoids duplicating an upstream source change whose updateBucket resource-limit behavior is already present in the branch
+  - Preserves explicit traceability for the source commit behind the existing updateBucket quota validation path
+- Validation:
+  - Reverse-applying the Apache patch on the current branch succeeded, showing the updateBucket limit-validation change is already present
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
