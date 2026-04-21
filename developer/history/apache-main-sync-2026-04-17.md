@@ -2384,26 +2384,49 @@
 ### Record 097 - fix revert-to-VM-snapshot service offering changes for custom offerings
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `5a5d654f58`
 - Source Apache commits:
   - `b22dbbe2d7` `Fix Revert Instance to Snapshot with custom service offering (#12885)`
 - Summary:
-  - Split the revert validation messages so running instances reject disk-only snapshots and stopped instances reject memory snapshots with clearer state-specific guidance
-  - Introduce `userVmServiceOfferingNeedsChange(...)` so revert only upgrades the service offering when the snapshot offering actually differs or dynamic offering CPU/memory/speed values changed
-  - Extend `VMSnapshotManagerTest` coverage for same-offering, changed-offering, and dynamic-offering revert cases
+  - Record that the current branch already splits the revert validation messages for running/stopped instance snapshot combinations and already gates service offering changes through `userVmServiceOfferingNeedsChange(...)`
+  - Note that the related `VMSnapshotManagerTest` coverage for custom and dynamic offerings is already present in this branch
 - Functional impact:
-  - Prevents unnecessary service-offering upgrades during revert-to-snapshot for custom/dynamic offerings while still preserving resource validation when the effective offering changed
-  - Makes invalid revert combinations easier to diagnose by returning state-specific error messages
+  - Avoids duplicating an already-integrated revert-to-snapshot fix while still tracking the upstream source commit explicitly
+  - Confirms that custom/dynamic service offering revert handling remains aligned with the upstream behavior already absorbed by this branch
 - Validation:
-  - Apache cherry-pick required manual conflict resolution on `main` in `VMSnapshotManagerImpl` because the local branch already carried more specific helper parameter documentation at the same comment block
-  - The resolved code keeps the local documentation wording and preserves Apache's service-offering decision logic and test additions
+  - Attempting the Apache cherry-pick on `main` surfaced only a comment-context conflict in `VMSnapshotManagerImpl` because the current branch already contained the functional logic and test coverage introduced by the upstream commit
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
-  - `VMSnapshotManagerImpl` conflicted in the helper documentation block where Apache and the local branch edited the same nearby comment context
+  - `VMSnapshotManagerImpl` conflicted only in the helper documentation block where Apache and the local branch edited the same nearby comment context
 - Resolution notes:
-  - Kept the local parameter descriptions in the helper comment and retained Apache's runtime logic and unit-test updates unchanged
+  - Kept the local parameter descriptions in the helper comment and recorded the source commit as already satisfied because no functional code delta remained
+
+### Record 098 - add Headlamp as the preferred Kubernetes dashboard while keeping legacy access guidance
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `18075ae4a9` `Add support for Headlamp dashboard for kubernetes; deprecate legacy kubernetes dashboard (#12776)`
+- Summary:
+  - Update Kubernetes cluster readiness checks to accept either Headlamp in `kube-system` or the legacy Kubernetes Dashboard namespace
+  - Switch the Kubernetes binaries ISO helper and control-node bootstrap flow to install Headlamp by default while preserving a fallback path for legacy dashboard manifests shipped in the ISO
+  - Refresh the UI guidance so operators get Headlamp-first access, token creation, and legacy dashboard compatibility instructions side by side
+- Functional impact:
+  - Makes new Kubernetes clusters prefer Headlamp without breaking older clusters that still ship the legacy dashboard manifest
+  - Improves operator guidance for dashboard access and token creation across both dashboard generations
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff is limited to the Kubernetes service util, bootstrap YAML, ISO helper script, and dashboard help UI
+  - Maven/UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
 
 ### Observed Already Satisfied
 
