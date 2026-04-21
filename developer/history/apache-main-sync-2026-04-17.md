@@ -1632,7 +1632,7 @@
 ### Record 064 - support SharedMountPoint storage discovery for KVM import and unmanage
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `920d6aa0ff`
 - Source Apache commits:
   - `b1bc5380a2` fix: support SharedMountPoint for KVM volume import and unmanage (#12956)
 - Summary:
@@ -1645,6 +1645,29 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - Staged diff updates one API interface constant and one KVM wrapper constant
   - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa as fee04fc506 after code and history-doc conflict resolution`
+- Conflict notes:
+  - `LibvirtGetVolumesOnStorageCommandWrapper` conflicted on `ablestack-europa` because the branch already carried the same storage-pool types in a different local list layout
+- Resolution notes:
+  - Kept Europa's existing `RBD` and `SharedMountPoint` support while accepting the Apache alignment for the API and hypervisor-side constants
+
+### Record 065 - replace GROUP_CONCAT backup volume serialization with JSON aggregation
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `4ba4bd33c3` replace GROUP_CONCAT with JSON_ARRAYAGG to avoid errors like Row 19 was cut by GROUP_CONCAT (#12777)
+- Summary:
+  - Rewrite upgrade SQL that backfills backup volume metadata so it uses `JSON_ARRAYAGG(JSON_OBJECT(...))` instead of string-built `GROUP_CONCAT(...)`
+  - Keep the same backup volume payload fields while avoiding truncation-prone string concatenation in large-volume cases
+- Functional impact:
+  - Prevents upgrade-time backup metadata generation from silently truncating long volume lists under MySQL `GROUP_CONCAT` limits
+  - Produces structurally valid JSON arrays for `backups.backed_volumes` and `vm_instance.backup_volumes` even when many disks are present
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Staged diff only updates the SQL migration logic in `schema-42010to42100.sql`
+  - Database migration execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
