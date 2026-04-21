@@ -1431,11 +1431,34 @@
   - The resolved file preserves Apache's null-host handling and repository-empty early return while keeping the local collections4 import
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
-  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+  - `Applied on ablestack-europa as e85e854cd1 after history-doc conflict resolution`
 - Conflict notes:
   - `NASBackupProvider` conflicted on `main` only in the import block due to the branch's existing `commons-collections4` migration
 - Resolution notes:
   - Kept the local `org.apache.commons.collections4.CollectionUtils` import and applied the Apache runtime guards unchanged
+
+### Record 056 - keep Public networks out of multi-CIDR cleanup side effects
+
+- Local branch: `main`
+- Local commit: `e8362ab92d`
+- Source Apache commits:
+  - `ae455ee193` VPC restart cleanup for Public networks with multi-CIDR data (#12622)
+- Summary:
+  - Skip `addCidrAndGatewayForIpv4/Ipv6(...)` and matching remove flows for `TrafficType.Public` networks in `ConfigurationManagerImpl`
+  - Sanitize legacy Public-network addressing fields in `schema-42200to42210.sql` by nulling network-level CIDR/gateway columns
+- Functional impact:
+  - Prevents Public networks from accumulating comma-separated CIDR and gateway state that later breaks VPC restart cleanup with malformed CIDR parsing
+  - Leaves Public network addressing sourced from VLAN/IP-range state rather than duplicating it into network-level fields
+- Validation:
+  - Apache cherry-pick required manual conflict resolution on `main` only in `schema-42200to42210.sql` because this branch already drops `backup_interval_type` in the same migration tail
+  - The resolved migration keeps both the local backup cleanup and the Apache Public-network sanitization SQL
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
+- Conflict notes:
+  - `schema-42200to42210.sql` conflicted on `main` because prior local migration work already rewrote the same tail section
+- Resolution notes:
+  - Preserved the existing `backup_interval_type` drop and inserted only the Apache Public-network cleanup statements beside it
 
 ### Observed Already Satisfied
 
