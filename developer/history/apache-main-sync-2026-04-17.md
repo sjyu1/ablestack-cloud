@@ -2731,7 +2731,7 @@
 ### Record 112 - record the already-satisfied force-delete cross-management-server propagation source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `f2222c9a3e`
 - Source Apache commits:
   - `160876c6d7` `Fix: API Thread held forever during force deleting across MS (#12968)`
 - Summary:
@@ -2742,6 +2742,29 @@
   - Preserves upstream traceability for the force-delete propagation change that prevents stuck API threads across management servers
 - Validation:
   - Inspection of `PropagateResourceEventCommand` and `ResourceManagerImpl.propagateResourceEvent(...)` confirmed the current branch already includes the extra force-delete flags and the corresponding propagation path
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 113 - record the already-satisfied backup and bucket review follow-up source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `13842a626d` `Address reviews`
+- Summary:
+  - Record that the current branch already contains the review follow-up changes for the backup and bucket reservation work
+  - Confirm that the branch already preserves the refined delete-bucket exception contract and the simplified backup/bucket reservation handling introduced after upstream review
+- Functional impact:
+  - Avoids duplicating a source follow-up whose behavioral outcome was already absorbed during the earlier backup and bucket reservation batch
+  - Keeps the upstream review-adjustment source commit explicitly tracked in the sync history
+- Validation:
+  - Current branch state in `BackupManagerImpl`, `BucketApiServiceImpl`, and `DeleteBucketCmd` already reflects the post-review API and reservation behavior documented in the earlier local bucket/backup records
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
