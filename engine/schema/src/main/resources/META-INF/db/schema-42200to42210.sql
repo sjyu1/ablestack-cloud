@@ -31,3 +31,6 @@ ALTER TABLE `cloud`.`backups` DROP COLUMN `backup_interval_type`;
 
 -- Update existing vm_template records with NULL type to "USER"
 UPDATE `cloud`.`vm_template` SET `type` = 'USER' WHERE `type` IS NULL;
+
+-- remove unused config item
+DELETE FROM `cloud`.`configuration` WHERE name = 'consoleproxy.cmd.port';

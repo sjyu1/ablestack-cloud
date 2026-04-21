@@ -907,6 +907,31 @@
   - Kept the Apache `queryAsyncJobResult`, DAO lookup, case-insensitive resource-type parsing, and shared resource helper changes
   - Preserved the local `listAsyncJobs` type-only filter so this sync does not silently regress `Record 003`
 
+### Record 034 - remove unused console proxy command port config
+
+- Local branch: `main`
+- Local commit: `f0f0218dcb`
+- Source Apache commits:
+  - `feb6076930` Remove unused config consoleproxy.cmd.port (#12807)
+- Summary:
+  - Remove the unused `ConsoleProxyCmdPort` config key from `ConsoleProxyManager`
+  - Stop exposing `consoleproxy.cmd.port` through `ConsoleProxyManagerImpl.getConfigKeys()`
+  - Delete stale `consoleproxy.cmd.port` rows during the `4.22.0.0 -> 4.22.1.0` schema upgrade
+- Functional impact:
+  - Removes an unused console proxy setting from the surfaced configuration set
+  - Cleans obsolete configuration data during upgrade without changing active console proxy behavior
+- Validation:
+  - Apache cherry-pick required a manual merge on `main` only in `schema-42200to42210.sql` because this branch already re-ordered nearby upgrade statements for `backup_interval_type` removal and `vm_template.type` backfill
+  - The resolved schema keeps the local statement order and adds only the `consoleproxy.cmd.port` cleanup delete
+  - Cherry-pick to `ablestack-europa` applied cleanly with no additional manual conflict resolution
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `schema-42200to42210.sql` conflicted on `main` because Apache inserts the config cleanup next to statements this branch already moved and de-duplicated earlier
+- Resolution notes:
+  - Preserved the local upgrade order, avoided duplicating the existing `backups.backup_interval_type` drop, and inserted only the new configuration cleanup
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
