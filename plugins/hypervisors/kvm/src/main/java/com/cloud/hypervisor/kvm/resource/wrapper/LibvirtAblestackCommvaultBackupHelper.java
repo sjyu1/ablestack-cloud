@@ -201,7 +201,7 @@ class LibvirtAblestackCommvaultBackupHelper {
             }
 
             if (isIncremental(command) && command.getParentBackupPath() != null && !command.getParentBackupPath().isEmpty()) {
-                rebaseIncrementalChain(dest, command, diskPaths);
+                rebaseIncrementalChain(dest, command, diskPaths, diskLabels);
             }
 
             dumpCheckpointXml(dummyVmName, command.getCheckpointName(), dest);
@@ -365,7 +365,7 @@ class LibvirtAblestackCommvaultBackupHelper {
     private Path writeBackupXml(Path dest, AblestackCommvaultTakeBackupCommand command, List<String> diskLabels) throws IOException {
         StringBuilder xml = new StringBuilder("<domainbackup mode='push'><disks>");
         for (int i = 0; i < diskLabels.size(); i++) {
-            String backupFile = getBackupFileByIndex(command, i, String.format("volume-%d.qcow2", i));
+            String backupFile = getBackupFileByIndex(command, i, getLegacyBackupFileName(diskLabels, i));
             xml.append("<disk name='").append(diskLabels.get(i)).append("' backup='yes' type='file' backupmode='full'>")
                     .append("<driver type='qcow2'/><target file='").append(dest.resolve(backupFile)).append("'/>");
             if (isIncremental(command) && command.getParentCheckpointName() != null && !command.getParentCheckpointName().isEmpty()) {
@@ -420,9 +420,9 @@ class LibvirtAblestackCommvaultBackupHelper {
                 String.format("virsh -c qemu:///system domjobinfo %s --completed --keep-completed", shellQuote(vmName)), 10);
     }
 
-    private void rebaseIncrementalChain(Path dest, AblestackCommvaultTakeBackupCommand command, List<String> diskPaths) throws IOException {
+    private void rebaseIncrementalChain(Path dest, AblestackCommvaultTakeBackupCommand command, List<String> diskPaths, List<String> diskLabels) throws IOException {
         for (int i = 0; i < diskPaths.size(); i++) {
-            String backupFile = getBackupFileByIndex(command, i, String.format("volume-%d.qcow2", i));
+            String backupFile = getBackupFileByIndex(command, i, getLegacyBackupFileName(diskLabels, i));
             int exit = Script.runSimpleBashScriptForExitValue(String.format(
                     "qemu-img rebase -u -F qcow2 -b %s %s",
                     shellQuote(Path.of(command.getParentBackupPath(), backupFile).toString()),
@@ -431,6 +431,12 @@ class LibvirtAblestackCommvaultBackupHelper {
                 throw new IOException("qemu-img rebase failed for " + backupFile);
             }
         }
+    }
+
+    private String getLegacyBackupFileName(List<String> diskLabels, int index) {
+        String diskType = index == 0 ? "root" : "datadisk";
+        String suffix = index < diskLabels.size() && diskLabels.get(index) != null ? diskLabels.get(index) : String.valueOf(index);
+        return String.format("%s.%s.qcow2", diskType, suffix);
     }
 
     private void dumpCheckpointXml(String vmName, String checkpointName, Path dest) {

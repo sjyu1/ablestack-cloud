@@ -562,13 +562,13 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private List<String> buildBackupFileNames(List<VolumeVO> volumes, String backupEngine, boolean incrementalBackup) {
         List<String> backupFiles = new ArrayList<>();
         for (VolumeVO volume : volumes) {
-            String suffix;
+            String diskPrefix = Volume.Type.ROOT.equals(volume.getVolumeType()) ? "root" : "datadisk";
             if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
-                suffix = incrementalBackup ? ".rbdiff" : ".raw";
+                String suffix = incrementalBackup ? ".rbdiff" : ".raw";
+                backupFiles.add(String.format("%s.%s%s", diskPrefix, volume.getUuid(), suffix));
             } else {
-                suffix = ".qcow2";
+                backupFiles.add(String.format("%s.%s.qcow2", diskPrefix, volume.getUuid()));
             }
-            backupFiles.add(String.format("volume-%s%s", volume.getUuid(), suffix));
         }
         return backupFiles;
     }
@@ -1251,13 +1251,10 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 continue;
             }
             loadBackupDetailsIfNeeded(backup);
-            if (!BACKUP_ENGINE_QCOW2.equalsIgnoreCase(getBackupDetail(backup, DETAIL_BACKUP_ENGINE, BACKUP_ENGINE_QCOW2))) {
+            if (hasNasBackupFiles(vm, backup)) {
                 continue;
             }
-            if (hasNasQcow2BackupFiles(vm, backup)) {
-                continue;
-            }
-            LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp because no QCOW2 backup files were found in repository path [{}]",
+            LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp because no backup files were found in repository path [{}]",
                     backup.getUuid(), vm.getInstanceName(), backup.getExternalId());
             backupDao.remove(backup.getId());
         }
@@ -1268,7 +1265,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         return value == null ? defaultValue : value;
     }
 
-    private boolean hasNasQcow2BackupFiles(VirtualMachine vm, Backup backup) {
+    private boolean hasNasBackupFiles(VirtualMachine vm, Backup backup) {
         final BackupRepository backupRepository = getBackupRepository(backup);
         final Host host = getVMHypervisorHost(vm);
         final HostVO hostVO = hostDao.findById(host.getId());
@@ -1279,9 +1276,25 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
         List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
+        String backupEngine = getBackupDetail(backup, DETAIL_BACKUP_ENGINE, BACKUP_ENGINE_QCOW2);
         boolean incrementalBackup = BACKUP_TYPE_INCREMENTAL.equalsIgnoreCase(backup.getType());
-        List<String> expectedBackupFiles = buildBackupFileNames(vmVolumes, BACKUP_ENGINE_QCOW2, incrementalBackup);
+        List<String> expectedBackupFiles = getExpectedBackupFiles(vmVolumes, backupEngine, incrementalBackup);
         return checkNasBackupFilesOnHost(hostVO, backupRepository, backup.getExternalId(), expectedBackupFiles);
+    }
+
+    private List<String> getExpectedBackupFiles(List<VolumeVO> vmVolumes, String backupEngine, boolean incrementalBackup) {
+        List<String> expectedBackupFiles = new ArrayList<>(buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup));
+        if (BACKUP_ENGINE_QCOW2.equalsIgnoreCase(backupEngine)) {
+            for (VolumeVO volume : vmVolumes) {
+                Backup.VolumeInfo legacyVolumeInfo = new Backup.VolumeInfo(volume.getUuid(), volume.getPath(), volume.getVolumeType(), volume.getSize(),
+                        volume.getDeviceId(), null, volume.getMinIops(), volume.getMaxIops());
+                expectedBackupFiles.add(getLegacyBackupFileName(legacyVolumeInfo));
+            }
+        }
+        return expectedBackupFiles.stream()
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     private boolean checkNasBackupFilesOnHost(HostVO host, BackupRepository backupRepository, String backupPath, List<String> backupFiles) {

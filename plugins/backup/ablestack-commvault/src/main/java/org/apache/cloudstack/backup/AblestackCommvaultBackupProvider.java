@@ -773,13 +773,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private List<String> buildBackupFileNames(List<VolumeVO> volumes, String backupEngine, boolean incrementalBackup) {
         List<String> backupFiles = new ArrayList<>();
         for (VolumeVO volume : volumes) {
-            String suffix;
+            String diskPrefix = Volume.Type.ROOT.equals(volume.getVolumeType()) ? "root" : "datadisk";
             if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
-                suffix = incrementalBackup ? ".rbdiff" : ".raw";
+                String suffix = incrementalBackup ? ".rbdiff" : ".raw";
+                backupFiles.add(String.format("%s.%s%s", diskPrefix, volume.getUuid(), suffix));
             } else {
-                suffix = ".qcow2";
+                backupFiles.add(String.format("%s.%s.qcow2", diskPrefix, volume.getUuid()));
             }
-            backupFiles.add(String.format("volume-%s%s", volume.getUuid(), suffix));
         }
         return backupFiles;
     }
