@@ -6166,9 +6166,21 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
     }
 
     private int runPackageQuery(final String packageManager, final String packageName, final long timeout) {
+        final String packageManagerPath = Script.getExecutableAbsolutePath(packageManager);
+        if (packageManagerPath == null) {
+            logger.debug(String.format("Package manager [%s] not found while checking package [%s], trying fallback if available.", packageManager, packageName));
+            return -1;
+        }
+
+        final String grepPath = Script.getExecutableAbsolutePath("grep");
+        if (grepPath == null) {
+            logger.debug(String.format("Executable [grep] not found while checking package [%s].", packageName));
+            return -1;
+        }
+
         List<String[]> commands = new ArrayList<>();
-        commands.add(new String[]{Script.getExecutableAbsolutePath(packageManager), "-qa"});
-        commands.add(new String[]{Script.getExecutableAbsolutePath("grep"), "-i", packageName});
+        commands.add(new String[]{packageManagerPath, "-qa"});
+        commands.add(new String[]{grepPath, "-i", packageName});
         return Script.executePipedCommands(commands, timeout).first();
     }
 
