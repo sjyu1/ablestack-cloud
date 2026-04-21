@@ -1726,7 +1726,7 @@
 ### Record 068 - fix PowerFlex 4.x VM snapshot take/revert handling
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `fa0bb99c76`
 - Source Apache commits:
   - `131ea9f7ac` Fix PowerFlex 4.x issues with take & revert instance snapshots (#12880)
 - Summary:
@@ -1739,6 +1739,29 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - Staged diff touches `ScaleIOVMSnapshotStrategy` and `ScaleIOGatewayClientImpl` only
   - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied on ablestack-europa as 3962871697 after history-doc auto-merge`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 069 - allow creating a volume directly on a selected storage pool
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `df7ff97271` Create volume on a specified storage pool (#12966)
+- Summary:
+  - Extend `CreateVolumeCmd` and `VolumeApiServiceImpl` so callers can optionally target a specific storage pool when creating a volume
+  - Surface the new pool-selection control in the UI create-volume flow and add the matching user-facing text
+- Functional impact:
+  - Lets operators place a newly created volume on an explicitly chosen storage pool instead of relying entirely on normal planner selection
+  - Improves operational control for storage troubleshooting, migration prep, or targeted placement workflows from both API and UI
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Staged diff spans the user API command, backend create-volume service path, and `CreateVolume.vue` plus locale text
+  - Maven/UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
