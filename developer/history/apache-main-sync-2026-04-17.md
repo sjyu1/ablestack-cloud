@@ -717,6 +717,29 @@
 - Resolution notes:
   - Cherry-pick applied on europa without manual edits
 
+### Record 027 - guard create-network global action when zone context is absent
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `db83622956` ui: fix create network from global create menu
+- Summary:
+  - Use optional chaining when reading `resource.zoneid` in `CreateNetwork.vue`
+  - Keep the zone filter only for deploy-VM and backup entry points, but avoid dereferencing an absent `resource`
+- Functional impact:
+  - Prevents the global create-network action from throwing when it is opened without a preselected zone context
+  - Keeps zone-scoped behavior unchanged for deploy and backup entry paths while making the generic menu entry safer
+- Validation:
+  - Applied cleanly on `main`
+  - The change is limited to `ui/src/views/network/CreateNetwork.vue`
+  - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - Cherry-pick applied on europa without manual edits
+
 ### Observed Already Satisfied
 
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
