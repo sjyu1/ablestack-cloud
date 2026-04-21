@@ -2475,6 +2475,29 @@
 - Resolution notes:
   - Kept the local import set intact and added Apache's reservation-related imports and logic without changing the local VLAN creation flow structure
 
+### Record 101 - record the already-satisfied global create-network menu guard source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `db83622956` `ui: fix create network from global create menu (#12677)`
+- Summary:
+  - Record that the current branch already guards the global create-network entry path so missing zone/resource context does not break the UI flow
+  - Confirm that the earlier UI fix on this branch already covers the same null-safe access pattern intended by the Apache source commit
+- Functional impact:
+  - Avoids duplicating a source commit whose functional outcome is already present in the current UI behavior
+  - Keeps the sync history explicit about the upstream source commit that was absorbed by the earlier local UI fix
+- Validation:
+  - Reverse-applying the Apache patch on the current branch showed the protective logic is already present in `CreateNetwork.vue`
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `273699cf56` `kvm: fix wrong CheckVirtualMachineAnswer when vm does not exist (#12928)`
