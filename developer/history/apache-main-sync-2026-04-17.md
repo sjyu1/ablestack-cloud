@@ -1938,7 +1938,7 @@
 ### Record 077 - refresh codespell configuration and hook versions
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `cec3def757`
 - Source Apache commits:
   - `5d61ba3538` [CI] Create `.codespellrc`; upgrade codespell hook; fix typos (#12824)
 - Summary:
@@ -1951,6 +1951,27 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff spans `.codespellrc`, `.pre-commit-config.yaml`, and a handful of typo-only source/doc updates
   - Pre-commit execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 078 - remove the broken ViserJS attribution link from the UI README
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `9cc6c09b9e` Remove broken ViserJS attribution link from UI README (#12724)
+- Summary:
+  - Remove the stale/broken ViserJS attribution link from `ui/README.md`
+- Functional impact:
+  - Improves repository documentation accuracy without changing product behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `ui/README.md` only
+  - Documentation link verification has not been run separately in this environment
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
