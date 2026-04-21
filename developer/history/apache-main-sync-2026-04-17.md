@@ -2639,7 +2639,7 @@
 ### Record 108 - record the already-satisfied SharedMountPoint import volume-check source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `f105fcf043`
 - Source Apache commits:
   - `b0b3dc91f5` `fix: support SharedMountPoint volume checks for importVm (#12946)`
 - Summary:
@@ -2650,6 +2650,29 @@
   - Keeps the upstream source commit explicitly tracked even though the local implementation now supports a superset of storage pool types
 - Validation:
   - Inspection of `LibvirtCheckVolumeCommandWrapper.STORAGE_POOL_TYPES_SUPPORTED` confirmed `SharedMountPoint` is already included
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 109 - record the already-satisfied SharedMountPoint import/unmanage source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b1bc5380a2` `fix: support SharedMountPoint for KVM volume import and unmanage (#12956)`
+- Summary:
+  - Record that the current branch already supports `SharedMountPoint` in the KVM volume import and unmanage path
+  - Confirm that the local implementation already includes the Apache source change and no extra delta remains to apply
+- Functional impact:
+  - Avoids reapplying a KVM volume import/unmanage fix whose behavior is already present in the branch
+  - Preserves source-level traceability for the upstream SharedMountPoint enhancement
+- Validation:
+  - Reverse-applying the Apache patch on the current branch succeeded, showing the SharedMountPoint import/unmanage support is already present
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
