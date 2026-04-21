@@ -1129,11 +1129,38 @@
 - Resolution notes:
   - `N/A`
 
+### Record 043 - compare NSX NAT delete service by name
+
+- Local branch: `main`
+- Local commit: `b078081e41`
+- Source Apache commits:
+  - `30dd234b00` fix: NsxResource.executeRequest DeleteNsxNatRuleCommand comparison bug (#12833)
+- Summary:
+  - Add `getNetworkServiceName()` to `DeleteNsxNatRuleCommand`
+  - Compare NSX NAT delete service selection by service name instead of object identity
+  - Add a focused test that verifies the Port Forwarding delete path reaches the expected NSX API call
+- Functional impact:
+  - Prevents NSX NAT rule deletion from missing the correct branch when the command carries an equivalent service object rather than the same enum instance
+  - Improves reliability of Port Forwarding and Static NAT rule cleanup in NSX-backed networks
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to the NAT delete command, `NsxResource`, and one focused `NsxResourceTest`
+  - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Applied cleanly on ablestack-europa; local commit pending creation`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
 ### Observed Already Satisfied
 
 - `8608b4edd0` `Fix snapshot copy resource limit concurrency`
   - Current branch state already wraps snapshot-chain copy reservation in `CheckedReservation` and routes per-snapshot copy through `copySnapshotToZone(..., shouldCheckResourceLimits)`
   - `SnapshotManagerImplTest` no longer stubs the removed direct `checkResourceLimit(...)` call in the covered copy flow
+  - Treat as already satisfied instead of creating a duplicate local commit
+- `e10c066cc1` `Fix NPE during VM setup for pvlan (#12781)`
+  - Current branch state already guards `setupVmForPvlan(...)` against null NICs, null broadcast URIs, non-PVLAN schemes, and missing hosts
   - Treat as already satisfied instead of creating a duplicate local commit
 - `2359061f66` `api: remove required flag of gatewayid in CreateStaticRouteCmd (#12786)`
   - Current branch state already has `gatewayId` without `required = true`
