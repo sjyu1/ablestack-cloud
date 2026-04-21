@@ -1961,7 +1961,7 @@
 ### Record 078 - remove the broken ViserJS attribution link from the UI README
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `c424b9ad2c`
 - Source Apache commits:
   - `9cc6c09b9e` Remove broken ViserJS attribution link from UI README (#12724)
 - Summary:
@@ -1972,6 +1972,27 @@
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff touches `ui/README.md` only
   - Documentation link verification has not been run separately in this environment
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 079 - add code owners for the NSX network elements plugin
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `b744824f65` Add code owners for nsx network elements plugin (#12838)
+- Summary:
+  - Add the NSX network elements plugin paths to `.github/CODEOWNERS`
+- Functional impact:
+  - Improves repository ownership and review routing metadata without changing product behavior
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - The staged diff touches `.github/CODEOWNERS` only
+  - CODEOWNERS validation has not been run separately in this environment
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
