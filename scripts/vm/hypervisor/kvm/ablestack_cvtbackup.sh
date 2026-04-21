@@ -87,6 +87,10 @@ sanity_checks() {
 cleanup() {
   local status=0
   rm -rf "$dest" || { echo "Failed to delete $dest"; status=1; }
+  if [[ -e "$dest" ]]; then
+    echo "Backup directory still exists after cleanup: $dest"
+    status=1
+  fi
   if [[ $status -ne 0 ]]; then
     echo "Backup cleanup failed"
     exit $EXIT_CLEANUP_FAILED

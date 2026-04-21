@@ -351,10 +351,14 @@ delete_backup() {
     delete_rbd_snapshot_if_unreferenced "$DISK_PATHS" "$CHECKPOINT_NAME"
   fi
 
-  rm -frv $dest
+  rm -frv "$dest" || { echo "Failed to delete $dest"; exit 1; }
+  if [[ -e "$dest" ]]; then
+    echo "Backup directory still exists after delete: $dest"
+    exit 1
+  fi
   sync
-  umount $mount_point
-  rmdir $mount_point
+  umount "$mount_point"
+  rmdir "$mount_point"
 }
 
 get_backup_stats() {
@@ -385,6 +389,10 @@ cleanup() {
   local status=0
 
   rm -rf "$dest" || { echo "Failed to delete $dest"; status=1; }
+  if [[ -e "$dest" ]]; then
+    echo "Backup directory still exists after cleanup: $dest"
+    status=1
+  fi
   umount "$mount_point" || { echo "Failed to unmount $mount_point"; status=1; }
   rmdir "$mount_point" || { echo "Failed to remove mount point $mount_point"; status=1; }
 
