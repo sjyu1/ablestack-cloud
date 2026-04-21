@@ -1384,6 +1384,29 @@
   - Cached diff is limited to the upgrade path resolver, one schema SQL line, and one targeted regression test
   - Maven-based Java test execution has not been run yet in this environment by request
 - Europa cherry-pick status:
+  - `Applied on ablestack-europa as 8e73f1f762 after history-doc conflict resolution`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 054 - restore management server id from cookies after SAML login
+
+- Local branch: `main`
+- Local commit: `affd5335ca`
+- Source Apache commits:
+  - `d6c39772b2` Set management server id from cookies after saml login (#12858)
+- Summary:
+  - Add the `managementserverid` cookie to the SAML login response when the login payload carries a management server id
+  - Restore that cookie into the UI store during the SAML re-entry path in `permission.js`
+- Functional impact:
+  - Prevents post-SAML UI/API flows from losing the management server affinity that normal login paths already preserve
+  - Reduces the chance of follow-up authenticated requests missing the server-id hint immediately after SAML authentication
+- Validation:
+  - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
+  - Cached diff is limited to `SAMLUtils.java` and `ui/src/permission.js`
+  - Maven/UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
   - `Applied on ablestack-europa after history-doc conflict resolution; local commit pending creation`
 - Conflict notes:
   - `None observed on main`
