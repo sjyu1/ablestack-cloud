@@ -2823,7 +2823,7 @@
 ### Record 116 - record the already-satisfied NSX load-balancer patch-suppression source change
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `97c80615e7`
 - Source Apache commits:
   - `05c59630e0` `fix: LB Creation avoid 404 API errors due to non-needed patches (#12835)`
 - Summary:
@@ -2836,6 +2836,29 @@
   - Inspection of `NsxApiClient` and `NsxApiClientTest` confirmed the current branch already contains the skip-patch logic and its associated tests
   - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven-based Java test execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 117 - record the already-satisfied HAProxy idle-timeout source change
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `6e810989b6` `HAProxy Configuration: network.loadbalancer.haproxy.idle.timeout (#12586)`
+- Summary:
+  - Record that the current branch already supports `network.loadbalancer.haproxy.idle.timeout` in the HAProxy configuration flow
+  - Confirm that the local implementation already carries the idle-timeout handling and its related health-check/config wiring
+- Functional impact:
+  - Avoids duplicating an HAProxy source change whose behavior is already present in the current branch
+  - Preserves explicit upstream traceability for the idle-timeout feature source commit
+- Validation:
+  - Inspection of `HAProxyConfigurator` confirmed the current branch already processes the idle-timeout value and retains the related handling around HAProxy configuration
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
+  - SystemVM/runtime verification has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
 - Conflict notes:
