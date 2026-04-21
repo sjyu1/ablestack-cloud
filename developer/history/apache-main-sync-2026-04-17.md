@@ -2407,7 +2407,7 @@
 ### Record 098 - add Headlamp as the preferred Kubernetes dashboard while keeping legacy access guidance
 
 - Local branch: `main`
-- Local commit: `Pending commit creation`
+- Local commit: `10056a6683`
 - Source Apache commits:
   - `18075ae4a9` `Add support for Headlamp dashboard for kubernetes; deprecate legacy kubernetes dashboard (#12776)`
 - Summary:
@@ -2420,6 +2420,29 @@
 - Validation:
   - Apache cherry-pick applied cleanly on `main` with no manual conflict resolution
   - The staged diff is limited to the Kubernetes service util, bootstrap YAML, ISO helper script, and dashboard help UI
+  - Maven/UI build execution has not been run yet in this environment by request
+- Europa cherry-pick status:
+  - `Pending`
+- Conflict notes:
+  - `None observed on main`
+- Resolution notes:
+  - `N/A`
+
+### Record 099 - record the already-satisfied create-volume-on-storage-pool flow
+
+- Local branch: `main`
+- Local commit: `Pending commit creation`
+- Source Apache commits:
+  - `df7ff97271` `Create volume on a specified storage pool (#12966)`
+- Summary:
+  - Record that the current branch already exposes the `storageid` API parameter, server-side `createVolumeOnStoragePool(...)` path, and the admin UI flow for creating a volume on a selected primary storage pool
+  - Confirm that the localized UI strings and create-on-storage toggle are already present in this branch
+- Functional impact:
+  - Avoids duplicating an already-integrated volume-placement enhancement while still tracking the upstream source commit explicitly
+  - Confirms that admins can already place newly created volumes on a chosen primary storage pool in this branch
+- Validation:
+  - Attempting the Apache cherry-pick on `main` produced no remaining staged code delta because `CreateVolumeCmd`, `VolumeApiServiceImpl`, `CreateVolume.vue`, and the related UI labels already contain the upstream behavior
+  - This local commit therefore records the satisfied upstream state in the history document instead of duplicating the implementation
   - Maven/UI build execution has not been run yet in this environment by request
 - Europa cherry-pick status:
   - `Pending`
