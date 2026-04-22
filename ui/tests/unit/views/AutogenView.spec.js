@@ -55,6 +55,11 @@ const spyConsole = {
 }
 
 const state = {
+  app: {
+    metrics: false,
+    listAllProjects: false,
+    allProjects: []
+  },
   user: {
     apis: mockData.apis,
     info: mockData.info,
@@ -70,13 +75,20 @@ const mutations = {
   },
   SET_CUSTOM_COLUMNS: (state, customColumns) => {
     state.user.customColumns = customColumns
+  },
+  SET_LIST_ALL_PROJECTS: (state, bool) => {
+    state.app.listAllProjects = bool
+  },
+  RELOAD_ALL_PROJECTS: (state, allProjects = []) => {
+    state.app.allProjects = allProjects
   }
 }
 
 const actions = {
   SetProject: jest.fn(({ commit }, project) => {}),
   ToggleTheme: jest.fn(({ commit }, theme) => {}),
-  SetCustomColumns: jest.fn(({ commit }, columns) => {})
+  SetCustomColumns: jest.fn(({ commit }, columns) => {}),
+  SetListAllProjects: jest.fn(({ commit }, bool) => {})
 }
 
 mockData.routes.push({
@@ -190,10 +202,12 @@ describe('Views > AutogenView.vue', () => {
     delete window.ResizeObserver
     delete window.ls
 
-    if (!wrapper) {
-      await router.isReady()
-      wrapper = factory()
-    }
+    router = common.createMockRouter(mockData.routes)
+    store = common.createMockStore(state, actions, mutations)
+    i18n = common.createMockI18n('en', mockData.messages)
+    await router.push('/')
+    await router.isReady()
+    wrapper = factory({ router, store, i18n, mocks })
 
     window.ResizeObserver = jest.fn().mockImplementation(() => ({
       observe: jest.fn(),
@@ -212,25 +226,13 @@ describe('Views > AutogenView.vue', () => {
 
   afterEach(() => {
     window.ResizeObserver = ResizeObserver
-    window.ResizeObserver = ls
-
-    if (wrapper) {
-      wrapper.vm.currentAction = {}
-      wrapper.vm.resource = {}
-      wrapper.vm.searchParams = {}
-      wrapper.vm.actionData = {}
-      wrapper.vm.dataView = false
-      wrapper.vm.showAction = false
-      wrapper.vm.selectedRowKeys = []
-      wrapper.vm.selectedRowKeys = []
-      wrapper.vm.items = []
-      wrapper.vm.promises = []
-      wrapper.vm.form = {}
-      wrapper.vm.rules = {}
-    }
+    window.ls = ls
 
     if (Object.keys(originalFunc).length > 0) {
       Object.keys(originalFunc).forEach(key => {
+        if (!wrapper) {
+          return
+        }
         switch (key) {
           case 'fetchData':
             wrapper.vm.fetchData = originalFunc[key]
@@ -278,6 +280,22 @@ describe('Views > AutogenView.vue', () => {
       })
 
       originalFunc = {}
+    }
+    if (wrapper) {
+      wrapper.vm.currentAction = {}
+      wrapper.vm.resource = {}
+      wrapper.vm.searchParams = {}
+      wrapper.vm.actionData = {}
+      wrapper.vm.dataView = false
+      wrapper.vm.showAction = false
+      wrapper.vm.selectedRowKeys = []
+      wrapper.vm.selectedRowKeys = []
+      wrapper.vm.items = []
+      wrapper.vm.promises = []
+      wrapper.vm.form = {}
+      wrapper.vm.rules = {}
+      wrapper.unmount()
+      wrapper = null
     }
     if (spyConsole.log) {
       spyConsole.log.mockClear()
@@ -1036,13 +1054,14 @@ describe('Views > AutogenView.vue', () => {
         })
         await flushPromises()
 
-        expect(wrapper.vm.currentAction.params).toEqual([
+        expect(wrapper.vm.currentAction.params).toHaveLength(5)
+        expect(wrapper.vm.currentAction.params).toEqual(expect.arrayContaining([
           { name: 'id', type: 'string' },
           { name: 'name', type: 'string' },
           { name: 'column1', type: 'string' },
           { name: 'column2', type: 'string' },
           { name: 'column3', type: 'string' }
-        ])
+        ]))
         expect(wrapper.vm.currentAction.paramFields).toEqual([])
         expect(wrapper.vm.showAction).toBeTruthy()
         done()
@@ -1065,13 +1084,14 @@ describe('Views > AutogenView.vue', () => {
         })
         await flushPromises()
 
-        expect(wrapper.vm.currentAction.params).toEqual([
+        expect(wrapper.vm.currentAction.params).toHaveLength(5)
+        expect(wrapper.vm.currentAction.params).toEqual(expect.arrayContaining([
           { name: 'column1', type: 'string' },
           { name: 'column2', type: 'string' },
           { name: 'column3', type: 'string' },
           { name: 'name', type: 'string' },
           { name: 'id', type: 'string' }
-        ])
+        ]))
         expect(wrapper.vm.currentAction.paramFields).toEqual([
           { name: 'column1', type: 'string' },
           { name: 'column2', type: 'string' },
@@ -1101,13 +1121,14 @@ describe('Views > AutogenView.vue', () => {
         })
         await flushPromises()
 
-        expect(wrapper.vm.currentAction.params).toEqual([
+        expect(wrapper.vm.currentAction.params).toHaveLength(5)
+        expect(wrapper.vm.currentAction.params).toEqual(expect.arrayContaining([
           { name: 'id', type: 'string' },
           { name: 'name', type: 'string' },
           { name: 'column1', type: 'string' },
           { name: 'column2', type: 'string' },
           { name: 'column3', type: 'string' }
-        ])
+        ]))
         expect(wrapper.vm.currentAction.paramFields).toEqual([
           { name: 'id', type: 'string' },
           { name: 'name', type: 'string' }

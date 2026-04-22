@@ -52,10 +52,6 @@ import static com.cloud.network.Network.Service.SourceNat;
 import static com.cloud.network.Network.Service.StaticNat;
 import static com.cloud.network.Network.Service.UserData;
 
-import static org.apache.cloudstack.api.command.utils.OfferingUtils.isNsxWithoutLb;
-import static org.apache.cloudstack.api.command.utils.OfferingUtils.isNetrisNatted;
-import static org.apache.cloudstack.api.command.utils.OfferingUtils.isNetrisRouted;
-
 public abstract class NetworkOfferingBaseCmd extends BaseCmd {
 
     public abstract String getGuestIpType();
@@ -263,6 +259,18 @@ public abstract class NetworkOfferingBaseCmd extends BaseCmd {
 
     public String getProvider() {
         return provider;
+    }
+
+    private static boolean isNsxWithoutLb(String provider, boolean nsxSupportsLbService) {
+        return "NSX".equalsIgnoreCase(provider) && !nsxSupportsLbService;
+    }
+
+    private static boolean isNetrisNatted(String provider, String networkMode) {
+        return "Netris".equalsIgnoreCase(provider) && NetworkOffering.NetworkMode.NATTED.name().equalsIgnoreCase(networkMode);
+    }
+
+    private static boolean isNetrisRouted(String provider, String networkMode) {
+        return "Netris".equalsIgnoreCase(provider) && NetworkOffering.NetworkMode.ROUTED.name().equalsIgnoreCase(networkMode);
     }
 
     public List<String> getSupportedServices() {
