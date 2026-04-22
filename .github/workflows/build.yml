@@ -30,7 +30,9 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      MAVEN_OPTS: -Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true
+      MAVEN_OPTS: >-
+        -Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true
+        --add-opens=java.base/java.lang=ALL-UNNAMED
     steps:
       - uses: actions/checkout@v6
 

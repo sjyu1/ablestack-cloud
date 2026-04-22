@@ -90,7 +90,7 @@ fi
 
 export JAVA_HOME="$JAVA17_HOME"
 export PATH="/opt/node-v${NODE_VERSION}-linux-x64/bin:$JAVA_HOME/bin:$PATH"
-export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true"
+export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true --add-opens=java.base/java.lang=ALL-UNNAMED"
 
 git config --global --add safe.directory "$ROOT_DIR"
 
