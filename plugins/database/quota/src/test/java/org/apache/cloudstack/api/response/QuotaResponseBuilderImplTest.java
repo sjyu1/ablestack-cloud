@@ -16,12 +16,15 @@
 // under the License.
 package org.apache.cloudstack.api.response;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,14 +34,21 @@ import java.util.function.Consumer;
 import com.cloud.domain.Domain;
 import com.cloud.domain.DomainVO;
 import com.cloud.domain.dao.DomainDao;
+import com.cloud.exception.PermissionDeniedException;
+import com.cloud.user.AccountManager;
+import com.cloud.user.UserVO;
 import com.cloud.utils.Pair;
+import com.cloud.utils.exception.CloudRuntimeException;
 import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.QuotaConfigureEmailCmd;
+import org.apache.cloudstack.api.command.QuotaCreditsListCmd;
 import org.apache.cloudstack.api.command.QuotaEmailTemplateListCmd;
 import org.apache.cloudstack.api.command.QuotaEmailTemplateUpdateCmd;
 import org.apache.cloudstack.api.command.QuotaSummaryCmd;
 import org.apache.cloudstack.api.command.QuotaValidateActivationRuleCmd;
+import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.discovery.ApiDiscoveryService;
+import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.jsinterpreter.JsInterpreterHelper;
 import org.apache.cloudstack.quota.QuotaService;
 import org.apache.cloudstack.quota.QuotaStatement;
@@ -65,6 +75,7 @@ import org.apache.cloudstack.utils.jsinterpreter.JsInterpreter;
 import org.apache.commons.lang3.time.DateUtils;
 
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InjectMocks;
@@ -72,6 +83,7 @@ import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
+import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
 
 import com.cloud.exception.InvalidParameterValueException;
@@ -135,7 +147,8 @@ public class QuotaResponseBuilderImplTest extends TestCase {
     QuotaEmailConfigurationDao quotaEmailConfigurationDaoMock;
 
     @InjectMocks
-    QuotaResponseBuilderImpl quotaResponseBuilderSpy = Mockito.spy(QuotaResponseBuilderImpl.class);
+    @Spy
+    QuotaResponseBuilderImpl quotaResponseBuilderSpy;
 
     Date date = new Date();
 

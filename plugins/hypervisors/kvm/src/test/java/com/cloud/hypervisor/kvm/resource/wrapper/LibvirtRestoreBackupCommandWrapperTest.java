@@ -73,6 +73,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         when(command.getMountTimeout()).thenReturn(30);
 
@@ -116,6 +117,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
         when(command.getBackupVolumesUUIDs()).thenReturn(Arrays.asList("volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getMountTimeout()).thenReturn(30);
 
         try (MockedStatic<Files> filesMock = mockStatic(Files.class)) {
@@ -154,6 +156,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getMountTimeout()).thenReturn(30);
 
         try (MockedStatic<Files> filesMock = mockStatic(Files.class)) {
@@ -194,6 +197,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         when(command.getMountTimeout()).thenReturn(30);
 
@@ -237,6 +241,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         lenient().when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         lenient().when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         lenient().when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         lenient().when(command.getMountTimeout()).thenReturn(30);
 
@@ -275,6 +280,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         when(command.getMountTimeout()).thenReturn(30);
 
@@ -323,6 +329,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         when(command.getMountTimeout()).thenReturn(30);
 
@@ -373,6 +380,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         when(command.getMountTimeout()).thenReturn(30);
 
@@ -431,6 +439,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         when(command.getMountTimeout()).thenReturn(30);
 
@@ -493,6 +502,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
         lenient().when(primaryDataStore.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(command.getRestoreVolumePools()).thenReturn(Arrays.asList(primaryDataStore));
         lenient().when(command.getRestoreVolumePaths()).thenReturn(Arrays.asList("/var/lib/libvirt/images/volume-123"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123"));
         lenient().when(command.getVmState()).thenReturn(VirtualMachine.State.Running);
         lenient().when(command.getMountTimeout()).thenReturn(30);
 
@@ -532,6 +542,7 @@ public class LibvirtRestoreBackupCommandWrapperTest {
                 "/var/lib/libvirt/images/volume-456"
         ));
         when(command.getBackupVolumesUUIDs()).thenReturn(Arrays.asList("volume-123", "volume-456"));
+        when(command.getBackupFiles()).thenReturn(Arrays.asList("volume-123", "volume-456"));
         when(command.getMountTimeout()).thenReturn(30);
 
         try (MockedStatic<Files> filesMock = mockStatic(Files.class)) {
