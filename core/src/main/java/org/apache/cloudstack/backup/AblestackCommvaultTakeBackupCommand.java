@@ -22,7 +22,9 @@ package org.apache.cloudstack.backup;
 import com.cloud.agent.api.Command;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class AblestackCommvaultTakeBackupCommand extends Command {
     private String vmName;
@@ -36,6 +38,7 @@ public class AblestackCommvaultTakeBackupCommand extends Command {
     private String parentCheckpointName;
     private String parentCheckpointPath;
     private String parentCheckpointXml;
+    private Map<String, String> parentCheckpointXmlChain;
     private List<String> backupFiles;
 
     public AblestackCommvaultTakeBackupCommand(String vmName, String backupPath) {
@@ -130,6 +133,14 @@ public class AblestackCommvaultTakeBackupCommand extends Command {
 
     public void setParentCheckpointXml(String parentCheckpointXml) {
         this.parentCheckpointXml = parentCheckpointXml;
+    }
+
+    public Map<String, String> getParentCheckpointXmlChain() {
+        return parentCheckpointXmlChain;
+    }
+
+    public void setParentCheckpointXmlChain(Map<String, String> parentCheckpointXmlChain) {
+        this.parentCheckpointXmlChain = parentCheckpointXmlChain != null ? new LinkedHashMap<>(parentCheckpointXmlChain) : null;
     }
 
     public List<String> getBackupFiles() {

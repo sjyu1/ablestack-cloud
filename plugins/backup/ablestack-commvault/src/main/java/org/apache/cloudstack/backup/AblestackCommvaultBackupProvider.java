@@ -92,6 +92,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Date;
 import java.util.Objects;
 import java.util.UUID;
@@ -636,6 +637,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             command.setParentCheckpointName(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
             command.setParentCheckpointPath(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
             command.setParentCheckpointXml(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_XML));
+            command.setParentCheckpointXmlChain(getParentCheckpointXmlChain(latestBackup));
         }
 
         try {
@@ -1019,6 +1021,29 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (backup instanceof BackupVO && backup.getDetails() == null) {
             backupDao.loadDetails((BackupVO) backup);
         }
+    }
+
+    private Map<String, String> getParentCheckpointXmlChain(Backup latestBackup) {
+        Map<String, String> checkpointXmlChain = new LinkedHashMap<>();
+        Backup current = latestBackup;
+        Set<String> visitedBackupUuids = new HashSet<>();
+        while (current != null && StringUtils.isNotBlank(current.getUuid()) && visitedBackupUuids.add(current.getUuid())) {
+            loadBackupDetailsIfNeeded(current);
+            String checkpointPath = getBackupDetail(current, DETAIL_CHECKPOINT_PATH);
+            String checkpointXml = getBackupDetail(current, DETAIL_CHECKPOINT_XML);
+            if (StringUtils.isNotBlank(checkpointPath) && StringUtils.isNotBlank(checkpointXml)) {
+                checkpointXmlChain.putIfAbsent(checkpointPath, checkpointXml);
+            } else {
+                LOG.debug("Skipping checkpoint XML chain entry for backup [{}] due to missing path/xml details", current.getUuid());
+            }
+
+            String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (StringUtils.isBlank(parentBackupUuid)) {
+                break;
+            }
+            current = backupDao.findByUuid(parentBackupUuid);
+        }
+        return checkpointXmlChain;
     }
 
     private String getRestoreBackupRootPath(Backup backup) {

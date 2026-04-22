@@ -219,24 +219,35 @@ class LibvirtAblestackCommvaultBackupHelper {
     }
 
     private void ensureParentCheckpointMaterialized(AblestackCommvaultTakeBackupCommand command) {
-        if (!isIncremental(command) || StringUtils.isBlank(command.getParentCheckpointPath())
-                || StringUtils.isBlank(command.getParentCheckpointXml())) {
-            return;
-        }
-        Path checkpointPath = Path.of(command.getParentCheckpointPath());
-        if (Files.exists(checkpointPath)) {
+        if (!isIncremental(command)) {
             return;
         }
         try {
-            Path parentDir = checkpointPath.getParent();
-            if (parentDir != null) {
-                Files.createDirectories(parentDir);
+            if (command.getParentCheckpointXmlChain() != null) {
+                for (var entry : command.getParentCheckpointXmlChain().entrySet()) {
+                    materializeCheckpointXml(entry.getKey(), entry.getValue());
+                }
             }
-            Files.writeString(checkpointPath, command.getParentCheckpointXml(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            LOGGER.debug("Materialized parent checkpoint XML at [{}] for VM [{}]", checkpointPath, command.getVmName());
+            materializeCheckpointXml(command.getParentCheckpointPath(), command.getParentCheckpointXml());
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to materialize parent checkpoint XML at " + checkpointPath, e);
+            throw new IllegalStateException("Failed to materialize parent checkpoint XML chain for VM " + command.getVmName(), e);
         }
+    }
+
+    private void materializeCheckpointXml(String checkpointPathValue, String checkpointXml) throws IOException {
+        if (StringUtils.isBlank(checkpointPathValue) || StringUtils.isBlank(checkpointXml)) {
+            return;
+        }
+        Path checkpointPath = Path.of(checkpointPathValue);
+        if (Files.exists(checkpointPath)) {
+            return;
+        }
+        Path parentDir = checkpointPath.getParent();
+        if (parentDir != null) {
+            Files.createDirectories(parentDir);
+        }
+        Files.writeString(checkpointPath, checkpointXml, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        LOGGER.debug("Materialized parent checkpoint XML at [{}]", checkpointPath);
     }
 
     private String buildDummyVmXml(String vmName, List<String> diskPaths) {
