@@ -446,6 +446,12 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                         vm.getInstanceName(), currentHostName, current.getUuid(), stageHost);
                 return false;
             }
+            final String checkpointXml = getBackupDetail(current, DETAIL_CHECKPOINT_XML);
+            if (StringUtils.isBlank(checkpointXml)) {
+                LOG.debug("Commvault QCOW2 incremental backup for VM [{}] cannot continue because backup [{}] is missing [{}] detail",
+                        vm.getInstanceName(), current.getUuid(), DETAIL_CHECKPOINT_XML);
+                return false;
+            }
             final String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
             if (StringUtils.isBlank(parentBackupUuid)) {
                 break;
