@@ -26,6 +26,11 @@ DISTRO=${DISTRO:-rocky9}
 RELEASE=${RELEASE:-}
 TEMPLATES=${TEMPLATES:-}
 NODE_VERSION=${NODE_VERSION:-14.21.3}
+BRAND=${BRAND:-}
+PACKAGE_VERSION=${PACKAGE_VERSION:-}
+TIMESTAMP_VALUE=${TIMESTAMP_VALUE:-}
+BUILD_SRPM=${BUILD_SRPM:-false}
+USE_TIMESTAMP=${USE_TIMESTAMP:-false}
 
 if ! command -v dnf >/dev/null 2>&1; then
     echo "This helper must run inside a Rocky/RHEL-compatible environment with dnf."
@@ -45,6 +50,11 @@ echo "SIMULATOR=$SIMULATOR"
 echo "RELEASE=${RELEASE:-<default>}"
 echo "TEMPLATES=${TEMPLATES:-<none>}"
 echo "NODE_VERSION=$NODE_VERSION"
+echo "BRAND=${BRAND:-<default>}"
+echo "PACKAGE_VERSION=${PACKAGE_VERSION:-<maven>}"
+echo "TIMESTAMP_VALUE=${TIMESTAMP_VALUE:-<generated>}"
+echo "BUILD_SRPM=$BUILD_SRPM"
+echo "USE_TIMESTAMP=$USE_TIMESTAMP"
 
 DNF=(dnf --releasever=9.7 -y)
 
@@ -108,6 +118,11 @@ mkdir -p "$ROOT_DIR/dist/rocky97-build"
     echo "distro=$DISTRO"
     echo "release=${RELEASE:-<default>}"
     echo "templates=${TEMPLATES:-<none>}"
+    echo "brand=${BRAND:-<default>}"
+    echo "package_version=${PACKAGE_VERSION:-<maven>}"
+    echo "timestamp_value=${TIMESTAMP_VALUE:-<generated>}"
+    echo "build_srpm=$BUILD_SRPM"
+    echo "use_timestamp=$USE_TIMESTAMP"
 } >"$ROOT_DIR/dist/rocky97-build/environment.txt"
 
 build_args=(
@@ -123,8 +138,28 @@ if [ -n "$RELEASE" ]; then
     build_args+=(--release "$RELEASE")
 fi
 
+if [ -n "$BRAND" ]; then
+    build_args+=(--brand "$BRAND")
+fi
+
+if [ -n "$PACKAGE_VERSION" ]; then
+    build_args+=(--package-version "$PACKAGE_VERSION")
+fi
+
+if [ -n "$TIMESTAMP_VALUE" ]; then
+    build_args+=(--timestamp-value "$TIMESTAMP_VALUE")
+fi
+
 if [ -n "$TEMPLATES" ]; then
     build_args+=(--templates "$TEMPLATES")
+fi
+
+if [ "$USE_TIMESTAMP" == "true" ] || [ -n "$TIMESTAMP_VALUE" ]; then
+    build_args+=(--use-timestamp)
+fi
+
+if [ "$BUILD_SRPM" == "true" ]; then
+    build_args+=(--build-srpm)
 fi
 
 cd "$ROOT_DIR/packaging"
