@@ -103,7 +103,6 @@ import com.cloud.domain.dao.DomainDao;
 import com.cloud.event.ActionEvent;
 import com.cloud.event.EventTypes;
 import com.cloud.exception.InvalidParameterValueException;
-import com.cloud.exception.PermissionDeniedException;
 import com.cloud.projects.dao.ProjectDao;
 import com.cloud.user.Account;
 import com.cloud.user.AccountManager;
@@ -161,9 +160,7 @@ public class QuotaResponseBuilderImpl implements QuotaResponseBuilder {
     private Set<Account.Type> accountTypesThatCanListAllQuotaSummaries = Sets.newHashSet(Account.Type.ADMIN, Account.Type.DOMAIN_ADMIN);
 
     protected void checkActivationRulesAllowed(String activationRule) {
-        if (!_quotaService.isJsInterpretationEnabled() && StringUtils.isNotEmpty(activationRule)) {
-            throw new PermissionDeniedException("Quota Tariff Activation Rule cannot be set, as Javascript interpretation is disabled in the configuration.");
-        }
+        jsInterpreterHelper.ensureInterpreterEnabledIfParameterProvided(ApiConstants.ACTIVATION_RULE, StringUtils.isNotBlank(activationRule));
     }
 
     @Override

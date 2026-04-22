@@ -18,6 +18,7 @@ package com.cloud.hypervisor.kvm.resource;
 
 import com.cloud.agent.properties.AgentProperties;
 import com.cloud.agent.properties.AgentPropertiesFileHandler;
+import com.cloud.storage.Storage.StoragePoolType;
 import com.cloud.utils.script.Script;
 import org.libvirt.Connect;
 import org.libvirt.LibvirtException;
@@ -172,7 +173,7 @@ public class KVMHAMonitor extends KVMHABase implements Runnable {
             for (String uuid : sPool.keySet()) {
                 HAStoragePool primaryStoragePool = sPool.get(uuid);
                 if (primaryStoragePool.getPool().getType() == StoragePoolType.NetworkFilesystem || primaryStoragePool.getPool().getType() == StoragePoolType.SharedMountPoint || primaryStoragePool.getPool().getType() == StoragePoolType.RBD || primaryStoragePool.getPool().getType() == StoragePoolType.CLVM) {
-                    checkForNotExistingPools(removedPools, uuid);
+                    checkForNotExistingLibvirtStoragePools(removedPools, uuid);
                     if (removedPools.contains(uuid)) {
                         continue;
                     }

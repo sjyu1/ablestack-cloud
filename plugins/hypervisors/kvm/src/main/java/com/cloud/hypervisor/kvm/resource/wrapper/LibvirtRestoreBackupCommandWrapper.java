@@ -251,6 +251,15 @@ public class LibvirtRestoreBackupCommandWrapper extends CommandWrapper<RestoreBa
         return bkpPath;
     }
 
+    private void verifyBackupFile(String backupPath, String volumeUuid) {
+        if (!checkBackupPathExists(backupPath)) {
+            throw new CloudRuntimeException(String.format("Backup file for the volume [%s] does not exist.", volumeUuid));
+        }
+        if (!checkBackupFileImage(backupPath)) {
+            throw new CloudRuntimeException(String.format("Backup qcow2 file for the volume [%s] is corrupt.", volumeUuid));
+        }
+    }
+
     private boolean checkBackupFileImage(String backupPath) {
         int exitValue = Script.runSimpleBashScriptForExitValue(String.format("qemu-img check %s", backupPath));
         return exitValue == 0;
