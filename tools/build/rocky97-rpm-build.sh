@@ -90,6 +90,7 @@ fi
 
 export JAVA_HOME="$JAVA17_HOME"
 export PATH="/opt/node-v${NODE_VERSION}-linux-x64/bin:$JAVA_HOME/bin:$PATH"
+export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true"
 
 git config --global --add safe.directory "$ROOT_DIR"
 
@@ -99,6 +100,7 @@ mkdir -p "$ROOT_DIR/dist/rocky97-build"
     echo "os_release=$(tr '\n' ' ' </etc/os-release)"
     echo "java_version=$("$JAVA_HOME/bin/java" -version 2>&1 | tr '\n' ' ' )"
     echo "maven_version=$(mvn -v | head -n 1)"
+    echo "maven_opts=$MAVEN_OPTS"
     echo "node_version=$(node -v)"
     echo "npm_version=$(npm -v)"
     echo "pack=$PACK"

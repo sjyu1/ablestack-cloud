@@ -86,6 +86,11 @@ public class OntapPrimaryDatastoreDriver implements PrimaryDataStoreDriver {
     }
 
     @Override
+    public void flattenAsync(DataStore store, DataObject data, AsyncCompletionCallback<CommandResult> callback) {
+        throw new UnsupportedOperationException("Flatten operation is not supported for ONTAP primary storage.");
+    }
+
+    @Override
     public boolean canCopy(DataObject srcData, DataObject destData) {
         return false;
     }

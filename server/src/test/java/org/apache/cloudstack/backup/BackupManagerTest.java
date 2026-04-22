@@ -1160,6 +1160,7 @@ public class BackupManagerTest {
         ImportBackupOfferingCmd cmd = Mockito.mock(ImportBackupOfferingCmd.class);
         when(cmd.getZoneId()).thenReturn(1L);
         when(cmd.getExternalId()).thenReturn("external-id");
+        when(cmd.getProvider()).thenReturn("testbackupprovider");
         when(cmd.getName()).thenReturn("Test Offering");
         when(cmd.getDescription()).thenReturn("Test Description");
         when(cmd.getUserDrivenBackups()).thenReturn(true);
@@ -1172,6 +1173,8 @@ public class BackupManagerTest {
         BackupOfferingVO offering = new BackupOfferingVO(1L, "external-id", "testbackupprovider", "Test Offering", "Test Description", true, null);
         when(backupOfferingDao.persist(any(BackupOfferingVO.class))).thenReturn(offering);
         when(backupProvider.isValidProviderOffering(cmd.getZoneId(), cmd.getExternalId())).thenReturn(true);
+        when(backupProvider.checkBackupAgent(cmd.getZoneId())).thenReturn(true);
+        when(backupProvider.importBackupPlan(cmd.getZoneId(), null, cmd.getExternalId())).thenReturn(true);
 
         BackupOffering result = backupManager.importBackupOffering(cmd);
 
@@ -1583,6 +1586,7 @@ public class BackupManagerTest {
 
         BackupOfferingVO offering = mock(BackupOfferingVO.class);
         when(backupOfferingDao.findByIdIncludingRemoved(backupOfferingId)).thenReturn(offering);
+        when(offering.getProvider()).thenReturn("testbackupprovider");
 
         when(backupProvider.deleteBackup(backup, false)).thenReturn(true);
 

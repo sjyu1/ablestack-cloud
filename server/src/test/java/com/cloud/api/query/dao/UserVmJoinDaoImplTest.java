@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.EnumSet;
 
 import com.cloud.storage.dao.VMTemplateDao;
+import com.cloud.storage.dao.VolumeDao;
 import org.apache.cloudstack.annotation.dao.AnnotationDao;
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.ResponseObject;
@@ -82,6 +83,8 @@ public class UserVmJoinDaoImplTest extends GenericDaoBaseWithTagInformationBaseT
 
     @Mock
     private VMTemplateDao vmTemplateDao;
+    @Mock
+    private VolumeDao _volsDao;
     ExtensionHelper extensionHelper;
 
     private UserVmJoinVO userVm = new UserVmJoinVO();
@@ -132,6 +135,7 @@ public class UserVmJoinDaoImplTest extends GenericDaoBaseWithTagInformationBaseT
         SearchCriteria<UserStatisticsVO> searchCriteriaMock = Mockito.mock(SearchCriteria.class);
         Mockito.doReturn(searchCriteriaMock).when(searchBuilderMock).create();
         Mockito.doReturn(Arrays.asList()).when(userStatsDao).search(searchCriteriaMock, null);
+        Mockito.doReturn(Arrays.asList()).when(_volsDao).findUsableVolumesForInstance(vmId);
 
         VnfTemplateNicVO vnfNic1 = new VnfTemplateNicVO(templateId, 0L, "eth0", true, true, "first");
         VnfTemplateNicVO vnfNic2 = new VnfTemplateNicVO(templateId, 1L, "eth1", true, true, "second");
