@@ -734,9 +734,9 @@ public class BackupManagerTest {
             assertTrue(backupManager.createBackup(cmd, asyncJobVOMock));
 
             Mockito.verify(resourceLimitMgr, times(1))
-                    .checkResourceLimitWithTag(accountVOMock, domainId, true, Resource.ResourceType.backup, null, 1L);
+                    .checkResourceLimitWithTag(accountVOMock, Resource.ResourceType.backup, null, 1L);
             Mockito.verify(resourceLimitMgr, times(1))
-                    .checkResourceLimitWithTag(accountVOMock, domainId, true, Resource.ResourceType.backup_storage, null, newBackupSize);
+                    .checkResourceLimitWithTag(accountVOMock, Resource.ResourceType.backup_storage, null, newBackupSize);
 
             Mockito.verify(resourceLimitMgr, times(1)).incrementResourceCount(accountId, Resource.ResourceType.backup);
             Mockito.verify(resourceLimitMgr, times(1)).incrementResourceCount(accountId, Resource.ResourceType.backup_storage, newBackupSize);
@@ -769,7 +769,7 @@ public class BackupManagerTest {
         when(accountManager.getAccount(accountId)).thenReturn(account);
         when(account.getDomainId()).thenReturn(domainId);
         Mockito.doThrow(new ResourceAllocationException("", Resource.ResourceType.backup)).when(resourceLimitMgr)
-                .checkResourceLimitWithTag(account, domainId, true, Resource.ResourceType.backup, null, 1L);
+                .checkResourceLimitWithTag(account, Resource.ResourceType.backup, null, 1L);
 
         CreateBackupCmd cmd = Mockito.mock(CreateBackupCmd.class);
         when(cmd.getVmId()).thenReturn(vmId);
@@ -820,7 +820,7 @@ public class BackupManagerTest {
         when(account.getDomainId()).thenReturn(domainId);
         Mockito.doThrow(new ResourceAllocationException("", Resource.ResourceType.backup_storage))
                 .when(resourceLimitMgr)
-                .checkResourceLimitWithTag(account, domainId, true, Resource.ResourceType.backup_storage, null, size);
+                .checkResourceLimitWithTag(account, Resource.ResourceType.backup_storage, null, size);
 
         CreateBackupCmd cmd = Mockito.mock(CreateBackupCmd.class);
         when(cmd.getVmId()).thenReturn(vmId);

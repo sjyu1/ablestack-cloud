@@ -157,10 +157,10 @@ public class BucketApiServiceImplTest {
 
         long size = quota * Resource.ResourceType.bytesToGiB;
         Mockito.verify(resourceLimitManager, Mockito.times(1))
-                .checkResourceLimitWithTag(mockAccountVO, DOMAIN_ID, true,
+                .checkResourceLimitWithTag(mockAccountVO,
                         Resource.ResourceType.bucket, null, 1L);
         Mockito.verify(resourceLimitManager, Mockito.times(1))
-                .checkResourceLimitWithTag(mockAccountVO, DOMAIN_ID, true,
+                .checkResourceLimitWithTag(mockAccountVO,
                         Resource.ResourceType.object_storage, null, size);
         Mockito.verify(resourceLimitManager, Mockito.times(1))
                 .incrementResourceCount(ACCOUNT_ID, Resource.ResourceType.bucket);
