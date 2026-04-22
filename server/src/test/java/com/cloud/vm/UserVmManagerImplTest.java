@@ -64,6 +64,7 @@ import java.util.UUID;
 import com.cloud.storage.StorageManager;
 import com.cloud.domain.Domain;
 import com.cloud.kubernetes.cluster.KubernetesServiceHelper;
+import com.cloud.network.NetworkService;
 import com.cloud.storage.dao.SnapshotPolicyDao;
 import com.cloud.utils.fsm.NoTransitionException;
 import org.apache.cloudstack.acl.ControlledEntity;
