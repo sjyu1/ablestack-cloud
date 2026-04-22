@@ -63,7 +63,6 @@ import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
-import org.apache.cloudstack.resourcelimit.Reserver;
 import org.apache.cloudstack.storage.datastore.db.ImageStoreDao;
 import org.apache.cloudstack.storage.datastore.db.ImageStoreVO;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
@@ -1548,7 +1547,7 @@ public class UnmanagedVMsManagerImplTest {
     @Test
     public void checkVmResourceLimitsForUnmanagedInstanceImportTestUsesInformationFromHypervisorWhenOfferingIsDynamic() throws Exception {
         when(serviceOfferingMock.isDynamic()).thenReturn(true);
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
 
         try (MockedConstruction<CheckedReservation> mockedConstruction = Mockito.mockConstruction(CheckedReservation.class)) {
             unmanagedVMsManager.checkVmResourceLimitsForUnmanagedInstanceImport(accountMock, unmanagedInstanceMock, serviceOfferingMock, templateMock, reservations);
@@ -1564,7 +1563,7 @@ public class UnmanagedVMsManagerImplTest {
     public void checkVmResourceLimitsForUnmanagedInstanceImportTestUsesInformationFromHypervisorWhenVmIsPoweredOn() throws Exception {
         when(unmanagedInstanceMock.getPowerState()).thenReturn(UnmanagedInstanceTO.PowerState.PowerOn);
         when(serviceOfferingMock.isDynamic()).thenReturn(false);
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
 
         try (MockedConstruction<CheckedReservation> mockedConstruction = Mockito.mockConstruction(CheckedReservation.class)) {
             unmanagedVMsManager.checkVmResourceLimitsForUnmanagedInstanceImport(accountMock, unmanagedInstanceMock, serviceOfferingMock, templateMock, reservations);
@@ -1580,7 +1579,7 @@ public class UnmanagedVMsManagerImplTest {
     public void checkVmResourceLimitsForUnmanagedInstanceImportTestUsesInformationFromOfferingWhenOfferingIsNotDynamicAndVmIsPoweredOff() throws Exception {
         when(unmanagedInstanceMock.getPowerState()).thenReturn(UnmanagedInstanceTO.PowerState.PowerOff);
         when(serviceOfferingMock.isDynamic()).thenReturn(false);
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
 
         try (MockedConstruction<CheckedReservation> mockedConstruction = Mockito.mockConstruction(CheckedReservation.class)) {
             unmanagedVMsManager.checkVmResourceLimitsForUnmanagedInstanceImport(accountMock, unmanagedInstanceMock, serviceOfferingMock, templateMock, reservations);
@@ -1598,7 +1597,7 @@ public class UnmanagedVMsManagerImplTest {
     public void checkVmResourceLimitsForExternalKvmVmImportTestUsesInformationFromOfferingWhenOfferingIsNotDynamic() throws ResourceAllocationException {
         when(serviceOfferingMock.isDynamic()).thenReturn(false);
         Map<String, String> details = new HashMap<>();
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
 
         try (MockedConstruction<CheckedReservation> mockedConstruction = Mockito.mockConstruction(CheckedReservation.class)) {
             unmanagedVMsManager.checkVmResourceLimitsForExternalKvmVmImport(accountMock, serviceOfferingMock, templateMock, details, reservations);
@@ -1618,7 +1617,7 @@ public class UnmanagedVMsManagerImplTest {
         Map<String, String> details = new HashMap<>();
         details.put(VmDetailConstants.CPU_NUMBER, "8");
         details.put(VmDetailConstants.MEMORY, "4096");
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
 
         try (MockedConstruction<CheckedReservation> mockedConstruction = Mockito.mockConstruction(CheckedReservation.class)) {
             unmanagedVMsManager.checkVmResourceLimitsForExternalKvmVmImport(accountMock, serviceOfferingMock, templateMock, details, reservations);

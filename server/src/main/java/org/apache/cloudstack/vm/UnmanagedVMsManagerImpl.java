@@ -89,7 +89,6 @@ import com.cloud.offering.ServiceOffering;
 import com.cloud.offerings.NetworkOfferingVO;
 import com.cloud.offerings.dao.NetworkOfferingDao;
 import com.cloud.resourcelimit.CheckedReservation;
-import com.cloud.resourcelimit.ReservationHelper;
 import com.cloud.org.Cluster;
 import com.cloud.resource.ResourceManager;
 import com.cloud.resource.ResourceState;
@@ -179,7 +178,6 @@ import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
-import org.apache.cloudstack.resourcelimit.Reserver;
 import org.apache.cloudstack.storage.datastore.db.ImageStoreDao;
 import org.apache.cloudstack.storage.datastore.db.ImageStoreVO;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
@@ -1688,7 +1686,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                     }
                 }
 
-                List<Reserver> reservations = new ArrayList<>();
+                List<CheckedReservation> reservations = new ArrayList<>();
                 try {
                     checkVmResourceLimitsForUnmanagedInstanceImport(owner, unmanagedInstance, serviceOffering, template, reservations);
                     userVm = importVirtualMachineInternal(unmanagedInstance, instanceName, zone, cluster, host,
@@ -1697,7 +1695,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                             nicNetworkMap, nicIpAddressMap, null,
                             details, migrateAllowed, forced, true);
                 } finally {
-                    ReservationHelper.closeAll(reservations);
+                    closeReservations(reservations);
                 }
                 break;
             }
@@ -1708,7 +1706,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         return userVm;
     }
 
-    protected void checkVmResourceLimitsForUnmanagedInstanceImport(Account owner, UnmanagedInstanceTO unmanagedInstance, ServiceOfferingVO serviceOffering, VMTemplateVO template, List<Reserver> reservations) throws ResourceAllocationException {
+    protected void checkVmResourceLimitsForUnmanagedInstanceImport(Account owner, UnmanagedInstanceTO unmanagedInstance, ServiceOfferingVO serviceOffering, VMTemplateVO template, List<CheckedReservation> reservations) throws ResourceAllocationException {
         // When importing an unmanaged instance, the amount of CPUs and memory is obtained from the hypervisor unless powered off
         // and not using a dynamic offering, unlike the external VM import that always obtains it from the compute offering
         Integer cpu = serviceOffering.getCpu();
@@ -1848,7 +1846,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         DataStoreTO temporaryConvertLocation = null;
         String ovfTemplateOnConvertLocation = null;
         ImportVmTask importVMTask = null;
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
         try {
             HostVO convertHost = selectKVMHostForConversionInCluster(destinationCluster, convertInstanceHostId, useVddk);
             HostVO importHost = (useVddk && importInstanceHostId == null)
@@ -1933,7 +1931,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             if (temporaryConvertLocation != null  && StringUtils.isNotBlank(ovfTemplateOnConvertLocation)) {
                 removeTemplate(temporaryConvertLocation, ovfTemplateOnConvertLocation);
             }
-            ReservationHelper.closeAll(reservations);
+            closeReservations(reservations);
         }
     }
 
@@ -2908,7 +2906,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         allDetails.put(VmDetailConstants.ROOT_DISK_CONTROLLER, rootDisk.getController());
 
         DiskOfferingVO diskOffering = diskOfferingDao.findById(serviceOffering.getDiskOfferingId());
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
         try {
             checkVmResourceLimitsForExternalKvmVmImport(owner, serviceOffering, (VMTemplateVO) template, details, reservations);
             checkVolumeResourceLimitsForExternalKvmVmImport(owner, rootDisk, dataDisks, diskOffering, dataDiskOfferingMap, reservations);
@@ -2994,7 +2992,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             publishVMUsageUpdateResourceCount(userVm, dummyOffering, template);
             return userVm;
         } finally {
-            ReservationHelper.closeAll(reservations);
+            closeReservations(reservations);
         }
     }
 
@@ -3051,7 +3049,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         profiles.add(nicProfile);
         networkNicMap.put(network.getUuid(), profiles);
 
-        List<Reserver> reservations = new ArrayList<>();
+        List<CheckedReservation> reservations = new ArrayList<>();
         try {
             checkVmResourceLimitsForExternalKvmVmImport(owner, serviceOffering, (VMTemplateVO) template, details, reservations);
             userVm = userVmManager.importVM(zone, null, template, null, displayName, owner,
@@ -3139,17 +3137,17 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             cleanupFailedImportVM(userVm);
             throw e;
         } finally {
-            ReservationHelper.closeAll(reservations);
+            closeReservations(reservations);
         }
     }
 
     protected void checkVolumeResourceLimitsForExternalKvmVmImport(Account owner, UnmanagedInstanceTO.Disk rootDisk,
                                                                    List<UnmanagedInstanceTO.Disk> dataDisks, DiskOfferingVO rootDiskOffering,
-                                                                   Map<String, Long> dataDiskOfferingMap, List<Reserver> reservations) throws ResourceAllocationException {
+                                                                   Map<String, Long> dataDiskOfferingMap, List<CheckedReservation> reservations) throws ResourceAllocationException {
         if (rootDisk.getCapacity() == null || rootDisk.getCapacity() == 0) {
             throw new InvalidParameterValueException(String.format("Root disk ID: %s size is invalid", rootDisk.getDiskId()));
         }
-        resourceLimitService.checkVolumeResourceLimit(owner, true, rootDisk.getCapacity(), rootDiskOffering, reservations);
+        addVolumeReservations(owner, rootDisk.getCapacity(), rootDiskOffering, reservations);
 
         if (CollectionUtils.isEmpty(dataDisks)) {
             return;
@@ -3159,11 +3157,11 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                 throw new InvalidParameterValueException(String.format("Data disk ID: %s size is invalid", disk.getDiskId()));
             }
             DiskOffering offering = diskOfferingDao.findById(dataDiskOfferingMap.get(disk.getDiskId()));
-            resourceLimitService.checkVolumeResourceLimit(owner, true, disk.getCapacity(), offering, reservations);
+            addVolumeReservations(owner, disk.getCapacity(), offering, reservations);
         }
     }
 
-    protected void checkVmResourceLimitsForExternalKvmVmImport(Account owner, ServiceOfferingVO serviceOffering, VMTemplateVO template, Map<String, String> details, List<Reserver> reservations) throws ResourceAllocationException {
+    protected void checkVmResourceLimitsForExternalKvmVmImport(Account owner, ServiceOfferingVO serviceOffering, VMTemplateVO template, Map<String, String> details, List<CheckedReservation> reservations) throws ResourceAllocationException {
         // When importing an external VM, the amount of CPUs and memory is always obtained from the compute offering,
         // unlike the unmanaged instance import that obtains it from the hypervisor unless the VM is powered off and the offering is fixed
         Integer cpu = serviceOffering.getCpu();
@@ -3184,6 +3182,27 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
 
         CheckedReservation memReservation = new CheckedReservation(owner, Resource.ResourceType.memory, resourceLimitHostTags, memory.longValue(), reservationDao, resourceLimitService);
         reservations.add(memReservation);
+    }
+
+    protected void addVolumeReservations(Account owner, Long size, DiskOffering diskOffering, List<CheckedReservation> reservations) throws ResourceAllocationException {
+        List<String> resourceLimitStorageTags = resourceLimitService.getResourceLimitStorageTagsForResourceCountOperation(true, diskOffering);
+
+        CheckedReservation volumeReservation = new CheckedReservation(owner, Resource.ResourceType.volume, resourceLimitStorageTags, 1L, reservationDao, resourceLimitService);
+        reservations.add(volumeReservation);
+
+        CheckedReservation primaryStorageReservation = new CheckedReservation(owner, Resource.ResourceType.primary_storage, resourceLimitStorageTags, size, reservationDao, resourceLimitService);
+        reservations.add(primaryStorageReservation);
+    }
+
+    protected void closeReservations(List<CheckedReservation> reservations) {
+        for (CheckedReservation reservation : reservations) {
+            try {
+                reservation.close();
+            } catch (Exception e) {
+                logger.warn("Failed to close resource reservation cleanly", e);
+            }
+        }
+        reservations.clear();
     }
 
     protected Integer getDetailAsInteger(String key, Map<String, String> details) {
