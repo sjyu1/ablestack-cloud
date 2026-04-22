@@ -274,15 +274,15 @@ backup_running_vm() {
     redefine_checkpoint_if_needed "$VM" "$parent_checkpoint_file"
   fi
 
-  echo "<domainbackup mode='push'><disks>" > "$dest/backup.xml"
+  echo "<domainbackup mode='push'>" > "$dest/backup.xml"
+  if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
+    echo "<incremental>$PARENT_CHECKPOINT_NAME</incremental>" >> "$dest/backup.xml"
+  fi
+  echo "<disks>" >> "$dest/backup.xml"
   local index=0
   for disk in $(virsh -c qemu:///system domblklist "$VM" --details 2>/dev/null | awk '/disk/{print $3}'); do
     local target_file="$dest/$(get_backup_file_by_index "$index")"
-    echo "<disk name='$disk' backup='yes' type='file' backupmode='full'><driver type='qcow2'/><target file='$target_file'/>" >> "$dest/backup.xml"
-    if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
-      echo "<incremental>$PARENT_CHECKPOINT_NAME</incremental>" >> "$dest/backup.xml"
-    fi
-    echo "</disk>" >> "$dest/backup.xml"
+    echo "<disk name='$disk' backup='yes' type='file'><driver type='qcow2'/><target file='$target_file'/></disk>" >> "$dest/backup.xml"
     index=$((index + 1))
   done
   echo "</disks></domainbackup>" >> "$dest/backup.xml"

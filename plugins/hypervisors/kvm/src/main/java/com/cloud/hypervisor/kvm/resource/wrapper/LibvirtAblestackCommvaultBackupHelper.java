@@ -383,15 +383,15 @@ class LibvirtAblestackCommvaultBackupHelper {
     }
 
     private Path writeBackupXml(Path dest, AblestackCommvaultTakeBackupCommand command, List<String> diskLabels) throws IOException {
-        StringBuilder xml = new StringBuilder("<domainbackup mode='push'><disks>");
+        StringBuilder xml = new StringBuilder("<domainbackup mode='push'>");
+        if (isIncremental(command) && command.getParentCheckpointName() != null && !command.getParentCheckpointName().isEmpty()) {
+            xml.append("<incremental>").append(command.getParentCheckpointName()).append("</incremental>");
+        }
+        xml.append("<disks>");
         for (int i = 0; i < diskLabels.size(); i++) {
             String backupFile = getBackupFileByIndex(command, i, getLegacyBackupFileName(diskLabels, i));
-            xml.append("<disk name='").append(diskLabels.get(i)).append("' backup='yes' type='file' backupmode='full'>")
-                    .append("<driver type='qcow2'/><target file='").append(dest.resolve(backupFile)).append("'/>");
-            if (isIncremental(command) && command.getParentCheckpointName() != null && !command.getParentCheckpointName().isEmpty()) {
-                xml.append("<incremental>").append(command.getParentCheckpointName()).append("</incremental>");
-            }
-            xml.append("</disk>");
+            xml.append("<disk name='").append(diskLabels.get(i)).append("' backup='yes' type='file'>")
+                    .append("<driver type='qcow2'/><target file='").append(dest.resolve(backupFile)).append("'/></disk>");
         }
         xml.append("</disks></domainbackup>");
         Path backupXml = dest.resolve("backup.xml");
