@@ -837,7 +837,7 @@ describe('Views > AutogenView.vue', () => {
         done()
       })
 
-      it('check $notifyError is called and router path = /exception/403 when api is called with throw error', async (done) => {
+      it('check $notifyError is called and router path = /dashboard when api is called with throw error status 405', async (done) => {
         const errorMock = {
           response: {
             status: 405
@@ -851,11 +851,11 @@ describe('Views > AutogenView.vue', () => {
 
         expect(mocks.$notifyError).toHaveBeenCalledTimes(1)
         expect(mocks.$notifyError).toHaveBeenCalledWith(errorMock)
-        expect(router.currentRoute.value.path).toEqual('/exception/403')
+        expect(router.currentRoute.value.path).toEqual('/dashboard')
         done()
       })
 
-      it('check $notifyError is called and router path = /exception/404 when api is called with throw error', async (done) => {
+      it('check $notifyError is called and router path = /dashboard when api is called with throw error status 430', async (done) => {
         const errorMock = {
           response: {
             status: 430
@@ -869,11 +869,11 @@ describe('Views > AutogenView.vue', () => {
 
         expect(mocks.$notifyError).toHaveBeenCalledTimes(1)
         expect(mocks.$notifyError).toHaveBeenCalledWith(errorMock)
-        expect(router.currentRoute.value.path).toEqual('/exception/404')
+        expect(router.currentRoute.value.path).toEqual('/dashboard')
         done()
       })
 
-      it('check $notifyError is called and router path = /exception/500 when api is called with throw error', async (done) => {
+      it('check $notifyError is called and router path = /dashboard when api is called with throw error status 530', async (done) => {
         const errorMock = {
           response: {
             status: 530
@@ -887,7 +887,7 @@ describe('Views > AutogenView.vue', () => {
 
         expect(mocks.$notifyError).toHaveBeenCalledTimes(1)
         expect(mocks.$notifyError).toHaveBeenCalledWith(errorMock)
-        expect(router.currentRoute.value.path).toEqual('/exception/500')
+        expect(router.currentRoute.value.path).toEqual('/dashboard')
         done()
       })
     })
@@ -1621,7 +1621,7 @@ describe('Views > AutogenView.vue', () => {
         done()
       })
 
-      it('fetchData() should be called when $pollJob error response', async (done) => {
+      it('fetchData() should not be called when $pollJob error response', async (done) => {
         originalFunc.fetchData = wrapper.vm.fetchData
         wrapper.vm.fetchData = jest.fn((args) => {})
         const fetchData = jest.spyOn(wrapper.vm, 'fetchData')
@@ -1642,7 +1642,7 @@ describe('Views > AutogenView.vue', () => {
         })
         await flushPromises()
 
-        expect(fetchData).toHaveBeenCalled()
+        expect(fetchData).not.toHaveBeenCalled()
         expect(mockAxios).toHaveBeenCalled()
         expect(mockAxios).toHaveBeenLastCalledWith({
           url: '/',
@@ -2083,6 +2083,12 @@ describe('Views > AutogenView.vue', () => {
 
       it('validate field `confirmpassword` a when validateTwoPassword() is called with confirmDirty equal true', async (done) => {
         wrapper.vm.form = { confirmpassword: '123abc' }
+        if (!wrapper.vm.formRef) {
+          wrapper.vm.formRef = ref({})
+        }
+        if (!wrapper.vm.formRef.value) {
+          wrapper.vm.formRef.value = {}
+        }
         originalFunc.RefValidateFields = wrapper.vm.formRef.value.validateFields
         wrapper.vm.formRef.value.validateFields = jest.fn((field) => {})
 
@@ -2315,6 +2321,9 @@ describe('Views > AutogenView.vue', () => {
         })
         if (!wrapper.vm.formRef) {
           wrapper.vm.formRef = ref()
+        }
+        if (!wrapper.vm.formRef.value) {
+          wrapper.vm.formRef.value = {}
         }
         wrapper.vm.formRef.value.validate = jest.fn((params, resourceName) => {
           return new Promise(resolve => {

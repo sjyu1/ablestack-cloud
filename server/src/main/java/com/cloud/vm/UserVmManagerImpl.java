@@ -335,7 +335,6 @@ import com.cloud.resource.ResourceManager;
 import com.cloud.resource.ResourceState;
 import com.cloud.resourcelimit.CheckedReservation;
 import com.cloud.server.ManagementServer;
-import com.cloud.resourcelimit.ReservationHelper;
 import com.cloud.server.ManagementService;
 import com.cloud.server.ResourceTag;
 import com.cloud.server.StatsCollector;

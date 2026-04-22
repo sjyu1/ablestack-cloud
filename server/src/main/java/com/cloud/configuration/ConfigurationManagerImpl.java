@@ -50,11 +50,7 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
-import com.cloud.consoleproxy.ConsoleProxyManager;
-import com.cloud.network.router.VirtualNetworkApplianceManager;
-import com.cloud.storage.secondary.SecondaryStorageVmManager;
 import com.cloud.utils.DomainHelper;
-import com.cloud.vm.VirtualMachineManager;
 import org.apache.cloudstack.acl.RoleType;
 import org.apache.cloudstack.acl.SecurityChecker;
 import org.apache.cloudstack.affinity.AffinityGroup;
