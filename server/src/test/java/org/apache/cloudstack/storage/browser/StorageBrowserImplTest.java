@@ -19,6 +19,8 @@
 
 package org.apache.cloudstack.storage.browser;
 
+import java.util.Collections;
+
 import com.cloud.agent.api.Answer;
 import com.cloud.agent.api.UnsupportedAnswer;
 import com.cloud.api.query.dao.ImageStoreJoinDao;

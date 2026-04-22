@@ -1168,7 +1168,7 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
         Mockito.when(userAccountVO.getId()).thenReturn(accountId);
         Mockito.when(userAccountVO.getUsername()).thenReturn("test");
         Mockito.when(userAccountVO.getDomainId()).thenReturn(1L);
-        User user = Mockito.mock(User.class);
+        UserVO user = Mockito.mock(UserVO.class);
         Mockito.when(user.getId()).thenReturn(2L);
         Mockito.when(user.getAccountId()).thenReturn(accountId);
         Mockito.when(userDaoMock.getUserByName("test", 1L)).thenReturn(user);
