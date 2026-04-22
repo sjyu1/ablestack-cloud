@@ -1432,8 +1432,7 @@ export default {
     },
     handleContextAction (action) {
       this.closeContextQuickView()
-      const isGroupAction = !!(action?.groupAction && this.selectedRowKeys.length > 0)
-      this.$parent.execAction(action, isGroupAction)
+      this.$parent.execAction(action, action.groupAction && this.selectedRowKeys.length > 1)
     },
     generateRowKeyValue (record) {
       return record.uid || (record.metadata && record.metadata.rule_uid) || record.id || record.name || record.usageType
