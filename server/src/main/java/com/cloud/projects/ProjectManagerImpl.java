@@ -600,17 +600,20 @@ public class ProjectManagerImpl extends ManagerBase implements ProjectManager, C
             }
 
             boolean shouldIncrementResourceCount = projectRole != null && Role.Admin == projectRole;
-            try (CheckedReservation cr = new CheckedReservation(userAccount, ResourceType.project, shouldIncrementResourceCount ? 1L : 0L, reservationDao, _resourceLimitMgr)) {
-                if (assignUserToProject(project, user.getId(), user.getAccountId(), projectRole,
-                        Optional.ofNullable(role).map(ProjectRole::getId).orElse(null)) != null) {
-                    if (shouldIncrementResourceCount) {
-                        _resourceLimitMgr.incrementResourceCount(userAccount.getId(), ResourceType.project);
+            try {
+                try (CheckedReservation cr = new CheckedReservation(userAccount, ResourceType.project,
+                        shouldIncrementResourceCount ? 1L : 0L, reservationDao, _resourceLimitMgr)) {
+                    if (assignUserToProject(project, user.getId(), user.getAccountId(), projectRole,
+                            Optional.ofNullable(role).map(ProjectRole::getId).orElse(null)) != null) {
+                        if (shouldIncrementResourceCount) {
+                            _resourceLimitMgr.incrementResourceCount(userAccount.getId(), ResourceType.project);
+                        }
+                        return true;
                     }
-                    return true;
-                } else {
-                    logger.warn("Failed to add user to project: {}", project);
-                    return false;
                 }
+            } catch (ResourceAllocationException e) {
+                throw new CloudRuntimeException(String.format("Unable to reserve project resources while adding user %s to project %s",
+                        user.getUsername(), project.getUuid()), e);
             }
             logger.warn("Failed to add user to project: {}", project);
             return false;

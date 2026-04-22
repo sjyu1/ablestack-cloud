@@ -3761,9 +3761,15 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             dataDiskOfferingMap = getAutoDataDiskOfferingMapForAblestackV2K(task, owner, zone, cluster, hosts, managedVms);
         }
 
-        UserVm importedVm = importUnmanagedInstanceFromHypervisor(zone, cluster, hosts, additionalNameFilters,
-                template, task.getSourceVMName(), displayName, hostName, CallContext.current().getCallingAccount(), owner, task.getUserId(),
-                serviceOffering, dataDiskOfferingMap, nicNetworkMap, nicIpAddressMap, details, false, managedVms, false);
+        UserVm importedVm;
+        try {
+            importedVm = importUnmanagedInstanceFromHypervisor(zone, cluster, hosts, additionalNameFilters,
+                    template, task.getSourceVMName(), displayName, hostName, CallContext.current().getCallingAccount(), owner, task.getUserId(),
+                    serviceOffering, dataDiskOfferingMap, nicNetworkMap, nicIpAddressMap, details, false, managedVms, false);
+        } catch (ResourceAllocationException e) {
+            throw new CloudRuntimeException(String.format("Failed to reserve resources while importing converted KVM VM %s for task %s",
+                    task.getSourceVMName(), task.getUuid()), e);
+        }
 
         if (importedVm == null) {
             throw new CloudRuntimeException(String.format("Failed to import converted KVM VM %s for task %s",
