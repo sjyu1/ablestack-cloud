@@ -330,13 +330,12 @@
 </template>
 
 <script>
-import { getAPI, postAPI } from '@/api'
-import { reactive, ref, toRaw } from 'vue'
+import { postAPI } from '@/api'
+import { reactive, ref } from 'vue'
 import { isAdmin } from '@/role'
 import { mixinForm } from '@/utils/mixin'
 import ResourceIcon from '@/components/view/ResourceIcon'
 import TooltipLabel from '@/components/widgets/TooltipLabel'
-import store from '@/store'
 
 export default {
   name: 'AddDiskOffering',
