@@ -515,9 +515,6 @@ public class UnmanagedVMsManagerImplTest {
         ImportUnmanagedInstanceCmd importUnmanageInstanceCmd = Mockito.mock(ImportUnmanagedInstanceCmd.class);
         when(importUnmanageInstanceCmd.getName()).thenReturn("TestInstance");
         when(importUnmanageInstanceCmd.getName()).thenReturn("some name");
-        when(importUnmanageInstanceCmd.getClusterId()).thenReturn(1L);
-        when(importUnmanageInstanceCmd.getEntityOwnerId()).thenReturn(1L);
-        when(importUnmanageInstanceCmd.getServiceOfferingId()).thenReturn(1L);
         unmanagedVMsManager.importUnmanagedInstance(importUnmanageInstanceCmd);
     }
 
@@ -910,10 +907,10 @@ public class UnmanagedVMsManagerImplTest {
         StoragePoolVO zoneDestPool = mock(StoragePoolVO.class);
         Mockito.lenient().when(zoneDestPool.getDataCenterId()).thenReturn(zoneId);
         Mockito.lenient().when(zoneDestPool.getClusterId()).thenReturn(null);
-        when(zoneDestPool.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
-        when(zoneDestPool.getUuid()).thenReturn("zone-pool-uuid");
-        when(zoneDestPool.getName()).thenReturn("zone-pool");
-        when(zoneDestPool.getPath()).thenReturn("/zone-pool");
+        Mockito.lenient().when(zoneDestPool.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
+        Mockito.lenient().when(zoneDestPool.getUuid()).thenReturn("zone-pool-uuid");
+        Mockito.lenient().when(zoneDestPool.getName()).thenReturn("zone-pool");
+        Mockito.lenient().when(zoneDestPool.getPath()).thenReturn("/zone-pool");
         if (selectTemporaryStorage) {
             long temporaryStoragePoolId = 1L;
             when(importVmCmd.getConvertStoragePoolId()).thenReturn(temporaryStoragePoolId);
@@ -926,8 +923,8 @@ public class UnmanagedVMsManagerImplTest {
             when(dataStoreManager.getDataStore(1L, DataStoreRole.Image)).thenReturn(dataStore);
         }
         when(primaryDataStoreDao.listPoolByHostPath(Mockito.anyString(), Mockito.anyString())).thenReturn(new ArrayList<>(List.of(destPool)));
-        when(primaryDataStoreDao.findClusterWideStoragePoolsByHypervisorAndPoolType(clusterId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(new ArrayList<>(List.of(destPool)));
-        when(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisorAndPoolType(zoneId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(new ArrayList<>(List.of(zoneDestPool)));
+        Mockito.lenient().when(primaryDataStoreDao.findClusterWideStoragePoolsByHypervisorAndPoolType(clusterId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(new ArrayList<>(List.of(destPool)));
+        Mockito.lenient().when(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisorAndPoolType(zoneId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(new ArrayList<>(List.of(zoneDestPool)));
         when(primaryDataStoreDao.listPoolsByCluster(clusterId)).thenReturn(new ArrayList<>(List.of(destPool)));
         when(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisor(zoneId, Hypervisor.HypervisorType.KVM)).thenReturn(new ArrayList<>(List.of(zoneDestPool)));
 
