@@ -29,6 +29,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      MAVEN_OPTS: -Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true
     steps:
       - uses: actions/checkout@v6
 
