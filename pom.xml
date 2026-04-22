@@ -1065,6 +1065,9 @@
                             <exclude>debian/source/format</exclude>
                             <exclude>dist/console-proxy/js/jquery.js</exclude>
                             <exclude>engine/schema/dist/**</exclude>
+                            <exclude>plugins/integrations/automation-service/src/main/resources/conf/genie</exclude>
+                            <exclude>plugins/integrations/desktop-service/src/main/resources/conf/dc</exclude>
+                            <exclude>plugins/integrations/desktop-service/src/main/resources/conf/works</exclude>
                             <exclude>plugins/hypervisors/hyperv/conf/agent.properties</exclude>
                             <exclude>plugins/hypervisors/hyperv/conf/uefi.properties</exclude>
                             <exclude>plugins/hypervisors/hyperv/DotNet/ServerResource/**</exclude>
