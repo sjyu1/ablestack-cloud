@@ -605,7 +605,7 @@ public class StorageManagerImplTest {
         Mockito.doReturn(vmInstanceVOMock).when(vmInstanceDao).findById(Mockito.anyLong());
 
         String log = storageManagerImpl.getStoragePoolNonDestroyedVolumesLog(storagePoolVOMock.getId());
-        String expected = String.format("[Volume [%s] (not attached to any VM), Volume [%s] (attached to VM [%s])]", volume1VOMock.getUuid(), volume2VOMock.getUuid(), vmInstanceVOMock.getUuid());
+        String expected = String.format("[Volume [%s], Volume [%s] (attached to VM [%s])]", volume1VOMock.getUuid(), volume2VOMock.getUuid(), vmInstanceVOMock.getUuid());
 
         Assert.assertEquals(expected, log);
     }

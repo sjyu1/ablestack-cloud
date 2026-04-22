@@ -3719,7 +3719,11 @@ public class UserVmManagerImplTest {
             when(vol.getInstanceId()).thenReturn(vmId);
             when(vol.getId()).thenReturn(volumeId);
             when(vol.getVolumeType()).thenReturn(Volume.Type.DATADISK);
+            when(vol.getDiskOfferingId()).thenReturn(10L);
             when(volumeDaoMock.findById(volumeId)).thenReturn(vol);
+            DiskOfferingVO diskOffering = mock(DiskOfferingVO.class);
+            when(diskOffering.getShareable()).thenReturn(false);
+            when(diskOfferingDao.findById(10L)).thenReturn(diskOffering);
 
             List<VolumeVO> dataVolumes = new ArrayList<>();
             when(volumeDaoMock.findByInstanceAndType(vmId, Volume.Type.DATADISK)).thenReturn(dataVolumes);

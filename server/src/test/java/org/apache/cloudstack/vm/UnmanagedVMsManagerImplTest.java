@@ -832,7 +832,10 @@ public class UnmanagedVMsManagerImplTest {
         when(importVmCmd.getDomainId()).thenReturn(null);
         when(importVmCmd.getImportSource()).thenReturn(VmImportService.ImportSource.VMWARE.toString());
         when(importVmCmd.getHostIp()).thenReturn(host);
-        when(importVmCmd.getNicNetworkList()).thenReturn(Map.of("NIC 1", networkId));
+        Map<String, Long> nicNetworkMap = new HashMap<>();
+        nicNetworkMap.put("NIC 1", networkId);
+        when(importVmCmd.getNicNetworkList()).thenReturn(nicNetworkMap);
+        when(importVmCmd.getDataDiskToDiskOfferingList()).thenReturn(new HashMap<>());
         when(importVmCmd.getConvertInstanceHostId()).thenReturn(null);
         when(importVmCmd.getImportInstanceHostId()).thenReturn(null);
         when(importVmCmd.getConvertStoragePoolId()).thenReturn(null);
@@ -890,7 +893,7 @@ public class UnmanagedVMsManagerImplTest {
             when(importVmCmd.getImportInstanceHostId()).thenReturn(convertHostId);
             when(hostDao.findById(convertHostId)).thenReturn(convertHost);
         } else {
-            when(hostDao.listByClusterAndHypervisorType(clusterId, Hypervisor.HypervisorType.KVM)).thenReturn(List.of(convertHost));
+            when(hostDao.listByClusterAndHypervisorType(clusterId, Hypervisor.HypervisorType.KVM)).thenReturn(new ArrayList<>(List.of(convertHost)));
         }
 
         DataStoreTO dataStoreTO = mock(DataStoreTO.class);
@@ -922,11 +925,11 @@ public class UnmanagedVMsManagerImplTest {
             when(imageStoreDao.findOneByZoneAndProtocol(zoneId, "nfs")).thenReturn(imageStoreVO);
             when(dataStoreManager.getDataStore(1L, DataStoreRole.Image)).thenReturn(dataStore);
         }
-        when(primaryDataStoreDao.listPoolByHostPath(Mockito.anyString(), Mockito.anyString())).thenReturn(List.of(destPool));
-        when(primaryDataStoreDao.findClusterWideStoragePoolsByHypervisorAndPoolType(clusterId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(List.of(destPool));
-        when(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisorAndPoolType(zoneId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(List.of(zoneDestPool));
-        when(primaryDataStoreDao.listPoolsByCluster(clusterId)).thenReturn(List.of(destPool));
-        when(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisor(zoneId, Hypervisor.HypervisorType.KVM)).thenReturn(List.of(zoneDestPool));
+        when(primaryDataStoreDao.listPoolByHostPath(Mockito.anyString(), Mockito.anyString())).thenReturn(new ArrayList<>(List.of(destPool)));
+        when(primaryDataStoreDao.findClusterWideStoragePoolsByHypervisorAndPoolType(clusterId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(new ArrayList<>(List.of(destPool)));
+        when(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisorAndPoolType(zoneId, Hypervisor.HypervisorType.KVM, Storage.StoragePoolType.NetworkFilesystem)).thenReturn(new ArrayList<>(List.of(zoneDestPool)));
+        when(primaryDataStoreDao.listPoolsByCluster(clusterId)).thenReturn(new ArrayList<>(List.of(destPool)));
+        when(primaryDataStoreDao.findZoneWideStoragePoolsByHypervisor(zoneId, Hypervisor.HypervisorType.KVM)).thenReturn(new ArrayList<>(List.of(zoneDestPool)));
 
         if (VcenterParameter.EXISTING == vcenterParameter) {
             VmwareDatacenterVO datacenterVO = mock(VmwareDatacenterVO.class);

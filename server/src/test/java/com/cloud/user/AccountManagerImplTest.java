@@ -196,7 +196,7 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
         Mockito.doReturn("account-uuid").when(accountMock).getUuid();
         Mockito.doReturn(1L).when(accountMock).getDomainId();
         Mockito.doReturn(Account.Type.ADMIN).when(accountMock).getType();
-        Mockito.doReturn("admin-account").when(accountMock).getAccountName();
+        Mockito.lenient().doReturn("admin-account").when(accountMock).getAccountName();
         Mockito.doReturn(accountMock).when(accountManagerImpl).getCurrentCallingAccount();
 
         Mockito.doReturn(accountMockId).when(userVoMock).getAccountId();
@@ -206,9 +206,9 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
 
         Mockito.lenient().doNothing().when(accountManagerImpl).checkRoleEscalation(accountMock, accountMock);
         Mockito.doReturn(accountMockId).when(accountVoMock).getId();
-        Mockito.doReturn(Account.Type.NORMAL).when(accountVoMock).getType();
+        Mockito.lenient().doReturn(Account.Type.NORMAL).when(accountVoMock).getType();
         Mockito.doReturn(1L).when(accountVoMock).getDomainId();
-        Mockito.doReturn("target").when(accountVoMock).getName();
+        Mockito.lenient().doReturn("target").when(accountVoMock).getName();
         Mockito.doReturn("target-uuid").when(accountVoMock).getUuid();
 
         Mockito.when(apiKeyPairDaoMock.persist(Mockito.any())).thenAnswer(i -> {

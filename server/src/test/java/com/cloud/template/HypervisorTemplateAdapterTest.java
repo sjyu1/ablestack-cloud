@@ -385,7 +385,7 @@ public class HypervisorTemplateAdapterTest {
     public void getImageStoresThrowsExceptionIfNotFoundTestNullImageStoreShouldThrowCloudRuntimeException() {
         TemplateProfile templateProfileMock = Mockito.mock(TemplateProfile.class);
 
-        Mockito.when(dataStoreManagerMock.getImageStoresByZoneIds(Mockito.anyLong())).thenReturn(null);
+        Mockito.when(dataStoreManagerMock.getImageStoresByScopeExcludingReadOnly(Mockito.any())).thenReturn(null);
 
         _adapter.getImageStoresThrowsExceptionIfNotFound(zoneId, templateProfileMock);
     }
@@ -395,7 +395,7 @@ public class HypervisorTemplateAdapterTest {
         TemplateProfile templateProfileMock = Mockito.mock(TemplateProfile.class);
         List<DataStore> imageStoresList = new ArrayList<>();
 
-        Mockito.when(dataStoreManagerMock.getImageStoresByZoneIds(Mockito.anyLong())).thenReturn(imageStoresList);
+        Mockito.when(dataStoreManagerMock.getImageStoresByScopeExcludingReadOnly(Mockito.any())).thenReturn(imageStoresList);
 
         _adapter.getImageStoresThrowsExceptionIfNotFound(zoneId, templateProfileMock);
     }
