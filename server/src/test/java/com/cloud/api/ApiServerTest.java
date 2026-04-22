@@ -258,12 +258,7 @@ public class ApiServerTest {
         UserVO userVO = mock(UserVO.class);
         Mockito.when(userVO.getUuid()).thenReturn("user-uuid");
         Mockito.when(accountManager.getActiveUser(100L)).thenReturn(userVO);
-        Mockito.when(userVO.getAccountId()).thenReturn(200L);
-        Mockito.when(userVO.getUsername()).thenReturn(username);
         Mockito.when(userDao.getUserByName(username, domainId)).thenReturn(userVO);
-        com.cloud.user.AccountVO accountVO = mock(com.cloud.user.AccountVO.class);
-        Mockito.when(accountVO.getDomainId()).thenReturn(domainId);
-        Mockito.when(accountDao.findById(200L)).thenReturn(accountVO);
         Mockito.doReturn(false).when(apiServer).validatePassword(userVO, "password");
 
         Mockito.when(session.getAttributeNames()).thenReturn(Collections.enumeration(List.of(PASSWORD_CHANGE_REQUIRED)));

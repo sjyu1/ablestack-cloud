@@ -406,7 +406,7 @@ public class HypervisorTemplateAdapterTest {
         DataStore dataStoreMock = Mockito.mock(DataStore.class);
         List<DataStore> imageStoresList = List.of(dataStoreMock);
 
-        Mockito.when(dataStoreManagerMock.getImageStoresByZoneIds(Mockito.anyLong())).thenReturn(imageStoresList);
+        Mockito.when(dataStoreManagerMock.getImageStoresByScopeExcludingReadOnly(Mockito.any())).thenReturn(imageStoresList);
 
         _adapter.getImageStoresThrowsExceptionIfNotFound(zoneId, templateProfileMock);
     }

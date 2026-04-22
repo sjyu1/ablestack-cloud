@@ -388,6 +388,9 @@ public class UnmanagedVMsManagerImplTest {
         StoragePoolVO poolVO = Mockito.mock(StoragePoolVO.class);
         when(poolVO.getDataCenterId()).thenReturn(1L);
         when(poolVO.getClusterId()).thenReturn(clusterVO.getId());
+        when(poolVO.getUuid()).thenReturn("pool-uuid");
+        when(poolVO.getName()).thenReturn("pool-name");
+        when(poolVO.getPath()).thenReturn("/pool-path");
         List<StoragePoolVO> pools = new ArrayList<>();
         pools.add(poolVO);
         when(primaryDataStoreDao.listPoolByHostPath(Mockito.anyString(), Mockito.anyString())).thenReturn(pools);
@@ -898,10 +901,16 @@ public class UnmanagedVMsManagerImplTest {
         when(destPool.getDataCenterId()).thenReturn(zoneId);
         when(destPool.getClusterId()).thenReturn(clusterId);
         when(destPool.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
+        when(destPool.getUuid()).thenReturn("dest-pool-uuid");
+        when(destPool.getName()).thenReturn("dest-pool");
+        when(destPool.getPath()).thenReturn("/dest-pool");
         StoragePoolVO zoneDestPool = mock(StoragePoolVO.class);
         when(zoneDestPool.getDataCenterId()).thenReturn(zoneId);
         when(zoneDestPool.getClusterId()).thenReturn(null);
         when(zoneDestPool.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
+        when(zoneDestPool.getUuid()).thenReturn("zone-pool-uuid");
+        when(zoneDestPool.getName()).thenReturn("zone-pool");
+        when(zoneDestPool.getPath()).thenReturn("/zone-pool");
         if (selectTemporaryStorage) {
             long temporaryStoragePoolId = 1L;
             when(importVmCmd.getConvertStoragePoolId()).thenReturn(temporaryStoragePoolId);

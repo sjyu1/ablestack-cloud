@@ -85,7 +85,8 @@ public class UserVmJoinDaoImplTest extends GenericDaoBaseWithTagInformationBaseT
     private VMTemplateDao vmTemplateDao;
     @Mock
     private VolumeDao _volsDao;
-    ExtensionHelper extensionHelper;
+    @Mock
+    private ExtensionHelper extensionHelper;
 
     private UserVmJoinVO userVm = new UserVmJoinVO();
     private UserVmResponse userVmResponse = new UserVmResponse();
@@ -136,6 +137,7 @@ public class UserVmJoinDaoImplTest extends GenericDaoBaseWithTagInformationBaseT
         Mockito.doReturn(searchCriteriaMock).when(searchBuilderMock).create();
         Mockito.doReturn(Arrays.asList()).when(userStatsDao).search(searchCriteriaMock, null);
         Mockito.doReturn(Arrays.asList()).when(_volsDao).findUsableVolumesForInstance(vmId);
+        Mockito.doReturn(Arrays.asList()).when(extensionHelper).getExtensionReservedResourceDetails(Mockito.anyLong());
 
         VnfTemplateNicVO vnfNic1 = new VnfTemplateNicVO(templateId, 0L, "eth0", true, true, "first");
         VnfTemplateNicVO vnfNic2 = new VnfTemplateNicVO(templateId, 1L, "eth1", true, true, "second");

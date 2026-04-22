@@ -937,6 +937,7 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
         Mockito.doReturn(accountMock).when(accountManagerImpl).getCurrentCallingAccount();
         Mockito.doReturn(true).when(accountManagerImpl).isRootAdmin(accountMockId);
         Mockito.doReturn(false).when(accountManagerImpl).isDomainAdmin(accountMockId);
+        Mockito.doReturn(false).when(accountManagerImpl).validatePassword(userVoMock, "password");
 
         Mockito.lenient().doNothing().when(accountManagerImpl).validateCurrentPassword(Mockito.eq(userVoMock), Mockito.anyString());
 
@@ -952,6 +953,7 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
         Mockito.doReturn(accountMock).when(accountManagerImpl).getCurrentCallingAccount();
         Mockito.doReturn(true).when(accountManagerImpl).isRootAdmin(accountMockId);
         Mockito.doReturn(false).when(accountManagerImpl).isDomainAdmin(accountMockId);
+        Mockito.doReturn(false).when(accountManagerImpl).validatePassword(userVoMock, "password");
 
         String newPassword = "newPassword";
 
@@ -974,6 +976,7 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
         Mockito.doReturn(accountMock).when(accountManagerImpl).getCurrentCallingAccount();
         Mockito.doReturn(false).when(accountManagerImpl).isRootAdmin(accountMockId);
         Mockito.doReturn(true).when(accountManagerImpl).isDomainAdmin(accountMockId);
+        Mockito.doReturn(false).when(accountManagerImpl).validatePassword(userVoMock, "password");
 
         String newPassword = "newPassword";
 
@@ -1173,8 +1176,12 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
         Mockito.when(user.getAccountId()).thenReturn(accountId);
         Mockito.when(userDaoMock.getUserByName("test", 1L)).thenReturn(user);
         Mockito.doNothing().when(accountManagerImpl).updateLoginAttempts(Mockito.eq(accountId), Mockito.eq(allowedAttempts), Mockito.eq(true));
-        Assert.assertThrows(com.cloud.exception.CloudAuthenticationException.class,
-                () -> accountManagerImpl.updateLoginAttemptsWhenIncorrectLoginAttemptsEnabled(userAccountVO, true, allowedAttempts));
+        try (MockedStatic<ActionEventUtils> eventUtils = Mockito.mockStatic(ActionEventUtils.class)) {
+            eventUtils.when(() -> ActionEventUtils.onActionEvent(Mockito.anyLong(), Mockito.anyLong(),
+                    Mockito.anyLong(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyString())).thenReturn(null);
+            Assert.assertThrows(com.cloud.exception.CloudAuthenticationException.class,
+                    () -> accountManagerImpl.updateLoginAttemptsWhenIncorrectLoginAttemptsEnabled(userAccountVO, true, allowedAttempts));
+        }
         Mockito.verify(accountManagerImpl).updateLoginAttempts(Mockito.eq(accountId), Mockito.eq(allowedAttempts), Mockito.eq(true));
     }
 

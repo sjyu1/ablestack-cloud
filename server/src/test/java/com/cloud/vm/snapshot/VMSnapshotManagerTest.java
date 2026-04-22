@@ -32,10 +32,12 @@ import com.cloud.hypervisor.dao.HypervisorCapabilitiesDao;
 import com.cloud.service.ServiceOfferingVO;
 import com.cloud.service.dao.ServiceOfferingDao;
 import com.cloud.service.dao.ServiceOfferingDetailsDao;
+import com.cloud.storage.DiskOfferingVO;
 import com.cloud.storage.GuestOSVO;
 import com.cloud.storage.Snapshot;
 import com.cloud.storage.SnapshotVO;
 import com.cloud.storage.VolumeVO;
+import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.GuestOSDao;
 import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.VolumeDao;
@@ -143,6 +145,10 @@ public class VMSnapshotManagerTest {
     @Mock
     UserVmManager _userVmManager;
     @Mock
+    DiskOfferingDao _diskOfferingDao;
+    @Mock
+    DiskOfferingVO diskOffering;
+    @Mock
     private AccountVO accountVOMock;
 
     private static final long TEST_VM_ID = 3L;
@@ -205,6 +211,7 @@ public class VMSnapshotManagerTest {
         _vmSnapshotMgr._vmInstanceDetailsDao = _vmInstanceDetailsDao;
         _vmSnapshotMgr._vmSnapshotDetailsDao = _vmSnapshotDetailsDao;
         _vmSnapshotMgr._userVmManager = _userVmManager;
+        _vmSnapshotMgr._diskOfferingDao = _diskOfferingDao;
 
         when(_userVMDao.findById(anyLong())).thenReturn(vmMock);
         when(_vmSnapshotDao.findByName(anyLong(), anyString())).thenReturn(null);
@@ -215,9 +222,12 @@ public class VMSnapshotManagerTest {
         List<VolumeVO> mockVolumeList = new ArrayList<VolumeVO>();
         mockVolumeList.add(volumeMock);
         when(volumeMock.getInstanceId()).thenReturn(TEST_VM_ID);
+        when(volumeMock.getDiskOfferingId()).thenReturn(1L);
         when(_volumeDao.findByInstance(anyLong())).thenReturn(mockVolumeList);
         when(_volumeDao.findReadyRootVolumesByInstance(anyLong())).thenReturn(mockVolumeList);
         when(_storagePoolDao.findById(anyLong())).thenReturn(mock(StoragePoolVO.class));
+        when(diskOffering.getShareable()).thenReturn(false);
+        when(_diskOfferingDao.findById(anyLong())).thenReturn(diskOffering);
 
         when(vmMock.getId()).thenReturn(TEST_VM_ID);
         when(vmMock.getServiceOfferingId()).thenReturn(SERVICE_OFFERING_ID);
@@ -326,6 +336,9 @@ public class VMSnapshotManagerTest {
         when(userVm.getAccountId()).thenReturn(accountId);
         when(_accountMgr.getAccount(accountId)).thenReturn(accountVOMock);
         when(vmMock.getState()).thenReturn(State.Running);
+        when(_snapshotDao.listByInstanceId(TEST_VM_ID, Snapshot.State.Creating, Snapshot.State.CreatedOnPrimary, Snapshot.State.BackingUp)).thenReturn(new ArrayList<>());
+        when(_vmSnapshotDao.listByInstanceId(TEST_VM_ID, VMSnapshot.State.Creating, VMSnapshot.State.Reverting, VMSnapshot.State.Expunging)).thenReturn(new ArrayList<>());
+        when(_vmSnapshotDao.persist(any(VMSnapshotVO.class))).thenReturn(vmSnapshotVO);
         _vmSnapshotMgr.allocVMSnapshot(TEST_VM_ID, "", "", true);
     }
 
@@ -348,7 +361,9 @@ public class VMSnapshotManagerTest {
     @Test
     public void testAddSupportForCustomServiceOfferingNotDynamicServiceOffering() {
         _vmSnapshotMgr.addSupportForCustomServiceOffering(TEST_VM_ID, SERVICE_OFFERING_ID, VM_SNAPSHOT_ID);
-        verify(_vmInstanceDetailsDao, never()).listDetails(TEST_VM_ID);
+        verify(_vmInstanceDetailsDao).listDetails(TEST_VM_ID);
+        verify(_vmSnapshotDetailsDao).saveDetails(listVmSnapshotDetailsCaptor.capture());
+        assertEquals(2, listVmSnapshotDetailsCaptor.getValue().size());
     }
 
     @Test
@@ -463,7 +478,8 @@ public class VMSnapshotManagerTest {
         _vmSnapshotMgr.revertCustomServiceOfferingDetailsFromVmSnapshot(vmMock, vmSnapshotVO);
 
         verify(_vmSnapshotDetailsDao).listDetails(VM_SNAPSHOT_ID);
-        verify(_vmInstanceDetailsDao, never()).saveDetails(any());
+        verify(_vmInstanceDetailsDao).saveDetails(listUserVmDetailsCaptor.capture());
+        assertTrue(listUserVmDetailsCaptor.getValue().isEmpty());
         ArgumentCaptor<String> detailNameCaptor = ArgumentCaptor.forClass(String.class);
         verify(_vmInstanceDetailsDao, times(2)).addDetail(eq(TEST_VM_ID), detailNameCaptor.capture(), anyString(), anyBoolean());
         List<String> appliedNames = detailNameCaptor.getAllValues();

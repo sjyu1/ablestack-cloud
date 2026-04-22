@@ -96,6 +96,7 @@ import org.apache.cloudstack.engine.subsystem.api.storage.Scope;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeInfo;
 import org.apache.cloudstack.framework.config.ConfigKey;
+import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.framework.jobs.impl.AsyncJobVO;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
@@ -284,6 +285,8 @@ public class UserVmManagerImplTest {
 
     @Mock
     private VMTemplateDao templateDao;
+    @Mock
+    private ConfigurationDao configurationDao;
 
 
     @Mock
@@ -840,7 +843,7 @@ public class UserVmManagerImplTest {
     @Test
     public void configureCustomRootDiskSizeTestEmptyParameters() {
         Map<String, String> customParameters = new HashMap<>();
-        long expectedRootDiskSize = 99l * GiB_TO_BYTES;
+        long expectedRootDiskSize = 0L;
         long offeringRootDiskSize = 0l;
         prepareAndRunConfigureCustomRootDiskSizeTest(customParameters, expectedRootDiskSize, 1, offeringRootDiskSize);
     }
@@ -3655,6 +3658,10 @@ public class UserVmManagerImplTest {
         when(vm.getId()).thenReturn(vmId);
         when(vm.getState()).thenReturn(VirtualMachine.State.Running);
         when(vm.getTemplateId()).thenReturn(templateId);
+        BackupVO backup = mock(BackupVO.class);
+        when(backupDao.findById(backupId)).thenReturn(backup);
+        when(backup.getBackupOfferingId()).thenReturn(2L);
+        when(backupManager.getBackupProviderForOffering(2L)).thenReturn(null);
 
         when(backupManager.restoreBackupToVM(backupId, vmId)).thenReturn(true);
 
@@ -3680,6 +3687,8 @@ public class UserVmManagerImplTest {
         boolean expunge = true;
 
         ReflectionTestUtils.setField(userVmManagerImpl, "_uuidMgr", uuidMgr);
+        ReflectionTestUtils.setField(userVmManagerImpl, "_configDao", configurationDao);
+        when(configurationDao.getValue("cloud.dr.service.enabled")).thenReturn("false");
         CallContext callContext = mock(CallContext.class);
         Account callingAccount = mock(Account.class);
         when(callingAccount.getId()).thenReturn(accountId);

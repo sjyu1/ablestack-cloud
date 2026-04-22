@@ -71,12 +71,15 @@ import org.apache.cloudstack.engine.subsystem.api.storage.StorageStrategyFactory
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeInfo;
 import org.apache.cloudstack.framework.config.ConfigKey;
+import org.apache.cloudstack.reservation.ReservationVO;
+import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.snapshot.SnapshotHelper;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.SnapshotDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.SnapshotDataStoreVO;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.image.datastore.ImageStoreEntity;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -168,6 +171,8 @@ public class SnapshotManagerTest {
 
     @Mock
     GlobalLock globalLockMock;
+    @Mock
+    ReservationDao reservationDao;
 
     @Mock
     SnapshotPolicyDao snapshotPolicyDaoMock;
@@ -246,6 +251,12 @@ public class SnapshotManagerTest {
         UserVO user = new UserVO(1, "testuser", "password", "firstname", "lastName", "email", "timezone", UUID.randomUUID().toString(), User.Source.UNKNOWN);
         CallContext.register(user, account);
         when(_accountMgr.getAccount(anyLong())).thenReturn(account);
+        Mockito.when(reservationDao.persist(any(ReservationVO.class))).thenAnswer(invocation -> {
+            ReservationVO reservation = invocation.getArgument(0);
+            ReflectionTestUtils.setField(reservation, "id", 1L);
+            return reservation;
+        });
+        Mockito.when(reservationDao.remove(anyLong())).thenReturn(true);
 
         when(_storagePoolDao.findById(anyLong())).thenReturn(poolMock);
         when(poolMock.getScope()).thenReturn(ScopeType.ZONE);
