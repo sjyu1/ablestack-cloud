@@ -90,6 +90,7 @@ import org.apache.cloudstack.framework.messagebus.PublishScope;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
 import org.apache.cloudstack.secstorage.dao.SecondaryStorageHeuristicDao;
 import org.apache.cloudstack.secstorage.heuristics.HeuristicType;
+import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.snapshot.SnapshotHelper;
 import org.apache.cloudstack.storage.command.AttachCommand;
 import org.apache.cloudstack.storage.command.CommandResult;
@@ -155,6 +156,7 @@ import com.cloud.hypervisor.HypervisorGuru;
 import com.cloud.hypervisor.HypervisorGuruManager;
 import com.cloud.projects.Project;
 import com.cloud.projects.ProjectManager;
+import com.cloud.resourcelimit.CheckedReservation;
 import com.cloud.storage.DataStoreRole;
 import com.cloud.storage.GuestOSVO;
 import com.cloud.storage.ImageStoreUploadMonitorImpl;
@@ -273,6 +275,8 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     private AccountService _accountService;
     @Inject
     private ResourceLimitService _resourceLimitMgr;
+    @Inject
+    private ReservationDao reservationDao;
     @Inject
     private LaunchPermissionDao _launchPermissionDao;
     @Inject
@@ -953,6 +957,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         }
 
         _accountMgr.checkAccess(caller, AccessType.OperateEntry, true, template);
+        final Account templateOwner = _accountDao.findById(template.getAccountId());
 
         List<String> failedZones = new ArrayList<>();
 
@@ -992,7 +997,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
                     continue;
                 }
                 if (template.getSize() != null) {
-                    try (CheckedReservation secondaryStorageReservation = new CheckedReservation(templateOwner, ResourceType.secondary_storage, null, null, template.getSize(), reservationDao, _resourceLimitMgr)) {
+                    try (CheckedReservation secondaryStorageReservation = new CheckedReservation(templateOwner, ResourceType.secondary_storage, template.getSize(), reservationDao, _resourceLimitMgr)) {
                         if (!copy(userId, template, srcSecStore, dataCenterVOs.get(destZoneId))) {
                             failedZones.add(dataCenterVOs.get(destZoneId).getName());
                             continue;

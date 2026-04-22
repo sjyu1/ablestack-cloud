@@ -78,6 +78,7 @@ import org.apache.cloudstack.framework.config.Configurable;
 import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.framework.jobs.AsyncJob;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
+import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.resourcedetail.SnapshotPolicyDetailVO;
 import org.apache.cloudstack.resourcedetail.dao.SnapshotPolicyDetailsDao;
 import org.apache.cloudstack.snapshot.SnapshotHelper;
@@ -124,6 +125,7 @@ import com.cloud.hypervisor.Hypervisor.HypervisorType;
 import com.cloud.org.Grouping;
 import com.cloud.projects.Project.ListProjectResourcesCriteria;
 import com.cloud.resource.ResourceManager;
+import com.cloud.resourcelimit.CheckedReservation;
 import com.cloud.server.ResourceTag.ResourceObjectType;
 import com.cloud.server.TaggedResourceService;
 import com.cloud.storage.CreateSnapshotPayload;
@@ -229,6 +231,8 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
     HostDao hostDao;
     @Inject
     ResourceLimitService _resourceLimitMgr;
+    @Inject
+    ReservationDao reservationDao;
     @Inject
     DomainManager _domainMgr;
     @Inject
@@ -2138,8 +2142,8 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
             hypervisorType = volume.getHypervisorType();
         }
 
-        try (CheckedReservation volumeSnapshotReservation = new CheckedReservation(owner, ResourceType.snapshot, null, null, 1L, reservationDao, _resourceLimitMgr);
-             CheckedReservation storageReservation = new CheckedReservation(owner, storeResourceType, null, null, volume.getSize(), reservationDao, _resourceLimitMgr)) {
+        try (CheckedReservation volumeSnapshotReservation = new CheckedReservation(owner, ResourceType.snapshot, 1L, reservationDao, _resourceLimitMgr);
+             CheckedReservation storageReservation = new CheckedReservation(owner, storeResourceType, volume.getSize(), reservationDao, _resourceLimitMgr)) {
             SnapshotVO snapshotVO = new SnapshotVO(volume.getDataCenterId(), volume.getAccountId(), volume.getDomainId(), volume.getId(), volume.getDiskOfferingId(), snapshotName,
                     (short)snapshotType.ordinal(), snapshotType.name(), volume.getSize(), volume.getMinIops(), volume.getMaxIops(), hypervisorType, locationType);
 
@@ -2218,7 +2222,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         // Resource limit checks are not performed here at the moment, but they were added in case this method is used
         // in the future to copy a standalone snapshot
         long requiredSecondaryStorageSpace = shouldCheckResourceLimits ? snapshotDataStoreVO.getSize() : 0L;
-        try (CheckedReservation secondaryStorageReservation = new CheckedReservation(account, ResourceType.secondary_storage, null, null, null, requiredSecondaryStorageSpace, null, reservationDao, _resourceLimitMgr)) {
+        try (CheckedReservation secondaryStorageReservation = new CheckedReservation(account, ResourceType.secondary_storage, requiredSecondaryStorageSpace, reservationDao, _resourceLimitMgr)) {
             // snapshotId may refer to ID of a removed parent snapshot
             SnapshotInfo snapshotOnSecondary = snapshotFactory.getSnapshot(snapshotId, srcSecStore);
             if (kvmIncrementalSnapshot) {
@@ -2305,7 +2309,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
                 throw new StorageUnavailableException("Destination zone is not ready, no image store with free capacity", DataCenter.class, destZoneId);
             }
         }
-        try  (CheckedReservation secondaryStorageReservation = new CheckedReservation(account, ResourceType.secondary_storage, null, null, null, size, null, reservationDao, _resourceLimitMgr)) {
+        try  (CheckedReservation secondaryStorageReservation = new CheckedReservation(account, ResourceType.secondary_storage, size, reservationDao, _resourceLimitMgr)) {
             logger.debug("Copying snapshot chain for snapshot ID: {} on secondary store: {} of zone ID: {}", snapshotVO, dstSecStore, destZone);
             Collections.reverse(snapshotChain);
             for (SnapshotDataStoreVO snapshotDataStoreVO : snapshotChain) {

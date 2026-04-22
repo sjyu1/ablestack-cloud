@@ -172,6 +172,7 @@ import org.apache.cloudstack.api.response.UnmanagedInstanceResponse;
 import org.apache.cloudstack.api.response.UserVmResponse;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
+import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.engine.orchestration.service.NetworkOrchestrationService;
 import org.apache.cloudstack.engine.orchestration.service.VolumeOrchestrationService;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
@@ -289,6 +290,8 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
     private ResourceManager resourceManager;
     @Inject
     private ResourceLimitService resourceLimitService;
+    @Inject
+    private ReservationDao reservationDao;
     @Inject
     private VMInstanceDetailsDao vmInstanceDetailsDao;
     @Inject
@@ -2921,7 +2924,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             try {
                 userVm = userVmManager.importVM(zone, null, template, null, displayName, owner,
                         null, caller, true, null, owner.getAccountId(), userId,
-                        serviceOffering, null, hostName,
+                        serviceOffering, null, null, hostName,
                         Hypervisor.HypervisorType.KVM, allDetails, powerState, null);
             } catch (InsufficientCapacityException ice) {
                 logger.error(String.format("Failed to import vm name: %s", instanceName), ice);
@@ -3394,7 +3397,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         UnmanagedInstanceTO sourceVMwareInstance = null;
         ImportVmTask importVMTask = null;
         try {
-            HostVO convertHost = selectKVMHostForConversionInCluster(destinationCluster, convertInstanceHostId);
+            HostVO convertHost = selectKVMHostForConversionInCluster(destinationCluster, convertInstanceHostId, false);
             HostVO importHost = convertHost;
             logger.debug("The host {} is selected to execute the ablestack-v2k conversion of the instance {} from VMware to KVM",
                     convertHost, sourceVMName);

@@ -3961,6 +3961,8 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
                 diskParams.iopsWriteRate, diskParams.iopsWriteRateMax, diskParams.iopsWriteRateMaxLength,
                 diskParams.hypervisorSnapshotReserve, diskParams.cacheMode, customParams.storagePolicy, dynamicScalingEnabled,
                 diskOfferingId, diskOfferingStrictness, isCustomized, encryptRoot,
+                sourceDiskOffering != null && sourceDiskOffering.getShareable(),
+                sourceDiskOffering != null && sourceDiskOffering.getKvdoEnable(),
                 vgpuProfileId, finalGpuCount, gpuDisplay, purgeResources, leaseParams.leaseDuration, leaseParams.leaseExpiryAction);
     }
 
@@ -4227,7 +4229,8 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
                 rateParams.bytesWriteRate, rateParams.bytesWriteRateMax, rateParams.bytesWriteRateMaxLength,
                 iopsParams.iopsReadRate, iopsParams.iopsReadRateMax, iopsParams.iopsReadRateMaxLength,
                 iopsParams.iopsWriteRate, iopsParams.iopsWriteRateMax, iopsParams.iopsWriteRateMaxLength,
-                hypervisorSnapshotReserve, cacheMode, mergedDetails, storagePolicy, diskSizeStrictness, encrypt);
+                hypervisorSnapshotReserve, cacheMode, mergedDetails, storagePolicy, diskSizeStrictness, encrypt,
+                sourceOffering.getShareable(), sourceOffering.getKvdoEnable());
     }
 
     private DiskOfferingVO getAndValidateSourceDiskOffering(Long sourceOfferingId) {
@@ -5559,7 +5562,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
             reservedIpAddressesAmount = NetUtils.ip2Long(endIP) - NetUtils.ip2Long(startIP) + 1;
         }
 
-        try (CheckedReservation publicIpReservation = new CheckedReservation(vlanOwner, ResourceType.public_ip, null, null, null, reservedIpAddressesAmount, null, reservationDao, _resourceLimitMgr)) {
+        try (CheckedReservation publicIpReservation = new CheckedReservation(vlanOwner, ResourceType.public_ip, reservedIpAddressesAmount, reservationDao, _resourceLimitMgr)) {
             return commitVlan(zoneId, podId, startIP, endIP, newVlanGateway, newVlanNetmask, vlanId, forVirtualNetwork, forSystemVms, networkId, physicalNetworkId, startIPv6, endIPv6, ip6Gateway,
                     ip6Cidr, domain, vlanOwner, network, sameSubnet, cmd.getProvider());
         }
@@ -6192,16 +6195,16 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
                 newIpAddressAmount = NetUtils.ip2Long(endIp) - NetUtils.ip2Long(startIp) + 1;
             }
 
-            try (CheckedReservation publicIpReservation = new CheckedReservation(account, ResourceType.public_ip, null, null, null, newIpAddressAmount, existingIpAddressAmount, reservationDao, _resourceLimitMgr)) {
+            final long publicIpCountDiff = newIpAddressAmount - existingIpAddressAmount;
+            try (CheckedReservation publicIpReservation = new CheckedReservation(account, ResourceType.public_ip, publicIpCountDiff, reservationDao, _resourceLimitMgr)) {
 
                 updateVlanAndIpv4Range(id, vlanRange, startIp, endIp, gateway, netmask, isRangeForSystemVM, forSystemVms);
 
                 if (account != null) {
-                    long countDiff = newIpAddressAmount - existingIpAddressAmount;
-                    if (countDiff > 0) {
-                        _resourceLimitMgr.incrementResourceCount(account.getId(), ResourceType.public_ip, countDiff);
-                    } else if (countDiff < 0) {
-                        _resourceLimitMgr.decrementResourceCount(account.getId(), ResourceType.public_ip, Math.abs(countDiff));
+                    if (publicIpCountDiff > 0) {
+                        _resourceLimitMgr.incrementResourceCount(account.getId(), ResourceType.public_ip, publicIpCountDiff);
+                    } else if (publicIpCountDiff < 0) {
+                        _resourceLimitMgr.decrementResourceCount(account.getId(), ResourceType.public_ip, Math.abs(publicIpCountDiff));
                     }
                 }
             }
@@ -6613,7 +6616,7 @@ public class ConfigurationManagerImpl extends ManagerBase implements Configurati
 
         // Check Public IP resource limits
         long reservedIpAddressesAmount = vlanOwner != null ? _publicIpAddressDao.countIPs(zoneId, vlanDbId, false) : 0L;
-        try (CheckedReservation publicIpReservation = new CheckedReservation(vlanOwner, ResourceType.public_ip, null, null, null, reservedIpAddressesAmount, null, reservationDao, _resourceLimitMgr)) {
+        try (CheckedReservation publicIpReservation = new CheckedReservation(vlanOwner, ResourceType.public_ip, reservedIpAddressesAmount, reservationDao, _resourceLimitMgr)) {
 
             if (vlanOwner != null) {
                 // Create an AccountVlanMapVO entry

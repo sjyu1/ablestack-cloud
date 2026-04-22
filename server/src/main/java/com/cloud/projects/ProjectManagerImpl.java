@@ -47,6 +47,7 @@ import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.framework.messagebus.MessageBus;
 import org.apache.cloudstack.framework.messagebus.PublishScope;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
+import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.utils.mailing.MailAddress;
 import org.apache.cloudstack.utils.mailing.SMTPMailProperties;
 import org.apache.cloudstack.utils.mailing.SMTPMailSender;
@@ -80,6 +81,7 @@ import com.cloud.projects.ProjectAccount.Role;
 import com.cloud.projects.dao.ProjectAccountDao;
 import com.cloud.projects.dao.ProjectDao;
 import com.cloud.projects.dao.ProjectInvitationDao;
+import com.cloud.resourcelimit.CheckedReservation;
 import com.cloud.storage.VMTemplateVO;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.VMTemplateDao;
@@ -127,6 +129,8 @@ public class ProjectManagerImpl extends ManagerBase implements ProjectManager, C
     ConfigurationManager _configMgr;
     @Inject
     ResourceLimitService _resourceLimitMgr;
+    @Inject
+    private ReservationDao reservationDao;
     @Inject
     private ProjectAccountDao _projectAccountDao;
     @Inject
@@ -711,7 +715,7 @@ public class ProjectManagerImpl extends ManagerBase implements ProjectManager, C
                                     " doesn't belong to the project. Add it to the project first and then change the project's ownership");
                         }
 
-                        try (CheckedReservation checkedReservation = new CheckedReservation(futureOwnerAccount, ResourceType.project, null, null, 1L, reservationDao, _resourceLimitMgr)) {
+                        try (CheckedReservation checkedReservation = new CheckedReservation(futureOwnerAccount, ResourceType.project, 1L, reservationDao, _resourceLimitMgr)) {
                             //unset the role for the old owner
                             ProjectAccountVO currentOwner = _projectAccountDao.findByProjectIdAccountId(projectId, currentOwnerAccount.getId());
                             currentOwner.setAccountRole(Role.Regular);
