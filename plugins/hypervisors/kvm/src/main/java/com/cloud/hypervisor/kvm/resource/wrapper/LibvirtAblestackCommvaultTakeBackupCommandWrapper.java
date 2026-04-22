@@ -26,6 +26,7 @@ import com.cloud.resource.ResourceWrapper;
 import com.cloud.utils.Pair;
 import org.apache.cloudstack.backup.BackupAnswer;
 import org.apache.cloudstack.backup.AblestackCommvaultTakeBackupCommand;
+import org.apache.commons.lang3.StringUtils;
 
 @ResourceWrapper(handles = AblestackCommvaultTakeBackupCommand.class)
 public class LibvirtAblestackCommvaultTakeBackupCommandWrapper extends CommandWrapper<AblestackCommvaultTakeBackupCommand, Answer, LibvirtComputingResource> {
@@ -35,8 +36,10 @@ public class LibvirtAblestackCommvaultTakeBackupCommandWrapper extends CommandWr
         Pair<Integer, String> result = backupHelper.executeBackup(command);
 
         if (result.first() != 0) {
-            logger.debug("Failed to take VM backup");
-            BackupAnswer answer = new BackupAnswer(command, false, result.second());
+            String failureDetails = StringUtils.defaultIfBlank(result.second(),
+                    "Commvault backup helper returned failure without details");
+            logger.warn("Failed to take VM backup for [{}]: {}", command.getVmName(), failureDetails);
+            BackupAnswer answer = new BackupAnswer(command, false, failureDetails);
             if (result.first() == LibvirtAblestackCommvaultBackupHelper.EXIT_CLEANUP_FAILED) {
                 logger.debug("Backup cleanup failed");
                 answer.setNeedsCleanup(true);

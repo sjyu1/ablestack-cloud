@@ -1308,6 +1308,11 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private boolean hasNasBackupFiles(VirtualMachine vm, Backup backup) {
         final BackupRepository backupRepository = getBackupRepository(backup);
         final Host host = getVMHypervisorHost(vm);
+        if (host == null) {
+            LOG.warn("Unable to resolve hypervisor host for VM [{}] while checking NAS backup [{}]",
+                    vm.getInstanceName(), backup.getUuid());
+            return false;
+        }
         final HostVO hostVO = hostDao.findById(host.getId());
         if (hostVO == null) {
             LOG.warn("Unable to find host information for VM [{}] while checking NAS backup [{}]", vm.getInstanceName(), backup.getUuid());

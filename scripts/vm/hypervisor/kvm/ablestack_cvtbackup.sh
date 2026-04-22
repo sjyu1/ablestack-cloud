@@ -266,6 +266,11 @@ backup_running_vm() {
   local parent_checkpoint_file=""
   if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_PATH" ]]; then
     parent_checkpoint_file="$PARENT_CHECKPOINT_PATH"
+    if [[ ! -f "$parent_checkpoint_file" ]]; then
+      echo "Parent checkpoint file not found for incremental backup: $parent_checkpoint_file"
+      cleanup
+      exit 1
+    fi
     redefine_checkpoint_if_needed "$VM" "$parent_checkpoint_file"
   fi
 
@@ -296,7 +301,8 @@ backup_running_vm() {
   fi
 
   local backup_begin=0
-  if virsh -c qemu:///system backup-begin --domain "$VM" --backupxml "$dest/backup.xml" --checkpointxml "$dest/checkpoint.xml" > /dev/null 2>&1; then
+  local backup_begin_output=""
+  if backup_begin_output=$(virsh -c qemu:///system backup-begin --domain "$VM" --backupxml "$dest/backup.xml" --checkpointxml "$dest/checkpoint.xml" 2>&1); then
     backup_begin=1
   fi
 
@@ -305,6 +311,7 @@ backup_running_vm() {
   fi
 
   if [[ $backup_begin -ne 1 ]]; then
+    echo "Failed to start libvirt backup for VM [$VM]: ${backup_begin_output:-Unknown error}"
     cleanup
     exit 1
   fi
