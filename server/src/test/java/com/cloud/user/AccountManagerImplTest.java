@@ -247,7 +247,7 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
     }
 
     @Test
-    public void deleteUserAccount() {
+    public void deleteUserAccount() throws Exception {
         AccountVO account = new AccountVO();
         account.setId(42L);
         account.setType(Account.Type.NORMAL);
@@ -284,7 +284,7 @@ public class AccountManagerImplTest extends AccountManagentImplTestBase {
     }
 
     @Test
-    public void deleteUserAccountCleanup() {
+    public void deleteUserAccountCleanup() throws Exception {
         AccountVO account = new AccountVO();
         account.setId(42L);
         account.setType(Account.Type.NORMAL);
