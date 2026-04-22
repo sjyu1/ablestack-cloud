@@ -158,7 +158,6 @@ public class LibvirtImportConvertedInstanceCommandWrapperTest {
         Mockito.when(destDisk.getPath()).thenReturn("xyz");
         Mockito.when(storagePoolManager.getStoragePool(Storage.StoragePoolType.RBD, destinationPoolUuid))
                 .thenReturn(destinationPool);
-        Mockito.when(destinationPool.getType()).thenReturn(Storage.StoragePoolType.RBD);
         Mockito.when(storagePoolManager.copyPhysicalDisk(Mockito.eq(sourceDisk), Mockito.anyString(), Mockito.eq(destinationPool), Mockito.anyInt()))
                 .thenReturn(destDisk);
 
