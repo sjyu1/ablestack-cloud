@@ -2340,6 +2340,7 @@ describe('Views > AutogenView.vue', () => {
           currentAction: {
             label: 'label.name',
             groupAction: true,
+            invokedAsGroupAction: true,
             groupMap: (selection) => {
               return selection.map(x => { return { id: x } })
             }
