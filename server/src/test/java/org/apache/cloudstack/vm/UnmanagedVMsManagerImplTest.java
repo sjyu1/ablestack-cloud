@@ -390,7 +390,7 @@ public class UnmanagedVMsManagerImplTest {
         when(poolVO.getClusterId()).thenReturn(clusterVO.getId());
         when(poolVO.getUuid()).thenReturn("pool-uuid");
         when(poolVO.getName()).thenReturn("pool-name");
-        when(poolVO.getPath()).thenReturn("/pool-path");
+        Mockito.lenient().when(poolVO.getPath()).thenReturn("/pool-path");
         List<StoragePoolVO> pools = new ArrayList<>();
         pools.add(poolVO);
         when(primaryDataStoreDao.listPoolByHostPath(Mockito.anyString(), Mockito.anyString())).thenReturn(pools);
@@ -407,7 +407,7 @@ public class UnmanagedVMsManagerImplTest {
         when(networkDao.findById(anyLong())).thenReturn(networkVO);
         List<NetworkVO> networks = new ArrayList<>();
         networks.add(networkVO);
-        when(networkDao.listByZone(anyLong())).thenReturn(networks);
+        Mockito.lenient().when(networkDao.listByZone(anyLong())).thenReturn(networks);
         doNothing().when(networkModel).checkNetworkPermissions(any(Account.class), any(Network.class));
         NicProfile profile = Mockito.mock(NicProfile.class);
         Integer deviceId = 100;
@@ -421,7 +421,7 @@ public class UnmanagedVMsManagerImplTest {
         when(responseGenerator.createUserVmResponse(any(ResponseObject.ResponseView.class), Mockito.anyString(), any(UserVm.class))).thenReturn(userVmResponses);
         when(resourceLimitService.getResourceLimitHostTags(any(ServiceOfferingVO.class), any(VMTemplateVO.class))).thenReturn(Collections.emptyList());
         when(resourceLimitService.getResourceLimitStorageTagsForResourceCountOperation(anyBoolean(), any())).thenReturn(Collections.emptyList());
-        when(storagePoolTagsDao.listPoolIdsByTag(anyString())).thenReturn(Collections.emptyList());
+        Mockito.lenient().when(storagePoolTagsDao.listPoolIdsByTag(anyString())).thenReturn(Collections.emptyList());
         final long[] reservationId = {1L};
         Mockito.when(reservationDao.persist(any(ReservationVO.class))).thenAnswer((org.mockito.stubbing.Answer<ReservationVO>) invocation -> {
             ReservationVO reservationVO = invocation.getArgument(0);
@@ -906,10 +906,10 @@ public class UnmanagedVMsManagerImplTest {
         when(destPool.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(destPool.getUuid()).thenReturn("dest-pool-uuid");
         when(destPool.getName()).thenReturn("dest-pool");
-        when(destPool.getPath()).thenReturn("/dest-pool");
+        Mockito.lenient().when(destPool.getPath()).thenReturn("/dest-pool");
         StoragePoolVO zoneDestPool = mock(StoragePoolVO.class);
-        when(zoneDestPool.getDataCenterId()).thenReturn(zoneId);
-        when(zoneDestPool.getClusterId()).thenReturn(null);
+        Mockito.lenient().when(zoneDestPool.getDataCenterId()).thenReturn(zoneId);
+        Mockito.lenient().when(zoneDestPool.getClusterId()).thenReturn(null);
         when(zoneDestPool.getPoolType()).thenReturn(Storage.StoragePoolType.NetworkFilesystem);
         when(zoneDestPool.getUuid()).thenReturn("zone-pool-uuid");
         when(zoneDestPool.getName()).thenReturn("zone-pool");
