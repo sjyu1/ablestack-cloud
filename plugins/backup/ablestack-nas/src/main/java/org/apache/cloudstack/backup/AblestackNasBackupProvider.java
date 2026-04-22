@@ -316,12 +316,12 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         } catch (AgentUnavailableException e) {
             logger.error("Unable to contact backend control plane to initiate backup for VM {}", vm.getInstanceName());
             backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
+            removeBackupWithDetails(backupVO.getId());
             throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
         } catch (OperationTimedoutException e) {
             logger.error("Operation to initiate backup timed out for VM {}", vm.getInstanceName());
             backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
+            removeBackupWithDetails(backupVO.getId());
             throw new CloudRuntimeException("Operation to initiate backup timed out, please try again");
         }
 
@@ -340,14 +340,14 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         logger.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
         if (retryAsFullOnFailure) {
             backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
+            removeBackupWithDetails(backupVO.getId());
         } else if (answer != null && answer.getNeedsCleanup()) {
             logger.error("Backup cleanup failed for VM {}. Leaving the backup in Error state.", vm.getInstanceName());
             backupVO.setStatus(Backup.Status.Error);
             backupDao.update(backupVO.getId(), backupVO);
         } else {
             backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
+            removeBackupWithDetails(backupVO.getId());
         }
         return BackupExecutionResult.failure(details, backupVO);
     }
@@ -366,7 +366,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         if (backup == null) {
             return;
         }
-        backupDao.remove(backup.getId());
+        removeBackupWithDetails(backup.getId());
     }
 
     private static final class BackupExecutionResult {
@@ -547,6 +547,11 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         if (backup instanceof BackupVO) {
             backupDao.loadDetails((BackupVO) backup);
         }
+    }
+
+    private void removeBackupWithDetails(long backupId) {
+        backupDetailsDao.removeDetails(backupId);
+        backupDao.remove(backupId);
     }
 
     private boolean hasDependentBackups(Backup backup) {
@@ -1284,12 +1289,12 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 }
                 LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp because its backup repository mapping is no longer valid",
                         backup.getUuid(), vm.getInstanceName());
-                backupDao.remove(backup.getId());
+                removeBackupWithDetails(backup.getId());
                 continue;
             }
             LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp because no backup files were found in repository path [{}]",
                     backup.getUuid(), vm.getInstanceName(), backup.getExternalId());
-            backupDao.remove(backup.getId());
+            removeBackupWithDetails(backup.getId());
         }
     }
 

@@ -520,6 +520,11 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
     }
 
+    private void removeBackupWithDetails(long backupId) {
+        backupDetailsDao.removeDetails(backupId);
+        backupDao.remove(backupId);
+    }
+
     @Override
     public boolean supportsProviderManagedBackupAgents() {
         return true;
@@ -654,12 +659,12 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             } catch (AgentUnavailableException e) {
                 LOG.error("Unable to contact backend control plane to initiate backup for VM {}", vm.getInstanceName());
                 backupVO.setStatus(Backup.Status.Failed);
-                backupDao.remove(backupVO.getId());
+                removeBackupWithDetails(backupVO.getId());
                 throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
             } catch (OperationTimedoutException e) {
                 LOG.error("Operation to initiate backup timed out for VM {}", vm.getInstanceName());
                 backupVO.setStatus(Backup.Status.Failed);
-                backupDao.remove(backupVO.getId());
+                removeBackupWithDetails(backupVO.getId());
                 throw new CloudRuntimeException("Operation to initiate backup timed out, please try again");
             }
 
@@ -732,7 +737,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     }
                 }
                 backupVO.setStatus(Backup.Status.Failed);
-                backupDao.remove(backupVO.getId());
+                removeBackupWithDetails(backupVO.getId());
                 executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
                 return BackupExecutionResult.failure("Failed to complete Commvault backup job", backupVO);
             }
@@ -741,14 +746,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             LOG.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
             if (retryAsFullOnFailure) {
                 backupVO.setStatus(Backup.Status.Failed);
-                backupDao.remove(backupVO.getId());
+                removeBackupWithDetails(backupVO.getId());
             } else if (answer != null && answer.getNeedsCleanup()) {
                 LOG.error("Backup cleanup failed for VM {}. Leaving the backup in Error state.", vm.getInstanceName());
                 backupVO.setStatus(Backup.Status.Error);
                 backupDao.update(backupVO.getId(), backupVO);
             } else {
                 backupVO.setStatus(Backup.Status.Failed);
-                backupDao.remove(backupVO.getId());
+                removeBackupWithDetails(backupVO.getId());
             }
             return BackupExecutionResult.failure(details, backupVO);
         } catch (RuntimeException e) {
@@ -758,7 +763,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 Backup existingBackup = backupDao.findById(backupVO.getId());
                 if (existingBackup != null) {
                     backupVO.setStatus(Backup.Status.Failed);
-                    backupDao.remove(backupVO.getId());
+                    removeBackupWithDetails(backupVO.getId());
                 }
             } catch (Exception cleanupException) {
                 LOG.warn("Failed to cleanup incomplete Commvault backup entry [{}] after unexpected error", backupVO.getUuid(), cleanupException);
@@ -781,7 +786,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (backup == null) {
             return;
         }
-        backupDao.remove(backup.getId());
+        removeBackupWithDetails(backup.getId());
     }
 
     private static final class BackupExecutionResult {
@@ -1845,7 +1850,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
                     if (result) {
                         cleanupBackupPathOnStageHost(clientName, path, false, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
-                        backupDao.remove(backup.getId());
+                        removeBackupWithDetails(backup.getId());
                     }
                 }
             }
@@ -1870,7 +1875,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final String stageHostName = getBackupDetail(backup, DETAIL_STAGE_HOST);
         if (StringUtils.isBlank(stageHostName)) {
             LOG.warn("Removing stale Commvault backup [{}] for VM [{}] stuck in BackingUp without stage host details", backup.getUuid(), vm.getInstanceName());
-            backupDao.remove(backup.getId());
+            removeBackupWithDetails(backup.getId());
             return true;
         }
         return false;
@@ -1940,7 +1945,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             LOG.warn("Removing incomplete Commvault backup [{}] for VM [{}] due to terminal job [{}] state [{}]",
                     backupVO.getUuid(), vm.getInstanceName(), jobId, jobState);
             backupVO.setStatus(Backup.Status.Failed);
-            backupDao.remove(backupVO.getId());
+            removeBackupWithDetails(backupVO.getId());
             return true;
         }
 
