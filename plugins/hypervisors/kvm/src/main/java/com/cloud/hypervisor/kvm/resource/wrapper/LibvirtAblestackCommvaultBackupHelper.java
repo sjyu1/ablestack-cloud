@@ -36,6 +36,7 @@ import org.libvirt.DomainInfo.DomainState;
 import org.libvirt.LibvirtException;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
+import org.apache.commons.lang3.StringUtils;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
@@ -95,6 +96,7 @@ class LibvirtAblestackCommvaultBackupHelper {
         }
 
         List<String[]> commands = new ArrayList<>();
+        ensureParentCheckpointMaterialized(command);
         String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
         LOGGER.debug("Executing Commvault backup script command=[{}]", String.join(" ", scriptCommand));
         commands.add(scriptCommand);
@@ -173,6 +175,7 @@ class LibvirtAblestackCommvaultBackupHelper {
             String dummyVmXml = buildDummyVmXml(dummyVmName, diskPaths);
             resource.startVM(conn, dummyVmName, dummyVmXml, Domain.CreateFlags.PAUSED);
 
+            ensureParentCheckpointMaterialized(command);
             if (isIncremental(command) && command.getParentCheckpointPath() != null && !command.getParentCheckpointPath().isEmpty()) {
                 redefineCheckpointIfNeeded(dummyVmName, Path.of(command.getParentCheckpointPath()));
             }
@@ -212,6 +215,27 @@ class LibvirtAblestackCommvaultBackupHelper {
             return new Pair<>(1, e.getMessage());
         } finally {
             cleanupDummyVm(dummyVmName);
+        }
+    }
+
+    private void ensureParentCheckpointMaterialized(AblestackCommvaultTakeBackupCommand command) {
+        if (!isIncremental(command) || StringUtils.isBlank(command.getParentCheckpointPath())
+                || StringUtils.isBlank(command.getParentCheckpointXml())) {
+            return;
+        }
+        Path checkpointPath = Path.of(command.getParentCheckpointPath());
+        if (Files.exists(checkpointPath)) {
+            return;
+        }
+        try {
+            Path parentDir = checkpointPath.getParent();
+            if (parentDir != null) {
+                Files.createDirectories(parentDir);
+            }
+            Files.writeString(checkpointPath, command.getParentCheckpointXml(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            LOGGER.debug("Materialized parent checkpoint XML at [{}] for VM [{}]", checkpointPath, command.getVmName());
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to materialize parent checkpoint XML at " + checkpointPath, e);
         }
     }
 

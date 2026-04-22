@@ -35,6 +35,7 @@ public class AblestackCommvaultTakeBackupCommand extends Command {
     private String parentBackupPath;
     private String parentCheckpointName;
     private String parentCheckpointPath;
+    private String parentCheckpointXml;
     private List<String> backupFiles;
 
     public AblestackCommvaultTakeBackupCommand(String vmName, String backupPath) {
@@ -121,6 +122,14 @@ public class AblestackCommvaultTakeBackupCommand extends Command {
 
     public void setParentCheckpointPath(String parentCheckpointPath) {
         this.parentCheckpointPath = parentCheckpointPath;
+    }
+
+    public String getParentCheckpointXml() {
+        return parentCheckpointXml;
+    }
+
+    public void setParentCheckpointXml(String parentCheckpointXml) {
+        this.parentCheckpointXml = parentCheckpointXml;
     }
 
     public List<String> getBackupFiles() {

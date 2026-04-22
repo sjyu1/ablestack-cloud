@@ -116,6 +116,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String BACKUP_ENGINE_RBD_DIFF = "RBD_DIFF";
     private static final String DETAIL_CHECKPOINT_NAME = "commvault.checkpoint.name";
     private static final String DETAIL_CHECKPOINT_PATH = "commvault.checkpoint.path";
+    private static final String DETAIL_CHECKPOINT_XML = "commvault.checkpoint.xml";
     private static final String DETAIL_PARENT_BACKUP_UUID = "commvault.parent.backup.uuid";
     private static final String DETAIL_PARENT_BACKUP_PATH = "commvault.parent.backup.path";
     private static final String DETAIL_PARENT_CHECKPOINT_NAME = "commvault.parent.checkpoint.name";
@@ -634,6 +635,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     latestBackup.getExternalId().substring(0, latestBackup.getExternalId().lastIndexOf(','))));
             command.setParentCheckpointName(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
             command.setParentCheckpointPath(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
+            command.setParentCheckpointXml(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_XML));
         }
 
         try {
@@ -656,6 +658,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
                 Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
                 String cmd = String.format(RM_COMMAND, backupPath);
+                if (BACKUP_ENGINE_QCOW2.equals(backupEngine)) {
+                    String checkpointXml = readFileContentsOnHost(vmHostVO, credentials.first(), credentials.second(), sshPort,
+                            getCheckpointPath(backupPath, checkpointName, backupEngine));
+                    if (StringUtils.isNotBlank(checkpointXml)) {
+                        backupDetails.put(DETAIL_CHECKPOINT_XML, checkpointXml);
+                    }
+                }
                 String clientId = client.getClientId(vmHost.getName());
                 String subClientEntity = client.getSubclient(clientId, vm.getInstanceName());
                 if (subClientEntity == null) {
@@ -1549,6 +1558,24 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
     }
 
+    private String readFileContentsOnHost(HostVO host, String username, String password, int port, String path) {
+        if (host == null || StringUtils.isBlank(path)) {
+            return null;
+        }
+        String command = String.format("test -f %s && cat %s", shellQuote(path), shellQuote(path));
+        try {
+            Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), port,
+                    username, null, password, command, 120000, 120000, 3600000);
+            if (!response.first()) {
+                return null;
+            }
+            return response.second();
+        } catch (Exception e) {
+            LOG.warn("Failed to read file [{}] on host [{}]", path, host.getName(), e);
+            return null;
+        }
+    }
+
     @Override
     public boolean deleteBackup(Backup backup, boolean forced) {
         loadBackupDetailsIfNeeded(backup);
@@ -2083,6 +2110,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
 
         return new Ternary<>(username, password, null);
+    }
+
+    private String shellQuote(String value) {
+        return "'" + StringUtils.defaultString(value).replace("'", "'\"'\"'") + "'";
     }
 
     private boolean executeDeleteBackupPathCommand(HostVO host, String username, String password, int port, String command) {
