@@ -258,7 +258,10 @@ public abstract class LibvirtServerDiscoverer extends DiscovererBase implements 
                 }
             }
 
-            int port = NumbersUtil.parseInt(_configDao.getValue("kvm.ssh.port"), 22);
+            int port = uri.getPort();
+            if (port <= 0) {
+                port = AgentManager.KVMHostDiscoverySshPort.valueIn(clusterId);
+            }
             sshConnection = new Connection(agentIp, port);
 
             sshConnection.connect(null, 60000, 60000);
@@ -367,6 +370,9 @@ public abstract class LibvirtServerDiscoverer extends DiscovererBase implements 
             Map<String, String> hostDetails = connectedHost.getDetails();
             hostDetails.put("password", password);
             hostDetails.put("username", username);
+            if (uri.getPort() > 0) {
+                hostDetails.put(Host.HOST_SSH_PORT, String.valueOf(uri.getPort()));
+            }
             _hostDao.saveDetails(connectedHost);
             return resources;
         } catch (DiscoveredWithErrorException e) {
