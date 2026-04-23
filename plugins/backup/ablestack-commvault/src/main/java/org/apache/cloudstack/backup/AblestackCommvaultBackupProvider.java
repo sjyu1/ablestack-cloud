@@ -1075,6 +1075,37 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return java.nio.file.Path.of(backupPath, filePath).toString();
     }
 
+    private void validateRestoreChainIntegrity(Backup backup) {
+        if (backup == null || isLegacyBackup(backup)) {
+            return;
+        }
+
+        loadBackupDetailsIfNeeded(backup);
+        final Set<String> visitedBackupUuids = new HashSet<>();
+        Backup current = backup;
+        while (current != null) {
+            final String currentBackupUuid = current.getUuid();
+            if (StringUtils.isNotBlank(currentBackupUuid) && !visitedBackupUuids.add(currentBackupUuid)) {
+                throw new CloudRuntimeException(String.format("Unable to restore backup [%s] because the incremental backup chain contains a cycle at [%s].",
+                        backup.getUuid(), currentBackupUuid));
+            }
+
+            final String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (StringUtils.isBlank(parentBackupUuid)) {
+                return;
+            }
+
+            final Backup parentBackup = backupDao.findByUuid(parentBackupUuid);
+            if (parentBackup == null) {
+                throw new CloudRuntimeException(String.format("Unable to restore backup [%s] because parent backup [%s] is missing from the incremental chain.",
+                        backup.getUuid(), parentBackupUuid));
+            }
+
+            loadBackupDetailsIfNeeded(parentBackup);
+            current = parentBackup;
+        }
+    }
+
     private boolean isLegacyBackup(Backup backup) {
         return getBackupDetail(backup, DETAIL_BACKUP_ENGINE) == null;
     }
@@ -1196,6 +1227,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     private Pair<Boolean, String> restoreVMBackup(VirtualMachine vm, Backup backup) {
         validateNoKvmFileBasedVmSnapshots(vm);
+        validateRestoreChainIntegrity(backup);
         loadBackupDetailsIfNeeded(backup);
         try {
             String commvaultServer = getUrlDomain(CommvaultUrl.value());
@@ -1341,6 +1373,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     // 백업 볼륨 복원 및 연결
     @Override
     public Pair<Boolean, String> restoreBackedUpVolume(Backup backup, Backup.VolumeInfo backupVolumeInfo, String hostIp, String dataStoreUuid, Pair<String, VirtualMachine.State> vmNameAndState) {
+        validateRestoreChainIntegrity(backup);
         loadBackupDetailsIfNeeded(backup);
         try {
             String commvaultServer = getUrlDomain(CommvaultUrl.value());
