@@ -1589,7 +1589,7 @@
 "label.max.migrations": "\ucd5c\ub300 \ub9c8\uc774\uadf8\ub808\uc774\uc158",
 "label.maxbackups": "\ucd5c\ub300 \ubc31\uc5c5 \uc218",
 "label.maxbackupstorage": "\ucd5c\ub300 \ubc31\uc5c5 \uc2a4\ud1a0\ub9ac\uc9c0 (GiB)",
-"label.maxbackups.to.retain": "\ubcf4\uad00\ud560 \ucd5c\ub300 \ubc31\uc5c5 \uc218",
+"label.maxbackups.to.retain": "\ubcf4\uad00\ud560 \ucd5c\ub300 \ubc31\uc5c5 \uc218 \ub610\ub294 \ubc31\uc5c5 \uccb4\uc778 \uc138\ud2b8 \uc218",
 "label.maxbucket": "\ucd5c\ub300 \ubc84\ud0b7 \uc218",
 "label.maxcpu": "\ucd5c\ub300 CPU \ucf54\uc5b4",
 "label.maxcpunumber": "\ucd5c\ub300 CPU \ucf54\uc5b4 \uc218",
