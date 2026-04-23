@@ -72,7 +72,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -80,7 +79,6 @@ import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 
 public class NASBackupProvider extends AdapterBase implements BackupProvider, Configurable {
     private static final Logger LOG = LogManager.getLogger(NASBackupProvider.class);
-    private static final long STALE_BACKUP_THRESHOLD_MS = TimeUnit.DAYS.toMillis(1);
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
             "nas.backup.restore.mount.timeout",
@@ -663,22 +661,6 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
 
     @Override
     public void syncBackups(VirtualMachine vm) {
-        for (final Backup backup : backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
-            if (!(backup instanceof BackupVO) || !Backup.Status.BackingUp.equals(backup.getStatus()) || !isOlderThanOneDay(backup.getDate())) {
-                continue;
-            }
-            LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp for over one day. Repository path: [{}]",
-                    backup.getUuid(), vm.getInstanceName(), backup.getExternalId());
-            try {
-                deleteBackup(backup, true);
-            } catch (Exception e) {
-                LOG.warn("Failed to delete stale NAS backup [{}] for VM [{}]", backup.getUuid(), vm.getInstanceName(), e);
-            }
-        }
-    }
-
-    private boolean isOlderThanOneDay(Date backupDate) {
-        return backupDate != null && backupDate.getTime() <= System.currentTimeMillis() - STALE_BACKUP_THRESHOLD_MS;
     }
 
     @Override
