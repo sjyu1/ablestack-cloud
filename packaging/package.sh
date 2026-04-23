@@ -39,7 +39,7 @@ Optional arguments:
    -V, --package-version string            Override the package base version (for example 4.22.0.0)
        --timestamp-value string            Override the timestamp used with --use-timestamp (format YYYYMMDDHHMM)
    -S, --build-srpm                        Build SRPM alongside binary RPMs
-   -L, --local-fast                        Skip local-only expensive packaging steps such as cloud-apidoc
+   -L, --local-fast                        Skip local-only expensive packaging steps such as cloud-apidoc and cloud-marvin
    -t --templates                          Passes necessary flag to package the required templates. Comma separated string - kvm,xen,vmware,ovm,hyperv
 
 Other arguments:

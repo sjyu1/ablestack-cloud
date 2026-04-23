@@ -203,8 +203,8 @@ if [ \"%{_temp}\" != "" ]; then
 fi
 
 if [ "%{?_localfast}" == "1" ]; then
-   echo "Using local-fast package build (excluding tools/apidoc)"
-   FLAGS="$FLAGS -pl !tools/apidoc"
+   echo "Using local-fast package build (excluding tools/apidoc and cloud-marvin)"
+   FLAGS="$FLAGS -pl !tools/apidoc,!:cloud-marvin"
 fi
 
 mvn -T 2C -Psystemvm,developer -DskipTests $FLAGS clean package
