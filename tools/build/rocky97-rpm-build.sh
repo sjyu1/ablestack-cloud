@@ -31,6 +31,7 @@ PACKAGE_VERSION=${PACKAGE_VERSION:-}
 TIMESTAMP_VALUE=${TIMESTAMP_VALUE:-}
 BUILD_SRPM=${BUILD_SRPM:-false}
 USE_TIMESTAMP=${USE_TIMESTAMP:-false}
+LOCAL_FAST=${LOCAL_FAST:-false}
 
 if ! command -v dnf >/dev/null 2>&1; then
     echo "This helper must run inside a Rocky/RHEL-compatible environment with dnf."
@@ -55,6 +56,7 @@ echo "PACKAGE_VERSION=${PACKAGE_VERSION:-<maven>}"
 echo "TIMESTAMP_VALUE=${TIMESTAMP_VALUE:-<generated>}"
 echo "BUILD_SRPM=$BUILD_SRPM"
 echo "USE_TIMESTAMP=$USE_TIMESTAMP"
+echo "LOCAL_FAST=$LOCAL_FAST"
 
 DNF=(dnf --releasever=9.7 -y)
 
@@ -123,6 +125,7 @@ mkdir -p "$ROOT_DIR/dist/rocky97-build"
     echo "timestamp_value=${TIMESTAMP_VALUE:-<generated>}"
     echo "build_srpm=$BUILD_SRPM"
     echo "use_timestamp=$USE_TIMESTAMP"
+    echo "local_fast=$LOCAL_FAST"
 } >"$ROOT_DIR/dist/rocky97-build/environment.txt"
 
 build_args=(
@@ -160,6 +163,10 @@ fi
 
 if [ "$BUILD_SRPM" == "true" ]; then
     build_args+=(--build-srpm)
+fi
+
+if [ "$LOCAL_FAST" == "true" ]; then
+    build_args+=(--local-fast)
 fi
 
 cd "$ROOT_DIR/packaging"

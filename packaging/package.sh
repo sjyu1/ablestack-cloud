@@ -39,6 +39,7 @@ Optional arguments:
    -V, --package-version string            Override the package base version (for example 4.22.0.0)
        --timestamp-value string            Override the timestamp used with --use-timestamp (format YYYYMMDDHHMM)
    -S, --build-srpm                        Build SRPM alongside binary RPMs
+   -L, --local-fast                        Skip local-only expensive packaging steps such as cloud-apidoc
    -t --templates                          Passes necessary flag to package the required templates. Comma separated string - kvm,xen,vmware,ovm,hyperv
 
 Other arguments:
@@ -70,6 +71,7 @@ NOW="$(date +%Y%m%d%H%M)"
 #   $7 package version override
 #   $8 explicit timestamp value
 #   $9 build SRPM flag
+#   $10 local fast build flag
 function packaging() {
     RPMDIR=$PWD/../dist/rpmbuild
     PACK_PROJECT=cloudstack
@@ -77,6 +79,7 @@ function packaging() {
     EXPLICIT_PACKAGE_VERSION="${7:-}"
     EXPLICIT_TIMESTAMP="${8:-}"
     BUILD_SRPM="${9:-false}"
+    LOCAL_FAST="${10:-false}"
 
     if [ -n "$1" ] ; then
         DEFOSSNOSS="-D_ossnoss $1"
@@ -222,7 +225,12 @@ function packaging() {
         RPMBUILD_MODE="-ba"
     fi
 
-    (cd "$RPMDIR"; rpmbuild --define "_topdir ${RPMDIR}" "${DEFVER}" "${DEFFULLVER}" "${DEFREL}" ${DEFPRE+"$DEFPRE"} ${DEFOSSNOSS+"$DEFOSSNOSS"} ${DEFSIM+"$DEFSIM"} ${DEFTEMP+"$DEFTEMP"} "$RPMBUILD_MODE" SPECS/cloud.spec)
+    DEFLOCALFAST=""
+    if [ "$LOCAL_FAST" == "true" ]; then
+        DEFLOCALFAST="-D_localfast 1"
+    fi
+
+    (cd "$RPMDIR"; rpmbuild --define "_topdir ${RPMDIR}" "${DEFVER}" "${DEFFULLVER}" "${DEFREL}" ${DEFPRE+"$DEFPRE"} ${DEFOSSNOSS+"$DEFOSSNOSS"} ${DEFSIM+"$DEFSIM"} ${DEFTEMP+"$DEFTEMP"} ${DEFLOCALFAST+"$DEFLOCALFAST"} "$RPMBUILD_MODE" SPECS/cloud.spec)
     if [ $? -ne 0 ]; then
         if [ "$WORKTREE_MUTATED" == "true" ]; then
             (cd $PWD/../; git reset --hard)
@@ -247,6 +255,7 @@ USE_TIMESTAMP="false"
 PACKAGE_VERSION_OVERRIDE=""
 TIMESTAMP_VALUE=""
 BUILD_SRPM="false"
+LOCAL_FAST="false"
 
 unrecognized_flags=""
 
@@ -325,6 +334,11 @@ while [ -n "$1" ]; do
             shift 1
             ;;
 
+        -L | --local-fast)
+            LOCAL_FAST="true"
+            shift 1
+            ;;
+
         -t | --templates)
             TEMPLATES=$2
             shift 1
@@ -365,4 +379,4 @@ if [ "$USE_TIMESTAMP" == "true" ] || [ -n "$BRANDING" ] || [ -n "$PACKAGE_VERSIO
 fi
 
 echo "Packaging CloudStack..."
-packaging "$PACKAGEVAL" "$SIM" "$TARGETDISTRO" "$RELEASE" "$BRANDING" "$USE_TIMESTAMP" "$PACKAGE_VERSION_OVERRIDE" "$TIMESTAMP_VALUE" "$BUILD_SRPM"
+packaging "$PACKAGEVAL" "$SIM" "$TARGETDISTRO" "$RELEASE" "$BRANDING" "$USE_TIMESTAMP" "$PACKAGE_VERSION_OVERRIDE" "$TIMESTAMP_VALUE" "$BUILD_SRPM" "$LOCAL_FAST"

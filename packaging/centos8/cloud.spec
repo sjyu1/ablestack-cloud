@@ -202,6 +202,11 @@ if [ \"%{_temp}\" != "" ]; then
     FLAGS="$FLAGS `rpm --eval %{?_temp}`"
 fi
 
+if [ "%{?_localfast}" == "1" ]; then
+   echo "Using local-fast package build (excluding tools/apidoc)"
+   FLAGS="$FLAGS -pl !tools/apidoc"
+fi
+
 mvn -T 2C -Psystemvm,developer -DskipTests $FLAGS clean package
 # cd ui && npm install && node build.js && npm run build && cd ..
 cd ui && npm install && node build.js && npm run build && cd ..
