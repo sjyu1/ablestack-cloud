@@ -501,6 +501,7 @@ const user = {
     Logout ({ commit, state }, payload) {
       return new Promise((resolve) => {
         var cloudianUrl = null
+        const sessionKey = state.token || vueProps.$localStorage.get(ACCESS_TOKEN) || Cookies.get('sessionkey') || ''
         if (state.cloudian.url && state.cloudian.enabled) {
           cloudianUrl = state.cloudian.url + 'logout.htm?redirect=' + encodeURIComponent(window.location.href)
         }
@@ -531,7 +532,7 @@ const user = {
 
         commit('SET_PASSWORD_CHANGE_REQUIRED', false)
 
-        logout(state.token).then(() => {
+        logout(sessionKey).then(() => {
           message.destroy()
           if (cloudianUrl) {
             window.location.href = cloudianUrl

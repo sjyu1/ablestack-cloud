@@ -84,7 +84,7 @@ async function applyDynamicCustomization (response) {
     })
   }
 
-  vueProps.$config.favicon = jsonConfig?.favicon ?? vueProps.$config.favicon
+  vueProps.$config.favicon = jsonConfig?.favicon ?? vueProps.$config.favicon ?? vueProps.$config.loginFavicon
   vueProps.$config.css = response?.css ?? null
 
   if (vueProps.$config.defaultLanguage) {
@@ -96,7 +96,9 @@ async function applyDynamicCustomization (response) {
 }
 
 async function applyStaticCustomization (favicon, css) {
-  document.getElementById('favicon').href = favicon
+  if (favicon) {
+    document.getElementById('favicon').href = favicon
+  }
 
   let style = document.getElementById('guiThemeCSS')
   if (style != null) {
