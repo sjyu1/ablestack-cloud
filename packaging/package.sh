@@ -225,12 +225,18 @@ function packaging() {
         RPMBUILD_MODE="-ba"
     fi
 
+    UNITDIR=$(rpm --eval '%{_unitdir}' 2>/dev/null || true)
+    if [ -z "$UNITDIR" ] || [ "$UNITDIR" == "%{_unitdir}" ]; then
+        UNITDIR="/usr/lib/systemd/system"
+    fi
+    DEFUNITDIR="-D_unitdir ${UNITDIR}"
+
     DEFLOCALFAST=""
     if [ "$LOCAL_FAST" == "true" ]; then
         DEFLOCALFAST="-D_localfast 1"
     fi
 
-    (cd "$RPMDIR"; rpmbuild --define "_topdir ${RPMDIR}" "${DEFVER}" "${DEFFULLVER}" "${DEFREL}" ${DEFPRE+"$DEFPRE"} ${DEFOSSNOSS+"$DEFOSSNOSS"} ${DEFSIM+"$DEFSIM"} ${DEFTEMP+"$DEFTEMP"} ${DEFLOCALFAST+"$DEFLOCALFAST"} "$RPMBUILD_MODE" SPECS/cloud.spec)
+    (cd "$RPMDIR"; rpmbuild --define "_topdir ${RPMDIR}" "${DEFVER}" "${DEFFULLVER}" "${DEFREL}" "${DEFUNITDIR}" ${DEFPRE+"$DEFPRE"} ${DEFOSSNOSS+"$DEFOSSNOSS"} ${DEFSIM+"$DEFSIM"} ${DEFTEMP+"$DEFTEMP"} ${DEFLOCALFAST+"$DEFLOCALFAST"} "$RPMBUILD_MODE" SPECS/cloud.spec)
     if [ $? -ne 0 ]; then
         if [ "$WORKTREE_MUTATED" == "true" ]; then
             (cd $PWD/../; git reset --hard)

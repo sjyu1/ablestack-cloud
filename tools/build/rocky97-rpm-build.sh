@@ -83,6 +83,7 @@ dnf --releasever=9.7 config-manager --set-enabled crb || true
     python3-pip \
     python3-setuptools \
     rpm-build \
+    systemd-rpm-macros \
     shadow-utils \
     tar \
     unzip \
