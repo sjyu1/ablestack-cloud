@@ -1904,7 +1904,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
         final String backupPath = backup.getExternalId();
-        if (StringUtils.isBlank(backupPath) || backupPath.contains(",")) {
+        if (StringUtils.isBlank(backupPath)) {
+            LOG.warn("Removing stale Commvault backup [{}] for VM [{}] stuck in BackingUp without backup path details",
+                    backup.getUuid(), vm.getInstanceName());
+            removeBackupWithDetails(backup.getId());
+            return true;
+        }
+        if (backupPath.contains(",")) {
             return false;
         }
 
@@ -1914,7 +1920,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             removeBackupWithDetails(backup.getId());
             return true;
         }
-        return false;
+
+        LOG.warn("Removing stale Commvault backup [{}] for VM [{}] stuck in BackingUp before job details were saved. Stage host: [{}], path: [{}]",
+                backup.getUuid(), vm.getInstanceName(), stageHostName, backupPath);
+        cleanupBackupPathOnStageHost(stageHostName, backupPath, false, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME),
+                getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+        removeBackupWithDetails(backup.getId());
+        return true;
     }
 
     private boolean isWithinBackingUpSyncGracePeriod(Backup backup) {
