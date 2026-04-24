@@ -64,8 +64,9 @@ under the License.
 - 테스트 배포가 끝나면 Release를 정리한다.
 
 권장 GitHub Actions 기준:
-- 패키징: `.github/workflows/rocky97-rpm.yml`
-- 필요 시 개발용 Release 게시용 별도 절차를 추가로 사용한다.
+- 개발용 Release: `.github/workflows/dev-release.yml`
+- 패키징 백엔드: `.github/workflows/rocky97-rpm.yml`
+- 테스트 종료 후 정리: `.github/workflows/dev-release-cleanup.yml`
 
 운영 규칙:
 - 개발용 빌드는 `draft` 또는 `prerelease` 성격으로 관리한다.
@@ -102,16 +103,19 @@ under the License.
 
 1. 대상 브랜치에 변경 반영
 2. GitHub Actions 개발용 패키징 workflow 실행
+   - 표준 workflow: `.github/workflows/dev-release.yml`
 3. 생성된 산출물을 GitHub Release에 게시
 4. Release asset 경로로 테스트 서버에 배포
 5. 기능 검증 수행
 6. 검증 완료 후 개발용 Release / tag / asset 삭제
+   - 표준 workflow: `.github/workflows/dev-release-cleanup.yml`
 7. 다음 개발용 빌드 때 새 Release를 다시 생성
 
 ### 릴리즈 빌드 절차
 
 1. 대상 브랜치 확정
 2. 전체 검증 workflow 실행
+   - 필수 기준: `.github/workflows/build.yml`, `.github/workflows/ui.yml`
 3. 검증 통과 확인
 4. `release.yml`로 정식 릴리즈 패키징 및 Release 게시
 5. Release asset 경로를 공식 다운로드 경로로 사용
@@ -140,4 +144,3 @@ under the License.
 - 개발용 빌드: GitHub Actions 기반 빠른 패키징 + GitHub Release 배포 + 테스트 후 정리
 - 릴리즈 빌드: GitHub Actions 기반 전체 검증 + 정식 Release 게시
 - 로컬 빌드: 비표준, 비운영, 사용하지 않음
-

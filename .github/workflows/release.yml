@@ -241,10 +241,24 @@ jobs:
           if-no-files-found: error
           path: dist/release/source/**
 
+  validate-build:
+    needs: prepare-source-release
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.prepare-source-release.outputs.source_commit_sha }}
+
+  validate-ui:
+    needs: prepare-source-release
+    uses: ./.github/workflows/ui.yml
+    with:
+      ref: ${{ needs.prepare-source-release.outputs.source_commit_sha }}
+
   build-rpm:
     needs:
       - metadata
       - prepare-source-release
+      - validate-build
+      - validate-ui
     uses: ./.github/workflows/rocky97-rpm.yml
     with:
       ref: ${{ needs.prepare-source-release.outputs.source_commit_sha }}
