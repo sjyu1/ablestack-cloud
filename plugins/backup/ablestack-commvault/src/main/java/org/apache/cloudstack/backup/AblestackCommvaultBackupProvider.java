@@ -948,13 +948,15 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 .filter(BackupVO.class::isInstance)
                 .map(BackupVO.class::cast)
                 .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
-                .filter(backup -> {
-                    BackupOffering offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
-                    return offering != null && Objects.equals(getName(), offering.getProvider());
-                })
+                .filter(this::isBackupManagedByThisProvider)
                 .peek(backupDao::loadDetails)
                 .max(Comparator.comparing(BackupVO::getDate))
                 .orElse(null);
+    }
+
+    private boolean isBackupManagedByThisProvider(Backup backup) {
+        BackupOffering offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+        return offering != null && Objects.equals(getName(), offering.getProvider());
     }
 
     private List<String> getBackupChain(Backup.VolumeInfo backupVolume, Backup backup) {
@@ -1847,6 +1849,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
         final AblestackCommvaultClient client = getClient(vm.getDataCenterId());
         for (final Backup backup: backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
+            if (!isBackupManagedByThisProvider(backup)) {
+                continue;
+            }
             loadBackupDetailsIfNeeded(backup);
             if (reconcileIncompleteBackup(vm, backup)) {
                 continue;
