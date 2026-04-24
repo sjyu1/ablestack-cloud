@@ -483,7 +483,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         }
 
         if (answer != null && answer.getResult()) {
-            return backupDao.remove(backup.getId());
+            return true;
         }
 
         logger.debug("There was an error removing the backup with id {}", backup.getId());
@@ -616,7 +616,9 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp for over one day. Repository path: [{}]",
                     backup.getUuid(), vm.getInstanceName(), backup.getExternalId());
             try {
-                deleteBackup(backup, true);
+                if (deleteBackup(backup, true)) {
+                    backupDao.remove(backup.getId());
+                }
             } catch (Exception e) {
                 LOG.warn("Failed to delete stale NAS backup [{}] for VM [{}]", backup.getUuid(), vm.getInstanceName(), e);
             }
