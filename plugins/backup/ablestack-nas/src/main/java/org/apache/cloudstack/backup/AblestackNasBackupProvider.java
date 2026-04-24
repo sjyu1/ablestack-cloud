@@ -1308,7 +1308,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             LOG.warn("Removing stale NAS backup [{}] for VM [{}] stuck in BackingUp for over one day. Repository path: [{}]",
                     backup.getUuid(), vm.getInstanceName(), backup.getExternalId());
             try {
-                deleteBackup(backup, true);
+                if (deleteBackup(backup, true)) {
+                    backupDao.remove(backup.getId());
+                }
             } catch (Exception e) {
                 LOG.warn("Failed to delete stale NAS backup [{}] for VM [{}]", backup.getUuid(), vm.getInstanceName(), e);
             }
