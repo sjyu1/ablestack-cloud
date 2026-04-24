@@ -1240,6 +1240,11 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     public void syncBackupStorageStats(Long zoneId) {
         final List<BackupRepository> repositories = backupRepositoryDao.listByZoneAndProvider(zoneId, BackupProviderNameUtils.toDisplayName(getName()));
         final Host host = resourceManager.findOneRandomRunningHostByHypervisor(Hypervisor.HypervisorType.KVM, zoneId);
+        if (host == null) {
+            LOG.warn("Skipping backup storage stats sync for provider [{}] in zone [{}] because no running KVM host was found",
+                    getName(), zoneId);
+            return;
+        }
         for (final BackupRepository repository : repositories) {
             GetBackupStorageStatsCommand command = new GetBackupStorageStatsCommand(repository.getType(), repository.getAddress(), repository.getMountOptions());
             BackupStorageStatsAnswer answer;
