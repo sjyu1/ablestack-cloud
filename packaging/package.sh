@@ -81,11 +81,13 @@ function packaging() {
     BUILD_SRPM="${9:-false}"
     LOCAL_FAST="${10:-false}"
 
+    OSSNOSS_VALUE=""
     if [ -n "$1" ] ; then
-        DEFOSSNOSS="-D_ossnoss $1"
+        OSSNOSS_VALUE="$1"
     fi
+    SIM_VALUE=""
     if [ -n "$2" ] ; then
-        DEFSIM="-D_sim $2"
+        SIM_VALUE="$2"
     fi
     if [ -n "$EXPLICIT_TIMESTAMP" ]; then
         NOW="$EXPLICIT_TIMESTAMP"
@@ -156,21 +158,21 @@ function packaging() {
 
     if [ "$6" == "true" ]; then
         if [ -n "$4" ] ; then
-            DEFREL="-D_rel ${BRAND}${INDICATOR}.$4"
+            REL_VALUE="${BRAND}${INDICATOR}.$4"
         else
-            DEFREL="-D_rel ${BRAND}${INDICATOR}"
+            REL_VALUE="${BRAND}${INDICATOR}"
         fi
     elif echo "$VERSION" | grep -q SNAPSHOT ; then
         if [ -n "$4" ] ; then
-            DEFREL="-D_rel ${BRAND}${INDICATOR}.$4"
+            REL_VALUE="${BRAND}${INDICATOR}.$4"
         else
-            DEFREL="-D_rel ${BRAND}${INDICATOR}"
+            REL_VALUE="${BRAND}${INDICATOR}"
         fi
     else
         if [ -n "$4" ] ; then
-            DEFREL="-D_rel ${BRAND}$4"
+            REL_VALUE="${BRAND}$4"
         else
-            DEFREL="-D_rel ${BRAND}1"
+            REL_VALUE="${BRAND}1"
         fi
     fi
 
@@ -192,18 +194,15 @@ function packaging() {
         WORKTREE_MUTATED="true"
     fi
 
-    DEFTEMP="-D_temp ''"
+    TEMP_VALUE=""
     if [ "$TEMPLATES" != "" ]; then
       if [[ ",$TEMPLATES," = *",all,"* ]]; then
-        DEFTEMP="-D_temp '-Dsystemvm-kvm -Dsystemvm-xen -Dsystemvm-vmware'"
+        TEMP_VALUE="-Dsystemvm-kvm -Dsystemvm-xen -Dsystemvm-vmware"
       else
         TEMP=-Dsystemvm-"${TEMPLATES//,/" -Dsystemvm-"}"
-        DEFTEMP="-D_temp ${TEMP}"
+        TEMP_VALUE="${TEMP}"
       fi
     fi
-
-    DEFFULLVER="-D_fullver $VERSION"
-    DEFVER="-D_ver $REALVER"
 
     echo "Preparing to package Apache CloudStack $VERSION"
 
@@ -229,14 +228,32 @@ function packaging() {
     if [ -z "$UNITDIR" ] || [ "$UNITDIR" == "%{_unitdir}" ]; then
         UNITDIR="/usr/lib/systemd/system"
     fi
-    DEFUNITDIR="-D_unitdir ${UNITDIR}"
-
-    DEFLOCALFAST=""
-    if [ "$LOCAL_FAST" == "true" ]; then
-        DEFLOCALFAST="-D_localfast 1"
+    RPMBUILD_ARGS=(
+        --define "_topdir ${RPMDIR}"
+        --define "_ver ${REALVER}"
+        --define "_fullver ${VERSION}"
+        --define "_rel ${REL_VALUE}"
+        --define "_unitdir ${UNITDIR}"
+        --define "_temp ${TEMP_VALUE}"
+    )
+    if [ -n "$OSSNOSS_VALUE" ]; then
+        RPMBUILD_ARGS+=(--define "_ossnoss ${OSSNOSS_VALUE}")
     fi
+    if [ -n "$SIM_VALUE" ]; then
+        RPMBUILD_ARGS+=(--define "_sim ${SIM_VALUE}")
+    fi
+    if [ "$LOCAL_FAST" == "true" ]; then
+        RPMBUILD_ARGS+=(--define "_localfast 1")
+    fi
+    RPMBUILD_ARGS+=("$RPMBUILD_MODE" SPECS/cloud.spec)
 
-    (cd "$RPMDIR"; rpmbuild --define "_topdir ${RPMDIR}" "${DEFVER}" "${DEFFULLVER}" "${DEFREL}" "${DEFUNITDIR}" ${DEFPRE+"$DEFPRE"} ${DEFOSSNOSS+"$DEFOSSNOSS"} ${DEFSIM+"$DEFSIM"} ${DEFTEMP+"$DEFTEMP"} ${DEFLOCALFAST+"$DEFLOCALFAST"} "$RPMBUILD_MODE" SPECS/cloud.spec)
+    (
+        cd "$RPMDIR"
+        printf '. rpmbuild args:'
+        printf ' %q' "${RPMBUILD_ARGS[@]}"
+        printf '\n'
+        rpmbuild "${RPMBUILD_ARGS[@]}"
+    )
     if [ $? -ne 0 ]; then
         if [ "$WORKTREE_MUTATED" == "true" ]; then
             (cd $PWD/../; git reset --hard)
