@@ -862,6 +862,11 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         return "Commvault Backup Plugin";
     }
 
+    private boolean isBackupManagedByThisProvider(Backup backup) {
+        BackupOffering offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+        return offering != null && Objects.equals(getName(), offering.getProvider());
+    }
+
     @Override
     public String getConfigComponentName() {
         return BackupService.class.getSimpleName();
@@ -876,6 +881,9 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
         final CommvaultClient client = getClient(vm.getDataCenterId());
         for (final Backup backup: backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
+            if (!isBackupManagedByThisProvider(backup)) {
+                continue;
+            }
             if (Backup.Status.BackingUp.equals(backup.getStatus()) && isOlderThanOneDay(backup.getDate())) {
                 LOG.warn("Removing stale Commvault backup [{}] for VM [{}] stuck in BackingUp for over one day. External ID: [{}]",
                         backup.getUuid(), vm.getInstanceName(), backup.getExternalId());

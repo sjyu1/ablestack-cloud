@@ -50,6 +50,7 @@ import com.cloud.vm.snapshot.dao.VMSnapshotDetailsDao;
 
 
 import org.apache.cloudstack.backup.dao.BackupDao;
+import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.backup.dao.BackupRepositoryDao;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
@@ -91,6 +92,9 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
 
     @Inject
     private BackupDao backupDao;
+
+    @Inject
+    private BackupOfferingDao backupOfferingDao;
 
     @Inject
     private BackupRepositoryDao backupRepositoryDao;
@@ -602,6 +606,11 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         return "NAS Backup Plugin";
     }
 
+    private boolean isBackupManagedByThisProvider(Backup backup) {
+        BackupOffering offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+        return offering != null && Objects.equals(getName(), offering.getProvider());
+    }
+
     @Override
     public String getConfigComponentName() {
         return BackupService.class.getSimpleName();
@@ -610,6 +619,9 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
     @Override
     public void syncBackups(VirtualMachine vm) {
         for (final Backup backup : backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
+            if (!isBackupManagedByThisProvider(backup)) {
+                continue;
+            }
             if (!(backup instanceof BackupVO) || !Backup.Status.BackingUp.equals(backup.getStatus()) || !isOlderThanOneDay(backup.getDate())) {
                 continue;
             }
