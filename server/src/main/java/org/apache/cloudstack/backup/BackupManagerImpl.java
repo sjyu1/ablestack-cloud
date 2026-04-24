@@ -2544,14 +2544,24 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             backedUpVolumes = new Gson().toJson(backup.getBackedUpVolumes().toArray(), Backup.VolumeInfo[].class);
         }
         response.setVolumes(backedUpVolumes);
-        response.setBackupOfferingId(offering.getUuid());
-        response.setBackupOffering(offering.getName());
-        response.setAccountId(account.getUuid());
-        response.setAccount(account.getAccountName());
-        response.setDomainId(domain.getUuid());
-        response.setDomain(domain.getName());
-        response.setZoneId(zone.getUuid());
-        response.setZone(zone.getName());
+        if (offering != null) {
+            response.setBackupOfferingId(offering.getUuid());
+            response.setBackupOffering(offering.getName());
+        } else {
+            response.setVmOfferingRemoved(true);
+        }
+        if (account != null) {
+            response.setAccountId(account.getUuid());
+            response.setAccount(account.getAccountName());
+        }
+        if (domain != null) {
+            response.setDomainId(domain.getUuid());
+            response.setDomain(domain.getName());
+        }
+        if (zone != null) {
+            response.setZoneId(zone.getUuid());
+            response.setZone(zone.getName());
+        }
 
         if (Boolean.TRUE.equals(listVmDetails)) {
             Map<String, String> vmDetails = new HashMap<>();

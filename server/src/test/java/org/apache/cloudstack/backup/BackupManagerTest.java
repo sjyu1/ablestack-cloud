@@ -1720,6 +1720,60 @@ public class BackupManagerTest {
     }
 
     @Test
+    public void testNewBackupResponseWhenBackupOfferingMissing() {
+        Long vmId = 1L;
+        Long accountId = 2L;
+        Long domainId = 3L;
+        Long zoneId = 4L;
+        Long backupOfferingId = 6L;
+        Long backupId = 7L;
+
+        BackupVO backup = new BackupVO();
+        ReflectionTestUtils.setField(backup, "id", backupId);
+        ReflectionTestUtils.setField(backup, "uuid", "backup-uuid");
+        backup.setVmId(vmId);
+        backup.setAccountId(accountId);
+        backup.setDomainId(domainId);
+        backup.setZoneId(zoneId);
+        backup.setBackupOfferingId(backupOfferingId);
+        backup.setType("Full");
+        backup.setBackupScheduleId(null);
+
+        VMInstanceVO vm = new VMInstanceVO(vmId, 0L, "test-vm", "test-vm", VirtualMachine.Type.User,
+                0L, Hypervisor.HypervisorType.Simulator, 0L, domainId, accountId, 0L, false);
+        vm.setDataCenterId(zoneId);
+        vm.setBackupOfferingId(backupOfferingId);
+
+        AccountVO account = new AccountVO();
+        account.setUuid("account-uuid");
+        account.setAccountName("test-account");
+
+        DomainVO domain = new DomainVO();
+        domain.setUuid("domain-uuid");
+        domain.setName("test-domain");
+
+        DataCenterVO zone = new DataCenterVO(1L, "test-zone", null, null, null, null, null, null, null, null, DataCenter.NetworkType.Advanced, null, null);
+        zone.setUuid("zone-uuid");
+
+        Mockito.when(vmInstanceDao.findByIdIncludingRemoved(vmId)).thenReturn(vm);
+        Mockito.when(accountDao.findByIdIncludingRemoved(accountId)).thenReturn(account);
+        Mockito.when(domainDao.findByIdIncludingRemoved(domainId)).thenReturn(domain);
+        Mockito.when(dataCenterDao.findByIdIncludingRemoved(zoneId)).thenReturn(zone);
+        Mockito.when(backupOfferingDao.findByIdIncludingRemoved(backupOfferingId)).thenReturn(null);
+
+        BackupResponse response = backupManager.createBackupResponse(backup, false);
+
+        Assert.assertEquals("backup-uuid", response.getId());
+        Assert.assertEquals("test-vm", response.getVmName());
+        Assert.assertNull(response.getBackupOfferingId());
+        Assert.assertNull(response.getBackupOffering());
+        Assert.assertTrue(response.getVmOfferingRemoved());
+        Assert.assertEquals("account-uuid", response.getAccountId());
+        Assert.assertEquals("domain-uuid", response.getDomainId());
+        Assert.assertEquals("zone-uuid", response.getZoneId());
+    }
+
+    @Test
     public void validateAndGetDefaultBackupRetentionIfRequiredTestReturnZeroAsDefaultValue() {
         int retention = backupManager.validateAndGetDefaultBackupRetentionIfRequired(null, backupOfferingVOMock, null);
         assertEquals(0, retention);
