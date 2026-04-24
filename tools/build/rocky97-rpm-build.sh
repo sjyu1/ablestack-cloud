@@ -58,6 +58,17 @@ echo "BUILD_SRPM=$BUILD_SRPM"
 echo "USE_TIMESTAMP=$USE_TIMESTAMP"
 echo "LOCAL_FAST=$LOCAL_FAST"
 
+if [ "$PACK" = "noredist" ] || [ "$PACK" = "NOREDIST" ]; then
+    echo "Installing non-redistributable VMware build dependencies"
+    tmp_nonoss_dir=$(mktemp -d /tmp/cloudstack-nonoss-XXXXXX)
+    git clone --depth 1 https://github.com/shapeblue/cloudstack-nonoss.git "$tmp_nonoss_dir"
+    (
+        cd "$tmp_nonoss_dir"
+        bash -x install-non-oss.sh
+    )
+    rm -rf "$tmp_nonoss_dir"
+fi
+
 DNF=(dnf --releasever=9.7 -y)
 
 "${DNF[@]}" install dnf-plugins-core
