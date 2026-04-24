@@ -19,6 +19,14 @@ under the License.
 
 # Rocky 9.7 Build Validation
 
+## Policy Note
+
+This document is now a technical reference only.
+
+- The operational source of truth is [build-release-policy.ko.md](/Users/dhslove/Documents/GitHub/dhslove/ablestack-cloud/developer/build-release-policy.ko.md).
+- Official development builds and release builds must use GitHub Actions.
+- Local builds must not be used as the standard delivery path.
+
 ## Goal
 
 - Validate that this repository can build and package on Rocky Linux 9.7.
@@ -121,9 +129,9 @@ The workflow uploads:
 - `dist/rocky97-build/environment.txt`
 - `dist/rocky97-build/artifacts.txt`
 
-## Optional Local Reproduction on macOS
+## Historical Local Reproduction on macOS
 
-If local runtime validation is needed later, the least disruptive path is:
+If local runtime validation is ever needed for debugging only, the least disruptive path is:
 
 1. Install a container runtime on macOS.
 2. Download and verify the same Rocky 9.7 container archive used by CI.
