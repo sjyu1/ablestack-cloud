@@ -189,19 +189,19 @@ echo PACKAGE=%{name} >> build/replace.properties
 touch build/gitrev.txt
 echo $(git rev-parse HEAD) > build/gitrev.txt
 
-if [ "%{_ossnoss}" == "NOREDIST" -o "%{_ossnoss}" == "noredist" ] ; then
+if [ "%{?_ossnoss}" == "NOREDIST" -o "%{?_ossnoss}" == "noredist" ] ; then
    echo "Adding noredist flag to the maven build"
    FLAGS="$FLAGS -Dnoredist"
 fi
 
-if [ "%{_sim}" == "SIMULATOR" -o "%{_sim}" == "simulator" ] ; then
+if [ "%{?_sim}" == "SIMULATOR" -o "%{?_sim}" == "simulator" ] ; then
    echo "Adding simulator flag to the maven build"
    FLAGS="$FLAGS -Dsimulator"
 fi
 
-if [ \"%{_temp}\" != "" ]; then
+if [ -n "%{?_temp}" ]; then
     echo "Adding flags to package requested templates"
-    FLAGS="$FLAGS `rpm --eval %{?_temp}`"
+    FLAGS="$FLAGS $(rpm --eval '%{?_temp}')"
 fi
 
 if [ "%{?_localfast}" == "1" ]; then
