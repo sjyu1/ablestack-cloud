@@ -250,7 +250,7 @@
                       @change="onSelectClusterId"
                     ></a-select>
                   </a-form-item>
-                  <a-form-item v-if="isDestinationKVM && isMigrateFromVmware && clusterId != undefined">
+                  <a-form-item v-if="supportsVmwareDatacenterImport && isDestinationKVM && isMigrateFromVmware && clusterId != undefined">
                     <SelectVmwareVcenter
                       @onVcenterTypeChanged="updateVmwareVcenterType"
                       @loadingVmwareUnmanagedInstances="() => this.unmanagedInstancesLoading = true"
@@ -811,6 +811,9 @@ export default {
     isMigrateFromVmware () {
       return this.selectedSourceAction === 'vmware'
     },
+    supportsVmwareDatacenterImport () {
+      return 'listVmwareDcVms' in this.$store.getters.apis && 'listVmwareDcs' in this.$store.getters.apis
+    },
     isDestinationKVM () {
       return this.destinationHypervisor === 'kvm'
     },
@@ -1123,16 +1126,35 @@ export default {
       this.activeTabKey = 1
       this.stopImportVmTasksAutoRefresh()
     },
+    getSourceActionsForHypervisor (hypervisor) {
+      return this.AllSourceActions.filter((action) => {
+        if (!action.sourceDestHypervisors[hypervisor]) {
+          return false
+        }
+        if (action.name === 'vmware' && !this.supportsVmwareDatacenterImport) {
+          return false
+        }
+        return true
+      })
+    },
     onSelectHypervisor (value) {
       this.sourceHypervisor = value
-      this.sourceActions = this.AllSourceActions.filter(x => x.sourceDestHypervisors[value])
-      this.form.sourceAction = this.sourceActions[0].name || ''
+      this.sourceActions = this.getSourceActionsForHypervisor(value)
+      this.form.sourceAction = this.sourceActions[0]?.name || ''
       this.selectedVmwareVcenter = undefined
-      this.onSelectSourceAction(this.form.sourceAction)
+      if (this.form.sourceAction) {
+        this.onSelectSourceAction(this.form.sourceAction)
+      } else {
+        this.resetLists()
+      }
     },
     onSelectSourceAction (value) {
       this.selectedSourceAction = value
       const selectedAction = _.find(this.AllSourceActions, (option) => option.name === value)
+      if (!selectedAction) {
+        this.resetLists()
+        return
+      }
       this.destinationHypervisor = selectedAction.sourceDestHypervisors[this.sourceHypervisor]
       this.wizardTitle = selectedAction.wizardTitle
       this.wizardDescription = selectedAction.wizardDescription
@@ -1294,6 +1316,12 @@ export default {
     fetchUnmanagedInstances (page, pageSize) {
       if (this.isExternal) {
         this.fetchExtKVMInstances(page, pageSize)
+        return
+      }
+      if (this.isMigrateFromVmware && !this.supportsVmwareDatacenterImport) {
+        this.unmanagedInstances = []
+        this.itemCount.unmanaged = 0
+        this.unmanagedInstancesLoading = false
         return
       }
       const params = {
@@ -1458,6 +1486,9 @@ export default {
       })
     },
     fetchVmwareInstanceForKVMMigration (vmname, hostname) {
+      if (!this.supportsVmwareDatacenterImport) {
+        return
+      }
       const params = {}
       this.loadingGuestOsMappings = true
       if (this.isMigrateFromVmware && this.selectedVmwareVcenter) {
