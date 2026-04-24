@@ -97,6 +97,8 @@
   "allowMakingRouterRedundant": false,
   "apidocs": true,
   "basicZoneEnabled": true,
+  "samlLoginEnabled": false,
+  "forgotPasswordEnabled": false,
   "multipleServer": false,
   "allowSettingTheme": true,
   "displayProjectFieldOnLogin": false,
