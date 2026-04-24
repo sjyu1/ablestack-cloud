@@ -234,8 +234,12 @@ function packaging() {
         --define "_fullver ${VERSION}"
         --define "_rel ${REL_VALUE}"
         --define "_unitdir ${UNITDIR}"
-        --define "_temp ${TEMP_VALUE}"
     )
+    if [ -n "$TEMP_VALUE" ]; then
+        RPMBUILD_ARGS+=(--define "_temp ${TEMP_VALUE}")
+    else
+        RPMBUILD_ARGS+=(--define "_temp %{nil}")
+    fi
     if [ -n "$OSSNOSS_VALUE" ]; then
         RPMBUILD_ARGS+=(--define "_ossnoss ${OSSNOSS_VALUE}")
     fi
