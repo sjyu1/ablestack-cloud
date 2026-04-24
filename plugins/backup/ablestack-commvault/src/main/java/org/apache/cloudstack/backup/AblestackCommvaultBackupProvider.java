@@ -1076,11 +1076,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     }
 
     private void validateRestoreChainIntegrity(Backup backup) {
-        if (backup == null || isLegacyBackup(backup)) {
+        if (backup == null) {
             return;
         }
 
         loadBackupDetailsIfNeeded(backup);
+        if (isLegacyBackup(backup)) {
+            return;
+        }
         final Set<String> visitedBackupUuids = new HashSet<>();
         Backup current = backup;
         while (current != null) {
