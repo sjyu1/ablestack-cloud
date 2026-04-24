@@ -58,17 +58,6 @@ echo "BUILD_SRPM=$BUILD_SRPM"
 echo "USE_TIMESTAMP=$USE_TIMESTAMP"
 echo "LOCAL_FAST=$LOCAL_FAST"
 
-if [ "$PACK" = "noredist" ] || [ "$PACK" = "NOREDIST" ]; then
-    echo "Installing non-redistributable VMware build dependencies"
-    tmp_nonoss_dir=$(mktemp -d /tmp/cloudstack-nonoss-XXXXXX)
-    git clone --depth 1 https://github.com/shapeblue/cloudstack-nonoss.git "$tmp_nonoss_dir"
-    (
-        cd "$tmp_nonoss_dir"
-        bash -x install-non-oss.sh
-    )
-    rm -rf "$tmp_nonoss_dir"
-fi
-
 DNF=(dnf --releasever=9.7 -y)
 
 "${DNF[@]}" install dnf-plugins-core
@@ -101,6 +90,17 @@ dnf --releasever=9.7 config-manager --set-enabled crb || true
     wget \
     which \
     xz
+
+if [ "$PACK" = "noredist" ] || [ "$PACK" = "NOREDIST" ]; then
+    echo "Installing non-redistributable VMware build dependencies"
+    tmp_nonoss_dir=$(mktemp -d /tmp/cloudstack-nonoss-XXXXXX)
+    git clone --depth 1 https://github.com/shapeblue/cloudstack-nonoss.git "$tmp_nonoss_dir"
+    (
+        cd "$tmp_nonoss_dir"
+        bash -x install-non-oss.sh
+    )
+    rm -rf "$tmp_nonoss_dir"
+fi
 
 if [ ! -x "/opt/node-v${NODE_VERSION}-linux-x64/bin/node" ]; then
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
