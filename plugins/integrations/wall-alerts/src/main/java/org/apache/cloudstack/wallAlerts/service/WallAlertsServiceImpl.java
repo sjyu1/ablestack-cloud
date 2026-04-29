@@ -1026,10 +1026,10 @@ public class WallAlertsServiceImpl extends ManagerBase implements WallAlertsServ
             // 1) 기본 메시지(예전 subject 느낌)
             final String base = (tail == null || tail.isEmpty())
                     ? String.format("Wall Alert: %s", title)
-                    : String.format("Wall Alert: %s — %s", title, tail);
+                    : String.format("Wall Alert: %s - %s", title, tail);
 
             // 2) 타깃 정보까지 포함한 “최종 메시지”
-            //    - 여기 안에 "Targets — ..." 가 들어갑니다.
+            //    - 여기 안에 "Targets - ..." 가 들어갑니다.
             final String message = buildAlertContent(base, targetInfo);
 
             // 3) CloudStack 쪽에서 description을 subject 기준으로 뽑기 때문에
@@ -1089,7 +1089,7 @@ public class WallAlertsServiceImpl extends ManagerBase implements WallAlertsServ
     /**
      * 규칙 종류(kind) + 인스턴스 라벨에서 "타깃 요약 문자열"을 생성합니다.
      * 예시:
-     *   Targets — VM: i-2-3-VM, i-2-4-VM | Host: ablecube32-1
+     *   Targets - VM: i-2-3-VM, i-2-4-VM | Host: ablecube32-1
      *
      * - 우선 ALERTING/FIRING 상태인 인스턴스만 사용하고
      * - 아무 것도 없을 때만 전체 인스턴스를 폴백으로 사용합니다.
@@ -1213,10 +1213,10 @@ public class WallAlertsServiceImpl extends ManagerBase implements WallAlertsServ
             if (rawLabels.isEmpty()) {
                 return "";
             }
-            return "Targets — " + String.join(", ", rawLabels);
+            return "Targets - " + String.join(", ", rawLabels);
         }
 
-        return "Targets — " + String.join(" | ", parts);
+        return "Targets - " + String.join(" | ", parts);
     }
 
     private static boolean isHostKind(final String v) {
@@ -1358,26 +1358,26 @@ public class WallAlertsServiceImpl extends ManagerBase implements WallAlertsServ
         final String o = op == null ? "" : op.trim().toLowerCase();
         // 범위형
         if (("outside_range".equals(o) || "range_outside".equals(o) || "not_between".equals(o)) && t1 != null && t2 != null) {
-            return String.format("out of range (%s–%s)", stripTrailingZeros(t1), stripTrailingZeros(t2));
+            return String.format("out of range (%s-%s)", stripTrailingZeros(t1), stripTrailingZeros(t2));
         }
         if (("within_range".equals(o) || "in_range".equals(o) || "between".equals(o)) && t1 != null && t2 != null) {
-            return String.format("within range (%s–%s)", stripTrailingZeros(t1), stripTrailingZeros(t2));
+            return String.format("within range (%s-%s)", stripTrailingZeros(t1), stripTrailingZeros(t2));
         }
         // 단일 임계 비교
         if ("gt".equals(o) || "greater_than".equals(o)) {
             return t1 != null ? String.format("exceeded %s", stripTrailingZeros(t1)) : "exceeded threshold";
         }
         if ("gte".equals(o) || "greater_or_equal".equals(o)) {
-            return t1 != null ? String.format("≥ %s", stripTrailingZeros(t1)) : "≥ threshold";
+            return t1 != null ? String.format(">= %s", stripTrailingZeros(t1)) : ">= threshold";
         }
         if ("lt".equals(o) || "less_than".equals(o)) {
             return t1 != null ? String.format("below %s", stripTrailingZeros(t1)) : "below threshold";
         }
         if ("lte".equals(o) || "less_or_equal".equals(o)) {
-            return t1 != null ? String.format("≤ %s", stripTrailingZeros(t1)) : "≤ threshold";
+            return t1 != null ? String.format("<= %s", stripTrailingZeros(t1)) : "<= threshold";
         }
         // 미지정/기타
-        if (t1 != null && t2 != null) return String.format("threshold (%s–%s) breached", stripTrailingZeros(t1), stripTrailingZeros(t2));
+        if (t1 != null && t2 != null) return String.format("threshold (%s-%s) breached", stripTrailingZeros(t1), stripTrailingZeros(t2));
         if (t1 != null) return String.format("threshold %s breached", stripTrailingZeros(t1));
         return "threshold breached";
     }
