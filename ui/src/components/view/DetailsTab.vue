@@ -105,6 +105,11 @@
               {{ convertKB(dataResource.size) }}
             </div>
           </div>
+          <div v-else-if="$route.meta.name === 'buckets' && item === 'quota'">
+            <div>
+              {{ dataResource.quota }} GiB
+            </div>
+          </div>
           <div v-else-if="['template', 'iso'].includes($route.meta.name) && item === 'size'">
             <div>
               {{ sizeInGiB(dataResource.size) }} GiB
