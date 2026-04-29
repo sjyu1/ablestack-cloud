@@ -3890,6 +3890,7 @@
 "router.health.checks": "Health check",
 "side.by.side": "Side by Side",
 "state.completed": "Completed",
+"state.created": "Created",
 "state.declined": "Declined",
 "state.disabled": "Disabled",
 "state.enabled": "Enabled",
