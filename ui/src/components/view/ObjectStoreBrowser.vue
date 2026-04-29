@@ -45,6 +45,18 @@
         {{ $t('label.volume.volumefileupload.description') }}
       </p>
     </a-upload-dragger>
+    <div v-if="uploadLoading || uploadTotalCount > 0" class="object-store-upload-status">
+      <div class="object-store-upload-status-title">
+        {{ uploadLoading ? '업로드 중' : '업로드 완료' }}
+      </div>
+      <div class="object-store-upload-status-summary">
+        전체 {{ uploadTotalCount }}개 / 완료 {{ uploadCompletedCount }}개 / 실패 {{ uploadFailedCount }}개 / 대기 {{ uploadPendingCount }}개
+      </div>
+      <div v-if="uploadCurrentFileName" class="object-store-upload-current">
+        <div>현재 처리 중:</div>
+        <div class="object-store-upload-current-name">{{ uploadCurrentFileName }}</div>
+      </div>
+    </div>
     <a-divider dashed/>
     <tooltip-label bold :title="$t('label.upload.path')" :tooltip="$t('label.upload.description')"/>
     <br/>
@@ -56,15 +68,6 @@
     <a-divider dashed/>
     <tooltip-label bold :title="$t('label.metadata')" :tooltip="$t('label.metadata.upload.description')"/>
     <KeyValuePairInput :pairs="uploadMetaData" @update-pairs="(pairs) => uploadMetaData = pairs" />
-    <div v-if="uploadLoading || uploadTotalCount > 0" class="object-store-upload-progress">
-      <a-progress
-        :percent="uploadProgressPercent"
-        :status="uploadFailedCount > 0 ? 'exception' : uploadLoading ? 'active' : 'success'" />
-      <div class="object-store-upload-progress-text">
-        업로드 {{ uploadCompletedCount }} / {{ uploadTotalCount }}
-        <span v-if="uploadFailedCount > 0">, 실패 {{ uploadFailedCount }}</span>
-      </div>
-    </div>
   </a-modal>
 
   <a-drawer
@@ -269,7 +272,7 @@ const normalizeObjectStorePath = path => {
   return path.endsWith('/') ? path : `${path}/`
 }
 
-const pageSize = 10
+const pageSize = 20
 
 export default {
   name: 'ObjectStoreBrowser',
@@ -327,6 +330,8 @@ export default {
       uploadTotalCount: 0,
       uploadCompletedCount: 0,
       uploadFailedCount: 0,
+      uploadFailedFiles: [],
+      uploadCurrentFileName: '',
       objectStorePresignedUrlExpirySeconds: defaultObjectStorePresignedUrlExpirySeconds,
       record: {},
       showObjectDetails: false,
@@ -334,11 +339,9 @@ export default {
     }
   },
   computed: {
-    uploadProgressPercent () {
-      if (!this.uploadTotalCount) {
-        return 0
-      }
-      return Math.round((this.uploadCompletedCount / this.uploadTotalCount) * 100)
+    uploadPendingCount () {
+      const uploadingCount = this.uploadLoading && this.uploadCurrentFileName ? 1 : 0
+      return Math.max(this.uploadTotalCount - this.uploadCompletedCount - this.uploadFailedCount - uploadingCount, 0)
     }
   },
   created () {
@@ -364,6 +367,8 @@ export default {
       this.uploadTotalCount = 0
       this.uploadCompletedCount = 0
       this.uploadFailedCount = 0
+      this.uploadFailedFiles = []
+      this.uploadCurrentFileName = ''
     },
     resetUploadForm () {
       this.uploadFileList = []
@@ -563,7 +568,17 @@ export default {
       this.uploadFileList = newFileList
       return true
     },
-    uploadFiles () {
+    updateUploadFileStatus (file, status, error) {
+      const index = this.uploadFileList.findIndex(uploadFile => uploadFile === file || uploadFile.uid === file.uid)
+      if (index < 0) {
+        return
+      }
+      const newFileList = this.uploadFileList.slice()
+      newFileList[index].status = status
+      newFileList[index].error = error
+      this.uploadFileList = newFileList
+    },
+    async uploadFiles () {
       if (this.uploadLoading) {
         return
       }
@@ -580,51 +595,61 @@ export default {
       this.uploadTotalCount = files.length
       this.uploadCompletedCount = 0
       this.uploadFailedCount = 0
+      this.uploadFailedFiles = []
+      this.uploadCurrentFileName = ''
       const metadata = { ...this.uploadMetaData }
-      const promises = files.map(file => {
-        const objectName = this.uploadDirectory + file.name
-        return this.asyncUploadFile(file, objectName, metadata)
-          .catch(error => {
-            this.uploadFailedCount++
-            throw error
-          })
-          .finally(() => {
+      try {
+        for (const file of files) {
+          const objectName = this.uploadDirectory + file.name
+          this.uploadCurrentFileName = file.name
+          this.updateUploadFileStatus(file, 'uploading')
+          try {
+            await this.asyncUploadFile(file, objectName, metadata)
+            this.updateUploadFileStatus(file, 'done')
             this.uploadCompletedCount++
-          })
-      })
-      Promise.allSettled(promises).then(results => {
-        const failedCount = results.filter(result => result.status === 'rejected').length
-        if (failedCount > 0) {
+          } catch (error) {
+            this.updateUploadFileStatus(file, 'error', error)
+            this.uploadFailedCount++
+            this.uploadFailedFiles.push({
+              name: file.name,
+              message: error?.message || String(error)
+            })
+          }
+        }
+        this.uploadCurrentFileName = ''
+        if (this.uploadFailedCount > 0) {
+          const failedNames = this.uploadFailedFiles.slice(0, 3).map(file => file.name).join(', ')
+          const extraFailedCount = Math.max(this.uploadFailedFiles.length - 3, 0)
+          const failedDescription = extraFailedCount > 0 ? `${failedNames} 외 ${extraFailedCount}개` : failedNames
           this.$notification.error({
             message: this.$t('message.upload.failed'),
-            description: `${failedCount} / ${files.length}`
+            description: `전체 ${files.length}개 중 성공 ${this.uploadCompletedCount}개, 실패 ${this.uploadFailedCount}개. 실패 파일: ${failedDescription}`
           })
           return
         }
+        this.$notification.success({
+          message: this.$t('message.success.upload'),
+          description: `전체 ${files.length}개 파일 업로드 완료`
+        })
         this.showUploadModal = false
         this.resetUploadForm()
         this.listObjects()
-      }).finally(() => {
+      } finally {
         this.uploadLoading = false
+        this.uploadCurrentFileName = ''
         if (this.uploadFailedCount > 0) {
           this.loading = false
         }
-      })
+      }
     },
     asyncUploadFile (file, objectName, metadata) {
       return new Promise((resolve, reject) => {
         file.arrayBuffer().then((buffer) => {
           this.client.putObject(this.resource.name, objectName, Buffer.from(buffer), file.size, metadata, err => {
             if (err) {
-              return reject(this.$notification.error({
-                message: this.$t('message.upload.failed'),
-                description: err.message
-              }))
+              return reject(err)
             }
-            return resolve(this.$notification.success({
-              message: this.$t('message.success.upload'),
-              description: objectName.split('/').pop()
-            }))
+            return resolve(objectName)
           })
         }).catch(reject)
       })
@@ -681,13 +706,36 @@ export default {
   margin-right: 6px;
 }
 
-.object-store-upload-progress {
-  margin-top: 16px;
+:deep(.ant-upload-list-picture .ant-upload-list-item-done) {
+  border-color: #1890ff;
 }
 
-.object-store-upload-progress-text {
+.object-store-upload-status {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  margin-top: 16px;
+  padding: 10px 12px;
+}
+
+.object-store-upload-status-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.object-store-upload-status-summary,
+.object-store-upload-current {
   color: rgba(0, 0, 0, 0.65);
   font-size: 12px;
-  margin-top: 4px;
+}
+
+.object-store-upload-current {
+  margin-top: 8px;
+}
+
+.object-store-upload-current-name {
+  color: rgba(0, 0, 0, 0.85);
+  margin-top: 2px;
+  word-break: break-all;
 }
 </style>
