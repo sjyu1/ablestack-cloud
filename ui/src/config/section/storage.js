@@ -555,8 +555,8 @@ export default {
       title: 'label.buckets',
       icon: 'funnel-plot-outlined',
       permission: ['listBuckets'],
-      columns: ['name', 'state', 'objectstore', 'size', 'account'],
-      details: ['id', 'name', 'state', 'objectstore', 'size', 'url', 'accesskey', 'usersecretkey', 'account', 'domain', 'created', 'quota', 'encryption', 'versioning', 'objectlocking', 'policy'],
+      columns: ['name', 'state', 'objectstore', { field: 'size', customTitle: 'used.capacity' }, { field: 'quota', customTitle: 'total.allocated.capacity' }, 'account'],
+      details: ['id', 'name', 'state', 'objectstore', { field: 'size', customTitle: 'used.capacity' }, 'url', 'accesskey', 'usersecretkey', 'account', 'domain', 'created', { field: 'quota', customTitle: 'total.allocated.capacity' }, 'encryption', 'versioning', 'objectlocking', 'policy'],
       tabs: [
         {
           name: 'details',
