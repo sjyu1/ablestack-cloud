@@ -18,21 +18,26 @@
 <template>
   <a-modal
     :visible="showUploadModal"
-    :closable="true"
+    :closable="!uploadLoading"
     :destroyOnClose="true"
     :title="$t('label.upload')"
     :maskClosable="false"
     :cancelText="$t('label.cancel')"
-    @cancel="() => showUploadModal = false"
+    @cancel="closeUploadModal"
     :okText="$t('label.upload')"
+    :confirmLoading="uploadLoading"
+    :okButtonProps="{ disabled: uploadLoading || uploadFileList.length === 0 }"
+    :cancelButtonProps="{ disabled: uploadLoading }"
     @ok="uploadFiles()"
     centered
     >
     <a-upload-dragger
       :multiple="true"
-      :v-model:file-list="uploadFileList"
+      :fileList="uploadFileList"
       listType="picture"
-      :beforeUpload="beforeUpload">
+      :disabled="uploadLoading"
+      :beforeUpload="beforeUpload"
+      @remove="removeUploadFile">
       <p class="ant-upload-drag-icon">
         <cloud-upload-outlined />
       </p>
@@ -40,13 +45,25 @@
         {{ $t('label.volume.volumefileupload.description') }}
       </p>
     </a-upload-dragger>
+    <div v-if="uploadLoading || uploadTotalCount > 0" class="object-store-upload-status">
+      <div class="object-store-upload-status-title">
+        {{ uploadLoading ? '업로드 중' : '업로드 완료' }}
+      </div>
+      <div class="object-store-upload-status-summary">
+        전체 {{ uploadTotalCount }}개 / 완료 {{ uploadCompletedCount }}개 / 실패 {{ uploadFailedCount }}개 / 대기 {{ uploadPendingCount }}개
+      </div>
+      <div v-if="uploadCurrentFileName" class="object-store-upload-current">
+        <div>현재 처리 중:</div>
+        <div class="object-store-upload-current-name">{{ uploadCurrentFileName }}</div>
+      </div>
+    </div>
     <a-divider dashed/>
     <tooltip-label bold :title="$t('label.upload.path')" :tooltip="$t('label.upload.description')"/>
     <br/>
     <a-input
       v-model:value="uploadDirectory"
       :placeholder="$t('label.upload.description')"
-      :loading="loading"
+      :disabled="uploadLoading"
       enter-button/>
     <a-divider dashed/>
     <tooltip-label bold :title="$t('label.metadata')" :tooltip="$t('label.metadata.upload.description')"/>
@@ -123,22 +140,33 @@
   <div>
     <a-card class="breadcrumb-card">
       <a-row>
-        <a-breadcrumb :routes="getRoutes()">
-          <template #itemRender="{ route }">
-            <span v-if="[''].includes(route.path) && route.breadcrumbName === 'root'">
-              <a @click="openDir('')">
-                <HomeOutlined/>
-              </a>
-            </span>
-            <span v-else>
-              <a @click="openDir(route.path)">
+        <a-breadcrumb>
+          <a-breadcrumb-item>
+            <a @click="openDir('')">
+              <HomeOutlined />
+              <span v-if="getObjectStorePathRoutes().length === 0" class="object-store-root-path">/</span>
+            </a>
+          </a-breadcrumb-item>
+          <a-breadcrumb-item
+            v-for="route in getObjectStorePathRoutes()"
+            :key="route.path">
+            <a @click="openDir(route.path)">
               {{ route.breadcrumbName }}
-              </a>
-            </span>
-          </template>
+            </a>
+          </a-breadcrumb-item>
         </a-breadcrumb>
       </a-row>
       <a-divider/>
+      <a-row class="object-store-usage-row" :gutter="[16, 8]">
+        <a-col>
+          <span class="object-store-usage-label">사용량</span>
+          <span>{{ convertKB(resource.size || 0) }}</span>
+        </a-col>
+        <a-col v-if="resource.quota">
+          <span class="object-store-usage-label">총용량</span>
+          <span>{{ resource.quota }} GiB</span>
+        </a-col>
+      </a-row>
       <a-row :gutter="[10,10]" :wrap="true">
         <a-col flex="75%">
           <a-input-search
@@ -168,7 +196,7 @@
             shape="round"
             size="medium"
             type="primary"
-            @click="() => showUploadModal = true">
+            @click="openUploadModal">
             <upload-outlined />
             {{ $t('label.upload') }}
           </a-button>
@@ -189,11 +217,11 @@
     <div>
       <a-table
         :columns="columns"
-        :scroll="{ y: 300 }"
         :row-key="record => record"
         :data-source="records"
         :loading="loading"
-        :pagination="{ current: page, pageSize: 1000, total: total, showSizeChanger: false }"
+        :size="'small'"
+        :pagination="{ current: page, pageSize: pageSize, total: total, showSizeChanger: false }"
         :row-selection="{ selectedRowsKeys: selectedRows, onChange: onSelectChange }"
         @change="handleTableChange">
         <template #bodyCell="{ column, record }">
@@ -225,13 +253,26 @@
 </template>
 
 <script>
-import { reactive } from 'vue'
 import * as Minio from 'minio'
+import { api } from '@/api'
 import { genericCompare } from '@/utils/sort.js'
 import InfoCard from '@/components/view/InfoCard'
 import TooltipButton from '@/components/widgets/TooltipButton'
 import TooltipLabel from '@/components/widgets/TooltipLabel'
 import KeyValuePairInput from '@/components/KeyValuePairInput'
+
+const objectStorePresignedUrlExpiryConfigKey = 'objectstore.presigned.url.expiry.seconds'
+const defaultObjectStorePresignedUrlExpirySeconds = 24 * 60 * 60
+
+const normalizeObjectStorePath = path => {
+  if (!path || path === '/') {
+    return ''
+  }
+  path = String(path).replace(/^\/+/, '')
+  return path.endsWith('/') ? path : `${path}/`
+}
+
+const pageSize = 20
 
 export default {
   name: 'ObjectStoreBrowser',
@@ -273,7 +314,8 @@ export default {
       client: null,
       loading: false,
       records: [],
-      browserPath: this.$route.query.browserPath || '',
+      browserPath: normalizeObjectStorePath(this.$route.query.browserPath),
+      pageSize,
       page: 1,
       pageStartAfterMap: { 1: '' },
       total: 0,
@@ -281,22 +323,62 @@ export default {
       selectedRows: [],
       searchPrefix: '',
       showUploadModal: false,
-      uploadFileList: reactive([]),
-      uploadDirectory: this.$route.query.browserPath || '',
+      uploadFileList: [],
+      uploadDirectory: normalizeObjectStorePath(this.$route.query.browserPath),
       uploadMetaData: {},
+      uploadLoading: false,
+      uploadTotalCount: 0,
+      uploadCompletedCount: 0,
+      uploadFailedCount: 0,
+      uploadFailedFiles: [],
+      uploadCurrentFileName: '',
+      objectStorePresignedUrlExpirySeconds: defaultObjectStorePresignedUrlExpirySeconds,
       record: {},
       showObjectDetails: false,
       fetching: false
     }
   },
+  computed: {
+    uploadPendingCount () {
+      const uploadingCount = this.uploadLoading && this.uploadCurrentFileName ? 1 : 0
+      return Math.max(this.uploadTotalCount - this.uploadCompletedCount - this.uploadFailedCount - uploadingCount, 0)
+    }
+  },
   created () {
     this.fetchData()
+    this.fetchObjectStorePresignedUrlExpirySeconds()
   },
   methods: {
+    openUploadModal () {
+      if (this.uploadLoading) {
+        return
+      }
+      this.resetUploadForm()
+      this.showUploadModal = true
+    },
+    closeUploadModal () {
+      if (this.uploadLoading) {
+        return
+      }
+      this.showUploadModal = false
+      this.resetUploadForm()
+    },
+    resetUploadProgress () {
+      this.uploadTotalCount = 0
+      this.uploadCompletedCount = 0
+      this.uploadFailedCount = 0
+      this.uploadFailedFiles = []
+      this.uploadCurrentFileName = ''
+    },
+    resetUploadForm () {
+      this.uploadFileList = []
+      this.uploadDirectory = this.browserPath
+      this.uploadMetaData = {}
+      this.resetUploadProgress()
+    },
     handleTableChange (pagination, filters, sorter) {
       if (this.page !== pagination.current) {
         this.page = pagination.current
-        this.fetchData()
       }
     },
     fetchData () {
@@ -316,12 +398,9 @@ export default {
         this.listObjects()
       }
     },
-    getRoutes () {
+    getObjectStorePathRoutes () {
       let path = ''
-      const routeList = [{
-        path: path,
-        breadcrumbName: 'root'
-      }]
+      const routeList = []
       for (const route of this.browserPath.split('/')) {
         if (route) {
           path = `${path}${route}/`
@@ -340,12 +419,17 @@ export default {
       if (val < 1024 * 1024 * 1024 * 1024 * 1024) return `${(val / 1024 / 1024 / 1024 / 1024).toFixed(2)} TB`
       return val
     },
+    convertKB (val) {
+      if (val < 1024) return `${Number(val).toFixed(2)} KB`
+      if (val < 1024 * 1024) return `${(val / 1024).toFixed(2)} MB`
+      if (val < 1024 * 1024 * 1024) return `${(val / 1024 / 1024).toFixed(2)} GB`
+      if (val < 1024 * 1024 * 1024 * 1024) return `${(val / 1024 / 1024 / 1024).toFixed(2)} TB`
+      return val
+    },
     openDir (name) {
-      if (name === '/') {
-        name = ''
-      }
-      this.browserPath = name
-      this.uploadDirectory = name
+      const normalizedName = normalizeObjectStorePath(name)
+      this.browserPath = normalizedName
+      this.uploadDirectory = normalizedName
       this.page = 1
       this.fetchData()
     },
@@ -358,29 +442,12 @@ export default {
       }
       this.fetching = true
       this.records = []
-      var stream = this.client.extensions.listObjectsV2WithMetadata(this.resource.name, this.browserPath + this.searchPrefix, false, this.pageStartAfterMap[this.page])
+      var stream = this.client.extensions.listObjectsV2WithMetadata(this.resource.name, normalizeObjectStorePath(this.browserPath) + this.searchPrefix, false, '')
       stream.on('data', obj => {
         this.records.push(obj)
-        if (this.records.length >= 1000) {
-          stream.destroy()
-        }
       })
       stream.on('end', obj => {
-        var total = 0
-        if (this.records.length > 0) {
-          if (this.records.length >= 1000) {
-            total = (this.page + 1) * 1000
-            if (total > this.total) {
-              this.total = total
-            }
-          } else {
-            total = (this.page - 1) * 1000 + this.records.length
-          }
-          this.pageStartAfterMap[this.page + 1] = this.records[this.records.length - 1].name
-        }
-        if (total > this.total) {
-          this.total = total
-        }
+        this.total = this.records.length
         this.loading = false
         this.fetching = false
       })
@@ -460,53 +527,137 @@ export default {
         this.listObjects()
       }
     },
+    fetchObjectStorePresignedUrlExpirySeconds () {
+      api('listConfigurations', { name: objectStorePresignedUrlExpiryConfigKey }).then(json => {
+        const value = json?.listconfigurationsresponse?.configuration?.[0]?.value
+        const expirySeconds = Number(value)
+        if (Number.isFinite(expirySeconds) && expirySeconds > 0) {
+          this.objectStorePresignedUrlExpirySeconds = Math.floor(expirySeconds)
+        }
+      }).catch(error => {
+        console.warn(`Failed to load ${objectStorePresignedUrlExpiryConfigKey}`, error)
+      })
+    },
+    getObjectStorePresignedUrlExpirySeconds () {
+      const expirySeconds = Number(this.objectStorePresignedUrlExpirySeconds)
+      if (!Number.isFinite(expirySeconds) || expirySeconds <= 0) {
+        return defaultObjectStorePresignedUrlExpirySeconds
+      }
+      return Math.floor(expirySeconds)
+    },
     onSelectChange (selectedRow) {
       this.selectedRows = selectedRow
     },
     beforeUpload (file) {
-      this.uploadFileList.push(file)
+      if (this.uploadLoading) {
+        return false
+      }
+      this.uploadFileList = [...this.uploadFileList, file]
       return false
     },
-    uploadFiles () {
-      if (!this.uploadDirectory.endsWith('/')) {
+    removeUploadFile (file) {
+      if (this.uploadLoading) {
+        return false
+      }
+      const index = this.uploadFileList.indexOf(file)
+      if (index < 0) {
+        return true
+      }
+      const newFileList = this.uploadFileList.slice()
+      newFileList.splice(index, 1)
+      this.uploadFileList = newFileList
+      return true
+    },
+    updateUploadFileStatus (file, status, error) {
+      const index = this.uploadFileList.findIndex(uploadFile => uploadFile === file || uploadFile.uid === file.uid)
+      if (index < 0) {
+        return
+      }
+      const newFileList = this.uploadFileList.slice()
+      newFileList[index].status = status
+      newFileList[index].error = error
+      this.uploadFileList = newFileList
+    },
+    async uploadFiles () {
+      if (this.uploadLoading) {
+        return
+      }
+      const files = [...this.uploadFileList]
+      if (files.length === 0) {
+        return
+      }
+      this.uploadDirectory = normalizeObjectStorePath(this.uploadDirectory)
+      if (this.uploadDirectory && !this.uploadDirectory.endsWith('/')) {
         this.uploadDirectory = this.uploadDirectory + '/'
       }
-      var promises = []
-      while (this.uploadFileList.length > 0) {
-        const file = this.uploadFileList.pop()
-        const objectName = this.uploadDirectory + file.name
-        promises.push(this.asyncUploadFile(file, objectName))
-      }
-      Promise.allSettled(promises).then(() => {
-        this.uploadDirectory = this.browserPath
-        this.uploadMetaData = {}
-        this.uploadFileList = []
+      this.uploadLoading = true
+      this.loading = true
+      this.uploadTotalCount = files.length
+      this.uploadCompletedCount = 0
+      this.uploadFailedCount = 0
+      this.uploadFailedFiles = []
+      this.uploadCurrentFileName = ''
+      const metadata = { ...this.uploadMetaData }
+      try {
+        for (const file of files) {
+          const objectName = this.uploadDirectory + file.name
+          this.uploadCurrentFileName = file.name
+          this.updateUploadFileStatus(file, 'uploading')
+          try {
+            await this.asyncUploadFile(file, objectName, metadata)
+            this.updateUploadFileStatus(file, 'done')
+            this.uploadCompletedCount++
+          } catch (error) {
+            this.updateUploadFileStatus(file, 'error', error)
+            this.uploadFailedCount++
+            this.uploadFailedFiles.push({
+              name: file.name,
+              message: error?.message || String(error)
+            })
+          }
+        }
+        this.uploadCurrentFileName = ''
+        if (this.uploadFailedCount > 0) {
+          const failedNames = this.uploadFailedFiles.slice(0, 3).map(file => file.name).join(', ')
+          const extraFailedCount = Math.max(this.uploadFailedFiles.length - 3, 0)
+          const failedDescription = extraFailedCount > 0 ? `${failedNames} 외 ${extraFailedCount}개` : failedNames
+          this.$notification.error({
+            message: this.$t('message.upload.failed'),
+            description: `전체 ${files.length}개 중 성공 ${this.uploadCompletedCount}개, 실패 ${this.uploadFailedCount}개. 실패 파일: ${failedDescription}`
+          })
+          return
+        }
+        this.$notification.success({
+          message: this.$t('message.success.upload'),
+          description: `전체 ${files.length}개 파일 업로드 완료`
+        })
+        this.showUploadModal = false
+        this.resetUploadForm()
         this.listObjects()
-      })
-      this.showUploadModal = false
+      } finally {
+        this.uploadLoading = false
+        this.uploadCurrentFileName = ''
+        if (this.uploadFailedCount > 0) {
+          this.loading = false
+        }
+      }
     },
-    asyncUploadFile (file, objectName) {
+    asyncUploadFile (file, objectName, metadata) {
       return new Promise((resolve, reject) => {
         file.arrayBuffer().then((buffer) => {
-          this.client.putObject(this.resource.name, objectName, Buffer.from(buffer), file.size, this.uploadMetaData, err => {
+          this.client.putObject(this.resource.name, objectName, Buffer.from(buffer), file.size, metadata, err => {
             if (err) {
-              return reject(this.$notification.error({
-                message: this.$t('message.upload.failed'),
-                description: err.message
-              }))
+              return reject(err)
             }
-            return resolve(this.$notification.success({
-              message: this.$t('message.success.upload'),
-              description: objectName.split('/').pop()
-            }))
+            return resolve(objectName)
           })
-        })
+        }).catch(reject)
       })
     },
     showObjectDescription (record) {
       this.record = { ...record }
       this.record.url = this.resource.url + '/' + record.name
-      this.client.presignedGetObject(this.resource.name, record.name, 24 * 60 * 60, (err, presignedUrl) => {
+      this.client.presignedGetObject(this.resource.name, record.name, this.getObjectStorePresignedUrlExpirySeconds(), (err, presignedUrl) => {
         if (err) {
           return this.$notification.error({
             message: this.$t('error.execute.api.failed'),
@@ -539,3 +690,52 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.object-store-root-path {
+  margin-left: 4px;
+}
+
+.object-store-usage-row {
+  margin-bottom: 12px;
+}
+
+.object-store-usage-label {
+  color: rgba(0, 0, 0, 0.65);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+:deep(.ant-upload-list-picture .ant-upload-list-item-done) {
+  border-color: #1890ff;
+}
+
+.object-store-upload-status {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  margin-top: 16px;
+  padding: 10px 12px;
+}
+
+.object-store-upload-status-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.object-store-upload-status-summary,
+.object-store-upload-current {
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 12px;
+}
+
+.object-store-upload-current {
+  margin-top: 8px;
+}
+
+.object-store-upload-current-name {
+  color: rgba(0, 0, 0, 0.85);
+  margin-top: 2px;
+  word-break: break-all;
+}
+</style>
