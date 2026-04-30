@@ -2344,18 +2344,28 @@ export default {
           Object.entries(createVnfAppData).filter(([key, value]) => value !== undefined))
 
         var idx = 0
+        const userdataDetailNames = new Set()
         if (this.templateUserDataValues) {
           for (const [key, value] of Object.entries(this.templateUserDataValues)) {
+            if (!this.isSafeUserDataDetailValue(value)) {
+              continue
+            }
             createVnfAppData['userdatadetails[' + idx + '].' + `${key}`] = value
+            userdataDetailNames.add(key)
             idx++
           }
         }
         if (isUserdataAllowed && this.userDataValues) {
           for (const [key, value] of Object.entries(this.userDataValues)) {
+            if (!this.isSafeUserDataDetailValue(value)) {
+              continue
+            }
             createVnfAppData['userdatadetails[' + idx + '].' + `${key}`] = value
+            userdataDetailNames.add(key)
             idx++
           }
         }
+        idx = this.addVnfDetailsToDeployParams(createVnfAppData, idx, userdataDetailNames)
 
         postAPI('deployVnfAppliance', createVnfAppData).then(response => {
           const jobId = response.deployvirtualmachineresponse.jobid
@@ -2369,6 +2379,7 @@ export default {
                 const name = vm.displayname || vm.name || vm.id
                 const username = vm.vnfdetails?.username || null
                 const password = vm.vnfdetails?.password || null
+                const effectivePassword = vm.password || password
                 const sshUsername = vm.vnfdetails?.ssh_user || null
                 const sshPassword = vm.vnfdetails?.ssh_password || null
                 const webUsername = vm.vnfdetails?.web_user || null
@@ -2377,8 +2388,8 @@ export default {
                 if (username) {
                   credentials.push(this.$t('label.username') + ' : ' + username)
                 }
-                if (password) {
-                  credentials.push(this.$t('label.password.default') + ' : ' + password)
+                if (effectivePassword) {
+                  credentials.push(this.$t('label.password.default') + ' : ' + effectivePassword)
                 }
                 if (webUsername) {
                   credentials.push('Web ' + this.$t('label.username') + ' : ' + webUsername)
@@ -2391,9 +2402,6 @@ export default {
                 }
                 if (sshPassword) {
                   credentials.push('SSH ' + this.$t('label.password.default') + ' : ' + sshPassword)
-                }
-                if (vm.password) {
-                  credentials.push('New password : ' + vm.password)
                 }
                 if (credentials.length > 0) {
                   credentials.push(this.$t('message.vnf.credentials.change'))
@@ -2907,6 +2915,32 @@ export default {
     },
     handleNicsNetworkSelection (nicToNetworkSelection) {
       this.nicToNetworkSelection = nicToNetworkSelection
+    },
+    getVnfDetailsForDeploy () {
+      const vnfDetails = this.template?.vnfdetails || {}
+      return Object.fromEntries(Object.entries(vnfDetails).filter(([key, value]) => {
+        return key && value !== undefined && value !== null && value !== ''
+      }))
+    },
+    addVnfDetailsToDeployParams (params, idx, existingDetailNames) {
+      const vnfDetails = this.getVnfDetailsForDeploy()
+      const vmPassword = vnfDetails.password || vnfDetails.ssh_password
+      if (!params.password && vmPassword) {
+        params.password = vmPassword
+      }
+      for (const [key, value] of Object.entries(vnfDetails)) {
+        if (existingDetailNames.has(key) || !this.isSafeUserDataDetailValue(value)) {
+          continue
+        }
+        params['userdatadetails[' + idx + '].' + key] = value
+        existingDetailNames.add(key)
+        idx++
+      }
+      return idx
+    },
+    isSafeUserDataDetailValue (value) {
+      // Backend serializes userdata details as Map.toString() and later splits on comma.
+      return !String(value).includes(',')
     },
     getSelectedNetworksWithExistingConfig (networks) {
       for (var i in this.networks) {

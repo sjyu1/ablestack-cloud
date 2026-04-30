@@ -94,6 +94,7 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
     @Override
     public boolean start() {
         _executor.scheduleWithFixedDelay(new BucketUsageTask(), 60L, 3600L, TimeUnit.SECONDS);
+        _executor.scheduleWithFixedDelay(new BucketUsageCustomTask(), 60L, 60L, TimeUnit.SECONDS);
         return true;
     }
 
@@ -348,6 +349,35 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
                     bucket.setSize(size);
                     _bucketDao.update(bucket.getId(), bucket);
                 }
+            }
+        }
+    }
+
+    private class BucketUsageCustomTask extends ManagedContextRunnable {
+        public BucketUsageCustomTask() {
+        }
+
+        @Override
+        protected void runInContext() {
+            try {
+                List<ObjectStoreVO> objectStores = _objectStoreDao.listObjectStores();
+                for(ObjectStoreVO objectStoreVO: objectStores) {
+                    List<BucketVO> buckets = _bucketDao.listByObjectStoreId(objectStoreVO.getId());
+                    if (buckets.isEmpty()) {
+                        continue;
+                    }
+                    ObjectStoreEntity  objectStore = (ObjectStoreEntity)_dataStoreMgr.getDataStore(objectStoreVO.getId(), DataStoreRole.Object);
+                    Map<String, Long> bucketSizes = objectStore.getAllBucketsUsage();
+                    for(BucketVO bucket : buckets) {
+                        Long size = bucketSizes.get(bucket.getName());
+                        if( size != null){
+                            bucket.setSize(size);
+                            _bucketDao.update(bucket.getId(), bucket);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("Error while fetching bucket usage", e);
             }
         }
     }

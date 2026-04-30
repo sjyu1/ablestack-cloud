@@ -142,6 +142,21 @@
                 <status class="status" :text="resource.resourcestate" displayText/>
               </div>
             </div>
+            <div class="resource-detail-item" v-if="$route.meta.name === 'buckets' && bucketQuotaKB > 0">
+              <div class="resource-detail-item__label">{{ $t('label.used.capacity') }}</div>
+              <div class="resource-detail-item__details">
+                <hdd-outlined />
+                {{ toSize(Number(resource.size || 0)) }} / {{ resource.quota }} GiB
+              </div>
+              <div>
+                <a-progress
+                  class="progress-bar"
+                  size="small"
+                  status="active"
+                  :percent="bucketUsagePercent"
+                  :format="(percent, successPercent) => parseFloat(percent).toFixed(2) + '% ' + $t('label.used')" />
+              </div>
+            </div>
             <div class="resource-detail-item" v-if="['cluster', 'zone'].includes($route.meta.name) && resource.resourcedetails">
               <div class="resource-detail-item__label">{{ $t('label.haenable') }}</div>
               <div class="resource-detail-item__details">
@@ -1209,6 +1224,23 @@ export default {
         return this.resource.resourceIcon.base64image
       }
       return this.images.template || this.images.iso || this.images.guestoscategory || null
+    },
+    bucketQuotaKB () {
+      const quotaGiB = Number(this.resource?.quota)
+      if (!Number.isFinite(quotaGiB) || quotaGiB <= 0) {
+        return 0
+      }
+      return quotaGiB * 1024 * 1024
+    },
+    bucketUsagePercent () {
+      if (this.bucketQuotaKB <= 0) {
+        return 0
+      }
+      const sizeKB = Number(this.resource?.size || 0)
+      if (!Number.isFinite(sizeKB) || sizeKB <= 0) {
+        return 0
+      }
+      return Math.min(Number(((sizeKB / this.bucketQuotaKB) * 100).toFixed(2)), 100)
     },
     routeFromResourceType () {
       return this.$getRouteFromResourceType(this.resource.resourcetype)
