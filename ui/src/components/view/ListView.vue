@@ -426,6 +426,11 @@
           {{ isNaN(text) ? text : (parseFloat(parseFloat(text) / 1024.0 / 1024.0 / 1024.0).toFixed(2) + ' GiB') }}
         </span>
       </template>
+      <template v-if="['disksizetotal', 'disksizeused'].includes(column.key)">
+        <span v-if="text !== undefined && text !== null">
+          {{ $bytesToHumanReadableSize(text) }}
+        </span>
+      </template>
       <template v-if="column.key === 'videoram'">
         <span v-if="text">
           {{ isNaN(text) ? text : (parseFloat(text) / 1024.0).toFixed(2) + ' GB' }}

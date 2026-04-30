@@ -433,6 +433,21 @@
                 <a-tag>{{ $t('label.writeio') + ' ' + resource.diskiowrite }}</a-tag>
               </div>
             </div>
+            <div class="resource-detail-item" v-else-if="$route.meta.name === 'imagestore' && resource.disksizetotal">
+              <div class="resource-detail-item__label">{{ $t('label.disksize') }}</div>
+              <div class="resource-detail-item__details">
+                <hdd-outlined />
+                {{ $bytesToHumanReadableSize(resource.disksizeused || 0) }} / {{ $bytesToHumanReadableSize(resource.disksizetotal) }}
+              </div>
+              <div>
+                <a-progress
+                  class="progress-bar"
+                  size="small"
+                  status="active"
+                  :percent="imageStoreUsagePercent"
+                  :format="(percent, successPercent) => parseFloat(percent).toFixed(2) + '% ' + $t('label.used')" />
+              </div>
+            </div>
             <div class="resource-detail-item" v-else-if="resource.disksizetotalgb">
               <div class="resource-detail-item__label">{{ $t('label.disksize') }}</div>
               <div class="resource-detail-item__details">
@@ -1241,6 +1256,14 @@ export default {
         return 0
       }
       return Math.min(Number(((sizeKB / this.bucketQuotaKB) * 100).toFixed(2)), 100)
+    },
+    imageStoreUsagePercent () {
+      const total = Number(this.resource?.disksizetotal)
+      const used = Number(this.resource?.disksizeused || 0)
+      if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(used) || used <= 0) {
+        return 0
+      }
+      return Math.min(Number(((used / total) * 100).toFixed(2)), 100)
     },
     routeFromResourceType () {
       return this.$getRouteFromResourceType(this.resource.resourcetype)
