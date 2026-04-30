@@ -139,11 +139,13 @@ import org.apache.cloudstack.api.command.admin.loadbalancer.ListLoadBalancerRule
 import org.apache.cloudstack.api.command.admin.management.ListMgmtsCmd;
 import org.apache.cloudstack.api.command.admin.network.AddNetworkDeviceCmd;
 import org.apache.cloudstack.api.command.admin.network.AddNetworkServiceProviderCmd;
+import org.apache.cloudstack.api.command.admin.network.CreateManagementNetworkIpRangeCmd;
 import org.apache.cloudstack.api.command.admin.network.CreateNetworkCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.network.CreateNetworkOfferingCmd;
 import org.apache.cloudstack.api.command.admin.network.CreatePhysicalNetworkCmd;
 import org.apache.cloudstack.api.command.admin.network.CreateStorageNetworkIpRangeCmd;
 import org.apache.cloudstack.api.command.admin.network.DedicateGuestVlanRangeCmd;
+import org.apache.cloudstack.api.command.admin.network.DeleteManagementNetworkIpRangeCmd;
 import org.apache.cloudstack.api.command.admin.network.DeleteNetworkDeviceCmd;
 import org.apache.cloudstack.api.command.admin.network.DeleteNetworkOfferingCmd;
 import org.apache.cloudstack.api.command.admin.network.DeleteNetworkServiceProviderCmd;
@@ -154,6 +156,7 @@ import org.apache.cloudstack.api.command.admin.network.ListGuestVlansCmd;
 import org.apache.cloudstack.api.command.admin.network.ListNetworkDeviceCmd;
 import org.apache.cloudstack.api.command.admin.network.ListNetworkIsolationMethodsCmd;
 import org.apache.cloudstack.api.command.admin.network.ListNetworkServiceProvidersCmd;
+import org.apache.cloudstack.api.command.admin.network.ListNetworksCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.network.ListPhysicalNetworksCmd;
 import org.apache.cloudstack.api.command.admin.network.ListStorageNetworkIpRangeCmd;
 import org.apache.cloudstack.api.command.admin.network.ListSupportedNetworkServicesCmd;
@@ -345,10 +348,12 @@ import org.apache.cloudstack.api.command.admin.volume.ResizeVolumeCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.volume.UpdateVolumeCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.volume.UploadVolumeCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.vpc.CreatePrivateGatewayByAdminCmd;
+import org.apache.cloudstack.api.command.admin.vpc.CreateVPCCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.vpc.CreateVPCOfferingCmd;
 import org.apache.cloudstack.api.command.admin.vpc.DeletePrivateGatewayCmd;
 import org.apache.cloudstack.api.command.admin.vpc.DeleteVPCOfferingCmd;
 import org.apache.cloudstack.api.command.admin.vpc.ListPrivateGatewaysCmdByAdminCmd;
+import org.apache.cloudstack.api.command.admin.vpc.ListVPCsCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.vpc.UpdateVPCCmdByAdmin;
 import org.apache.cloudstack.api.command.admin.vpc.UpdateVPCOfferingCmd;
 import org.apache.cloudstack.api.command.admin.zone.CreateZoneCmd;
@@ -655,6 +660,7 @@ import org.apache.cloudstack.api.response.UpdateHostVhbaDevicesResponse;
 import org.apache.cloudstack.api.response.VmDeviceAssignmentResponse;
 import org.apache.cloudstack.auth.UserAuthenticator;
 import org.apache.cloudstack.auth.UserTwoFactorAuthenticator;
+import org.apache.cloudstack.backup.BackupManager;
 import org.apache.cloudstack.config.ApiServiceConfiguration;
 import org.apache.cloudstack.config.Configuration;
 import org.apache.cloudstack.config.ConfigurationGroup;
@@ -756,6 +762,7 @@ import com.cloud.configuration.ConfigurationManagerImpl;
 import com.cloud.consoleproxy.ConsoleProxyManagementState;
 import com.cloud.consoleproxy.ConsoleProxyManager;
 import com.cloud.dc.AccountVlanMapVO;
+import com.cloud.dc.ClusterDetailsDao;
 import com.cloud.dc.ClusterVO;
 import com.cloud.dc.DataCenterVO;
 import com.cloud.dc.DomainVlanMapVO;
@@ -986,6 +993,8 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
     @Inject
     private HostDao _hostDao;
     @Inject
+    private ClusterDetailsDao _clusterDetailsDao;
+    @Inject
     protected HostDetailsDao _detailsDao;
     @Inject
     private UserDao _userDao;
@@ -1111,6 +1120,8 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
     UserDataManager userDataManager;
     @Inject
     StoragePoolTagsDao storagePoolTagsDao;
+    @Inject
+    private BackupManager backupManager;
 
     @Inject
     private PublicIpQuarantineDao publicIpQuarantineDao;
@@ -2363,7 +2374,21 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
             return listResponse;
         }
 
-        ListHostLunDeviceCommand lunCmd = new ListHostLunDeviceCommand(id);
+        String lunPathMode = cmd.getLunPathMode();
+        if (lunPathMode == null || lunPathMode.trim().isEmpty()) {
+            Map<String, String> hostDetails = _hostDetailsDao.findDetails(hostVO.getId());
+            if (hostDetails != null) {
+                String fromDetail = hostDetails.get(ApiConstants.LUN_PATH_MODE);
+                if (fromDetail != null && !fromDetail.trim().isEmpty()) {
+                    lunPathMode = fromDetail.trim();
+                }
+            }
+        }
+        if (lunPathMode == null || lunPathMode.trim().isEmpty()) {
+            lunPathMode = ListHostLunDeviceCommand.MODE_SINGLE;
+        }
+
+        ListHostLunDeviceCommand lunCmd = new ListHostLunDeviceCommand(id, lunPathMode);
         Answer answer;
         try {
             answer = _agentMgr.send(hostVO.getId(), lunCmd);
@@ -3616,35 +3641,6 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
                     // VM extraconfig에서 해당 디바이스 설정 제거
                     if (vmIdToRemove != null && !vmIdToRemove.trim().isEmpty()) {
                         removeDeviceFromVmExtraConfig(Long.parseLong(vmIdToRemove), hostDeviceName, xmlConfig);
-
-                        // LUN 디바이스 삭제 시 함께 삭제되는 SCSI 디바이스의 extraconfig도 삭제
-                        try {
-                            // 같은 VM에 할당된 모든 디바이스 할당 정보 조회
-                            SearchCriteria<DetailVO> sc = _hostDetailsDao.createSearchCriteria();
-                            sc.addAnd("hostId", SearchCriteria.Op.EQ, hostId);
-                            sc.addAnd("value", SearchCriteria.Op.EQ, vmIdToRemove);
-                            List<DetailVO> allAllocations = _hostDetailsDao.search(sc, null);
-
-                            // SCSI 디바이스 중에서 같은 물리 디바이스에 매핑된 것 찾기
-                            for (DetailVO allocation : allAllocations) {
-                                String deviceName = extractDeviceNameFromStoredKey(allocation.getName());
-                                if (isScsiDevice(deviceName)) {
-                                    // SCSI 디바이스의 물리 경로 추출
-                                    String scsiPhysicalPath = extractPhysicalDeviceFromScsi(deviceName);
-                                    if (scsiPhysicalPath != null) {
-                                        // LUN 디바이스 이름과 SCSI 디바이스의 물리 경로를 비교하여 같은 물리 디바이스인지 확인
-                                        if (isSamePhysicalDevice(hostDeviceName, scsiPhysicalPath)) {
-                                            // 같은 물리 디바이스에 매핑된 SCSI 디바이스의 extraconfig 삭제
-                                            removeDeviceFromVmExtraConfig(Long.parseLong(vmIdToRemove), deviceName, "");
-                                            // host_details에서 SCSI 할당 레코드도 삭제 (가상머신 설정과 동기화)
-                                            _hostDetailsDao.remove(allocation.getId());
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            logger.warn("Error removing SCSI device extraconfig for LUN device {}: {}", hostDeviceName, e.getMessage());
-                        }
                     }
                 }
             } else {
@@ -6101,7 +6097,7 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
     }
 
     List<SummedCapacity> getStorageCapacities(Long clusterId, Long podId, Long zoneId, List<Long> poolIds, Short capacityType) {
-        List<Short> capacityTypes = Arrays.asList(Capacity.CAPACITY_TYPE_STORAGE, Capacity.CAPACITY_TYPE_SECONDARY_STORAGE);
+        List<Short> capacityTypes = Arrays.asList(Capacity.CAPACITY_TYPE_STORAGE, Capacity.CAPACITY_TYPE_SECONDARY_STORAGE, Capacity.CAPACITY_TYPE_BACKUP_STORAGE, Capacity.CAPACITY_TYPE_OBJECT_STORAGE);
         if (capacityType != null && !capacityTypes.contains(capacityType)) {
             return null;
         }
@@ -6109,7 +6105,7 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
             capacityTypes = capacityTypes.stream().filter(x -> x.equals(capacityType)).collect(Collectors.toList());
         }
         if (CollectionUtils.isNotEmpty(poolIds)) {
-            capacityTypes = capacityTypes.stream().filter(x -> x != Capacity.CAPACITY_TYPE_SECONDARY_STORAGE).collect(Collectors.toList());
+            capacityTypes = capacityTypes.stream().filter(x -> x == Capacity.CAPACITY_TYPE_STORAGE).collect(Collectors.toList());
         }
         if (CollectionUtils.isEmpty(capacityTypes)) {
             return null;
@@ -6135,6 +6131,12 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
             if (capacityTypes.contains(Capacity.CAPACITY_TYPE_STORAGE)) {
                 capacities.add(_storageMgr.getStoragePoolUsedStats(dc.getId(), podId, clusterId, poolIds));
             }
+            if (capacityTypes.contains(Capacity.CAPACITY_TYPE_OBJECT_STORAGE)) {
+                capacities.add(_storageMgr.getObjectStorageUsedStats(dc.getId()));
+            }
+            if (capacityTypes.contains(Capacity.CAPACITY_TYPE_BACKUP_STORAGE)) {
+                capacities.add((CapacityVO) backupManager.getBackupStorageUsedStats(dc.getId()));
+            }
             for (CapacityVO capacity : capacities) {
                 if (capacity.getTotalCapacity() != 0) {
                     capacity.setUsedPercentage((float)capacity.getUsedCapacity() / capacity.getTotalCapacity());
@@ -6147,6 +6149,23 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
             }
         }// End of for
         return list;
+    }
+
+    private void addZoneWideCapacitiesByType(final Integer capacityType, Long zId, List<CapacityVO> taggedCapacities) {
+        if (capacityType == null) {
+            taggedCapacities.add(_storageMgr.getSecondaryStorageUsedStats(null, zId));
+            taggedCapacities.add(_storageMgr.getObjectStorageUsedStats(zId));
+            taggedCapacities.add((CapacityVO) backupManager.getBackupStorageUsedStats(zId));
+            return;
+        }
+
+        if (capacityType == Capacity.CAPACITY_TYPE_SECONDARY_STORAGE) {
+            taggedCapacities.add(_storageMgr.getSecondaryStorageUsedStats(null, zId));
+        } else if (capacityType == Capacity.CAPACITY_TYPE_OBJECT_STORAGE) {
+            taggedCapacities.add(_storageMgr.getObjectStorageUsedStats(zId));
+        } else if (capacityType == Capacity.CAPACITY_TYPE_BACKUP_STORAGE) {
+            taggedCapacities.add((CapacityVO) backupManager.getBackupStorageUsedStats(zId));
+        }
     }
 
 
@@ -6177,11 +6196,9 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
             for (final Long zId : dcList) {
                 // op_host_Capacity contains only allocated stats and the real time
                 // stats are stored "in memory".
-                // List secondary storage capacity only when the api is invoked for the zone layer.
-                if ((capacityType == null || capacityType == Capacity.CAPACITY_TYPE_SECONDARY_STORAGE) &&
-                        podId == null && clusterId == null &&
-                        StringUtils.isEmpty(t)) {
-                    taggedCapacities.add(_storageMgr.getSecondaryStorageUsedStats(null, zId));
+                // List secondary, object and backup storage capacities only when the api is invoked for the zone layer.
+                if (podId == null && clusterId == null && StringUtils.isEmpty(t)) {
+                    addZoneWideCapacitiesByType(capacityType, zId, taggedCapacities);
                 }
                 if ((capacityType == null || capacityType == Capacity.CAPACITY_TYPE_STORAGE) && storagePoolIdsForCapacity.first()) {
                     taggedCapacities.add(_storageMgr.getStoragePoolUsedStats(zId, podId, clusterId, storagePoolIdsForCapacity.second()));
@@ -6274,9 +6291,11 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(UpdateHostPasswordCmd.class);
         cmdList.add(AddNetworkDeviceCmd.class);
         cmdList.add(AddNetworkServiceProviderCmd.class);
+        cmdList.add(CreateManagementNetworkIpRangeCmd.class);
         cmdList.add(CreateNetworkOfferingCmd.class);
         cmdList.add(CreatePhysicalNetworkCmd.class);
         cmdList.add(CreateStorageNetworkIpRangeCmd.class);
+        cmdList.add(DeleteManagementNetworkIpRangeCmd.class);
         cmdList.add(DeleteNetworkDeviceCmd.class);
         cmdList.add(DeleteNetworkOfferingCmd.class);
         cmdList.add(DeleteNetworkServiceProviderCmd.class);
@@ -6733,9 +6752,9 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(AssociateIPAddrCmdByAdmin.class);
         cmdList.add(ListPublicIpAddressesCmdByAdmin.class);
         cmdList.add(CreateNetworkCmdByAdmin.class);
-        // cmdList.add(ListNetworksCmdByAdmin.class);
-        // cmdList.add(CreateVPCCmdByAdmin.class);
-        // cmdList.add(ListVPCsCmdByAdmin.class);
+        cmdList.add(ListNetworksCmdByAdmin.class);
+        cmdList.add(CreateVPCCmdByAdmin.class);
+        cmdList.add(ListVPCsCmdByAdmin.class);
         cmdList.add(UpdateVPCCmdByAdmin.class);
         cmdList.add(CreatePrivateGatewayByAdminCmd.class);
         cmdList.add(ListPrivateGatewaysCmdByAdminCmd.class);

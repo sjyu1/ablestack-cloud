@@ -17,18 +17,24 @@
 
 <template>
   <div class="backup-layout">
-    <a-tabs defaultActiveKey="1" :animated="false">
+    <a-tabs :key="`tabs-${resource?.id}-${innerRenderKey}`" defaultActiveKey="1" :animated="false">
       <a-tab-pane :tab="$t('label.schedule')" key="1">
         <FormSchedule
+          :key="`form-${resource?.id}-${innerRenderKey}`"
           :loading="loading"
           :resource="resource"
-          :dataSource="dataSource"/>
+          :dataSource="dataSource"
+          @close-action="closeAction"
+          @refresh="handleRefresh"/>
       </a-tab-pane>
       <a-tab-pane :tab="$t('label.scheduled.backups')" key="2">
         <BackupSchedule
+          :key="`backup-${resource?.id}-${innerRenderKey}`"
           :loading="loading"
           :resource="resource"
-          :dataSource="dataSource"/>
+          :dataSource="dataSource"
+          @refresh="handleRefresh"
+          @close-action="closeAction" />
       </a-tab-pane>
     </a-tabs>
   </div>
@@ -54,7 +60,8 @@ export default {
   data () {
     return {
       loading: false,
-      dataSource: []
+      dataSource: [],
+      innerRenderKey: 0
     }
   },
   provide () {
@@ -68,23 +75,41 @@ export default {
   created () {
     this.fetchData()
   },
+  watch: {
+    'resource.id': {
+      immediate: false,
+      handler () {
+        this.dataSource = []
+        this.innerRenderKey++
+        this.fetchData()
+      }
+    }
+  },
   methods: {
     fetchData () {
       const params = {}
+      this.dataSource = []
       this.loading = true
-      params.virtualmachineid = this.resource.id
+      params.virtualmachineid = this.resource.id || this.resource.virtualmachineid
+
+      if (!params.virtualmachineid) {
+        console.error('No VM ID found in resource:', this.resource)
+        this.loading = false
+        return
+      }
+
       api('listBackupSchedule', params).then(json => {
-        const listBackupSchedule = json.listbackupscheduleresponse.backupschedule
-        this.dataSource = listBackupSchedule || []
-      }).catch(error => {
-        if ([530].includes(error.response.status)) {
-          this.dataSource = []
-        }
+        this.dataSource = json.listbackupscheduleresponse.backupschedule || []
       }).finally(() => {
         this.loading = false
       })
     },
+    handleRefresh () {
+      this.fetchData()
+      this.$emit('refresh')
+    },
     closeAction () {
+      this.$emit('refresh')
       this.$emit('close-action')
     }
   }

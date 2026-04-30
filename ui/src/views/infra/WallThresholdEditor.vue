@@ -3,15 +3,14 @@
 Licensed to the Apache Software Foundation (ASF) ...
 -->
 <template>
-  <div class="form-layout" v-ctrl-enter="$refs.submit && $refs.submit.$el && $refs.submit.$el.click()">
+  <div class="form-layout">
     <a-spin :spinning="loading">
       <a-form
         ref="formRef"
         :model="form"
         :loading="loading"
         layout="vertical"
-        :validate-messages="validateMessages"
-        @finish="handleFinish">
+        :validate-messages="validateMessages">
 
         <a-alert
           type="info"
@@ -94,10 +93,10 @@ Licensed to the Apache Software Foundation (ASF) ...
         <div class="action-button">
           <a-button @click="closeAction">{{ $t('label.cancel') }}</a-button>
           <a-button
-            html-type="submit"
             :loading="loading || submitting"
             ref="submit"
-            type="primary">
+            type="primary"
+            @click="handleFinish">
             {{ $t('label.ok') }}
           </a-button>
         </div>
@@ -300,12 +299,20 @@ export default {
       if (!this.isRange) {
         this.form.threshold2 = undefined
         this.$nextTick(() => {
-          this.$refs.formRef?.clearValidate?.(['threshold', 'thresholdRange'])
+          const formRef = this.$refs.formRef
+          if (formRef && formRef.clearValidate) {
+            formRef.clearValidate(['threshold', 'thresholdRange'])
+          }
         })
       } else {
         this.$nextTick(() => {
-          this.$refs.formRef?.clearValidate?.(['thresholdRange'])
-          this.$refs.formRef?.validateFields?.(['thresholdRange']).catch(() => {})
+          const formRef = this.$refs.formRef
+          if (formRef && formRef.clearValidate) {
+            formRef.clearValidate(['thresholdRange'])
+          }
+          if (formRef && formRef.validateFields) {
+            formRef.validateFields(['thresholdRange']).catch(() => {})
+          }
         })
       }
     },
@@ -422,6 +429,19 @@ export default {
 
     // ===== @finish 전용 제출 핸들러 =====
     async handleFinish () {
+      if (this.submitting || this.loading) {
+        return
+      }
+      try {
+        const formRef = this.$refs.formRef
+        if (formRef?.validateFields) {
+          await formRef.validateFields()
+        } else if (formRef?.validate) {
+          await formRef.validate()
+        }
+      } catch (validationError) {
+        return
+      }
       const currKey = this.keyOf(this.resource)
       if (currKey && Array.isArray(this.allRules) && this.allRules.length) {
         const dups = this.allRules.filter(r => this.keyOf(r) === currKey)
