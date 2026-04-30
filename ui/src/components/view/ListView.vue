@@ -242,6 +242,11 @@
           {{ isNaN(text) ? text : (parseFloat(parseFloat(text) / 1024.0 / 1024.0 / 1024.0).toFixed(2) + ' GiB') }}
         </span>
       </template>
+      <template v-if="['disksizetotal', 'disksizeused'].includes(column.key)">
+        <span v-if="text !== undefined && text !== null">
+          {{ $bytesToHumanReadableSize(text) }}
+        </span>
+      </template>
       <template v-if="column.key === 'physicalnetworkname'">
         <router-link :to="{ path: '/physicalnetwork/' + record.physicalnetworkid }">{{ text }}</router-link>
       </template>
