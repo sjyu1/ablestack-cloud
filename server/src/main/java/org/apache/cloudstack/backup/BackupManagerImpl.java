@@ -1914,9 +1914,9 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         long backupSize = backup.getSize() != null ? backup.getSize() : 0L;
         try (CheckedReservation backupReservation = new CheckedReservation(owner, Resource.ResourceType.backup,
                 backup.getId(), null, -1L, reservationDao, resourceLimitMgr);
-             CheckedReservation backupStorageReservation = new CheckedReservation(owner,
+            CheckedReservation backupStorageReservation = new CheckedReservation(owner,
                      Resource.ResourceType.backup_storage, backup.getId(), null, -1 * backupSize,
-                     reservationDao, resourceLimitMgr)) {
+                    reservationDao, resourceLimitMgr)) {
             boolean result = backupProvider.deleteBackup(backup, forced);
             if (result) {
                 resourceLimitMgr.decrementResourceCount(backup.getAccountId(), Resource.ResourceType.backup);
