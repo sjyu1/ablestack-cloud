@@ -833,7 +833,7 @@ const hostVmList = ref([])
 const hostVmFallbackList = ref([])
 const dragSource = ref({ rIndex: -1, iIndex: -1 })
 const quickLinksError = ref('')
-const ENABLE_VM_FALLBACK_MOCK = false
+const ENABLE_VM_FALLBACK_MOCK = true
 const HOST_ACTIVE_VM_STATES = new Set(['running', 'starting', 'stopping', 'migrating'])
 
 const buildVmMockList = (hostId, hostName = 'sample') => {
