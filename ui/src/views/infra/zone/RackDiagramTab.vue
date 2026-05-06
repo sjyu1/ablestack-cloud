@@ -62,7 +62,7 @@
     </div>
     <a-spin :spinning="loading || saving">
       <div class="rack-canvas" style="overflow: auto; min-height: 600px; padding: 20px; background: #eef0f4;">
-        <div class="rack-zoom-wrapper" :style="{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left' }">
+        <div class="rack-zoom-wrapper" :style="{ zoom: zoomLevel }">
 
           <a-empty v-if="!parsedRacks.length" :description="'등록된 랙이 없습니다. 상단의 [새 랙 추가] 버튼을 눌러주세요.'" style="margin-top: 50px;" />
 
@@ -102,7 +102,7 @@
                 </div>
               </div>
 
-              <div class="rack-body" style="display: flex; margin: 0 auto; width: 310px;">
+              <div class="rack-body" style="display: flex; margin: 0 auto; width: 372px;">
 
                 <div class="rack-ruler">
                   <div
@@ -119,11 +119,12 @@
                   </div>
                 </div>
 
-                <div class="rack-frame">
+                <div class="rack-frame" @dragover.prevent @drop.stop="onDropRackFrame(rIndex, $event)">
                   <div
                     v-for="(item, iIndex) in rack.items"
                     :key="iIndex"
                     class="rack-item"
+                    @dragover.prevent
                     :style="{ height: (item.height * 32) + 'px' }"
                   >
                     <div v-if="item.type === 'gap'" class="gap-content" @click="openDeviceModal(rIndex, iIndex)">
@@ -133,6 +134,8 @@
                     <div
                       v-else
                       class="device-content"
+                      draggable="true"
+                      @dragstart="onDragStart(rIndex, iIndex)"
                       :style="{ opacity: isMatched(item) ? 1 : 0.2, filter: isMatched(item) ? 'none' : 'grayscale(100%)' }"
                     >
 
@@ -179,35 +182,31 @@
                           </a-button>
                         </a-tooltip>
 
-                        <a-tooltip title="위쪽 여백 끝으로 이동" :mouseEnterDelay="0.1">
-                          <a-button size="small" type="text" @click.stop="moveItem(rIndex, iIndex, -1, true)" :disabled="iIndex === 0">
-                            <VerticalAlignTopOutlined />
-                          </a-button>
-                        </a-tooltip>
-
-                        <a-tooltip title="한 칸 위로" :mouseEnterDelay="0.1">
-                          <a-button size="small" type="text" @click.stop="moveItem(rIndex, iIndex, -1, false)" :disabled="iIndex === 0">
-                            <UpOutlined />
-                          </a-button>
-                        </a-tooltip>
-
-                        <a-tooltip title="한 칸 아래로" :mouseEnterDelay="0.1">
-                          <a-button size="small" type="text" @click.stop="moveItem(rIndex, iIndex, 1, false)" :disabled="iIndex === rack.items.length - 1">
-                            <DownOutlined />
-                          </a-button>
-                        </a-tooltip>
-
-                        <a-tooltip title="아래쪽 여백 끝으로 이동" :mouseEnterDelay="0.1">
-                          <a-button size="small" type="text" @click.stop="moveItem(rIndex, iIndex, 1, true)" :disabled="iIndex === rack.items.length - 1">
-                            <VerticalAlignBottomOutlined />
-                          </a-button>
-                        </a-tooltip>
-
                         <a-tooltip title="설정" :mouseEnterDelay="0.1">
                           <a-button size="small" type="text" @click.stop="openDeviceModal(rIndex, iIndex)">
                             <SettingOutlined />
                           </a-button>
                         </a-tooltip>
+
+                        <a-dropdown v-if="hasActionMenu(item)" :trigger="['click']">
+                          <a-tooltip title="장치 작업" :mouseEnterDelay="0.1">
+                            <a-button size="small" type="text" class="device-more-btn" @click.stop>
+                              <MoreOutlined />
+                            </a-button>
+                          </a-tooltip>
+                          <template #overlay>
+                            <a-menu @click="({ key }) => handleHostActionMenu(key, item)">
+                              <a-menu-item v-if="isHostLinked(item)" key="host-detail"><LinkOutlined /> 호스트 상세</a-menu-item>
+                              <a-menu-item v-if="isHostLinked(item)" key="host-vms"><UnorderedListOutlined /> 호스트 VM 목록</a-menu-item>
+                              <a-menu-item v-if="isHostLinked(item)" key="host-oobm"><LaptopOutlined /> OOBM 포털 접속</a-menu-item>
+                              <a-menu-item v-if="isHostLinked(item)" key="host-cube"><AppstoreOutlined /> Cube 포털 접속</a-menu-item>
+                              <a-menu-divider v-if="isHostLinked(item) && hasQuickLinks(item)" />
+                              <a-menu-item v-for="(link, lIdx) in getQuickLinks(item)" :key="`quick-${lIdx}`">
+                                <LinkOutlined /> {{ link.label || link.url }}
+                              </a-menu-item>
+                            </a-menu>
+                          </template>
+                        </a-dropdown>
 
                         <a-popconfirm title="삭제하시겠습니까?" @confirm="deleteItem(rIndex, iIndex)" placement="topRight">
                           <a-tooltip title="삭제" :mouseEnterDelay="0.1">
@@ -241,7 +240,14 @@
           <a-input v-model:value="rackForm.name" placeholder="예: Server Rack 1" />
         </a-form-item>
         <a-form-item label="총 높이 (U)">
-          <a-input-number v-model:value="rackForm.totalHeight" :min="10" :max="50" style="width: 100%" />
+          <a-input-number
+            v-model:value="rackForm.totalHeight"
+            :min="10"
+            :max="50"
+            :step="1"
+            :precision="0"
+            style="width: 100%"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -301,6 +307,20 @@
           />
         </a-form-item>
 
+        <a-form-item label="인프라 자산 선택" v-if="deviceForm.type !== 'blank'">
+          <a-select
+            v-model:value="deviceForm.sourceRef"
+            :loading="inventoryLoading"
+            :options="inventoryOptions"
+            :show-search="true"
+            option-filter-prop="label"
+            placeholder="Host를 선택하세요."
+            allow-clear
+            style="width: 100%"
+            @change="handleSourceChange"
+          />
+        </a-form-item>
+
         <a-form-item label="커스텀 타입명" v-if="deviceForm.type === 'custom'">
           <a-input v-model:value="deviceForm.customType" placeholder="예: Router" />
         </a-form-item>
@@ -326,7 +346,63 @@
             placeholder="IP 주소, 용도, 담당자 등을 입력하세요"
           />
         </a-form-item>
+        <a-form-item
+          label="커스텀 바로가기 링크 (한 줄에 하나, 형식: 이름|URL)"
+          :validateStatus="quickLinksError ? 'error' : ''"
+          :help="quickLinksError"
+        >
+          <a-textarea
+            v-model:value="deviceForm.quickLinksText"
+            :rows="3"
+            placeholder="예: iDRAC|https://10.0.0.10&#10;NAS|https://nas.local"
+            @change="quickLinksError = ''"
+          />
+        </a-form-item>
       </a-form>
+    </a-modal>
+    <a-modal
+      v-model:visible="hostVmModalVisible"
+      :title="hostVmModalTitle"
+      :footer="null"
+      width="760px"
+      destroyOnClose
+    >
+      <a-spin :spinning="hostVmLoading">
+        <div class="host-vm-scroll-area">
+        <div v-if="!hostVmLoading && !filteredHostVmList.length" class="host-vm-empty-wrap">
+          <div class="ant-empty ant-empty-normal">
+            <div class="ant-empty-image">
+              <svg class="ant-empty-img-simple" width="64" height="41" viewBox="0 0 64 41">
+                <g transform="translate(0 1)" fill="none" fill-rule="evenodd">
+                  <ellipse class="ant-empty-img-simple-ellipse" fill="#F5F5F5" cx="32" cy="33" rx="32" ry="7"></ellipse>
+                  <g class="ant-empty-img-simple-g" fill-rule="nonzero" stroke="#D9D9D9">
+                    <path d="M55 12.76L44.854 1.258C44.367.474 43.656 0 42.907 0H21.093c-.749 0-1.46.474-1.947 1.257L9 12.761V22h46v-9.24z"></path>
+                    <path d="M41.613 15.931c0-1.605.994-2.93 2.227-2.931H55v18.137C55 33.26 53.68 35 52.05 35h-40.1C10.32 35 9 33.259 9 31.137V13h11.16c1.233 0 2.227 1.323 2.227 2.928v.022c0 1.605 1.005 2.901 2.237 2.901h14.752c1.232 0 2.237-1.308 2.237-2.913v-.007z" fill="#FAFAFA" class="ant-empty-img-simple-path"></path>
+                  </g>
+                </g>
+              </svg>
+            </div>
+            <p class="ant-empty-description">{{ $t('label.no.data') || 'No Data' }}</p>
+          </div>
+        </div>
+        <div v-else-if="!hostVmLoading" class="host-vm-grid">
+          <div
+            v-for="vm in filteredHostVmList"
+            :key="vm.id"
+            class="host-vm-card"
+            :class="{ 'host-vm-card-inactive': !isRunningVm(vm) }"
+          >
+            <div class="host-vm-icon">
+              <font-awesome-icon :icon="['fab', getVmOsLogo(vm)]" size="lg" />
+            </div>
+            <a-tooltip :title="vm.displayname || vm.name || vm.id">
+              <div class="host-vm-name">{{ vm.displayname || vm.name || vm.id }}</div>
+            </a-tooltip>
+            <div class="host-vm-meta">{{ vm.state || '-' }} / {{ vm.ostypename || vm.hypervisor || '-' }}</div>
+          </div>
+        </div>
+        </div>
+      </a-spin>
     </a-modal>
 
   </div>
@@ -337,6 +413,7 @@ import { ref, reactive, onMounted, computed, watch, onBeforeUnmount, nextTick } 
 import { message } from 'ant-design-vue'
 import html2canvas from 'html2canvas'
 import { api } from '@/api'
+import { useRouter } from 'vue-router'
 import {
   CopyOutlined,
   SettingOutlined,
@@ -344,22 +421,24 @@ import {
   InfoCircleOutlined,
   LeftOutlined,
   RightOutlined,
-  UpOutlined,
-  DownOutlined,
-  VerticalAlignTopOutlined,
-  VerticalAlignBottomOutlined,
   PlusOutlined,
   FileTextOutlined,
   UploadOutlined,
   CameraOutlined,
   SaveOutlined,
-  ExportOutlined
+  ExportOutlined,
+  LinkOutlined,
+  LaptopOutlined,
+  AppstoreOutlined,
+  MoreOutlined,
+  UnorderedListOutlined
 } from '@ant-design/icons-vue'
 
 // 전역 상태
 const loading = ref(false)
 const saving = ref(false)
 const zoomLevel = ref(1)
+const router = useRouter()
 
 // 슬라이더 및 입력창과 연동할 퍼센트 단위 변수
 const zoomPercent = computed({
@@ -515,10 +594,27 @@ const exportToImage = async () => {
 
   try {
     message.loading({ content: '이미지 변환 중...', key: 'exporting' })
-    // 배율(zoomLevel)에 영향받지 않도록 원본 크기로 캡처
+    const fullWidth = element.scrollWidth
+    const fullHeight = element.scrollHeight
+
+    // 가로 스크롤 영역 전체를 포함해 캡처
     const canvas = await html2canvas(element, {
       backgroundColor: '#eef0f4',
-      scale: 2 // 고화질 저장
+      scale: 2,
+      width: fullWidth,
+      height: fullHeight,
+      windowWidth: fullWidth,
+      windowHeight: fullHeight,
+      scrollX: 0,
+      scrollY: 0,
+      onclone: (doc) => {
+        const cloned = doc.querySelector('.rack-container')
+        if (cloned) {
+          cloned.style.overflow = 'visible'
+          cloned.style.width = `${fullWidth}px`
+          cloned.style.height = `${fullHeight}px`
+        }
+      }
     })
 
     const link = document.createElement('a')
@@ -624,14 +720,33 @@ const moveRack = (rIndex, direction) => {
 
 // 랙 모달 저장 로직
 const submitRackModal = () => {
-  if (!rackForm.name) {
+  const rackName = String(rackForm.name || '').trim()
+  if (!rackName) {
     message.warning('랙 이름을 입력해주세요.')
+    return
+  }
+  if (rackName.length > 60) {
+    message.warning('랙 이름은 60자 이하로 입력해주세요.')
+    return
+  }
+
+  if (!Number.isInteger(rackForm.totalHeight) || rackForm.totalHeight < 10 || rackForm.totalHeight > 50) {
+    message.warning('총 높이(U)는 10~50 사이의 정수만 입력할 수 있습니다.')
+    return
+  }
+
+  const duplicateName = parsedRacks.value.some((rack, idx) => {
+    if (rackModalMode.value === 'edit' && idx === targetRackIndex.value) return false
+    return String(rack.name || '').trim().toLowerCase() === rackName.toLowerCase()
+  })
+  if (duplicateName) {
+    message.warning('동일한 랙 이름이 이미 존재합니다.')
     return
   }
 
   if (rackModalMode.value === 'add') {
     parsedRacks.value.push({
-      name: rackForm.name,
+      name: rackName,
       totalHeight: rackForm.totalHeight,
       items: [{ type: 'gap', height: rackForm.totalHeight }]
     })
@@ -643,7 +758,7 @@ const submitRackModal = () => {
     if (diff > 0) {
       // 랙 크기가 커졌으면 맨 아래에 그만큼 여백(Gap) 추가
       targetRack.items.push({ type: 'gap', height: diff })
-      targetRack.name = rackForm.name
+      targetRack.name = rackName
       targetRack.totalHeight = rackForm.totalHeight
     } else if (diff < 0) {
       // 랙 크기가 줄어들었을 때의 스마트 처리 로직
@@ -680,11 +795,11 @@ const submitRackModal = () => {
       }
 
       targetRack.items = tempItems
-      targetRack.name = rackForm.name
+      targetRack.name = rackName
       targetRack.totalHeight = rackForm.totalHeight
     } else {
       // 높이는 그대로고 이름만 변경된 경우
-      targetRack.name = rackForm.name
+      targetRack.name = rackName
     }
   }
   closeRackModal()
@@ -703,8 +818,404 @@ const deviceForm = reactive({
   label: '',
   height: 1,
   customType: '',
-  memo: ''
+  memo: '',
+  sourceRef: undefined,
+  quickLinksText: ''
 })
+
+const inventoryLoading = ref(false)
+const inventoryOptions = ref([])
+const hostCache = ref({})
+const hostVmModalVisible = ref(false)
+const hostVmModalTitle = ref('호스트 VM 목록')
+const hostVmLoading = ref(false)
+const hostVmList = ref([])
+const hostVmFallbackList = ref([])
+const dragSource = ref({ rIndex: -1, iIndex: -1 })
+const quickLinksError = ref('')
+const ENABLE_VM_FALLBACK_MOCK = false
+const HOST_ACTIVE_VM_STATES = new Set(['running', 'starting', 'stopping', 'migrating'])
+
+const buildVmMockList = (hostId, hostName = 'sample') => {
+  const osPool = [
+    'CentOS Linux (Sample)',
+    'Rocky Linux (Sample)',
+    'Ubuntu Linux (Sample)',
+    'Windows Server (Sample)',
+    'Windows 11 Pro (Sample)'
+  ]
+  const list = []
+  for (let i = 1; i <= 20; i++) {
+    const idx = i - 1
+    const no = String(i).padStart(2, '0')
+    list.push({
+      id: `sample-${hostId}-${no}`,
+      name: `${hostName}-vm-${no}`,
+      displayname: `${hostName}-vm-${no}`,
+      state: 'Running',
+      ostypename: osPool[idx % osPool.length]
+    })
+  }
+  return list
+}
+
+const filteredHostVmList = computed(() => {
+  const merged = hostVmList.value.length ? hostVmList.value : hostVmFallbackList.value
+  return merged.filter(vm => HOST_ACTIVE_VM_STATES.has(String(vm?.state || '').toLowerCase()))
+})
+
+const mergeAssetMemo = (existingMemo, linesToAdd) => {
+  const memo = existingMemo || ''
+  const marker = '[LinkedAsset]'
+  const cleaned = memo
+    .split('\n')
+    .filter(line => !line.startsWith(marker))
+    .join('\n')
+    .trim()
+  const linked = linesToAdd.map(line => `${marker} ${line}`).join('\n')
+  return [cleaned, linked].filter(Boolean).join('\n')
+}
+
+const buildInventoryOptions = async () => {
+  if (!currentZoneId.value) return
+  inventoryLoading.value = true
+  const options = []
+
+  try {
+    const hostJson = await api('listHosts', { zoneid: currentZoneId.value, listall: true })
+    const hosts = hostJson?.listhostsresponse?.host || []
+    hosts.forEach(h => {
+      const name = h.name || h.hostname || h.id
+      const ip = h.ipaddress ? ` / ${h.ipaddress}` : ''
+      options.push({
+        label: `[Host] ${name}${ip}`,
+        value: `host:${h.id}`,
+        meta: { kind: 'host', id: h.id, name, ip: h.ipaddress || '' }
+      })
+      hostCache.value[h.id] = h
+    })
+  } catch (e) {
+    console.warn('listHosts failed:', e)
+  }
+
+  inventoryOptions.value = options
+  inventoryLoading.value = false
+}
+
+const handleSourceChange = (value) => {
+  if (!value) return
+  const selected = inventoryOptions.value.find(o => o.value === value)
+  if (!selected) return
+
+  if (!deviceForm.label || Object.values(defaultLabels).includes(deviceForm.label)) {
+    deviceForm.label = selected.meta.name
+  }
+
+  const lines = [
+    `Type=${selected.meta.kind}`,
+    `Name=${selected.meta.name}`,
+    `Id=${selected.meta.id}`
+  ]
+  if (selected.meta.ip) lines.push(`IP=${selected.meta.ip}`)
+  deviceForm.memo = mergeAssetMemo(deviceForm.memo, lines)
+}
+
+const getLinkedHostId = (item) => {
+  if (!item?.sourceRef || typeof item.sourceRef !== 'string') return null
+  if (!item.sourceRef.startsWith('host:')) return null
+  return item.sourceRef.split(':')[1] || null
+}
+
+const isHostLinked = (item) => {
+  return !!getLinkedHostId(item)
+}
+
+const parseQuickLinksTextWithValidation = (text) => {
+  if (!text) return { links: [], errors: [] }
+  const lines = text.split('\n')
+  const links = []
+  const errors = []
+
+  lines.forEach((raw, idx) => {
+    const line = raw.trim()
+    if (!line) return
+
+    let label = ''
+    let url = ''
+    if (line.includes('|')) {
+      const parts = line.split('|')
+      label = (parts[0] || '').trim()
+      url = (parts.slice(1).join('|') || '').trim()
+    } else {
+      url = line
+    }
+
+    if (!url) {
+      errors.push(`${idx + 1}행: URL이 비어 있습니다. (형식: 이름|URL)`)
+      return
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      errors.push(`${idx + 1}행: URL은 http:// 또는 https:// 로 시작해야 합니다.`)
+      return
+    }
+
+    links.push({ label, url })
+  })
+
+  return { links, errors }
+}
+
+const getQuickLinks = (item) => {
+  if (!item?.quickLinks || !Array.isArray(item.quickLinks)) return []
+  return item.quickLinks.filter(link => link?.url)
+}
+
+const hasQuickLinks = (item) => getQuickLinks(item).length > 0
+const hasActionMenu = (item) => isHostLinked(item) || hasQuickLinks(item)
+
+const compactGaps = (rack) => {
+  for (let i = rack.items.length - 1; i > 0; i--) {
+    if (rack.items[i].type === 'gap' && rack.items[i - 1].type === 'gap') {
+      rack.items[i - 1].height += rack.items[i].height
+      rack.items.splice(i, 1)
+    }
+  }
+}
+
+const onDragStart = (rIndex, iIndex) => {
+  dragSource.value = { rIndex, iIndex }
+}
+
+const getDesiredStartUFromRackEvent = (event, rack) => {
+  if (!event?.currentTarget) return 0
+  const rect = event.currentTarget.getBoundingClientRect()
+  const y = Math.max(0, Math.min(rect.height - 1, event.clientY - rect.top))
+  const raw = Math.floor(y / 32)
+  const rackHeight = rack?.totalHeight || rack.items.reduce((s, i) => s + i.height, 0)
+  return Math.max(0, Math.min(rackHeight - 1, raw))
+}
+
+const findBestStartUInRack = (rack, deviceHeight, desiredStartU) => {
+  compactGaps(rack)
+  let cursor = 0
+  let best = null
+  for (let i = 0; i < rack.items.length; i++) {
+    const item = rack.items[i]
+    if (item.type === 'gap') {
+      const minStart = cursor
+      const maxStart = cursor + item.height - deviceHeight
+      if (maxStart >= minStart) {
+        const candidate = Math.max(minStart, Math.min(desiredStartU, maxStart))
+        const dist = Math.abs(candidate - desiredStartU)
+        if (!best || dist < best.dist) {
+          best = { index: i, startU: candidate, dist }
+        }
+      }
+    }
+    cursor += item.height
+  }
+  return best
+}
+
+const placeDeviceAtStartU = (rack, gapIndex, startU, device) => {
+  let cursor = 0
+  for (let i = 0; i < gapIndex; i++) cursor += rack.items[i].height
+  const gap = rack.items[gapIndex]
+  if (!gap || gap.type !== 'gap') return false
+
+  const localStart = startU - cursor
+  const localEnd = localStart + device.height
+  if (localStart < 0 || localEnd > gap.height) return false
+
+  const before = localStart
+  const after = gap.height - localEnd
+  const insert = []
+  if (before > 0) insert.push({ type: 'gap', height: before })
+  insert.push({ ...device })
+  if (after > 0) insert.push({ type: 'gap', height: after })
+  rack.items.splice(gapIndex, 1, ...insert)
+  compactGaps(rack)
+  return true
+}
+
+const onDropRackFrame = (targetRIndex, event) => {
+  const { rIndex: sourceRIndex, iIndex: sourceIIndex } = dragSource.value
+  dragSource.value = { rIndex: -1, iIndex: -1 }
+
+  if (sourceRIndex < 0 || sourceIIndex < 0) return
+  const sourceRack = parsedRacks.value[sourceRIndex]
+  const targetRack = parsedRacks.value[targetRIndex]
+  const sourceItem = sourceRack?.items?.[sourceIIndex]
+  if (!sourceRack || !targetRack || !sourceItem || sourceItem.type === 'gap') return
+
+  const moving = { ...sourceItem }
+  const sameRack = sourceRIndex === targetRIndex
+
+  // 원본 위치 비우기
+  sourceRack.items.splice(sourceIIndex, 1, { type: 'gap', height: moving.height })
+  compactGaps(sourceRack)
+
+  const desiredStartU = getDesiredStartUFromRackEvent(event, targetRack)
+  const best = findBestStartUInRack(targetRack, moving.height, desiredStartU)
+  if (!best) {
+    message.warning(`대상 랙의 연속 여백이 부족합니다. (필요 ${moving.height}U)`)
+    // 복구
+    const restore = findBestStartUInRack(sourceRack, moving.height, 0)
+    if (restore) placeDeviceAtStartU(sourceRack, restore.index, restore.startU, moving)
+    return
+  }
+
+  const placed = placeDeviceAtStartU(targetRack, best.index, best.startU, moving)
+  if (!placed) {
+    message.warning('드롭 위치 계산에 실패했습니다. 다시 시도해주세요.')
+    const restore = findBestStartUInRack(sourceRack, moving.height, 0)
+    if (restore) placeDeviceAtStartU(sourceRack, restore.index, restore.startU, moving)
+    return
+  }
+
+  if (sameRack) compactGaps(targetRack)
+}
+
+const fetchHostById = async (hostId) => {
+  if (!hostId) return null
+  if (hostCache.value[hostId]) return hostCache.value[hostId]
+  const json = await api('listHosts', { id: hostId })
+  const host = json?.listhostsresponse?.host?.[0] || null
+  if (host) hostCache.value[hostId] = host
+  return host
+}
+
+const goToLinkedHost = (item) => {
+  const hostId = getLinkedHostId(item)
+  if (!hostId) return
+  router.push({ path: `/host/${hostId}` })
+}
+
+const openLinkedHostOobm = async (item) => {
+  const hostId = getLinkedHostId(item)
+  if (!hostId) return
+  try {
+    const host = await fetchHostById(hostId)
+    const protocol = host?.details?.manageconsoleprotocol || 'http'
+    const address = host?.outofbandmanagement?.address || ''
+    const port = host?.details?.manageconsoleport
+    if (!address || !port) {
+      message.warning('선택한 호스트의 OOBM 포털 정보를 찾을 수 없습니다.')
+      return
+    }
+    window.open(`${protocol}://${address}:${port}`, '_blank')
+  } catch (e) {
+    message.error('OOBM 포털 정보를 불러오지 못했습니다.')
+  }
+}
+
+const openLinkedHostCube = async (item) => {
+  const hostId = getLinkedHostId(item)
+  if (!hostId) return
+  try {
+    const host = await fetchHostById(hostId)
+    const ip = host?.ipaddress
+    if (!ip) {
+      message.warning('선택한 호스트의 IP 정보를 찾을 수 없습니다.')
+      return
+    }
+    window.open(`https://${ip}:9090`, '_blank')
+  } catch (e) {
+    message.error('Cube 포털 정보를 불러오지 못했습니다.')
+  }
+}
+
+const openLinkedHostVmModal = async (item) => {
+  const hostId = getLinkedHostId(item)
+  if (!hostId) return
+  hostVmLoading.value = true
+  hostVmModalVisible.value = true
+  hostVmList.value = []
+  hostVmFallbackList.value = []
+
+  try {
+    const host = await fetchHostById(hostId)
+    hostVmModalTitle.value = `호스트 VM 목록 - ${host?.name || host?.hostname || hostId}`
+    const hostIdStr = String(hostId)
+    const isVmAssignedToHost = (vm) => {
+      const vmHostId = String(vm?.hostid || '')
+      const vmState = String(vm?.state || '').toLowerCase()
+      // 정책: 현재 host_id가 해당 호스트 + 활성 상태 VM만 표시
+      return vmHostId === hostIdStr && HOST_ACTIVE_VM_STATES.has(vmState)
+    }
+
+    // 1) hostid 직접 조회
+    const directJson = await api('listVirtualMachines', {
+      hostid: hostId,
+      listall: true,
+      projectid: '-1',
+      details: 'min',
+      pagesize: 500
+    })
+    let vms = (directJson?.listvirtualmachinesresponse?.virtualmachine || []).filter(isVmAssignedToHost)
+
+    // 2) hostid 조회가 비면 전체에서 host 매핑 기준으로 재탐색
+    if (!vms.length) {
+      const allJson = await api('listVirtualMachines', {
+        listall: true,
+        projectid: '-1',
+        details: 'min',
+        pagesize: 500
+      })
+      const allVms = allJson?.listvirtualmachinesresponse?.virtualmachine || []
+      vms = allVms.filter(isVmAssignedToHost)
+    }
+
+    hostVmList.value = vms
+
+    // 개발환경 fallback: host 매핑 샘플 제공
+    if (ENABLE_VM_FALLBACK_MOCK && !hostVmList.value.length) {
+      const hostName = host?.name || host?.hostname || hostId
+      hostVmFallbackList.value = buildVmMockList(hostId, hostName)
+    }
+  } catch (e) {
+    // 통일된 UI 정책: 실패 시 토스트 없이 No Data 표시
+    hostVmList.value = []
+    hostVmFallbackList.value = ENABLE_VM_FALLBACK_MOCK
+      ? buildVmMockList(hostId, 'sample')
+      : []
+  } finally {
+    hostVmLoading.value = false
+  }
+}
+
+const getVmOsLogo = (vm) => {
+  const osname = String(vm?.ostypename || vm?.name || '').toLowerCase()
+  if (osname.includes('centos')) return 'centos'
+  if (osname.includes('debian')) return 'debian'
+  if (osname.includes('ubuntu')) return 'ubuntu'
+  if (osname.includes('suse')) return 'suse'
+  if (osname.includes('redhat')) return 'redhat'
+  if (osname.includes('fedora')) return 'fedora'
+  if (osname.includes('windows') || osname.includes('dos')) return 'windows'
+  // Rocky는 전용 브랜드 아이콘이 없어서 Linux 계열로 표현
+  if (osname.includes('rocky') || osname.includes('linux')) return 'linux'
+  if (osname.includes('bsd')) return 'freebsd'
+  if (osname.includes('apple') || osname.includes('mac')) return 'apple'
+  return 'linux'
+}
+
+const isRunningVm = (vm) => {
+  return String(vm?.state || '').toLowerCase() === 'running'
+}
+
+const handleHostActionMenu = (key, item) => {
+  if (typeof key === 'string' && key.startsWith('quick-')) {
+    const idx = Number(key.replace('quick-', ''))
+    const link = getQuickLinks(item)[idx]
+    if (link?.url) window.open(link.url, '_blank')
+    return
+  }
+  if (key === 'host-detail') goToLinkedHost(item)
+  if (key === 'host-vms') openLinkedHostVmModal(item)
+  if (key === 'host-oobm') openLinkedHostOobm(item)
+  if (key === 'host-cube') openLinkedHostCube(item)
+}
 
 // 입력 가능한 최대 높이 사전 계산 (물리적 한계)
 const maxAllowedHeight = computed(() => {
@@ -751,6 +1262,9 @@ const openDeviceModal = (rIndex, iIndex) => {
     deviceForm.height = 1
     deviceForm.customType = ''
     deviceForm.memo = ''
+    deviceForm.sourceRef = undefined
+    deviceForm.quickLinksText = ''
+    quickLinksError.value = ''
   } else {
     // 수정 모드일 때는 기존 데이터 로드
     deviceForm.type = item.type
@@ -758,6 +1272,12 @@ const openDeviceModal = (rIndex, iIndex) => {
     deviceForm.height = item.height
     deviceForm.customType = item.customType || ''
     deviceForm.memo = item.memo || ''
+    deviceForm.sourceRef = item.sourceRef || undefined
+    deviceForm.quickLinksText = getQuickLinks(item).map(link => `${link.label || ''}|${link.url || ''}`.replace(/^\|/, '')).join('\n')
+    quickLinksError.value = ''
+  }
+  if (!inventoryOptions.value.length) {
+    buildInventoryOptions()
   }
   deviceModalVisible.value = true
 }
@@ -783,15 +1303,46 @@ const submitDeviceModal = () => {
   const rack = parsedRacks.value[rIndex]
   const oldItem = rack.items[iIndex]
 
-  const finalLabel = deviceForm.label || defaultLabels[deviceForm.type] || 'New Device'
-  const finalCustomType = deviceForm.customType || (deviceForm.type === 'custom' ? 'Custom Unit' : '')
+  const rawLabel = String(deviceForm.label || '').trim()
+  const rawCustomType = String(deviceForm.customType || '').trim()
+  const finalLabel = rawLabel || defaultLabels[deviceForm.type] || 'New Device'
+  const finalCustomType = rawCustomType || (deviceForm.type === 'custom' ? 'Custom Unit' : '')
+
+  if (deviceForm.type !== 'blank' && !finalLabel) {
+    message.warning('장비명을 입력해주세요.')
+    return
+  }
+  if (finalLabel.length > 60) {
+    message.warning('장비명은 60자 이하로 입력해주세요.')
+    return
+  }
+  if (deviceForm.type === 'custom' && !rawCustomType) {
+    message.warning('커스텀 타입명을 입력해주세요.')
+    return
+  }
+  if (deviceForm.type === 'custom' && rawCustomType.length > 60) {
+    message.warning('커스텀 타입명은 60자 이하로 입력해주세요.')
+    return
+  }
+  if (!Number.isInteger(deviceForm.height) || deviceForm.height <= 0) {
+    message.warning('장비 높이(U)는 1 이상의 정수만 입력할 수 있습니다.')
+    return
+  }
+  const quickLinkParsed = parseQuickLinksTextWithValidation(deviceForm.quickLinksText)
+  if (quickLinkParsed.errors.length > 0) {
+    quickLinksError.value = quickLinkParsed.errors[0]
+    return
+  }
+  quickLinksError.value = ''
 
   const newItem = {
     type: deviceForm.type,
     label: finalLabel,
     height: deviceForm.height,
     customType: finalCustomType,
-    memo: deviceForm.memo
+    memo: deviceForm.memo,
+    sourceRef: deviceForm.sourceRef || null,
+    quickLinks: quickLinkParsed.links
   }
 
   // 여백(Gap)에 새 장비 추가 시
@@ -843,132 +1394,40 @@ const cloneItem = (rIndex, iIndex) => {
   const rack = parsedRacks.value[rIndex]
   const itemToClone = rack.items[iIndex]
   const neededHeight = itemToClone.height
+  const newItem = { ...itemToClone }
 
-  // 1. 아래쪽 여백 확인
-  let availableGapBelow = 0
-  let gapsToRemoveBelowCount = 0
+  const placeIntoGap = (gapIndex, placeAtBottom = false) => {
+    const gap = rack.items[gapIndex]
+    if (!gap || gap.type !== 'gap' || gap.height < neededHeight) return false
+    const remain = gap.height - neededHeight
+    if (placeAtBottom) {
+      const insert = []
+      if (remain > 0) insert.push({ type: 'gap', height: remain })
+      insert.push(newItem)
+      rack.items.splice(gapIndex, 1, ...insert)
+    } else {
+      rack.items.splice(gapIndex, 1, newItem)
+      if (remain > 0) rack.items.splice(gapIndex + 1, 0, { type: 'gap', height: remain })
+    }
+    return true
+  }
 
+  // 1) 아래쪽 어디든 충분한 gap 우선
   for (let i = iIndex + 1; i < rack.items.length; i++) {
-    if (rack.items[i].type === 'gap') {
-      availableGapBelow += rack.items[i].height
-      gapsToRemoveBelowCount++
-      if (availableGapBelow >= neededHeight) break
-    } else {
-      break
-    }
+    if (rack.items[i].type === 'gap' && placeIntoGap(i, false)) return
   }
 
-  // 아래쪽으로 복제 가능한 경우
-  if (availableGapBelow >= neededHeight) {
-    const remainingGap = availableGapBelow - neededHeight
-    const newItem = { ...itemToClone }
-
-    // 기존 아래쪽 여백 제거
-    rack.items.splice(iIndex + 1, gapsToRemoveBelowCount)
-    // 복제된 장비 삽입
-    rack.items.splice(iIndex + 1, 0, newItem)
-    // 남은 여백이 있다면 삽입
-    if (remainingGap > 0) {
-      rack.items.splice(iIndex + 2, 0, { type: 'gap', height: remainingGap })
-    }
-    return
-  }
-
-  // 2. 아래쪽이 부족하면 위쪽 여백 확인
-  let availableGapAbove = 0
-  let gapsToRemoveAboveCount = 0
-
+  // 2) 위쪽 어디든 충분한 gap (원본 근처에 붙도록 아래쪽 정렬)
   for (let i = iIndex - 1; i >= 0; i--) {
-    if (rack.items[i].type === 'gap') {
-      availableGapAbove += rack.items[i].height
-      gapsToRemoveAboveCount++
-      if (availableGapAbove >= neededHeight) break
-    } else {
-      break
-    }
+    if (rack.items[i].type === 'gap' && placeIntoGap(i, true)) return
   }
 
-  // 위쪽으로 복제 가능한 경우
-  if (availableGapAbove >= neededHeight) {
-    const remainingGap = availableGapAbove - neededHeight
-    const newItem = { ...itemToClone }
-
-    // 위쪽 여백이 시작되는 인덱스 계산
-    const startGapIndex = iIndex - gapsToRemoveAboveCount
-
-    // 기존 위쪽 여백 제거
-    rack.items.splice(startGapIndex, gapsToRemoveAboveCount)
-
-    // 삽입할 아이템 배열 준비 (남은 여백 먼저, 그다음 복제된 장비)
-    const insertItems = []
-    if (remainingGap > 0) {
-      insertItems.push({ type: 'gap', height: remainingGap })
-    }
-    insertItems.push(newItem)
-
-    // 해당 위치에 일괄 삽입
-    rack.items.splice(startGapIndex, 0, ...insertItems)
-    return
+  // 3) 그래도 없으면 랙 전체 검사(방어)
+  for (let i = 0; i < rack.items.length; i++) {
+    if (rack.items[i].type === 'gap' && placeIntoGap(i, false)) return
   }
 
-  // 3. 위/아래 모두 연속된 빈 공간이 부족한 경우
-  message.error(`위/아래 모두 여백이 부족합니다. (필요 공간: ${neededHeight}U)`)
-}
-
-const moveItem = (rIndex, iIndex, direction, isJump = false) => {
-  const rack = parsedRacks.value[rIndex]
-  const items = rack.items
-
-  // 🔼 위로 이동 (direction: -1)
-  if (direction === -1 && iIndex > 0) {
-    const itemAbove = items[iIndex - 1]
-
-    if (itemAbove.type === 'gap') {
-      const moveU = isJump ? itemAbove.height : 1
-
-      itemAbove.height -= moveU
-
-      if (iIndex + 1 < items.length && items[iIndex + 1].type === 'gap') {
-        items[iIndex + 1].height += moveU
-      } else {
-        items.splice(iIndex + 1, 0, { type: 'gap', height: moveU })
-      }
-
-      if (itemAbove.height <= 0) {
-        items.splice(iIndex - 1, 1)
-      }
-    } else {
-      const temp = items[iIndex]
-      items[iIndex] = items[iIndex - 1]
-      items[iIndex - 1] = temp
-    }
-  } else if (direction === 1 && iIndex < items.length - 1) {
-    // 🔽 아래로 이동 (direction: 1) - 주석을 괄호 안으로 넣어서 에러 원천 차단!
-    const itemBelow = items[iIndex + 1]
-
-    if (itemBelow.type === 'gap') {
-      const moveU = isJump ? itemBelow.height : 1
-
-      itemBelow.height -= moveU
-
-      let gapInserted = false
-      if (iIndex > 0 && items[iIndex - 1].type === 'gap') {
-        items[iIndex - 1].height += moveU
-      } else {
-        items.splice(iIndex, 0, { type: 'gap', height: moveU })
-        gapInserted = true
-      }
-
-      const bottomGapIndex = gapInserted ? iIndex + 2 : iIndex + 1
-      if (items[bottomGapIndex].height <= 0) {
-        items.splice(bottomGapIndex, 1)
-      }
-    } else {
-      const temp = items[iIndex]
-      items[iIndex] = items[iIndex + 1]
-      items[iIndex + 1] = temp
-    }
-  }
+  message.error(`랙 내에 여유 공간이 부족합니다. (필요 공간: ${neededHeight}U)`)
 }
 
 const deleteItem = (rIndex, iIndex) => {
@@ -1175,8 +1634,13 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 30px;
   align-items: flex-start;
-  overflow-x: auto;
+  width: max-content;
   padding-bottom: 20px; /* 가로 스크롤바와 랙 사이 여백 */
+}
+
+.rack-zoom-wrapper {
+  display: inline-block;
+  width: max-content;
 }
 
 /* 개별 랙 래퍼 */
@@ -1186,8 +1650,8 @@ onBeforeUnmount(() => {
   padding: 15px;
   box-shadow: 0 4px 10px rgba(0,0,0,0.3);
   flex-shrink: 0;
-  width: 345px; /* 기존 UI 규격에 맞춰 넓이 조정 */
-  flex: 0 0 345px
+  width: 414px; /* 기존 폭 대비 20% 확장 */
+  flex: 0 0 414px
 }
 
 /* 랙 헤더 */
@@ -1228,7 +1692,7 @@ onBeforeUnmount(() => {
 
 /* 눈금자 기둥 영역 */
 .rack-ruler {
-  width: 24px; /* 눈금자 너비 */
+  width: 29px; /* 기존 폭 대비 20% 확장 */
   background: #232428; /* 프레임보다 아주 살짝 어두운 색 */
   border-right: 2px solid #111; /* 장비 영역과의 경계선 */
   display: flex;
@@ -1257,7 +1721,7 @@ onBeforeUnmount(() => {
 
 /* 랙 내부 프레임 */
 .rack-frame {
-  width: 280px;
+  width: 336px; /* 기존 폭 대비 20% 확장 */
   background: #2c2f35;
   border: 4px solid #3f434b;
   /* 프레임 자체 모서리를 둥글게 */
@@ -1484,8 +1948,9 @@ onBeforeUnmount(() => {
 .device-name-tag {
   position: absolute;
   top: 50%;
-  left: 60%;
-  transform: translate(-50%, -50%);
+  left: 56px;
+  right: 56px;
+  transform: translateY(-50%);
   color: #ffffff;
   font-size: 15px;
   font-weight: bold;
@@ -1493,10 +1958,19 @@ onBeforeUnmount(() => {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 1);
   pointer-events: none;
   display: flex;
+  justify-content: center;
   align-items: center;
-  white-space: nowrap;
   z-index: 5;
   letter-spacing: -0.2px;
+}
+
+.tag-text {
+  display: inline-block;
+  max-width: calc(100% - 44px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .tag-badge {
@@ -1573,7 +2047,82 @@ onBeforeUnmount(() => {
   color: white;
 }
 
+.device-more-btn {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 8px !important;
+  background: rgba(64, 169, 255, 0.2) !important;
+}
+
+.device-more-btn :deep(.anticon) {
+  font-size: 18px !important;
+}
+
 .device-content:hover .device-actions {
   opacity: 1;
+}
+
+.host-vm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.host-vm-scroll-area {
+  max-height: 52vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.host-vm-empty-wrap {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.host-vm-card {
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  background: #f9fbff;
+  padding: 10px 12px;
+}
+
+.host-vm-card-inactive {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.host-vm-card-inactive .host-vm-icon {
+  color: #9ca3af;
+}
+
+.host-vm-card-inactive .host-vm-name {
+  color: #6b7280;
+}
+
+.host-vm-card-inactive .host-vm-meta {
+  color: #9ca3af;
+}
+
+.host-vm-icon {
+  font-size: 22px;
+  color: #3b82f6;
+  margin-bottom: 6px;
+}
+
+.host-vm-name {
+  font-weight: 700;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.host-vm-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
 }
 </style>

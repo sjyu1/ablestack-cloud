@@ -147,23 +147,37 @@
         </a-col>
       </a-card>
     </a-col>
-    <template v-for="(section, index) in sections" :key="index">
-      <a-col
-        :xs="12"
-        :sm="8"
-        :md="6"
-        :style="{ marginBottom: '12px' }"
-        v-if="routes[section]">
-        <chart-card :loading="loading">
-          <div class="chart-card-inner">
-            <router-link :to="{ name: section.substring(0, section.length - 1) }">
-              <h2>{{ $t(routes[section].title) }}</h2>
-              <h2><render-icon :icon="routes[section].icon" /> {{ stats[section] }}</h2>
-            </router-link>
-          </div>
-        </chart-card>
-      </a-col>
-    </template>
+    <a-col :xs="24">
+      <div class="infra-summary-layout">
+        <div class="summary-cards-pane">
+          <a-row :gutter="12">
+            <template v-for="(section, index) in sections" :key="index">
+              <a-col
+                :xs="12"
+                :sm="8"
+                :md="8"
+                :style="{ marginBottom: '12px' }"
+                v-if="routes[section]">
+                <chart-card :loading="loading" class="summary-mini-card">
+                  <div class="chart-card-inner">
+                    <router-link :to="{ name: section.substring(0, section.length - 1) }">
+                      <h2>{{ $t(routes[section].title) }}</h2>
+                      <h2><render-icon :icon="routes[section].icon" /> {{ stats[section] }}</h2>
+                    </router-link>
+                  </div>
+                </chart-card>
+              </a-col>
+            </template>
+          </a-row>
+        </div>
+        <div class="rack-visualization-pane">
+          <a-card :bordered="false" class="rack-visualization-card">
+            <template #title>랙 시각화</template>
+            <rack-diagram-tab />
+          </a-card>
+        </div>
+      </div>
+    </a-col>
   </a-row>
 </template>
 
@@ -175,13 +189,15 @@ import router from '@/router'
 import Breadcrumb from '@/components/widgets/Breadcrumb'
 import ChartCard from '@/components/widgets/ChartCard'
 import TooltipLabel from '@/components/widgets/TooltipLabel'
+import RackDiagramTab from '@/views/infra/zone/RackDiagramTab.vue'
 
 export default {
   name: 'InfraSummary',
   components: {
     Breadcrumb,
     ChartCard,
-    TooltipLabel
+    TooltipLabel,
+    RackDiagramTab
   },
   data () {
     return {
@@ -350,6 +366,70 @@ export default {
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
+  }
+  .infra-summary-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .summary-cards-pane {
+    width: 30%;
+    flex: 0 0 30%;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid #dfe3e8;
+    background: linear-gradient(180deg, #f8f9fb 0%, #f3f5f8 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  }
+  .rack-visualization-pane {
+    width: 70%;
+    flex: 0 0 70%;
+    min-width: 320px;
+  }
+  .summary-mini-card :deep(.ant-card-body) {
+    padding: 12px 14px 6px !important;
+  }
+  .summary-mini-card :deep(.chart-card-content) {
+    margin-top: -28px;
+    margin-bottom: 4px;
+  }
+  .summary-mini-card :deep(.chart-card-total) {
+    margin-top: 2px;
+    font-size: 22px;
+    line-height: 26px;
+    height: 26px;
+  }
+  .summary-mini-card .chart-card-inner h2 {
+    margin: 0;
+    line-height: 1.2;
+  }
+  .summary-mini-card .chart-card-inner h2:first-child {
+    font-size: 20px;
+  }
+  .summary-mini-card .chart-card-inner h2:last-child {
+    margin-top: 4px;
+    font-size: 28px;
+  }
+  .rack-visualization-card :deep(.ant-card-body) {
+    padding: 10px 12px 12px;
+    background: #f6f8fb;
+    border-radius: 10px;
+  }
+  .rack-visualization-card {
+    border: 1px solid #dfe3e8;
+    border-radius: 12px;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+  }
+  @media (max-width: 1200px) {
+    .infra-summary-layout {
+      flex-direction: column;
+    }
+    .summary-cards-pane,
+    .rack-visualization-pane {
+      width: 100%;
+      flex: 1 1 100%;
+      min-width: 0;
+    }
   }
   .intermediate-certificate {
     opacity: 1;
