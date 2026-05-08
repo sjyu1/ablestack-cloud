@@ -5,32 +5,32 @@
       <div class="toolbar-left">
         <a-space wrap>
           <a-button type="primary" @click="saveRackData" :loading="saving" :disabled="!isDirty">
-            <SaveOutlined /> 저장
+            <SaveOutlined /> {{ t('rackDiagram.save') }}
           </a-button>
 
           <a-divider type="vertical" class="toolbar-divider" />
 
           <a-input-search
             v-model:value="searchQuery"
-            placeholder="장비명, IP, 메모 검색..."
+            :placeholder="t('rackDiagram.searchPlaceholder')"
             style="width: 200px;"
             allow-clear
           />
 
           <a-button type="dashed" @click="openRackModal('add')">
-            <PlusOutlined /> 새 랙 추가
+            <PlusOutlined /> {{ t('rackDiagram.addRack') }}
           </a-button>
 
           <a-divider type="vertical" class="toolbar-divider" />
 
-          <a-button @click="exportToJson" title="JSON 파일로 백업">
-            <FileTextOutlined /> 백업
+          <a-button @click="exportToJson" :title="t('rackDiagram.backupJson')">
+            <FileTextOutlined /> {{ t('rackDiagram.backup') }}
           </a-button>
-          <a-button @click="triggerImport" title="JSON 파일 불러오기">
-            <UploadOutlined /> 복원
+          <a-button @click="triggerImport" :title="t('rackDiagram.restoreJson')">
+            <UploadOutlined /> {{ t('rackDiagram.restore') }}
           </a-button>
-          <a-button @click="exportToImage" title="PNG 이미지 캡처">
-            <CameraOutlined /> 캡처
+          <a-button @click="exportToImage" :title="t('rackDiagram.capturePng')">
+            <CameraOutlined /> {{ t('rackDiagram.capture') }}
           </a-button>
         </a-space>
 
@@ -38,7 +38,7 @@
       </div>
 
       <div class="toolbar-right" style="display: flex; align-items: center;">
-        <span class="zoom-label" style="margin-right: 8px;">Zoom:</span>
+        <span class="zoom-label" style="margin-right: 8px;">{{ t('rackDiagram.zoom') }}:</span>
 
         <a-input-number
           v-model:value="zoomPercent"
@@ -64,7 +64,7 @@
       <div class="rack-canvas" style="overflow: auto; min-height: 600px; padding: 20px; background: #eef0f4;">
         <div class="rack-zoom-wrapper" :style="{ zoom: zoomLevel }">
 
-          <a-empty v-if="!parsedRacks.length" :description="'등록된 랙이 없습니다. 상단의 [새 랙 추가] 버튼을 눌러주세요.'" style="margin-top: 50px;" />
+          <a-empty v-if="!parsedRacks.length" :description="t('rackDiagram.emptyRack')" style="margin-top: 50px;" />
 
           <div class="rack-container" v-else>
             <div class="rack-wrapper" v-for="(rack, rIndex) in parsedRacks" :key="rIndex">
@@ -81,19 +81,19 @@
                   </a-tooltip>
 
                   <div class="rack-header-actions">
-                    <a-button size="small" type="text" @click="moveRack(rIndex, -1)" :disabled="rIndex === 0" title="왼쪽 이동">
+                    <a-button size="small" type="text" @click="moveRack(rIndex, -1)" :disabled="rIndex === 0" :title="t('rackDiagram.moveLeft')">
                       <LeftOutlined />
                     </a-button>
-                    <a-button size="small" type="text" @click="moveRack(rIndex, 1)" :disabled="rIndex === parsedRacks.length - 1" title="오른쪽 이동">
+                    <a-button size="small" type="text" @click="moveRack(rIndex, 1)" :disabled="rIndex === parsedRacks.length - 1" :title="t('rackDiagram.moveRight')">
                       <RightOutlined />
                     </a-button>
-                    <a-button size="small" type="text" @click="cloneRack(rIndex)" title="랙 복제">
+                    <a-button size="small" type="text" @click="cloneRack(rIndex)" :title="t('rackDiagram.cloneRack')">
                       <CopyOutlined />
                     </a-button>
-                    <a-button size="small" type="text" @click="openRackModal('edit', rIndex)" title="수정">
+                    <a-button size="small" type="text" @click="openRackModal('edit', rIndex)" :title="t('rackDiagram.edit')">
                       <SettingOutlined />
                     </a-button>
-                    <a-popconfirm title="삭제하시겠습니까?" @confirm="deleteRack(rIndex)">
+                    <a-popconfirm :title="t('rackDiagram.deleteConfirm')" @confirm="deleteRack(rIndex)">
                       <a-button size="small" type="text" danger>
                         <DeleteOutlined />
                       </a-button>
@@ -128,7 +128,7 @@
                     :style="{ height: (item.height * 32) + 'px' }"
                   >
                     <div v-if="item.type === 'gap'" class="gap-content" @click="openDeviceModal(rIndex, iIndex)">
-                      <span>+ {{ item.height }}U 여백 (클릭하여 장비 추가)</span>
+                      <span>+ {{ item.height }}U {{ t('rackDiagram.gapAddDevice') }}</span>
                     </div>
 
                     <div
@@ -170,36 +170,36 @@
                           </a-button>
                         </a-tooltip>
 
-                        <a-tooltip title="장비 복제" :mouseEnterDelay="0.1">
+                        <a-tooltip :title="t('rackDiagram.cloneDevice')" :mouseEnterDelay="0.1">
                           <a-button size="small" type="text" @click.stop="cloneItem(rIndex, iIndex)">
                             <CopyOutlined />
                           </a-button>
                         </a-tooltip>
 
-                        <a-tooltip title="다른 랙으로 이동" :mouseEnterDelay="0.1">
+                        <a-tooltip :title="t('rackDiagram.moveToOtherRack')" :mouseEnterDelay="0.1">
                           <a-button size="small" type="text" @click.stop="openMoveDeviceModal(rIndex, iIndex)">
                             <ExportOutlined />
                           </a-button>
                         </a-tooltip>
 
-                        <a-tooltip title="설정" :mouseEnterDelay="0.1">
+                        <a-tooltip :title="t('rackDiagram.settings')" :mouseEnterDelay="0.1">
                           <a-button size="small" type="text" @click.stop="openDeviceModal(rIndex, iIndex)">
                             <SettingOutlined />
                           </a-button>
                         </a-tooltip>
 
                         <a-dropdown v-if="hasActionMenu(item)" :trigger="['click']">
-                          <a-tooltip title="장치 작업" :mouseEnterDelay="0.1">
+                          <a-tooltip :title="t('rackDiagram.deviceActions')" :mouseEnterDelay="0.1">
                             <a-button size="small" type="text" class="device-more-btn" @click.stop>
                               <MoreOutlined />
                             </a-button>
                           </a-tooltip>
                           <template #overlay>
                             <a-menu @click="({ key }) => handleHostActionMenu(key, item)">
-                              <a-menu-item v-if="isHostLinked(item)" key="host-detail"><LinkOutlined /> 호스트 상세</a-menu-item>
-                              <a-menu-item v-if="isHostLinked(item)" key="host-vms"><UnorderedListOutlined /> 호스트 VM 목록</a-menu-item>
-                              <a-menu-item v-if="isHostLinked(item)" key="host-oobm"><LaptopOutlined /> OOBM 포털 접속</a-menu-item>
-                              <a-menu-item v-if="isHostLinked(item)" key="host-cube"><AppstoreOutlined /> Cube 포털 접속</a-menu-item>
+                              <a-menu-item v-if="isHostLinked(item)" key="host-detail"><LinkOutlined /> {{ t('rackDiagram.hostDetail') }}</a-menu-item>
+                              <a-menu-item v-if="isHostLinked(item)" key="host-vms"><UnorderedListOutlined /> {{ t('rackDiagram.hostVmList') }}</a-menu-item>
+                              <a-menu-item v-if="isHostLinked(item)" key="host-oobm"><LaptopOutlined /> {{ t('rackDiagram.hostOobmPortal') }}</a-menu-item>
+                              <a-menu-item v-if="isHostLinked(item)" key="host-cube"><AppstoreOutlined /> {{ t('rackDiagram.hostCubePortal') }}</a-menu-item>
                               <a-menu-divider v-if="isHostLinked(item) && hasQuickLinks(item)" />
                               <a-menu-item v-for="(link, lIdx) in getQuickLinks(item)" :key="`quick-${lIdx}`">
                                 <LinkOutlined /> {{ link.label || link.url }}
@@ -208,8 +208,8 @@
                           </template>
                         </a-dropdown>
 
-                        <a-popconfirm title="삭제하시겠습니까?" @confirm="deleteItem(rIndex, iIndex)" placement="topRight">
-                          <a-tooltip title="삭제" :mouseEnterDelay="0.1">
+                        <a-popconfirm :title="t('rackDiagram.deleteConfirm')" @confirm="deleteItem(rIndex, iIndex)" placement="topRight">
+                          <a-tooltip :title="t('rackDiagram.delete')" :mouseEnterDelay="0.1">
                             <a-button size="small" type="text" danger @click.stop>
                               <DeleteOutlined />
                             </a-button>
@@ -230,16 +230,16 @@
 
     <a-modal
       v-model:visible="rackModalVisible"
-      :title="rackModalMode === 'add' ? '새 랙 추가' : '랙 설정 수정'"
+      :title="rackModalMode === 'add' ? t('rackDiagram.addRack') : t('rackDiagram.editRack')"
       @ok="submitRackModal"
       @cancel="closeRackModal"
       destroyOnClose
     >
       <a-form layout="vertical">
-        <a-form-item label="랙 이름 (Name)">
-          <a-input v-model:value="rackForm.name" placeholder="예: Server Rack 1" />
+        <a-form-item :label="t('rackDiagram.rackName')">
+          <a-input v-model:value="rackForm.name" :placeholder="t('rackDiagram.rackNamePlaceholder')" />
         </a-form-item>
-        <a-form-item label="총 높이 (U)">
+        <a-form-item :label="t('rackDiagram.totalHeight')">
           <a-input-number
             v-model:value="rackForm.totalHeight"
             :min="10"
@@ -253,25 +253,25 @@
     </a-modal>
     <a-modal
       v-model:visible="moveModalVisible"
-      title="장비 이동 (다른 랙으로 보내기)"
+      :title="t('rackDiagram.moveDeviceTitle')"
       @ok="submitMoveDevice"
       destroyOnClose
     >
       <div style="margin-bottom: 16px;">
         <InfoCircleOutlined style="color: #1890ff; margin-right: 8px;" />
-        <span>이동할 대상 랙을 선택하면, <strong>빈 공간(Gap)을 찾아 자동으로 배치</strong>됩니다.</span>
+        <span>{{ t('rackDiagram.moveDeviceDesc1') }} <strong>{{ t('rackDiagram.moveDeviceDesc2') }}</strong>{{ t('rackDiagram.moveDeviceDesc3') }}</span>
       </div>
 
       <a-form layout="vertical">
-        <a-form-item label="대상 랙 선택">
-          <a-select v-model:value="moveTargetRackIndex" placeholder="랙을 선택하세요" style="width: 100%">
+        <a-form-item :label="t('rackDiagram.targetRack')">
+          <a-select v-model:value="moveTargetRackIndex" :placeholder="t('rackDiagram.selectRack')" style="width: 100%">
             <a-select-option
               v-for="(rack, idx) in parsedRacks"
               :key="idx"
               :value="idx"
               :disabled="idx === moveSourceInfo.rIndex"
             >
-              {{ rack.name }} (잔여 여백 확인 필요)
+              {{ rack.name }} ({{ t('rackDiagram.needGapCheck') }})
             </a-select-option>
           </a-select>
         </a-form-item>
@@ -279,53 +279,53 @@
     </a-modal>
     <a-modal
       v-model:visible="deviceModalVisible"
-      :title="'장비 설정'"
+      :title="t('rackDiagram.deviceConfig')"
       @ok="submitDeviceModal"
       @cancel="closeDeviceModal"
       destroyOnClose
     >
       <a-form layout="vertical">
-        <a-form-item label="장비 종류">
+        <a-form-item :label="t('rackDiagram.deviceType')">
           <a-select v-model:value="deviceForm.type" style="width: 100%" @change="handleTypeChange">
-            <a-select-option value="server">서버 (Server)</a-select-option>
-            <a-select-option value="switch">스위치 (Switch)</a-select-option>
-            <a-select-option value="storage">스토리지 (Storage)</a-select-option>
-            <a-select-option value="firewall">방화벽 (Firewall)</a-select-option>
+            <a-select-option value="server">{{ t('rackDiagram.deviceTypeServer') }}</a-select-option>
+            <a-select-option value="switch">{{ t('rackDiagram.deviceTypeSwitch') }}</a-select-option>
+            <a-select-option value="storage">{{ t('rackDiagram.deviceTypeStorage') }}</a-select-option>
+            <a-select-option value="firewall">{{ t('rackDiagram.deviceTypeFirewall') }}</a-select-option>
             <a-select-option value="ups">UPS</a-select-option>
-            <a-select-option value="patch">패치패널 (Patch Panel)</a-select-option>
+            <a-select-option value="patch">{{ t('rackDiagram.deviceTypePatch') }}</a-select-option>
             <a-select-option value="pdu">PDU</a-select-option>
-            <a-select-option value="blank">블랭크 패널 (Blank)</a-select-option>
-            <a-select-option value="custom">커스텀 (Custom)</a-select-option>
+            <a-select-option value="blank">{{ t('rackDiagram.deviceTypeBlank') }}</a-select-option>
+            <a-select-option value="custom">{{ t('rackDiagram.deviceTypeCustom') }}</a-select-option>
           </a-select>
         </a-form-item>
 
-        <a-form-item label="장비명 (Label)" v-if="deviceForm.type !== 'blank'">
+        <a-form-item :label="t('rackDiagram.deviceName')" v-if="deviceForm.type !== 'blank'">
           <a-input
             v-model:value="deviceForm.label"
-            placeholder="장비명을 입력하세요."
+            :placeholder="t('rackDiagram.deviceNamePlaceholder')"
             allow-clear
           />
         </a-form-item>
 
-        <a-form-item label="인프라 자산 선택" v-if="deviceForm.type !== 'blank'">
+        <a-form-item :label="t('rackDiagram.selectInfraAsset')" v-if="deviceForm.type !== 'blank'">
           <a-select
             v-model:value="deviceForm.sourceRef"
             :loading="inventoryLoading"
             :options="inventoryOptions"
             :show-search="true"
             option-filter-prop="label"
-            placeholder="Host를 선택하세요."
+            :placeholder="t('rackDiagram.selectHost')"
             allow-clear
             style="width: 100%"
             @change="handleSourceChange"
           />
         </a-form-item>
 
-        <a-form-item label="커스텀 타입명" v-if="deviceForm.type === 'custom'">
-          <a-input v-model:value="deviceForm.customType" placeholder="예: Router" />
+        <a-form-item :label="t('rackDiagram.customTypeName')" v-if="deviceForm.type === 'custom'">
+          <a-input v-model:value="deviceForm.customType" :placeholder="t('rackDiagram.customTypePlaceholder')" />
         </a-form-item>
 
-        <a-form-item label="높이 (U)">
+        <a-form-item :label="t('rackDiagram.height')">
         <a-input-number
           v-model:value="deviceForm.height"
           :min="1"
@@ -335,26 +335,26 @@
         />
         <div style="font-size: 12px; color: #888; margin-top: 4px;">
           <InfoCircleOutlined style="margin-right: 4px;" />
-          현재 이 위치의 최대 허용 높이는 <strong>{{ maxAllowedHeight }}U</strong> 입니다.
+          {{ t('rackDiagram.maxAllowedHeightPrefix') }} <strong>{{ maxAllowedHeight }}U</strong> {{ t('rackDiagram.maxAllowedHeightSuffix') }}
         </div>
       </a-form-item>
 
-        <a-form-item label="장비 메모 / 상세 설명">
+        <a-form-item :label="t('rackDiagram.deviceMemo')">
           <a-textarea
             v-model:value="deviceForm.memo"
             :rows="3"
-            placeholder="IP 주소, 용도, 담당자 등을 입력하세요"
+            :placeholder="t('rackDiagram.deviceMemoPlaceholder')"
           />
         </a-form-item>
         <a-form-item
-          label="커스텀 바로가기 링크 (한 줄에 하나, 형식: 이름|URL)"
+          :label="t('rackDiagram.quickLinks')"
           :validateStatus="quickLinksError ? 'error' : ''"
           :help="quickLinksError"
         >
           <a-textarea
             v-model:value="deviceForm.quickLinksText"
             :rows="3"
-            placeholder="예: iDRAC|https://10.0.0.10&#10;NAS|https://nas.local"
+            :placeholder="t('rackDiagram.quickLinksPlaceholder')"
             @change="quickLinksError = ''"
           />
         </a-form-item>
@@ -382,7 +382,7 @@
                 </g>
               </svg>
             </div>
-            <p class="ant-empty-description">{{ $t('label.no.data') || 'No Data' }}</p>
+            <p class="ant-empty-description">{{ t('label.no.data') }}</p>
           </div>
         </div>
         <div v-else-if="!hostVmLoading" class="host-vm-grid">
@@ -391,6 +391,7 @@
             :key="vm.id"
             class="host-vm-card"
             :class="{ 'host-vm-card-inactive': !isRunningVm(vm) }"
+            @click="goToVmDetail(vm)"
           >
             <div class="host-vm-icon">
               <font-awesome-icon :icon="['fab', getVmOsLogo(vm)]" size="lg" />
@@ -409,7 +410,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed, watch, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import { message } from 'ant-design-vue'
 import html2canvas from 'html2canvas'
 import { api } from '@/api'
@@ -439,6 +440,8 @@ const loading = ref(false)
 const saving = ref(false)
 const zoomLevel = ref(1)
 const router = useRouter()
+const { proxy } = getCurrentInstance()
+const t = (key, args) => proxy?.$t ? proxy.$t(key, args) : key
 
 // 슬라이더 및 입력창과 연동할 퍼센트 단위 변수
 const zoomPercent = computed({
@@ -489,12 +492,12 @@ const fetchZonesAndRackData = () => {
         // Zone ID를 성공적으로 가져왔으므로 DB에서 랙 구성 조회 시작
         fetchRackData()
       } else {
-        message.warning('사용 가능한 Zone이 없습니다.')
+        message.warning(t('rackDiagram.msg.noAvailableZone'))
       }
     }
   }).catch(error => {
     console.error('Zone 목록 조회 실패:', error)
-    message.error('Zone 정보를 불러오는데 실패했습니다.')
+    message.error(t('rackDiagram.msg.zoneLoadFailed'))
   }).finally(() => {
     zoneLoading.value = false
   })
@@ -517,11 +520,11 @@ const fetchRackData = () => {
     // DB에 저장된 데이터가 있고, 내용(content)이 존재하는 경우
     if (layouts && layouts.length > 0 && layouts[0].content) {
       parsedRacks.value = JSON.parse(layouts[0].content)
-      message.success('랙 구성을 불러왔습니다.')
+      message.success(t('rackDiagram.msg.rackLoaded'))
     } else {
       // DB에 데이터가 전혀 없는 경우 (최초 접속) -> 기본 빈 랙 생성
       parsedRacks.value = [{
-        name: 'Main Rack',
+        name: t('rackDiagram.defaultRackName'),
         totalHeight: 42,
         items: [{ type: 'gap', height: 42 }]
       }]
@@ -530,7 +533,7 @@ const fetchRackData = () => {
     nextTick(() => { isDirty.value = false })
   }).catch(error => {
     console.error('랙 데이터 불러오기 실패:', error)
-    message.error('랙 구성을 불러오는데 실패했습니다.')
+    message.error(t('rackDiagram.msg.rackLoadFailed'))
   }).finally(() => {
     loading.value = false
   })
@@ -538,7 +541,7 @@ const fetchRackData = () => {
 
 const saveRackData = () => {
   if (!currentZoneId.value) {
-    message.error('저장할 Zone 정보가 없습니다.')
+    message.error(t('rackDiagram.msg.noZoneToSave'))
     return
   }
 
@@ -550,11 +553,11 @@ const saveRackData = () => {
     name: 'default',
     content: jsonContent
   }).then(json => {
-    message.success('랙 구성이 DB에 안전하게 저장되었습니다.')
+    message.success(t('rackDiagram.msg.rackSaved'))
     isDirty.value = false // 저장 성공 시 변경 상태 뱃지 숨김
   }).catch(error => {
     console.error('랙 데이터 저장 실패:', error)
-    message.error('랙 구성 저장에 실패했습니다.')
+    message.error(t('rackDiagram.msg.rackSaveFailed'))
   }).finally(() => {
     saving.value = false
   })
@@ -588,12 +591,12 @@ const closeRackModal = () => {
 const exportToImage = async () => {
   const element = document.querySelector('.rack-container')
   if (!element) {
-    message.warning('저장할 랙 구성이 없습니다.')
+    message.warning(t('rackDiagram.msg.noRackToSaveImage'))
     return
   }
 
   try {
-    message.loading({ content: '이미지 변환 중...', key: 'exporting' })
+    message.loading({ content: t('rackDiagram.msg.exportingImage'), key: 'exporting' })
     const fullWidth = element.scrollWidth
     const fullHeight = element.scrollHeight
 
@@ -622,10 +625,10 @@ const exportToImage = async () => {
     link.href = canvas.toDataURL('image/png')
     link.click()
 
-    message.success({ content: '이미지 저장이 완료되었습니다.', key: 'exporting' })
+    message.success({ content: t('rackDiagram.msg.imageSaved'), key: 'exporting' })
   } catch (error) {
     console.error(error)
-    message.error({ content: '이미지 저장에 실패했습니다.', key: 'exporting' })
+    message.error({ content: t('rackDiagram.msg.imageSaveFailed'), key: 'exporting' })
   }
 }
 
@@ -635,7 +638,7 @@ const fileInput = ref(null)
 // JSON으로 내보내기 (Export)
 const exportToJson = () => {
   if (!parsedRacks.value || parsedRacks.value.length === 0) {
-    message.warning('내보낼 랙 데이터가 없습니다.')
+    message.warning(t('rackDiagram.msg.noRackToExport'))
     return
   }
 
@@ -656,7 +659,7 @@ const exportToJson = () => {
 
   // 4. 메모리 정리
   URL.revokeObjectURL(url)
-  message.success('JSON 파일이 다운로드되었습니다.')
+  message.success(t('rackDiagram.msg.jsonDownloaded'))
 }
 
 // JSON 불러오기 버튼 클릭 시 숨겨진 input 실행
@@ -680,13 +683,13 @@ const handleImport = (event) => {
       // 2. 간단한 유효성 검사 (배열 형태인지 확인)
       if (Array.isArray(importedData)) {
         parsedRacks.value = importedData // 화면 갱신
-        message.success('성공적으로 데이터를 불러왔습니다.')
+        message.success(t('rackDiagram.msg.importSuccess'))
       } else {
-        message.error('유효하지 않은 파일 형식입니다. (배열이 아님)')
+        message.error(t('rackDiagram.msg.invalidFileFormat'))
       }
     } catch (error) {
       console.error(error)
-      message.error('JSON 파일 파싱에 실패했습니다. 파일이 손상되었을 수 있습니다.')
+      message.error(t('rackDiagram.msg.jsonParseFailed'))
     } finally {
       // 3. 같은 파일을 다시 선택할 수 있도록 input 초기화
       event.target.value = ''
@@ -701,11 +704,11 @@ const cloneRack = (rIndex) => {
   const targetRack = parsedRacks.value[rIndex]
   const newRack = {
     ...targetRack,
-    name: `${targetRack.name} (Copy)`,
+    name: `${targetRack.name} (${t('rackDiagram.copySuffix')})`,
     items: targetRack.items.map(item => ({ ...item }))
   }
   parsedRacks.value.push(newRack)
-  message.success('랙이 복제되었습니다.')
+  message.success(t('rackDiagram.msg.rackCloned'))
 }
 
 // 랙 순서 좌우 이동 함수
@@ -722,16 +725,16 @@ const moveRack = (rIndex, direction) => {
 const submitRackModal = () => {
   const rackName = String(rackForm.name || '').trim()
   if (!rackName) {
-    message.warning('랙 이름을 입력해주세요.')
+    message.warning(t('rackDiagram.msg.enterRackName'))
     return
   }
   if (rackName.length > 60) {
-    message.warning('랙 이름은 60자 이하로 입력해주세요.')
+    message.warning(t('rackDiagram.msg.rackNameMax'))
     return
   }
 
   if (!Number.isInteger(rackForm.totalHeight) || rackForm.totalHeight < 10 || rackForm.totalHeight > 50) {
-    message.warning('총 높이(U)는 10~50 사이의 정수만 입력할 수 있습니다.')
+    message.warning(t('rackDiagram.msg.rackHeightRange'))
     return
   }
 
@@ -740,7 +743,7 @@ const submitRackModal = () => {
     return String(rack.name || '').trim().toLowerCase() === rackName.toLowerCase()
   })
   if (duplicateName) {
-    message.warning('동일한 랙 이름이 이미 존재합니다.')
+    message.warning(t('rackDiagram.msg.duplicateRackName'))
     return
   }
 
@@ -827,7 +830,7 @@ const inventoryLoading = ref(false)
 const inventoryOptions = ref([])
 const hostCache = ref({})
 const hostVmModalVisible = ref(false)
-const hostVmModalTitle = ref('호스트 VM 목록')
+const hostVmModalTitle = ref(t('rackDiagram.hostVmList'))
 const hostVmLoading = ref(false)
 const hostVmList = ref([])
 const hostVmFallbackList = ref([])
@@ -907,7 +910,7 @@ const handleSourceChange = (value) => {
   const selected = inventoryOptions.value.find(o => o.value === value)
   if (!selected) return
 
-  if (!deviceForm.label || Object.values(defaultLabels).includes(deviceForm.label)) {
+  if (!deviceForm.label || Object.values(defaultLabelKeys).map(key => t(key)).includes(deviceForm.label)) {
     deviceForm.label = selected.meta.name
   }
 
@@ -951,11 +954,11 @@ const parseQuickLinksTextWithValidation = (text) => {
     }
 
     if (!url) {
-      errors.push(`${idx + 1}행: URL이 비어 있습니다. (형식: 이름|URL)`)
+      errors.push(t('rackDiagram.msg.quickLinkUrlEmpty', { line: idx + 1 }))
       return
     }
     if (!/^https?:\/\//i.test(url)) {
-      errors.push(`${idx + 1}행: URL은 http:// 또는 https:// 로 시작해야 합니다.`)
+      errors.push(t('rackDiagram.msg.quickLinkUrlInvalid', { line: idx + 1 }))
       return
     }
 
@@ -1058,7 +1061,7 @@ const onDropRackFrame = (targetRIndex, event) => {
   const desiredStartU = getDesiredStartUFromRackEvent(event, targetRack)
   const best = findBestStartUInRack(targetRack, moving.height, desiredStartU)
   if (!best) {
-    message.warning(`대상 랙의 연속 여백이 부족합니다. (필요 ${moving.height}U)`)
+    message.warning(t('rackDiagram.msg.notEnoughGapOnTarget', { height: moving.height }))
     // 복구
     const restore = findBestStartUInRack(sourceRack, moving.height, 0)
     if (restore) placeDeviceAtStartU(sourceRack, restore.index, restore.startU, moving)
@@ -1067,7 +1070,7 @@ const onDropRackFrame = (targetRIndex, event) => {
 
   const placed = placeDeviceAtStartU(targetRack, best.index, best.startU, moving)
   if (!placed) {
-    message.warning('드롭 위치 계산에 실패했습니다. 다시 시도해주세요.')
+    message.warning(t('rackDiagram.msg.dropCalcFailed'))
     const restore = findBestStartUInRack(sourceRack, moving.height, 0)
     if (restore) placeDeviceAtStartU(sourceRack, restore.index, restore.startU, moving)
     return
@@ -1100,12 +1103,12 @@ const openLinkedHostOobm = async (item) => {
     const address = host?.outofbandmanagement?.address || ''
     const port = host?.details?.manageconsoleport
     if (!address || !port) {
-      message.warning('선택한 호스트의 OOBM 포털 정보를 찾을 수 없습니다.')
+      message.warning(t('rackDiagram.msg.oobmNotFound'))
       return
     }
     window.open(`${protocol}://${address}:${port}`, '_blank')
   } catch (e) {
-    message.error('OOBM 포털 정보를 불러오지 못했습니다.')
+    message.error(t('rackDiagram.msg.oobmLoadFailed'))
   }
 }
 
@@ -1116,12 +1119,12 @@ const openLinkedHostCube = async (item) => {
     const host = await fetchHostById(hostId)
     const ip = host?.ipaddress
     if (!ip) {
-      message.warning('선택한 호스트의 IP 정보를 찾을 수 없습니다.')
+      message.warning(t('rackDiagram.msg.hostIpNotFound'))
       return
     }
     window.open(`https://${ip}:9090`, '_blank')
   } catch (e) {
-    message.error('Cube 포털 정보를 불러오지 못했습니다.')
+    message.error(t('rackDiagram.msg.cubeLoadFailed'))
   }
 }
 
@@ -1135,7 +1138,7 @@ const openLinkedHostVmModal = async (item) => {
 
   try {
     const host = await fetchHostById(hostId)
-    hostVmModalTitle.value = `호스트 VM 목록 - ${host?.name || host?.hostname || hostId}`
+    hostVmModalTitle.value = `${t('rackDiagram.hostVmList')} - ${host?.name || host?.hostname || hostId}`
     const hostIdStr = String(hostId)
     const isVmAssignedToHost = (vm) => {
       const vmHostId = String(vm?.hostid || '')
@@ -1204,6 +1207,13 @@ const isRunningVm = (vm) => {
   return String(vm?.state || '').toLowerCase() === 'running'
 }
 
+const goToVmDetail = (vm) => {
+  const vmId = vm?.id
+  if (!vmId) return
+  hostVmModalVisible.value = false
+  router.push({ path: `/vm/${vmId}` })
+}
+
 const handleHostActionMenu = (key, item) => {
   if (typeof key === 'string' && key.startsWith('quick-')) {
     const idx = Number(key.replace('quick-', ''))
@@ -1238,17 +1248,18 @@ const maxAllowedHeight = computed(() => {
 })
 
 // 각 장비별 기본 라벨명 매핑
-const defaultLabels = {
-  server: 'Server',
-  switch: 'Switch',
-  storage: 'Storage',
-  firewall: 'Firewall',
-  patch: 'Patch Panel',
-  pdu: 'PDU',
-  ups: 'UPS',
-  blank: 'Blank Panel',
-  custom: 'Custom Device'
+const defaultLabelKeys = {
+  server: 'rackDiagram.defaultLabelServer',
+  switch: 'rackDiagram.defaultLabelSwitch',
+  storage: 'rackDiagram.defaultLabelStorage',
+  firewall: 'rackDiagram.defaultLabelFirewall',
+  patch: 'rackDiagram.defaultLabelPatch',
+  pdu: 'rackDiagram.defaultLabelPdu',
+  ups: 'rackDiagram.defaultLabelUps',
+  blank: 'rackDiagram.defaultLabelBlank',
+  custom: 'rackDiagram.defaultLabelCustom'
 }
+const getDefaultLabel = (type) => t(defaultLabelKeys[type] || 'rackDiagram.defaultLabelCustom')
 
 // 모달 열기 로직 수정
 const openDeviceModal = (rIndex, iIndex) => {
@@ -1286,10 +1297,10 @@ const openDeviceModal = (rIndex, iIndex) => {
 const handleTypeChange = (newType) => {
   // 사용자가 직접 입력한 라벨이 없거나, 기존 기본 라벨명과 똑같을 때만 새 기본명으로 교체
   const isLabelEmpty = !deviceForm.label
-  const isLabelDefault = Object.values(defaultLabels).includes(deviceForm.label)
+  const isLabelDefault = Object.values(defaultLabelKeys).map(key => t(key)).includes(deviceForm.label)
 
   if (isLabelEmpty || isLabelDefault) {
-    deviceForm.label = defaultLabels[newType] || ''
+    deviceForm.label = getDefaultLabel(newType) || ''
   }
 }
 
@@ -1305,27 +1316,27 @@ const submitDeviceModal = () => {
 
   const rawLabel = String(deviceForm.label || '').trim()
   const rawCustomType = String(deviceForm.customType || '').trim()
-  const finalLabel = rawLabel || defaultLabels[deviceForm.type] || 'New Device'
-  const finalCustomType = rawCustomType || (deviceForm.type === 'custom' ? 'Custom Unit' : '')
+  const finalLabel = rawLabel || getDefaultLabel(deviceForm.type) || t('rackDiagram.newDevice')
+  const finalCustomType = rawCustomType || (deviceForm.type === 'custom' ? t('rackDiagram.customUnit') : '')
 
   if (deviceForm.type !== 'blank' && !finalLabel) {
-    message.warning('장비명을 입력해주세요.')
+    message.warning(t('rackDiagram.msg.enterDeviceName'))
     return
   }
   if (finalLabel.length > 60) {
-    message.warning('장비명은 60자 이하로 입력해주세요.')
+    message.warning(t('rackDiagram.msg.deviceNameMax'))
     return
   }
   if (deviceForm.type === 'custom' && !rawCustomType) {
-    message.warning('커스텀 타입명을 입력해주세요.')
+    message.warning(t('rackDiagram.msg.enterCustomType'))
     return
   }
   if (deviceForm.type === 'custom' && rawCustomType.length > 60) {
-    message.warning('커스텀 타입명은 60자 이하로 입력해주세요.')
+    message.warning(t('rackDiagram.msg.customTypeMax'))
     return
   }
   if (!Number.isInteger(deviceForm.height) || deviceForm.height <= 0) {
-    message.warning('장비 높이(U)는 1 이상의 정수만 입력할 수 있습니다.')
+    message.warning(t('rackDiagram.msg.deviceHeightInteger'))
     return
   }
   const quickLinkParsed = parseQuickLinksTextWithValidation(deviceForm.quickLinksText)
@@ -1348,7 +1359,7 @@ const submitDeviceModal = () => {
   // 여백(Gap)에 새 장비 추가 시
   if (oldItem.type === 'gap') {
     if (oldItem.height < newItem.height) {
-      message.error('선택한 여백보다 큰 장비는 추가할 수 없습니다.')
+      message.error(t('rackDiagram.msg.deviceLargerThanGap'))
       return
     }
     const remainingHeight = oldItem.height - newItem.height
@@ -1371,7 +1382,7 @@ const submitDeviceModal = () => {
         nextItem.height -= heightDiff
         if (nextItem.height === 0) rack.items.splice(iIndex + 1, 1) // 여백이 0이 되면 삭제
       } else {
-        message.error('아래쪽 여백이 부족하여 크기를 늘릴 수 없습니다.')
+        message.error(t('rackDiagram.msg.notEnoughGapBelow'))
         return
       }
     } else {
@@ -1427,7 +1438,7 @@ const cloneItem = (rIndex, iIndex) => {
     if (rack.items[i].type === 'gap' && placeIntoGap(i, false)) return
   }
 
-  message.error(`랙 내에 여유 공간이 부족합니다. (필요 공간: ${neededHeight}U)`)
+  message.error(t('rackDiagram.msg.notEnoughSpaceInRack', { height: neededHeight }))
 }
 
 const deleteItem = (rIndex, iIndex) => {
@@ -1455,7 +1466,7 @@ const moveSourceInfo = reactive({ rIndex: -1, iIndex: -1 }) // 이사 갈 장비
 const openMoveDeviceModal = (rIndex, iIndex) => {
   // 랙이 하나밖에 없으면 이사 불가
   if (parsedRacks.value.length <= 1) {
-    message.warning('이동할 다른 랙이 없습니다. [새 랙 추가]를 먼저 해주세요.')
+    message.warning(t('rackDiagram.msg.noOtherRackToMove'))
     return
   }
 
@@ -1468,7 +1479,7 @@ const openMoveDeviceModal = (rIndex, iIndex) => {
 // 이사 실행 (확인 버튼 클릭 시)
 const submitMoveDevice = () => {
   if (moveTargetRackIndex.value === null) {
-    message.warning('이동할 대상 랙을 선택해주세요.')
+    message.warning(t('rackDiagram.msg.selectTargetRack'))
     return
   }
 
@@ -1487,7 +1498,7 @@ const submitMoveDevice = () => {
   )
 
   if (targetGapIndex === -1) {
-    message.error(`'${targetRack.name}'에 ${deviceToMove.height}U 공간이 부족하여 이동할 수 없습니다.`)
+    message.error(t('rackDiagram.msg.targetRackNoSpace', { rack: targetRack.name, height: deviceToMove.height }))
     return
   }
 
@@ -1519,7 +1530,7 @@ const submitMoveDevice = () => {
     }
   }
 
-  message.success(`'${deviceToMove.label}' 장비가 '${targetRack.name}'(으)로 이동되었습니다.`)
+  message.success(t('rackDiagram.msg.deviceMoved', { label: deviceToMove.label, rack: targetRack.name }))
   moveModalVisible.value = false
 }
 
@@ -2087,6 +2098,13 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: #f9fbff;
   padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.host-vm-card:hover {
+  border-color: #91caff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
 }
 
 .host-vm-card-inactive {
