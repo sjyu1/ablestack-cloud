@@ -1607,7 +1607,7 @@
   "label.max.migrations": "최대 마이그레이션",
   "label.maxbackups": "최대 백업 수",
   "label.maxbackupstorage": "최대 백업 스토리지 (GiB)",
-  "label.maxbackups.to.retain": "보관할 최대 백업 수",
+  "label.maxbackups.to.retain": "보관할 최대 백업 수 또는 백업 체인 세트 수",
   "label.maxbucket": "최대 버킷 수",
   "label.maxcpu": "최대 CPU 코어",
   "label.maxcpunumber": "최대 CPU 코어 수",
