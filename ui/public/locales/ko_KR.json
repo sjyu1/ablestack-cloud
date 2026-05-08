@@ -4143,6 +4143,7 @@
   "message.success.remove.sslcert": "로드 밸런서에서 SSL 인증서가 성공적으로 제거되었습니다.",
   "message.success.remove.egress.rule": "송신 규칙을 제거했습니다.",
   "message.success.remove.objectstore.objects": "선택한 개체를 성공적으로 제거했습니다.",
+  "message.success.remove.objectstore.objects.count": "총 {count}개 객체를 삭제했습니다.",
   "message.success.remove.objectstore.directory": "선택한 디렉터리를 성공적으로 제거했습니다.",
   "message.success.remove.firewall.rule": "방화벽 규칙을 제거했습니다.",
   "message.success.remove.instance.rule": "규칙에서 가상머신을 제거했습니다.",

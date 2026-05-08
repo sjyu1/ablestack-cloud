@@ -26,6 +26,7 @@ import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
 import org.apache.cloudstack.api.command.user.bucket.CreateBucketCmd;
+import org.apache.cloudstack.api.command.user.bucket.SyncBucketUsageCmd;
 import org.apache.cloudstack.api.command.user.bucket.UpdateBucketCmd;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -94,7 +95,6 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
     @Override
     public boolean start() {
         _executor.scheduleWithFixedDelay(new BucketUsageTask(), 60L, 3600L, TimeUnit.SECONDS);
-        _executor.scheduleWithFixedDelay(new BucketUsageCustomTask(), 60L, 60L, TimeUnit.SECONDS);
         return true;
     }
 
@@ -353,32 +353,39 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
         }
     }
 
-    private class BucketUsageCustomTask extends ManagedContextRunnable {
-        public BucketUsageCustomTask() {
+    @Override
+    public Bucket syncBucketUsage(SyncBucketUsageCmd cmd, Account caller) {
+        BucketVO bucket = _bucketDao.findById(cmd.getId());
+        if (bucket == null) {
+            throw new InvalidParameterValueException("Unable to find bucket with ID: " + cmd.getId());
+        }
+        _accountMgr.checkAccess(caller, null, true, bucket);
+        ObjectStoreVO objectStoreVO = _objectStoreDao.findById(bucket.getObjectStoreId());
+        if (objectStoreVO == null) {
+            throw new InvalidParameterValueException("Unable to find object store with ID: " + bucket.getObjectStoreId());
+        }
+        ObjectStoreEntity objectStore = (ObjectStoreEntity)_dataStoreMgr.getDataStore(objectStoreVO.getId(), DataStoreRole.Object);
+        Map<String, Long> bucketSizes = objectStore.getAllBucketsUsage();
+        updateBucketUsage(bucket, bucketSizes.getOrDefault(bucket.getName(), 0L), true);
+        return _bucketDao.findById(bucket.getId());
+    }
+
+    private void updateBucketUsage(BucketVO bucket, long size, boolean updateStats) {
+        bucket.setSize(size);
+        _bucketDao.update(bucket.getId(), bucket);
+
+        if (!updateStats) {
+            return;
         }
 
-        @Override
-        protected void runInContext() {
-            try {
-                List<ObjectStoreVO> objectStores = _objectStoreDao.listObjectStores();
-                for(ObjectStoreVO objectStoreVO: objectStores) {
-                    List<BucketVO> buckets = _bucketDao.listByObjectStoreId(objectStoreVO.getId());
-                    if (buckets.isEmpty()) {
-                        continue;
-                    }
-                    ObjectStoreEntity  objectStore = (ObjectStoreEntity)_dataStoreMgr.getDataStore(objectStoreVO.getId(), DataStoreRole.Object);
-                    Map<String, Long> bucketSizes = objectStore.getAllBucketsUsage();
-                    for(BucketVO bucket : buckets) {
-                        Long size = bucketSizes.get(bucket.getName());
-                        if( size != null){
-                            bucket.setSize(size);
-                            _bucketDao.update(bucket.getId(), bucket);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                logger.error("Error while fetching bucket usage", e);
-            }
+        BucketStatisticsVO bucketStatisticsVO = _bucketStatisticsDao.findBy(bucket.getAccountId(), bucket.getId());
+        if(bucketStatisticsVO != null) {
+            bucketStatisticsVO.setSize(size);
+            _bucketStatisticsDao.update(bucketStatisticsVO.getId(), bucketStatisticsVO);
+        } else {
+            bucketStatisticsVO = new BucketStatisticsVO(bucket.getAccountId(), bucket.getId());
+            bucketStatisticsVO.setSize(size);
+            _bucketStatisticsDao.persist(bucketStatisticsVO);
         }
     }
 
@@ -407,21 +414,9 @@ public class BucketApiServiceImpl extends ManagerBase implements BucketApiServic
                             Long objectStoreUsedBytes = 0L;
                             for(BucketVO bucket : buckets) {
                                 Long size = bucketSizes.get(bucket.getName());
-                                if( size != null) {
+                                if (size != null) {
                                     objectStoreUsedBytes += size;
-                                    bucket.setSize(size);
-                                    _bucketDao.update(bucket.getId(), bucket);
-
-                                    //Update Bucket Usage stats
-                                    BucketStatisticsVO bucketStatisticsVO = _bucketStatisticsDao.findBy(bucket.getAccountId(), bucket.getId());
-                                    if(bucketStatisticsVO != null) {
-                                        bucketStatisticsVO.setSize(size);
-                                        _bucketStatisticsDao.update(bucketStatisticsVO.getId(), bucketStatisticsVO);
-                                    } else {
-                                        bucketStatisticsVO = new BucketStatisticsVO(bucket.getAccountId(), bucket.getId());
-                                        bucketStatisticsVO.setSize(size);
-                                        _bucketStatisticsDao.persist(bucketStatisticsVO);
-                                    }
+                                    updateBucketUsage(bucket, size, true);
                                 }
                             }
                             objectStoreVO.setUsedSize(objectStoreUsedBytes);

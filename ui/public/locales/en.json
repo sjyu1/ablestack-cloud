@@ -4143,6 +4143,7 @@
   "message.success.remove.sslcert": "Successfully removed SSL certificate from load balancer",
   "message.success.remove.egress.rule": "Successfully removed egress rule",
   "message.success.remove.objectstore.objects": "Successfully removed selected object(s)",
+  "message.success.remove.objectstore.objects.count": "Removed {count} object(s).",
   "message.success.remove.objectstore.directory": "Successfully removed selected directory",
   "message.success.remove.firewall.rule": "Successfully removed firewall rule",
   "message.success.remove.instance.rule": "Successfully removed Instance from rule",

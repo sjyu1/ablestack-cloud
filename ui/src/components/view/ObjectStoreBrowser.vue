@@ -17,6 +17,30 @@
 
 <template>
   <a-modal
+    :visible="showCreateFolderModal"
+    :closable="!createFolderLoading"
+    :destroyOnClose="true"
+    title="폴더 생성"
+    :maskClosable="false"
+    :cancelText="$t('label.cancel')"
+    @cancel="closeCreateFolderModal"
+    okText="생성"
+    :confirmLoading="createFolderLoading"
+    :okButtonProps="{ disabled: createFolderLoading || !createFolderName }"
+    :cancelButtonProps="{ disabled: createFolderLoading }"
+    @ok="createFolder()"
+    centered
+    >
+    <tooltip-label bold title="폴더명" tooltip="현재 위치에 생성할 폴더 이름을 입력하세요."/>
+    <br/>
+    <a-input
+      v-model:value="createFolderName"
+      placeholder="예: aaa"
+      :disabled="createFolderLoading"
+      @pressEnter="createFolder()"/>
+  </a-modal>
+
+  <a-modal
     :visible="showUploadModal"
     :closable="!uploadLoading"
     :destroyOnClose="true"
@@ -160,15 +184,15 @@
       <a-row class="object-store-usage-row" :gutter="[16, 8]">
         <a-col>
           <span class="object-store-usage-label">사용량</span>
-          <span>{{ convertKB(resource.size || 0) }}</span>
+          <span>{{ convertKB(bucketUsageSize || 0) }}</span>
         </a-col>
         <a-col v-if="resource.quota">
           <span class="object-store-usage-label">총용량</span>
           <span>{{ resource.quota }} GiB</span>
         </a-col>
       </a-row>
-      <a-row :gutter="[10,10]" :wrap="true">
-        <a-col flex="75%">
+      <a-row class="object-store-toolbar" :gutter="[10,10]" :wrap="false" align="middle">
+        <a-col class="object-store-search-col" flex="auto">
           <a-input-search
             allowClear
             size="medium"
@@ -178,7 +202,7 @@
             @search="listObjects()"
             :enter-button="$t('label.search')"/>
         </a-col>
-        <a-col flex="auto">
+        <a-col flex="none">
           <a-button
             :loading="loading"
             style="margin-bottom: 5px"
@@ -189,7 +213,19 @@
             {{ $t('label.refresh') }}
           </a-button>
         </a-col>
-        <a-col flex="auto">
+        <a-col flex="none">
+          <a-button
+            :loading="loading"
+            style="margin-bottom: 5px"
+            shape="round"
+            size="medium"
+            type="primary"
+            @click="openCreateFolderModal">
+            <folder-add-outlined />
+            폴더 생성
+          </a-button>
+        </a-col>
+        <a-col flex="none">
           <a-button
             :loading="loading"
             style="margin-bottom: 5px"
@@ -201,15 +237,19 @@
             {{ $t('label.upload') }}
           </a-button>
         </a-col>
-        <a-col flex="auto">
-          <tooltip-button
-            type="primary"
-            size="medium"
-            icon="delete-outlined"
-            :tooltip="$t('label.delete')"
+        <a-col flex="none">
+          <a-button
             v-if="selectedRows.length > 0"
-            :danger="true"
-            @onClick="removeObjects()"/>
+            :loading="loading"
+            style="margin-bottom: 5px"
+            type="primary"
+            shape="round"
+            size="medium"
+            danger
+            @click="removeObjects()">
+            <delete-outlined />
+            {{ $t('label.delete') }}
+          </a-button>
         </a-col>
       </a-row>
     </a-card>
@@ -273,6 +313,7 @@ const normalizeObjectStorePath = path => {
 }
 
 const pageSize = 20
+const deleteBatchSize = 1000
 
 export default {
   name: 'ObjectStoreBrowser',
@@ -282,6 +323,7 @@ export default {
     TooltipLabel,
     KeyValuePairInput
   },
+  emits: ['change-resource'],
   props: {
     resource: {
       type: Object,
@@ -332,6 +374,10 @@ export default {
       uploadFailedCount: 0,
       uploadFailedFiles: [],
       uploadCurrentFileName: '',
+      showCreateFolderModal: false,
+      createFolderName: '',
+      createFolderLoading: false,
+      bucketUsageSize: this.resource.size,
       objectStorePresignedUrlExpirySeconds: defaultObjectStorePresignedUrlExpirySeconds,
       record: {},
       showObjectDetails: false,
@@ -344,11 +390,65 @@ export default {
       return Math.max(this.uploadTotalCount - this.uploadCompletedCount - this.uploadFailedCount - uploadingCount, 0)
     }
   },
+  watch: {
+    'resource.size' (size) {
+      this.bucketUsageSize = size
+    }
+  },
   created () {
     this.fetchData()
     this.fetchObjectStorePresignedUrlExpirySeconds()
   },
   methods: {
+    openCreateFolderModal () {
+      if (this.createFolderLoading) {
+        return
+      }
+      this.createFolderName = ''
+      this.showCreateFolderModal = true
+    },
+    closeCreateFolderModal () {
+      if (this.createFolderLoading) {
+        return
+      }
+      this.showCreateFolderModal = false
+      this.createFolderName = ''
+    },
+    getCreateFolderObjectName () {
+      const folderName = String(this.createFolderName || '').trim().replace(/^\/+/, '').replace(/\/+$/, '')
+      if (!folderName) {
+        return ''
+      }
+      return normalizeObjectStorePath(`${this.browserPath}${folderName}`)
+    },
+    createFolder () {
+      if (this.createFolderLoading) {
+        return
+      }
+      const objectName = this.getCreateFolderObjectName()
+      if (!objectName) {
+        return
+      }
+      this.createFolderLoading = true
+      this.loading = true
+      this.client.putObject(this.resource.name, objectName, Buffer.from(''), 0, {}, err => {
+        this.createFolderLoading = false
+        if (err) {
+          this.loading = false
+          return this.$notification.error({
+            message: this.$t('error.execute.api.failed'),
+            description: err.message
+          })
+        }
+        this.$notification.success({
+          message: '폴더 생성',
+          description: `${objectName} 생성 완료`
+        })
+        this.showCreateFolderModal = false
+        this.createFolderName = ''
+        this.listObjects()
+      })
+    },
     openUploadModal () {
       if (this.uploadLoading) {
         return
@@ -434,16 +534,17 @@ export default {
       this.fetchData()
     },
     listObjects () {
-      while (this.fetching) {
-        // sleep for 500ms
-        setTimeout(() => {
-          console.log('waiting for previous request to complete')
-        }, 500)
+      if (this.fetching) {
+        return
       }
       this.fetching = true
       this.records = []
-      var stream = this.client.extensions.listObjectsV2WithMetadata(this.resource.name, normalizeObjectStorePath(this.browserPath) + this.searchPrefix, false, '')
+      const currentPath = normalizeObjectStorePath(this.browserPath)
+      var stream = this.client.extensions.listObjectsV2WithMetadata(this.resource.name, currentPath + this.searchPrefix, false, '')
       stream.on('data', obj => {
+        if (this.isCurrentDirectoryMarker(obj, currentPath)) {
+          return
+        }
         this.records.push(obj)
       })
       stream.on('end', obj => {
@@ -457,60 +558,117 @@ export default {
         this.fetching = false
       })
     },
-    removeObjects () {
+    isCurrentDirectoryMarker (obj, currentPath) {
+      if (!currentPath || obj.prefix || !obj.name) {
+        return false
+      }
+      return obj.name === currentPath && Number(obj.size || 0) === 0
+    },
+    async removeObjects () {
       this.loading = true
       this.page = 1
       this.pageStartAfterMap = { 1: '' }
       const objectsToDelete = this.selectedRows.filter((row) => row.name).map((row) => row.name)
       const directoriesToDelete = this.selectedRows.filter((row) => row.prefix).map((row) => row.prefix)
       this.selectedRows = []
-      this.removeDirectories(directoriesToDelete)
-      if (objectsToDelete.length > 0) {
-        this.client.removeObjects(this.resource.name, objectsToDelete, err => {
-          if (err) {
-            return this.$notification.error({
-              message: this.$t('error.execute.api.failed'),
-              description: err.message
-            })
-          }
-          this.$notification.success({
-            message: this.$t('label.delete'),
-            description: this.$t('message.success.remove.objectstore.objects') + ' ' + objectsToDelete.length
-          })
-          this.listObjects()
+
+      try {
+        let deletedCount = 0
+        deletedCount += await this.removeObjectsInBatches(objectsToDelete)
+        for (const directory of directoriesToDelete) {
+          deletedCount += await this.removeDirectoryObjects(directory)
+        }
+
+        this.$notification.success({
+          message: this.$t('label.delete'),
+          description: this.$t('message.success.remove.objectstore.objects.count', { count: deletedCount })
+        })
+        await this.syncBucketUsage()
+        this.listObjects()
+      } catch (err) {
+        this.loading = false
+        this.$notification.error({
+          message: this.$t('error.execute.api.failed'),
+          description: err.message
         })
       }
     },
-    removeDirectories (directoriesToDelete) {
-      for (const directory of directoriesToDelete) {
-        var objectsList = []
-        const stream = this.client.listObjectsV2(this.resource.name, directory, true, '')
-        stream.on('data', (obj) => {
-          objectsList.push(obj.name)
-        })
-
-        stream.on('error', (err) => {
-          console.log(err)
-        })
-        stream.on('end', (err) => {
+    async removeObjectsInBatches (objectNames) {
+      let deletedCount = 0
+      for (let i = 0; i < objectNames.length; i += deleteBatchSize) {
+        const objectBatch = objectNames.slice(i, i + deleteBatchSize)
+        await this.removeObjectBatch(objectBatch)
+        deletedCount += objectBatch.length
+      }
+      return deletedCount
+    },
+    removeObjectBatch (objectNames) {
+      return new Promise((resolve, reject) => {
+        if (objectNames.length === 0) {
+          resolve()
+          return
+        }
+        this.client.removeObjects(this.resource.name, objectNames, err => {
           if (err) {
-            return console.log(err)
+            reject(err)
+            return
           }
-          this.client.removeObjects(this.resource.name, objectsList, err => {
-            if (err) {
-              return this.$notification.error({
-                message: this.$t('error.execute.api.failed'),
-                description: err.message
-              })
-            }
-            this.$notification.success({
-              message: this.$t('label.delete'),
-              description: this.$t('message.success.remove.objectstore.directory') + ' ' + directory
-            })
-            console.log('Removed the objects successfully')
-            this.listObjects()
-          })
+          resolve()
         })
+      })
+    },
+    removeDirectoryObjects (directory) {
+      return new Promise((resolve, reject) => {
+        let deletedCount = 0
+        let objectBatch = []
+        let deleteChain = Promise.resolve()
+        const stream = this.client.listObjectsV2(this.resource.name, directory, true, '')
+        const flushBatch = () => {
+          if (objectBatch.length === 0) {
+            return
+          }
+          const batch = objectBatch
+          objectBatch = []
+          if (typeof stream?.pause === 'function') {
+            stream.pause()
+          }
+          deleteChain = deleteChain.then(() => this.removeObjectBatch(batch)).then(() => {
+            deletedCount += batch.length
+            if (typeof stream?.resume === 'function') {
+              stream.resume()
+            }
+          })
+        }
+        stream.on('data', (obj) => {
+          if (!obj.name) {
+            return
+          }
+          objectBatch.push(obj.name)
+          if (objectBatch.length >= deleteBatchSize) {
+            flushBatch()
+          }
+        })
+        stream.on('error', reject)
+        stream.on('end', () => {
+          flushBatch()
+          deleteChain.then(() => resolve(deletedCount)).catch(reject)
+        })
+      })
+    },
+    async syncBucketUsage () {
+      if (!this.resource?.id) {
+        return
+      }
+      try {
+        const json = await api('syncBucketUsage', { id: this.resource.id })
+        const response = json?.syncbucketusageresponse || {}
+        const size = response.size ?? response.bucket?.size
+        if (size !== undefined && size !== null) {
+          this.bucketUsageSize = size
+          this.$emit('change-resource', { ...this.resource, size })
+        }
+      } catch (error) {
+        console.warn('Failed to synchronize bucket usage', error)
       }
     },
     initMinioClient () {
@@ -625,6 +783,10 @@ export default {
             message: this.$t('message.upload.failed'),
             description: `전체 ${files.length}개 중 성공 ${this.uploadCompletedCount}개, 실패 ${this.uploadFailedCount}개. 실패 파일: ${failedDescription}`
           })
+          if (this.uploadCompletedCount > 0) {
+            await this.syncBucketUsage()
+            this.listObjects()
+          }
           return
         }
         this.$notification.success({
@@ -633,6 +795,7 @@ export default {
         })
         this.showUploadModal = false
         this.resetUploadForm()
+        await this.syncBucketUsage()
         this.listObjects()
       } finally {
         this.uploadLoading = false
@@ -709,6 +872,14 @@ export default {
   color: rgba(0, 0, 0, 0.65);
   font-weight: 600;
   margin-right: 6px;
+}
+
+.object-store-toolbar {
+  overflow-x: auto;
+}
+
+.object-store-search-col {
+  min-width: 240px;
 }
 
 :deep(.ant-upload-list-picture .ant-upload-list-item-done) {
