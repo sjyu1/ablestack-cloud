@@ -784,7 +784,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         loadBackupDetailsIfNeeded(backup);
         if (isLegacyBackup(backup)) {
             Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), volumeUuid);
-            return volumeInfo != null ? getLegacyBackupFileCandidates(volumeInfo) : List.of();
+            return volumeInfo != null ? List.of(getLegacyBackupFileName(volumeInfo)) : List.of();
         }
 
         String backupEngine = getBackupDetail(backup, DETAIL_BACKUP_ENGINE);
@@ -871,43 +871,8 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     }
 
     private String getLegacyBackupFileName(Backup.VolumeInfo volumeInfo) {
-        String volumePath = volumeInfo.getPath();
-        if (StringUtils.isNotBlank(volumePath) &&
-                (volumePath.endsWith(".qcow2") || volumePath.endsWith(".raw") || volumePath.endsWith(".rbdiff"))) {
-            return volumePath;
-        }
         String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
         return String.format("%s.%s.qcow2", diskPrefix, volumeInfo.getUuid());
-    }
-
-    private List<String> getLegacyBackupFileCandidates(Backup.VolumeInfo volumeInfo) {
-        List<String> candidates = new ArrayList<>();
-        String legacyFileName = getLegacyBackupFileName(volumeInfo);
-        candidates.add(legacyFileName);
-
-        String volumePath = volumeInfo.getPath();
-        if (StringUtils.isNotBlank(volumePath)) {
-            if (!candidates.contains(volumePath)) {
-                candidates.add(volumePath);
-            }
-            if (volumePath.contains("/")) {
-                String baseName = volumePath.substring(volumePath.lastIndexOf('/') + 1);
-                if (!Objects.equals(volumePath, baseName)) {
-                    candidates.add(baseName);
-                }
-            }
-        }
-
-        if (volumePath != null && volumePath.contains("/")) {
-            String baseName = volumePath.substring(volumePath.lastIndexOf('/') + 1);
-            String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
-            String baseNameLegacyFile = String.format("%s.%s.qcow2", diskPrefix, baseName);
-            if (!candidates.contains(baseNameLegacyFile)) {
-                candidates.add(baseNameLegacyFile);
-            }
-        }
-
-        return candidates;
     }
 
     private List<String> getVolumePaths(List<VolumeVO> volumes) {
