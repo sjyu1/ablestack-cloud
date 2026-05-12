@@ -877,25 +877,25 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             return volumePath;
         }
         String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
-        return String.format("%s.%s.qcow2", diskPrefix, volumeInfo.getPath());
+        return String.format("%s.%s.qcow2", diskPrefix, volumeInfo.getUuid());
     }
 
     private List<String> getLegacyBackupFileCandidates(Backup.VolumeInfo volumeInfo) {
         List<String> candidates = new ArrayList<>();
+        String legacyFileName = getLegacyBackupFileName(volumeInfo);
+        candidates.add(legacyFileName);
+
         String volumePath = volumeInfo.getPath();
         if (StringUtils.isNotBlank(volumePath)) {
-            candidates.add(volumePath);
+            if (!candidates.contains(volumePath)) {
+                candidates.add(volumePath);
+            }
             if (volumePath.contains("/")) {
                 String baseName = volumePath.substring(volumePath.lastIndexOf('/') + 1);
                 if (!Objects.equals(volumePath, baseName)) {
                     candidates.add(baseName);
                 }
             }
-        }
-
-        String legacyFileName = getLegacyBackupFileName(volumeInfo);
-        if (!candidates.contains(legacyFileName)) {
-            candidates.add(legacyFileName);
         }
 
         if (volumePath != null && volumePath.contains("/")) {
