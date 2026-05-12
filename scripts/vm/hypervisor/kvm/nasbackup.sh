@@ -176,7 +176,7 @@ backup_stopped_vm() {
   IFS=","
   local -a volume_uuid_arr=()
   if [[ -n "$VOLUME_UUIDS" ]]; then
-    read -r -a volume_uuid_arr <<< "${VOLUME_UUIDS//,/ }"
+    IFS=',' read -r -a volume_uuid_arr <<< "$VOLUME_UUIDS"
   fi
 
   name="root"
