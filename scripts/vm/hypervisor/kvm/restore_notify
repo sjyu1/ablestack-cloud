@@ -1,0 +1,186 @@
+#!/bin/bash
+
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+set -euo pipefail
+
+LOG_FILE="${LOG_FILE:-/var/log/netbackup-mold-restore.log}"
+RESTORE_ROOT="${RESTORE_ROOT:-}"
+MOLD_RESTORE_API_URL="${MOLD_RESTORE_API_URL:-}"
+MOLD_RESTORE_API_METHOD="${MOLD_RESTORE_API_METHOD:-POST}"
+MOLD_RESTORE_API_TOKEN="${MOLD_RESTORE_API_TOKEN:-}"
+MOLD_RESTORE_API_AUTH_HEADER="${MOLD_RESTORE_API_AUTH_HEADER:-}"
+MOLD_RESTORE_MODE="${MOLD_RESTORE_MODE:-validate-only}"
+
+log_line() {
+  printf '%s %s\n' "$(date '+%F %T')" "$1" >> "${LOG_FILE}" 2>&1
+}
+
+fail() {
+  log_line "RESTORE error: $*"
+  exit 1
+}
+
+find_backup_meta_files() {
+  local root="$1"
+  find "${root}" -type f -name backup.meta 2>/dev/null
+}
+
+is_ablestack_netbackup_meta() {
+  local meta_file="$1"
+  grep -Eq '^BACKUP_FRAMEWORK=ABLESTACK_NETBACKUP$' "${meta_file}"
+}
+
+usage() {
+  cat <<'EOF' >> "${LOG_FILE}" 2>&1
+restore_notify expects one of the following:
+- RESTORE_ROOT environment variable set to the restored path root
+- first argument as restored path root
+
+Optional environment:
+- MOLD_RESTORE_API_URL
+- MOLD_RESTORE_API_METHOD
+- MOLD_RESTORE_API_TOKEN
+- MOLD_RESTORE_API_AUTH_HEADER
+- MOLD_RESTORE_MODE
+- LOG_FILE
+EOF
+}
+
+load_meta() {
+  local meta_file="$1"
+  [[ -f "${meta_file}" ]] || fail "missing metadata file ${meta_file}"
+  # shellcheck disable=SC1090
+  source "${meta_file}"
+}
+
+require_meta_value() {
+  local key="$1"
+  local value="$2"
+  [[ -n "${value}" ]] || fail "missing required metadata ${key}"
+}
+
+validate_restore_artifacts() {
+  local restore_dir="$1"
+  [[ -f "${restore_dir}/backup.meta" ]] || fail "missing restored backup.meta in ${restore_dir}"
+  [[ -f "${restore_dir}/engine.meta" ]] || fail "missing restored engine.meta in ${restore_dir}"
+  [[ -f "${restore_dir}/domain-config.xml" ]] || fail "missing restored domain-config.xml in ${restore_dir}"
+}
+
+validate_restore_metadata() {
+  require_meta_value "BACKUP_FRAMEWORK" "${BACKUP_FRAMEWORK:-}"
+  require_meta_value "VM_NAME" "${VM_NAME:-}"
+  require_meta_value "CHECKPOINT_NAME" "${CHECKPOINT_NAME:-}"
+  require_meta_value "BACKUP_ENGINE" "${BACKUP_ENGINE:-}"
+  require_meta_value "POLICY_NAME" "${POLICY_NAME:-}"
+  require_meta_value "SESSION_TIMESTAMP" "${SESSION_TIMESTAMP:-}"
+
+  if [[ "${BACKUP_FRAMEWORK}" != "ABLESTACK_NETBACKUP" ]]; then
+    fail "unsupported backup framework ${BACKUP_FRAMEWORK}"
+  fi
+}
+
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "${value}"
+}
+
+build_restore_payload() {
+  local restore_dir="$1"
+  cat <<EOF
+{"framework":"$(json_escape "${BACKUP_FRAMEWORK}")","vmName":"$(json_escape "${VM_NAME}")","backupType":"$(json_escape "${BACKUP_TYPE:-}")","checkpointName":"$(json_escape "${CHECKPOINT_NAME}")","parentCheckpointName":"$(json_escape "${PARENT_CHECKPOINT_NAME:-}")","backupEngine":"$(json_escape "${BACKUP_ENGINE}")","policyName":"$(json_escape "${POLICY_NAME}")","scheduleName":"$(json_escape "${SCHEDULE_NAME:-}")","clientName":"$(json_escape "${CLIENT_NAME:-}")","sessionTimestamp":"$(json_escape "${SESSION_TIMESTAMP}")","restoreDir":"$(json_escape "${restore_dir}")","restoreMode":"$(json_escape "${MOLD_RESTORE_MODE}")"}
+EOF
+}
+
+invoke_mold_restore_api() {
+  local restore_dir="$1"
+  local payload
+  payload="$(build_restore_payload "${restore_dir}")"
+
+  if [[ "${MOLD_RESTORE_MODE}" == "validate-only" ]]; then
+    log_line "RESTORE validate-only vm=${VM_NAME} checkpoint=${CHECKPOINT_NAME} engine=${BACKUP_ENGINE} dir=${restore_dir}"
+    printf '%s\n' "${payload}" >> "${LOG_FILE}" 2>&1
+    return 0
+  fi
+
+  [[ -n "${MOLD_RESTORE_API_URL}" ]] || fail "MOLD_RESTORE_API_URL is required for live restore"
+  if [[ -z "${MOLD_RESTORE_API_AUTH_HEADER}" && -n "${MOLD_RESTORE_API_TOKEN}" ]]; then
+    MOLD_RESTORE_API_AUTH_HEADER="Authorization: Bearer ${MOLD_RESTORE_API_TOKEN}"
+  fi
+
+  local curl_args=(
+    --silent
+    --show-error
+    --fail
+    -X "${MOLD_RESTORE_API_METHOD}"
+    -H "Content-Type: application/json"
+    --data "${payload}"
+  )
+
+  if [[ -n "${MOLD_RESTORE_API_AUTH_HEADER}" ]]; then
+    curl_args+=(-H "${MOLD_RESTORE_API_AUTH_HEADER}")
+  fi
+
+  local response
+  response="$(curl "${curl_args[@]}" "${MOLD_RESTORE_API_URL}")" || fail "Mold restore API call failed for vm=${VM_NAME}"
+  log_line "RESTORE api-call-success vm=${VM_NAME} checkpoint=${CHECKPOINT_NAME} response=${response}"
+}
+
+RESTORE_ROOT="${RESTORE_ROOT:-${1:-}}"
+
+if [[ -z "${RESTORE_ROOT}" ]]; then
+  log_line "RESTORE missing restore root"
+  usage
+  exit 0
+fi
+
+if [[ ! -d "${RESTORE_ROOT}" ]]; then
+  log_line "RESTORE root not found path=${RESTORE_ROOT}"
+  exit 0
+fi
+
+handled=0
+while IFS= read -r meta_file; do
+  [[ -n "${meta_file}" ]] || continue
+
+  if ! is_ablestack_netbackup_meta "${meta_file}"; then
+    log_line "RESTORE skip meta=${meta_file} reason=framework-marker-missing"
+    continue
+  fi
+
+  handled=1
+  restore_dir="$(dirname "${meta_file}")"
+  log_line "RESTORE start meta=${meta_file} restore_dir=${restore_dir}"
+
+  load_meta "${meta_file}"
+  validate_restore_metadata
+  validate_restore_artifacts "${restore_dir}"
+  invoke_mold_restore_api "${restore_dir}"
+  log_line "RESTORE end meta=${meta_file} restore_dir=${restore_dir}"
+done < <(find_backup_meta_files "${RESTORE_ROOT}")
+
+if [[ "${handled}" -eq 0 ]]; then
+  log_line "RESTORE skip root=${RESTORE_ROOT} reason=no-ablestack-netbackup-metadata"
+fi
+
+exit 0
