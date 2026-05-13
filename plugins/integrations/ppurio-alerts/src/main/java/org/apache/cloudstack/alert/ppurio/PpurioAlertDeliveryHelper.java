@@ -152,14 +152,14 @@ public class PpurioAlertDeliveryHelper extends AdapterBase implements AlertDeliv
         logger.info(String.format("Received Ppurio Kakao alert delivery request [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].",
                 alertType, dataCenterId, podId, clusterId, subject));
         if (!PpurioAlertConfigKeys.ALERT_KAKAO_ENABLED.value()) {
-            logger.info(String.format("Skipped Ppurio Kakao alert delivery because alert.kakao.ppurio.enabled is false [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].",
+            logger.info(String.format("Skipped Ppurio Kakao alert delivery because kakao.ppurio.enabled is false [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].",
                     alertType, dataCenterId, podId, clusterId, subject));
             return;
         }
 
         List<String> recipients = parseRecipients(PpurioAlertConfigKeys.RECIPIENTS.value());
         if (recipients.isEmpty()) {
-            logger.warn("Ppurio Alert integration is enabled but no recipients are configured in alert.kakao.ppurio.recipients");
+            logger.warn("Ppurio Alert integration is enabled but no recipients are configured in kakao.ppurio.recipients");
             return;
         }
 
@@ -465,7 +465,7 @@ public class PpurioAlertDeliveryHelper extends AdapterBase implements AlertDeliv
 
         String resendFrom = normalizePhoneNumber(getConfiguredResendFrom());
         if (!isValidPhoneNumber(resendFrom)) {
-            logger.warn("Ppurio Alert integration resend is enabled but alert.kakao.ppurio.resend.from is not a valid phone number; sending Kakao alert without resend fallback");
+            logger.warn("Ppurio Alert integration resend is enabled but kakao.ppurio.resend.from is not a valid phone number; sending Kakao alert without resend fallback");
             return null;
         }
         return buildResend(alertType, subject, body);
