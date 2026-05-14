@@ -373,8 +373,8 @@ export default {
     gap: 12px;
   }
   .summary-cards-pane {
-    width: 30%;
-    flex: 0 0 30%;
+    width: 34%;
+    flex: 0 0 34%;
     padding: 10px;
     border-radius: 12px;
     border: 1px solid #dfe3e8;
@@ -382,8 +382,8 @@ export default {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
   }
   .rack-visualization-pane {
-    width: 70%;
-    flex: 0 0 70%;
+    width: 66%;
+    flex: 0 0 66%;
     min-width: 320px;
   }
   .summary-mini-card :deep(.ant-card-body) {
