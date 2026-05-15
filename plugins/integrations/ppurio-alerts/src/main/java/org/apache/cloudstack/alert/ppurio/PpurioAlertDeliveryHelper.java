@@ -152,8 +152,7 @@ public class PpurioAlertDeliveryHelper extends AdapterBase implements AlertDeliv
         logger.info(String.format("Received Ppurio Kakao alert delivery request [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].",
                 alertType, dataCenterId, podId, clusterId, subject));
         if (!PpurioAlertConfigKeys.ALERT_KAKAO_ENABLED.value()) {
-            logger.info(String.format("Skipped Ppurio Kakao alert delivery because kakao.ppurio.enabled is false [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].",
-                    alertType, dataCenterId, podId, clusterId, subject));
+            //logger.info(String.format("Skipped Ppurio Kakao alert delivery because kakao.ppurio.enabled is false [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].", alertType, dataCenterId, podId, clusterId, subject));
             return;
         }
 
