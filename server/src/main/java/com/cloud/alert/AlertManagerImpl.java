@@ -949,8 +949,7 @@ public class AlertManagerImpl extends ManagerBase implements AlertManager, Confi
 
     protected void sendExternalAlertDeliveries(AlertType alertType, long dataCenterId, Long podId, Long clusterId, String subject, String content) {
         try {
-            logger.info(String.format("Dispatching external alert delivery [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].",
-                    alertType, dataCenterId, podId, clusterId, subject));
+            // logger.debug(String.format("Dispatching external alert delivery [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].", alertType, dataCenterId, podId, clusterId, subject));
             AlertDeliveryHelper alertDeliveryHelper = ComponentContext.getDelegateComponentOfType(AlertDeliveryHelper.class);
             alertDeliveryHelper.sendAlert(alertType, dataCenterId, podId, clusterId, subject, content);
         } catch (NoSuchBeanDefinitionException ignored) {

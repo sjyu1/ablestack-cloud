@@ -149,8 +149,7 @@ public class PpurioAlertDeliveryHelper extends AdapterBase implements AlertDeliv
 
     @Override
     public void sendAlert(AlertManager.AlertType alertType, long dataCenterId, Long podId, Long clusterId, String subject, String body) {
-        logger.info(String.format("Received Ppurio Kakao alert delivery request [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].",
-                alertType, dataCenterId, podId, clusterId, subject));
+        // logger.debug(String.format("Received Ppurio Kakao alert delivery request [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].", alertType, dataCenterId, podId, clusterId, subject));
         if (!PpurioAlertConfigKeys.ALERT_KAKAO_ENABLED.value()) {
             //logger.info(String.format("Skipped Ppurio Kakao alert delivery because kakao.ppurio.enabled is false [alertType=%s, dataCenterId=%s, podId=%s, clusterId=%s, subject=%s].", alertType, dataCenterId, podId, clusterId, subject));
             return;
