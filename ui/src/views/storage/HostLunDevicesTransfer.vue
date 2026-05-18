@@ -663,7 +663,6 @@ export default {
     },
 
     areRelatedDevices (device1, device2) {
-
       return device1 === device2
     }
   }
