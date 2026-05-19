@@ -381,8 +381,7 @@ export default {
         }
 
         this.loading = true
-        const title = this.$t('message.success.clone.backup.offering')
-
+        const title = this.$t('label.clone.backup.offering')
         postAPI('cloneBackupOffering', params).then(json => {
           const jobId = json.clonebackupofferingresponse?.jobid
           if (jobId) {
