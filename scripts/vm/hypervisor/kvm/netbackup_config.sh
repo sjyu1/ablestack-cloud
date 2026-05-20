@@ -227,6 +227,7 @@ write_encrypted_secret_file() {
   chmod 0600 "${target}"
 }
 
+apply_permissions() {
   if [[ -d "${CONFIG_OUTPUT_DIR}" ]]; then
     chown root:root "${CONFIG_OUTPUT_DIR}"
     chmod 700 "${CONFIG_OUTPUT_DIR}"
