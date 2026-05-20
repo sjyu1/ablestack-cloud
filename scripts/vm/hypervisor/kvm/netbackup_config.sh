@@ -27,6 +27,8 @@ PRE_HELPER_PATH="${PRE_HELPER_PATH:-/usr/share/cloudstack-common/scripts/vm/hype
 POST_HELPER_PATH="${POST_HELPER_PATH:-/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpend_notify.sh}"
 HOOK_LOG_PATH="${HOOK_LOG_PATH:-/var/log/netbackup-cloudstack-hook.log}"
 SECRET_CIPHER="${SECRET_CIPHER:-aes-256-cbc}"
+NETBACKUP_BP_CONF_PATH="${NETBACKUP_BP_CONF_PATH:-/usr/openv/netbackup/bp.conf}"
+NETBACKUP_SERVICE_NAME="${NETBACKUP_SERVICE_NAME:-netbackup}"
 
 POLICY_NAME=""
 SCHEDULE_NAME=""
@@ -58,6 +60,8 @@ Environment overrides:
   POST_HELPER_PATH
   HOOK_LOG_PATH
   SECRET_CIPHER
+  NETBACKUP_BP_CONF_PATH
+  NETBACKUP_SERVICE_NAME
 EOF
 }
 
@@ -68,6 +72,18 @@ fail() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+set_bp_conf_value() {
+  local file_path="$1"
+  local key="$2"
+  local value="$3"
+
+  if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "${file_path}"; then
+    sed -i'' -E "s|^[[:space:]]*${key}[[:space:]]*=.*$|${key} = ${value}|" "${file_path}"
+  else
+    printf '%s = %s\n' "${key}" "${value}" >> "${file_path}"
+  fi
 }
 
 prompt_value() {
@@ -115,6 +131,14 @@ backup_existing_file() {
   [[ -f "${target}" ]] || return 0
   local backup_target="${target}.bak.$(date '+%Y%m%d%H%M%S')"
   mv "${target}" "${backup_target}"
+  printf 'Backed up existing file: %s -> %s\n' "${target}" "${backup_target}"
+}
+
+copy_existing_file_backup() {
+  local target="$1"
+  [[ -f "${target}" ]] || return 0
+  local backup_target="${target}.bak.$(date '+%Y%m%d%H%M%S')"
+  cp -p "${target}" "${backup_target}"
   printf 'Backed up existing file: %s -> %s\n' "${target}" "${backup_target}"
 }
 
@@ -235,6 +259,40 @@ apply_permissions() {
   fi
 }
 
+apply_netbackup_bp_conf() {
+  if [[ ! -f "${NETBACKUP_BP_CONF_PATH}" ]]; then
+    printf 'NetBackup bp.conf not found: %s\n' "${NETBACKUP_BP_CONF_PATH}"
+    return 1
+  fi
+
+  copy_existing_file_backup "${NETBACKUP_BP_CONF_PATH}"
+
+  set_bp_conf_value "${NETBACKUP_BP_CONF_PATH}" "BPSTART_TIMEOUT" "14400"
+  set_bp_conf_value "${NETBACKUP_BP_CONF_PATH}" "BPEND_TIMEOUT" "3600"
+  set_bp_conf_value "${NETBACKUP_BP_CONF_PATH}" "CLIENT_READ_TIMEOUT" "21600"
+  set_bp_conf_value "${NETBACKUP_BP_CONF_PATH}" "CLIENT_CONNECT_TIMEOUT" "1800"
+  set_bp_conf_value "${NETBACKUP_BP_CONF_PATH}" "SERVER_CONNECT_TIMEOUT" "1800"
+
+  printf 'Updated NetBackup config: %s\n' "${NETBACKUP_BP_CONF_PATH}"
+  return 0
+}
+
+restart_netbackup_service() {
+  if command_exists systemctl; then
+    systemctl restart "${NETBACKUP_SERVICE_NAME}"
+    printf 'Restarted NetBackup service via systemctl: %s\n' "${NETBACKUP_SERVICE_NAME}"
+    return 0
+  fi
+
+  if command_exists service; then
+    service "${NETBACKUP_SERVICE_NAME}" restart
+    printf 'Restarted NetBackup service via service: %s\n' "${NETBACKUP_SERVICE_NAME}"
+    return 0
+  fi
+
+  printf 'NetBackup service restart command not found. Please restart manually: %s\n' "${NETBACKUP_SERVICE_NAME}"
+}
+
 collect_inputs() {
   printf 'Select configuration scope:\n'
   printf '  1. Apply to all schedules in one policy\n'
@@ -296,6 +354,11 @@ generate_outputs() {
   write_config_file "${config_path}"
   write_encrypted_secret_file "${secret_path}"
   apply_permissions
+  if apply_netbackup_bp_conf; then
+    restart_netbackup_service
+  else
+    printf 'Skipped NetBackup service restart because bp.conf was not found.\n'
+  fi
 
   printf '\nGenerated files:\n'
   printf '  PRE hook   : %s\n' "${pre_hook_path}"
