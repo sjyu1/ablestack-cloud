@@ -24,21 +24,31 @@ STATE_ROOT_DEFAULT="/var/lib/ablestack/netbackup"
 LOG_FILE_DEFAULT="/var/log/cloudstack/agent/agent.log"
 LIBVIRT_URI_DEFAULT="qemu:///system"
 CONFIG_ROOT_DEFAULT="/etc/ablestack/netbackup"
+SECRET_HELPER_DEFAULT="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup_secret_helper.sh"
+SECRET_SUBDIR_DEFAULT="secrets"
 
 CONFIG_ROOT="${CONFIG_ROOT:-$CONFIG_ROOT_DEFAULT}"
-VM_INCLUDE="${VM_INCLUDE:-*}"
-VM_EXCLUDE="${VM_EXCLUDE:-}"
-MAX_INCREMENTAL_CHAIN="${MAX_INCREMENTAL_CHAIN:-10}"
-
-BACKUP_ENGINE_QCOW2="QCOW2"
-BACKUP_ENGINE_RBD_DIFF="RBD_DIFF"
-
-verb="${verb:-0}"
 BACKUP_ROOT="${BACKUP_ROOT:-$BACKUP_ROOT_DEFAULT}"
 STATE_ROOT="${STATE_ROOT:-$STATE_ROOT_DEFAULT}"
 LOG_FILE="${LOG_FILE:-$LOG_FILE_DEFAULT}"
 LIBVIRT_URI="${LIBVIRT_URI:-$LIBVIRT_URI_DEFAULT}"
-QUIESCE="${QUIESCE:-false}"
+SECRET_HELPER="${SECRET_HELPER:-$SECRET_HELPER_DEFAULT}"
+SECRET_SUBDIR="${SECRET_SUBDIR:-$SECRET_SUBDIR_DEFAULT}"
+
+VM_INCLUDE="${VM_INCLUDE:-*}"
+VM_EXCLUDE="${VM_EXCLUDE:-}"
+MAX_INCREMENTAL_CHAIN="${MAX_INCREMENTAL_CHAIN:-10}"
+MOLD_URL="${MOLD_URL:-}"
+ADMIN_APIKEY="${ADMIN_APIKEY:-}"
+ADMIN_SECRETKEY="${ADMIN_SECRETKEY:-}"
+MOLD_CREATE_BACKUP_API_URL="${MOLD_CREATE_BACKUP_API_URL:-}"
+MOLD_CREATE_BACKUP_API_METHOD="${MOLD_CREATE_BACKUP_API_METHOD:-POST}"
+MOLD_LIST_VMS_API_URL="${MOLD_LIST_VMS_API_URL:-}"
+MOLD_LIST_VMS_API_METHOD="${MOLD_LIST_VMS_API_METHOD:-GET}"
+MOLD_API_AUTH_HEADER_NAME="${MOLD_API_AUTH_HEADER_NAME:-x-mold-apikey}"
+MOLD_SECRET_AUTH_HEADER_NAME="${MOLD_SECRET_AUTH_HEADER_NAME:-x-mold-secretkey}"
+
+verb="${verb:-0}"
 POLICY_NAME="${POLICY_NAME:-}"
 SCHEDULE_NAME="${SCHEDULE_NAME:-}"
 CLIENT_NAME="${CLIENT_NAME:-}"
@@ -48,6 +58,7 @@ NETBACKUP_REQUIRE_JOB_SUCCESS="${NETBACKUP_REQUIRE_JOB_SUCCESS:-true}"
 NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO="${NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO:-false}"
 NETBACKUP_JOB_ID="${NETBACKUP_JOB_ID:-${NB_JOBID:-${JOB_ID:-}}}"
 NETBACKUP_SUCCESS_CONFIRM_CMD="${NETBACKUP_SUCCESS_CONFIRM_CMD:-}"
+MOLD_VM_CACHE_FILE=""
 
 log() {
   local ts
@@ -70,9 +81,7 @@ ensure_runtime_dirs() {
   mkdir -p "${BACKUP_ROOT}" \
            "${STATE_ROOT}/contexts" \
            "${STATE_ROOT}/locks" \
-           "${STATE_ROOT}/pending" \
-           "${STATE_ROOT}/sessions" \
-           "${STATE_ROOT}/vms"
+           "${STATE_ROOT}/sessions"
 }
 
 sanitize_name() {
@@ -138,7 +147,6 @@ resolve_context() {
   LOCK_FILE="${STATE_ROOT}/locks/${CONTEXT_KEY}.lock"
   CONTEXT_FILE="${STATE_ROOT}/contexts/${CONTEXT_KEY}.env"
   MANIFEST_FILE="${STATE_ROOT}/sessions/${CONTEXT_KEY}.manifest"
-  PENDING_DIR="${STATE_ROOT}/pending/${CONTEXT_KEY}"
 }
 
 context_in_progress_file() {
@@ -162,34 +170,82 @@ clear_context_in_progress() {
   rm -f "$(context_in_progress_file)"
 }
 
+schedule_config_file_path() {
+  builtin echo "${CONFIG_ROOT}/${POLICY_SAFE}.${SCHEDULE_SAFE}.conf"
+}
+
+policy_config_file_path() {
+  builtin echo "${CONFIG_ROOT}/${POLICY_SAFE}.conf"
+}
+
+resolve_config_file_path() {
+  local schedule_config_file
+  local policy_config_file
+
+  schedule_config_file="$(schedule_config_file_path)"
+  policy_config_file="$(policy_config_file_path)"
+
+  if [[ -n "${SCHEDULE_NAME}" && "${SCHEDULE_NAME}" != "manual" && -f "${schedule_config_file}" ]]; then
+    builtin echo "${schedule_config_file}"
+    return 0
+  fi
+  builtin echo "${policy_config_file}"
+}
+
+resolve_secret_file_path() {
+  builtin echo "${CONFIG_ROOT}/${SECRET_SUBDIR}/secret.enc"
+}
+
+load_admin_secretkey() {
+  local secret_file
+  secret_file="$(resolve_secret_file_path)"
+
+  if [[ -n "${ADMIN_SECRETKEY}" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${secret_file}" ]]; then
+    fail "ADMIN_SECRETKEY is not set and encrypted secret file was not found: ${secret_file}"
+  fi
+  if [[ ! -x "${SECRET_HELPER}" ]]; then
+    fail "Secret helper not found or not executable: ${SECRET_HELPER}"
+  fi
+
+  ADMIN_SECRETKEY="$("${SECRET_HELPER}" decrypt "${secret_file}")" || fail "Failed to decrypt NetBackup secret file ${secret_file}"
+  [[ -n "${ADMIN_SECRETKEY}" ]] || fail "Decrypted ADMIN_SECRETKEY is empty."
+}
+
 load_policy_schedule_config() {
-  local schedule_config_file="${CONFIG_ROOT}/${POLICY_SAFE}.${SCHEDULE_SAFE}.conf"
-  local policy_config_file="${CONFIG_ROOT}/${POLICY_SAFE}.conf"
+  local config_file
+  config_file="$(resolve_config_file_path)"
 
   VM_INCLUDE="*"
   VM_EXCLUDE=""
+  MAX_INCREMENTAL_CHAIN="10"
+  MOLD_URL=""
+  ADMIN_APIKEY=""
 
-  if [[ -f "${schedule_config_file}" ]]; then
+  if [[ -f "${config_file}" ]]; then
     # shellcheck disable=SC1090
-    source "${schedule_config_file}"
-    log -ne "Loaded NetBackup VM selection config: ${schedule_config_file}"
-  elif [[ -f "${policy_config_file}" ]]; then
-    # shellcheck disable=SC1090
-    source "${policy_config_file}"
-    log -ne "Loaded NetBackup VM selection config: ${policy_config_file}"
+    source "${config_file}"
+    log -ne "Loaded NetBackup config: ${config_file}"
   else
-    log -ne "No NetBackup VM selection config found. Using default VM_INCLUDE=* VM_EXCLUDE="
+    log -ne "No NetBackup config found for policy=${POLICY_NAME} schedule=${SCHEDULE_NAME}"
   fi
 
   VM_INCLUDE="${VM_INCLUDE:-*}"
   VM_EXCLUDE="${VM_EXCLUDE:-}"
   MAX_INCREMENTAL_CHAIN="${MAX_INCREMENTAL_CHAIN:-10}"
+  MOLD_CREATE_BACKUP_API_URL="${MOLD_CREATE_BACKUP_API_URL:-${MOLD_URL}}"
+  MOLD_LIST_VMS_API_URL="${MOLD_LIST_VMS_API_URL:-${MOLD_URL}}"
+
+  [[ "${MAX_INCREMENTAL_CHAIN}" =~ ^[1-9][0-9]*$ ]] || fail "Invalid MAX_INCREMENTAL_CHAIN=${MAX_INCREMENTAL_CHAIN}. It must be a positive integer."
+  [[ -n "${MOLD_CREATE_BACKUP_API_URL}" ]] || fail "MOLD_URL or MOLD_CREATE_BACKUP_API_URL must be configured."
+  [[ -n "${MOLD_LIST_VMS_API_URL}" ]] || fail "MOLD_URL or MOLD_LIST_VMS_API_URL must be configured."
+  [[ -n "${ADMIN_APIKEY}" ]] || fail "ADMIN_APIKEY must be configured."
+
+  load_admin_secretkey
 
   log -ne "VM selection include=${VM_INCLUDE} exclude=${VM_EXCLUDE} max_incremental_chain=${MAX_INCREMENTAL_CHAIN}"
-
-  if ! [[ "${MAX_INCREMENTAL_CHAIN}" =~ ^[1-9][0-9]*$ ]]; then
-    fail "Invalid MAX_INCREMENTAL_CHAIN=${MAX_INCREMENTAL_CHAIN}. It must be a positive integer."
-  fi
 }
 
 match_csv_glob() {
@@ -198,40 +254,36 @@ match_csv_glob() {
   local pattern
 
   [[ -z "${patterns}" ]] && return 1
-
   while IFS= read -r pattern; do
     pattern="${pattern#"${pattern%%[![:space:]]*}"}"
     pattern="${pattern%"${pattern##*[![:space:]]}"}"
     [[ -z "${pattern}" ]] && continue
-
     if [[ "${value}" == ${pattern} ]]; then
       return 0
     fi
   done < <(tr ',' '\n' <<< "${patterns}")
-
   return 1
 }
 
 vm_is_selected() {
   local vm_name="$1"
-
   if match_csv_glob "${vm_name}" "${VM_EXCLUDE}"; then
     return 1
   fi
-
   if match_csv_glob "${vm_name}" "${VM_INCLUDE}"; then
     return 0
   fi
-
   return 1
+}
+
+list_running_vms() {
+  virsh -c "${LIBVIRT_URI}" list --name --state-running | sed '/^$/d'
 }
 
 list_target_vms() {
   local vm_name
-
   while IFS= read -r vm_name; do
     [[ -z "${vm_name}" ]] && continue
-
     if vm_is_selected "${vm_name}"; then
       builtin echo "${vm_name}"
     else
@@ -240,9 +292,20 @@ list_target_vms() {
   done < <(list_running_vms)
 }
 
+acquire_lock() {
+  exec 9>"${LOCK_FILE}"
+  if ! flock -n 9; then
+    fail "Another NetBackup staging operation is already running for context ${CONTEXT_KEY}"
+  fi
+}
+
+sanity_checks() {
+  command -v virsh >/dev/null 2>&1 || fail "virsh command not found"
+  command -v curl >/dev/null 2>&1 || fail "curl command not found"
+  command -v python3 >/dev/null 2>&1 || fail "python3 command not found"
+}
+
 netbackup_job_success_confirmed() {
-  # Return 0 only when it is safe to commit the new incremental base.
-  # JOB_STATUS is the client-side bpbkar status passed by bpend_notify.
   [[ "${JOB_STATUS}" == "0" ]] || return 1
 
   if [[ -n "${NETBACKUP_SUCCESS_CONFIRM_CMD}" ]]; then
@@ -259,192 +322,108 @@ netbackup_job_success_confirmed() {
   fi
 
   if [[ "${NETBACKUP_REQUIRE_JOB_SUCCESS}" == "true" ]]; then
-    log -ne "NetBackup overall job success was not independently confirmed. Set NETBACKUP_SUCCESS_CONFIRM_CMD, set NETBACKUP_JOB_ID with bpdbjobs access, or set NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO=true to allow client-status-only commit."
+    log -ne "NetBackup overall job success was not independently confirmed. Set NETBACKUP_SUCCESS_CONFIRM_CMD, set NETBACKUP_JOB_ID with bpdbjobs access, or set NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO=true to allow client-status-only completion."
     return 1
   fi
 
   [[ "${NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO}" == "true" ]]
 }
 
-acquire_lock() {
-  exec 9>"${LOCK_FILE}"
-  if ! flock -n 9; then
-    fail "Another NetBackup staging operation is already running for context ${CONTEXT_KEY}"
-  fi
-}
-
-vercomp() {
-  local IFS=.
-  local i ver1=($1) ver2=($3)
-  for ((i=0; i<${#ver1[@]}; i++)); do
-    if [[ -z "${ver2[i]:-}" ]]; then
-      ver2[i]=0
-    fi
-    if ((10#${ver1[i]} > 10#${ver2[i]})); then
-      return 0
-    elif ((10#${ver1[i]} < 10#${ver2[i]})); then
-      return 2
-    fi
-  done
-  return 0
-}
-
-sanity_checks() {
-  local hv_version
-  local libvirt_version
-  local api_version
-
-  command -v virsh >/dev/null 2>&1 || fail "virsh command not found"
-  command -v qemu-img >/dev/null 2>&1 || fail "qemu-img command not found"
-
-  hv_version=$(virsh -c "${LIBVIRT_URI}" version | awk '/hypervisor/ {print $NF}')
-  libvirt_version=$(virsh -c "${LIBVIRT_URI}" version | awk '/libvirt/ {print $NF}' | tail -n 1)
-  api_version=$(virsh -c "${LIBVIRT_URI}" version | awk '/API/ {print $NF}')
-
-  vercomp "${hv_version}" ">=" "4.2.0"
-  local hv_status=$?
-  vercomp "${libvirt_version}" ">=" "7.2.0"
-  local libvirt_status=$?
-
-  if [[ ${hv_status} -ne 0 || ${libvirt_status} -ne 0 ]]; then
-    fail "Unsupported QEMU/libvirt version. QEMU=${hv_version}, libvirt=${libvirt_version}"
-  fi
-
-  log -ne "NetBackup sanity checks passed [QEMU=${hv_version} libvirt=${libvirt_version} API=${api_version}]"
-}
-
-list_running_vms() {
-  virsh -c "${LIBVIRT_URI}" list --name --state-running | sed '/^$/d'
-}
-
-collect_disk_map() {
-  local vm_name="$1"
-  virsh -c "${LIBVIRT_URI}" domblklist "${vm_name}" --details 2>/dev/null | awk '$2 == "disk" {print $3 "|" $4}'
-}
-
-split_csv() {
-  tr ',' '\n' <<< "$1"
-}
-
-is_positive_integer() {
-  local value="$1"
-  [[ "${value}" =~ ^[1-9][0-9]*$ ]]
-}
-
-is_rbd_disk_path() {
-  local disk_path="$1"
-  [[ "${disk_path}" == rbd:* || "${disk_path}" == rbd/* ]]
-}
-
-build_disk_layout_signature() {
-  local vm_name="$1"
-  collect_disk_map "${vm_name}" | sort | tr '\n' ';'
-}
-
-detect_backup_engine() {
-  local vm_name="$1"
-  local disk_path
-  local has_rbd=0
-  local has_file=0
-
-  while IFS='|' read -r _target disk_path; do
-    [[ -z "${disk_path}" ]] && continue
-    if is_rbd_disk_path "${disk_path}"; then
-      has_rbd=1
-    else
-      has_file=1
-    fi
-  done < <(collect_disk_map "${vm_name}")
-
-  if [[ ${has_rbd} -eq 1 && ${has_file} -eq 1 ]]; then
-    fail "VM ${vm_name} has mixed RBD/file disks. This script does not support mixed backup engines in one VM."
-  fi
-  if [[ ${has_rbd} -eq 1 ]]; then
-    builtin echo "${BACKUP_ENGINE_RBD_DIFF}"
-  else
-    builtin echo "${BACKUP_ENGINE_QCOW2}"
-  fi
-}
-
-parse_rbd_uri() {
-  local uri="$1"
-
-  RBD_IMAGE=""
-  RBD_MON_HOST=""
-  RBD_USER=""
-  RBD_KEY=""
-
-  if [[ "${uri}" == rbd:* ]]; then
-    local payload="${uri#rbd:}"
-    RBD_IMAGE="${payload%%:*}"
-    if [[ "${uri}" =~ :mon_host=([^:]*) ]]; then
-      RBD_MON_HOST="${BASH_REMATCH[1]}"
-      RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
-      RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
-    fi
-    if [[ "${uri}" =~ :id=([^:]*) ]]; then
-      RBD_USER="${BASH_REMATCH[1]}"
-    fi
-    if [[ "${uri}" =~ :key=([^:]*) ]]; then
-      RBD_KEY="${BASH_REMATCH[1]}"
-    fi
-  elif [[ "${uri}" == rbd/* ]]; then
-    RBD_IMAGE="${uri}"
-  else
-    fail "Invalid RBD disk path: ${uri}"
-  fi
-
-  [[ -n "${RBD_IMAGE}" ]] || fail "Failed to parse RBD image from uri: ${uri}"
-}
-
-build_rbd_cmd() {
-  RBD_CMD=(rbd)
-  if [[ -n "${RBD_MON_HOST}" ]]; then
-    RBD_CMD+=(-m "${RBD_MON_HOST}")
-  fi
-  if [[ -n "${RBD_USER}" ]]; then
-    RBD_CMD+=(--id "${RBD_USER}")
-  fi
-  if [[ -n "${RBD_KEY}" ]]; then
-    RBD_CMD+=(--key "${RBD_KEY}")
-  fi
-}
-
-vm_state_file() {
-  local vm_name="$1"
-  builtin echo "${STATE_ROOT}/vms/$(sanitize_name "${vm_name}").env"
-}
-
-pending_vm_state_file() {
-  local vm_name="$1"
-  builtin echo "${PENDING_DIR}/$(sanitize_name "${vm_name}").env"
-}
-
 write_manifest_header() {
   : > "${MANIFEST_FILE}"
+  MOLD_VM_CACHE_FILE="${STATE_ROOT}/sessions/${CONTEXT_KEY}.listVirtualMachines.json"
 }
 
 append_manifest_line() {
   local vm_name="$1"
   local session_dir="$2"
-  local engine="$3"
-  local checkpoint_name="$4"
-  local parent_checkpoint_name="$5"
-  printf '%s|%s|%s|%s|%s\n' \
-    "${vm_name}" "${session_dir}" "${engine}" "${checkpoint_name}" "${parent_checkpoint_name}" >> "${MANIFEST_FILE}"
+  printf '%s|%s\n' "${vm_name}" "${session_dir}" >> "${MANIFEST_FILE}"
 }
 
-backup_domain_information() {
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "${value}"
+}
+
+invoke_mold_api() {
+  local method="$1"
+  local url="$2"
+  local payload="${3:-}"
+  local response=""
+
+  local curl_args=(
+    --silent
+    --show-error
+    --fail
+    -X "${method}"
+    -H "${MOLD_API_AUTH_HEADER_NAME}: ${ADMIN_APIKEY}"
+    -H "${MOLD_SECRET_AUTH_HEADER_NAME}: ${ADMIN_SECRETKEY}"
+  )
+
+  if [[ -n "${payload}" ]]; then
+    curl_args+=(
+      -H "Content-Type: application/json"
+      --data "${payload}"
+    )
+  fi
+
+  response="$(curl "${curl_args[@]}" "${url}")" || fail "Mold API call failed: method=${method} url=${url}"
+  printf '%s' "${response}"
+}
+
+cache_mold_virtual_machines() {
+  [[ -n "${MOLD_VM_CACHE_FILE}" ]] || fail "MOLD_VM_CACHE_FILE is not initialized."
+  if [[ -f "${MOLD_VM_CACHE_FILE}" ]]; then
+    return 0
+  fi
+
+  log -ne "Calling Mold listVirtualMachines API url=${MOLD_LIST_VMS_API_URL}"
+  invoke_mold_api "${MOLD_LIST_VMS_API_METHOD}" "${MOLD_LIST_VMS_API_URL}" > "${MOLD_VM_CACHE_FILE}"
+}
+
+lookup_mold_vm_id() {
+  local vm_name="$1"
+  [[ -f "${MOLD_VM_CACHE_FILE}" ]] || fail "Mold VM cache file not found: ${MOLD_VM_CACHE_FILE}"
+
+  python3 - "$MOLD_VM_CACHE_FILE" "$vm_name" <<'PY'
+import json
+import sys
+
+cache_path = sys.argv[1]
+vm_name = sys.argv[2]
+
+with open(cache_path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+matches = []
+
+def walk(node):
+    if isinstance(node, dict):
+        if str(node.get("instancename", "")) == vm_name and "id" in node:
+            matches.append(str(node["id"]))
+        for value in node.values():
+            walk(value)
+    elif isinstance(node, list):
+        for item in node:
+            walk(item)
+
+walk(data)
+
+if matches:
+    print(matches[0], end="")
+PY
+}
+
+write_backup_metadata() {
   local vm_name="$1"
   local dest="$2"
-  local backup_type="$3"
-  local checkpoint_name="$4"
-  local parent_checkpoint_name="$5"
-  local engine="$6"
-  local disk_paths="$7"
 
-  mkdir -p "${dest}/checkpoints"
-
+  mkdir -p "${dest}"
   virsh -c "${LIBVIRT_URI}" dumpxml "${vm_name}" > "${dest}/domain-config.xml" 2>/dev/null || true
   virsh -c "${LIBVIRT_URI}" dominfo "${vm_name}" > "${dest}/dominfo.xml" 2>/dev/null || true
   virsh -c "${LIBVIRT_URI}" domiflist "${vm_name}" > "${dest}/domiflist.xml" 2>/dev/null || true
@@ -452,297 +431,53 @@ backup_domain_information() {
 
   write_state_file "${dest}/backup.meta" \
     BACKUP_FRAMEWORK "ABLESTACK_NETBACKUP" \
+    BACKUP_MODE "MOLD_API" \
     VM_NAME "${vm_name}" \
-    BACKUP_TYPE "${backup_type}" \
-    CHECKPOINT_NAME "${checkpoint_name}" \
-    PARENT_CHECKPOINT_NAME "${parent_checkpoint_name}" \
-    BACKUP_ENGINE "${engine}" \
-    DISK_PATHS "${disk_paths}" \
     POLICY_NAME "${POLICY_NAME}" \
     SCHEDULE_NAME "${SCHEDULE_NAME}" \
     CLIENT_NAME "${CLIENT_NAME}" \
-    SESSION_TIMESTAMP "${SESSION_TIMESTAMP}"
+    SESSION_TIMESTAMP "${SESSION_TIMESTAMP}" \
+    MAX_INCREMENTAL_CHAIN "${MAX_INCREMENTAL_CHAIN}"
 }
 
-dump_checkpoint_xml() {
+build_create_backup_payload() {
   local vm_name="$1"
-  local checkpoint_name="$2"
+  local vm_id="$2"
   local dest="$3"
-  [[ -n "${checkpoint_name}" ]] || return 0
-  virsh -c "${LIBVIRT_URI}" checkpoint-dumpxml --domain "${vm_name}" --checkpointname "${checkpoint_name}" --no-domain > "${dest}/checkpoints/${checkpoint_name}.xml" 2>/dev/null || true
+  cat <<EOF
+{"command":"createBackup","vmName":"$(json_escape "${vm_name}")","vmId":"$(json_escape "${vm_id}")","policyName":"$(json_escape "${POLICY_NAME}")","scheduleName":"$(json_escape "${SCHEDULE_NAME}")","clientName":"$(json_escape "${CLIENT_NAME}")","sessionTimestamp":"$(json_escape "${SESSION_TIMESTAMP}")","backupRoot":"$(json_escape "${dest}")","maxIncrementalChain":${MAX_INCREMENTAL_CHAIN}}
+EOF
 }
 
-virsh_checkpoint_exists() {
+invoke_mold_create_backup() {
   local vm_name="$1"
-  local checkpoint_name="$2"
-  [[ -n "${checkpoint_name}" ]] || return 1
-  virsh -c "${LIBVIRT_URI}" checkpoint-info --domain "${vm_name}" --checkpointname "${checkpoint_name}" >/dev/null 2>&1
-}
+  local vm_id="$2"
+  local dest="$3"
+  local payload
+  payload="$(build_create_backup_payload "${vm_name}" "${vm_id}" "${dest}")"
 
-rbd_checkpoint_exists_for_all_disks() {
-  local disk_paths_csv="$1"
-  local checkpoint_name="$2"
-  local disk_path
+  log -ne "Calling Mold createBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
 
-  [[ -n "${checkpoint_name}" ]] || return 1
+  local response
+  response="$(invoke_mold_api "${MOLD_CREATE_BACKUP_API_METHOD}" "${MOLD_CREATE_BACKUP_API_URL}" "${payload}")" || fail "Mold createBackup API call failed for vm=${vm_name}"
 
-  while IFS= read -r disk_path; do
-    [[ -z "${disk_path}" ]] && continue
-    parse_rbd_uri "${disk_path}"
-    build_rbd_cmd
-    if ! timeout 30s "${RBD_CMD[@]}" snap ls "${RBD_IMAGE}" 2>/dev/null | awk 'NR>1 {print $2}' | grep -Fxq "${checkpoint_name}"; then
-      return 1
-    fi
-  done < <(split_csv "${disk_paths_csv}")
-
-  return 0
-}
-
-create_qcow2_incremental_backup() {
-  local vm_name="$1"
-  local dest="$2"
-  local checkpoint_name="$3"
-  local parent_checkpoint_name="$4"
-  local backup_type="$5"
-  local disk_paths_csv="$6"
-
-  mkdir -p "${dest}/checkpoints"
-
-  {
-    echo "<domainbackup mode='push'>"
-    if [[ "${backup_type}" == "INCREMENTAL" ]]; then
-      echo "<incremental>${parent_checkpoint_name}</incremental>"
-    fi
-    echo "<disks>"
-    while IFS='|' read -r target _source; do
-      [[ -z "${target}" ]] && continue
-      echo "<disk name='${target}' backup='yes' type='file'><target file='${dest}/${target}.qcow2' /><driver type='qcow2'/></disk>"
-    done < <(collect_disk_map "${vm_name}")
-    echo "</disks>"
-    echo "</domainbackup>"
-  } > "${dest}/backup.xml"
-
-  {
-    echo "<domaincheckpoint><name>${checkpoint_name}</name><disks>"
-    while IFS='|' read -r target _source; do
-      [[ -z "${target}" ]] && continue
-      echo "<disk name='${target}' checkpoint='bitmap'/>"
-    done < <(collect_disk_map "${vm_name}")
-    echo "</disks></domaincheckpoint>"
-  } > "${dest}/checkpoint.xml"
-
-  local thaw=0
-  if [[ "${QUIESCE}" == "true" ]]; then
-    if virsh -c "${LIBVIRT_URI}" qemu-agent-command "${vm_name}" '{"execute":"guest-fsfreeze-freeze"}' >/dev/null 2>/dev/null; then
-      thaw=1
-    fi
-  fi
-
-  local backup_started=0
-  if virsh -c "${LIBVIRT_URI}" backup-begin --domain "${vm_name}" --backupxml "${dest}/backup.xml" --checkpointxml "${dest}/checkpoint.xml" >/dev/null 2>&1; then
-    backup_started=1
-  fi
-
-  if [[ ${thaw} -eq 1 ]]; then
-    virsh -c "${LIBVIRT_URI}" qemu-agent-command "${vm_name}" '{"execute":"guest-fsfreeze-thaw"}' >/dev/null 2>&1 || true
-  fi
-
-  [[ ${backup_started} -eq 1 ]] || fail "Failed to start libvirt incremental backup for VM ${vm_name}"
-
-  while true; do
-    local status
-    status=$(virsh -c "${LIBVIRT_URI}" domjobinfo "${vm_name}" --completed --keep-completed 2>/dev/null | awk '/Job type:/ {print $3}')
-    case "${status}" in
-      Completed)
-        break
-        ;;
-      Failed)
-        fail "Libvirt incremental backup job failed for VM ${vm_name}"
-        ;;
-    esac
-    sleep 5
-  done
-
-  dump_checkpoint_xml "${vm_name}" "${checkpoint_name}" "${dest}"
-  rm -f "${dest}/backup.xml" "${dest}/checkpoint.xml"
-
-  write_state_file "${dest}/engine.meta" \
-    BACKUP_ENGINE "${BACKUP_ENGINE_QCOW2}" \
-    DISK_PATHS "${disk_paths_csv}"
-}
-
-create_rbd_incremental_backup() {
-  local vm_name="$1"
-  local dest="$2"
-  local checkpoint_name="$3"
-  local parent_checkpoint_name="$4"
-  local backup_type="$5"
-  local disk_paths_csv="$6"
-  local disk_path
-  local index=0
-
-  mkdir -p "${dest}/checkpoints"
-
-  while IFS= read -r disk_path; do
-    [[ -z "${disk_path}" ]] && continue
-    parse_rbd_uri "${disk_path}"
-    build_rbd_cmd
-
-    timeout 30s "${RBD_CMD[@]}" info "${RBD_IMAGE}" >/dev/null 2>&1 || fail "Failed to access RBD image ${RBD_IMAGE}"
-    timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${checkpoint_name}" >/dev/null 2>&1 || fail "Failed to create RBD snapshot ${RBD_IMAGE}@${checkpoint_name}"
-
-    local output_file="${dest}/disk${index}.raw"
-    if [[ "${backup_type}" == "INCREMENTAL" ]]; then
-      timeout 6h "${RBD_CMD[@]}" export-diff --from-snap "${parent_checkpoint_name}" "${RBD_IMAGE}@${checkpoint_name}" "${output_file}" >/dev/null 2>&1 || fail "Failed to export incremental RBD diff for ${RBD_IMAGE}"
-    else
-      timeout 6h "${RBD_CMD[@]}" export "${RBD_IMAGE}@${checkpoint_name}" "${output_file}" >/dev/null 2>&1 || fail "Failed to export full RBD snapshot ${RBD_IMAGE}"
-    fi
-    index=$((index + 1))
-  done < <(split_csv "${disk_paths_csv}")
-
-  write_state_file "${dest}/engine.meta" \
-    BACKUP_ENGINE "${BACKUP_ENGINE_RBD_DIFF}" \
-    DISK_PATHS "${disk_paths_csv}"
+  printf '%s\n' "${response}" > "${dest}/create-backup.response.json"
 }
 
 stage_vm_backup() {
   local vm_name="$1"
-  local engine="$2"
-  local vm_dir="${BACKUP_ROOT}/${vm_name}"
-  local dest="${vm_dir}/${SESSION_TIMESTAMP}"
-  local disk_paths_csv=""
-  local parent_checkpoint_name=""
-  local previous_checkpoint_name=""
-  local backup_type="FULL"
-  local checkpoint_name="nbu_${SESSION_TIMESTAMP}"
-  local disk_layout_signature=""
-  checkpoint_name="${checkpoint_name//./_}"
+  local dest="${BACKUP_ROOT}/${vm_name}/${SESSION_TIMESTAMP}"
+  local vm_id=""
 
-  mkdir -p "${vm_dir}"
   rm -rf "${dest}"
   mkdir -p "${dest}"
 
-  while IFS='|' read -r _target disk_path; do
-    [[ -z "${disk_path}" ]] && continue
-    if [[ -n "${disk_paths_csv}" ]]; then
-      disk_paths_csv+=","
-    fi
-    disk_paths_csv+="${disk_path}"
-  done < <(collect_disk_map "${vm_name}")
+  vm_id="$(lookup_mold_vm_id "${vm_name}")"
+  [[ -n "${vm_id}" ]] || fail "Unable to resolve Mold VM id for instance name ${vm_name}"
 
-  disk_layout_signature="$(build_disk_layout_signature "${vm_name}")"
-
-  local state_file
-  state_file="$(vm_state_file "${vm_name}")"
-  local chain_depth=0
-  if load_state_file "${state_file}"; then
-    previous_checkpoint_name="${LAST_CHECKPOINT_NAME:-}"
-    chain_depth="${CHAIN_DEPTH:-0}"
-    if [[ -n "${previous_checkpoint_name}" ]] && ! is_positive_integer "${chain_depth}"; then
-      log -ne "Invalid CHAIN_DEPTH for VM ${vm_name}: ${chain_depth}. Forcing FULL backup."
-      previous_checkpoint_name=""
-      chain_depth=0
-    fi
-
-    if [[ -z "${previous_checkpoint_name}" && "${chain_depth}" != "0" ]]; then
-      log -ne "Missing LAST_CHECKPOINT_NAME with CHAIN_DEPTH=${chain_depth} for VM ${vm_name}. Forcing FULL backup."
-      chain_depth=0
-    fi
-
-    if [[ -n "${LAST_DISK_LAYOUT_SIGNATURE:-}" ]] &&
-      [[ "${LAST_DISK_LAYOUT_SIGNATURE}" != "${disk_layout_signature}" ]]; then
-      log -ne "Disk layout changed for VM ${vm_name}. Previous signature differs from current layout. Forcing FULL backup."
-      previous_checkpoint_name=""
-      chain_depth=0
-    fi
-
-    if [[ "${LAST_BACKUP_ENGINE:-}" == "${engine}" ]]; then
-      parent_checkpoint_name="${LAST_CHECKPOINT_NAME:-}"
-    fi
-  fi
-
-  if [[ "${engine}" == "${BACKUP_ENGINE_QCOW2}" ]]; then
-    if ! virsh_checkpoint_exists "${vm_name}" "${parent_checkpoint_name}"; then
-      parent_checkpoint_name=""
-    fi
-  else
-    if ! rbd_checkpoint_exists_for_all_disks "${disk_paths_csv}" "${parent_checkpoint_name}"; then
-      parent_checkpoint_name=""
-    fi
-  fi
-
-  local max_chain="${MAX_INCREMENTAL_CHAIN:-10}"
-
-  if [[ -n "${parent_checkpoint_name}" ]] &&
-    [[ "${chain_depth}" -lt "${max_chain}" ]]; then
-
-    backup_type="INCREMENTAL"
-    chain_depth=$((chain_depth + 1))
-  else
-    backup_type="FULL"
-    parent_checkpoint_name=""
-    chain_depth=1
-  fi
-
-  log -ne "Staging VM ${vm_name} engine=${engine} type=${backup_type} checkpoint=${checkpoint_name} parent=${parent_checkpoint_name}"
-
-  if [[ "${engine}" == "${BACKUP_ENGINE_QCOW2}" ]]; then
-    create_qcow2_incremental_backup "${vm_name}" "${dest}" "${checkpoint_name}" "${parent_checkpoint_name}" "${backup_type}" "${disk_paths_csv}"
-  else
-    create_rbd_incremental_backup "${vm_name}" "${dest}" "${checkpoint_name}" "${parent_checkpoint_name}" "${backup_type}" "${disk_paths_csv}"
-  fi
-
-  backup_domain_information "${vm_name}" "${dest}" "${backup_type}" "${checkpoint_name}" "${parent_checkpoint_name}" "${engine}" "${disk_paths_csv}"
-
-  mkdir -p "${PENDING_DIR}"
-  write_state_file "$(pending_vm_state_file "${vm_name}")" \
-    VM_NAME "${vm_name}" \
-    SESSION_DIR "${dest}" \
-    LAST_BACKUP_ENGINE "${engine}" \
-    NEXT_CHECKPOINT_NAME "${checkpoint_name}" \
-    PREVIOUS_COMMITTED_CHECKPOINT_NAME "${previous_checkpoint_name}" \
-    PARENT_CHECKPOINT_NAME "${parent_checkpoint_name}" \
-    DISK_PATHS "${disk_paths_csv}" \
-    CHAIN_DEPTH "${chain_depth}" \
-    DISK_LAYOUT_SIGNATURE "${disk_layout_signature}"
-
-  append_manifest_line "${vm_name}" "${dest}" "${engine}" "${checkpoint_name}" "${parent_checkpoint_name}"
-}
-
-cleanup_rbd_snapshot() {
-  local disk_paths_csv="$1"
-  local checkpoint_name="$2"
-  local disk_path
-
-  [[ -n "${checkpoint_name}" ]] || return 0
-
-  while IFS= read -r disk_path; do
-    [[ -z "${disk_path}" ]] && continue
-    parse_rbd_uri "${disk_path}"
-    build_rbd_cmd
-    "${RBD_CMD[@]}" snap rm "${RBD_IMAGE}@${checkpoint_name}" >/dev/null 2>&1 || true
-  done < <(split_csv "${disk_paths_csv}")
-}
-
-cleanup_virsh_checkpoint() {
-  local vm_name="$1"
-  local checkpoint_name="$2"
-  [[ -n "${checkpoint_name}" ]] || return 0
-  virsh -c "${LIBVIRT_URI}" checkpoint-delete --domain "${vm_name}" --checkpointname "${checkpoint_name}" --metadata >/dev/null 2>&1 || true
-}
-
-commit_vm_state() {
-  local vm_name="$1"
-  local engine="$2"
-  local checkpoint_name="$3"
-  local chain_depth="$4"
-  local disk_layout_signature="$5"
-  write_state_file "$(vm_state_file "${vm_name}")" \
-    LAST_CHECKPOINT_NAME "${checkpoint_name}" \
-    LAST_BACKUP_ENGINE "${engine}" \
-    LAST_SESSION_TIMESTAMP "${SESSION_TIMESTAMP}" \
-    CHAIN_DEPTH "${chain_depth}" \
-    LAST_DISK_LAYOUT_SIGNATURE "${disk_layout_signature}"
+  write_backup_metadata "${vm_name}" "${dest}"
+  invoke_mold_create_backup "${vm_name}" "${vm_id}" "${dest}"
+  append_manifest_line "${vm_name}" "${dest}"
 }
 
 remove_session_dir() {

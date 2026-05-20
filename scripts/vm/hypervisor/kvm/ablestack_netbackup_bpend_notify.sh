@@ -83,38 +83,20 @@ log -ne "NetBackup post-backup cleanup start policy=${POLICY_NAME} schedule=${SC
 COMMIT_ALLOWED=false
 if netbackup_job_success_confirmed; then
   COMMIT_ALLOWED=true
-  log -ne "NetBackup success confirmed; committing new incremental checkpoints"
+  log -ne "NetBackup success confirmed; removing staged backup directories"
 else
-  log -ne "NetBackup success not confirmed; preserving previous incremental checkpoints and rolling back new checkpoints"
+  log -ne "NetBackup success not confirmed; preserving staged backup directories for investigation"
 fi
 
 if [[ -f "${MANIFEST_FILE}" ]]; then
-  while IFS='|' read -r vm_name session_dir engine checkpoint_name _parent_checkpoint_name; do
+  while IFS='|' read -r vm_name session_dir; do
     [[ -z "${vm_name}" ]] && continue
-    pending_file="$(pending_vm_state_file "${vm_name}")"
 
-    if load_state_file "${pending_file}"; then
-      if [[ "${COMMIT_ALLOWED}" == "true" ]]; then
-        commit_vm_state "${VM_NAME}" "${LAST_BACKUP_ENGINE}" "${NEXT_CHECKPOINT_NAME}" "${CHAIN_DEPTH}" "${DISK_LAYOUT_SIGNATURE:-}"
-
-        if [[ "${LAST_BACKUP_ENGINE}" == "${BACKUP_ENGINE_RBD_DIFF}" ]]; then
-          cleanup_rbd_snapshot "${DISK_PATHS}" "${PREVIOUS_COMMITTED_CHECKPOINT_NAME}"
-        else
-          cleanup_virsh_checkpoint "${VM_NAME}" "${PREVIOUS_COMMITTED_CHECKPOINT_NAME}"
-        fi
-      else
-        if [[ "${LAST_BACKUP_ENGINE}" == "${BACKUP_ENGINE_RBD_DIFF}" ]]; then
-          cleanup_rbd_snapshot "${DISK_PATHS}" "${NEXT_CHECKPOINT_NAME}"
-        else
-          cleanup_virsh_checkpoint "${VM_NAME}" "${NEXT_CHECKPOINT_NAME}"
-        fi
-      fi
-      rm -f "${pending_file}"
+    if [[ "${COMMIT_ALLOWED}" == "true" ]]; then
+      remove_session_dir "${session_dir}"
     else
-      log -ne "Pending state file missing for VM ${vm_name}: ${pending_file}"
+      log -ne "Preserving staged directory for VM ${vm_name} because NetBackup success was not confirmed: ${session_dir}"
     fi
-
-    remove_session_dir "${session_dir}"
   done < "${MANIFEST_FILE}"
 fi
 

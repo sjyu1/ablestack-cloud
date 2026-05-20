@@ -32,8 +32,7 @@ Environment overrides:
   BACKUP_ROOT      Default: /var/lib/ablestack/netbackup/staging
   STATE_ROOT       Default: /var/lib/ablestack/netbackup
   LOG_FILE         Default: /var/log/cloudstack/agent/agent.log
-  QUIESCE          Default: false
-  NOTE             Increase NetBackup BPSTART_TIMEOUT/CLIENT_READ_TIMEOUT for large VM staging.
+  NOTE             Increase NetBackup BPSTART_TIMEOUT/CLIENT_READ_TIMEOUT for large API-driven staging.
   POLICY_NAME
   SCHEDULE_NAME
   CLIENT_NAME
@@ -54,6 +53,7 @@ sanity_checks
 mark_context_in_progress
 trap 'clear_context_in_progress' ERR INT TERM
 write_manifest_header
+cache_mold_virtual_machines
 
 write_state_file "${CONTEXT_FILE}" \
   POLICY_NAME "${POLICY_NAME}" \
@@ -67,7 +67,7 @@ vm_count=0
 while IFS= read -r vm_name; do
   [[ -z "${vm_name}" ]] && continue
   vm_count=$((vm_count + 1))
-  stage_vm_backup "${vm_name}" "$(detect_backup_engine "${vm_name}")"
+  stage_vm_backup "${vm_name}"
 done < <(list_target_vms)
 
 if [[ ${vm_count} -eq 0 ]]; then

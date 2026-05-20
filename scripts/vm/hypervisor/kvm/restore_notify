@@ -26,6 +26,10 @@ MOLD_RESTORE_API_METHOD="${MOLD_RESTORE_API_METHOD:-POST}"
 MOLD_RESTORE_API_TOKEN="${MOLD_RESTORE_API_TOKEN:-}"
 MOLD_RESTORE_API_AUTH_HEADER="${MOLD_RESTORE_API_AUTH_HEADER:-}"
 MOLD_RESTORE_MODE="${MOLD_RESTORE_MODE:-validate-only}"
+MOLD_CONFIG_FILE="${MOLD_CONFIG_FILE:-}"
+MOLD_SECRET_FILE="${MOLD_SECRET_FILE:-}"
+SECRET_HELPER="${SECRET_HELPER:-/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup_secret_helper.sh}"
+NETBACKUP_SECRET_PASSPHRASE="${NETBACKUP_SECRET_PASSPHRASE:-}"
 
 log_line() {
   printf '%s %s\n' "$(date '+%F %T')" "$1" >> "${LOG_FILE}" 2>&1
@@ -58,6 +62,10 @@ Optional environment:
 - MOLD_RESTORE_API_TOKEN
 - MOLD_RESTORE_API_AUTH_HEADER
 - MOLD_RESTORE_MODE
+- MOLD_CONFIG_FILE
+- MOLD_SECRET_FILE
+- SECRET_HELPER
+- NETBACKUP_SECRET_PASSPHRASE
 - LOG_FILE
 EOF
 }
@@ -92,6 +100,30 @@ validate_restore_metadata() {
 
   if [[ "${BACKUP_FRAMEWORK}" != "ABLESTACK_NETBACKUP" ]]; then
     fail "unsupported backup framework ${BACKUP_FRAMEWORK}"
+  fi
+}
+
+load_restore_config() {
+  if [[ -n "${MOLD_CONFIG_FILE}" ]]; then
+    [[ -f "${MOLD_CONFIG_FILE}" ]] || fail "MOLD_CONFIG_FILE not found: ${MOLD_CONFIG_FILE}"
+    # shellcheck disable=SC1090
+    source "${MOLD_CONFIG_FILE}"
+  fi
+
+  MOLD_RESTORE_API_URL="${MOLD_RESTORE_API_URL:-${MOLD_URL:-}}"
+  MOLD_RESTORE_API_TOKEN="${MOLD_RESTORE_API_TOKEN:-${ADMIN_APIKEY:-}}"
+}
+
+load_restore_secret() {
+  [[ -n "${MOLD_SECRET_FILE}" ]] || return 0
+  [[ -x "${SECRET_HELPER}" ]] || fail "SECRET_HELPER not found or not executable: ${SECRET_HELPER}"
+
+  local decrypted_secret
+  decrypted_secret="$("${SECRET_HELPER}" decrypt "${MOLD_SECRET_FILE}")" || fail "Failed to decrypt MOLD secret file."
+  [[ -n "${decrypted_secret}" ]] || fail "Decrypted MOLD secret is empty."
+
+  if [[ -z "${MOLD_RESTORE_API_AUTH_HEADER}" ]]; then
+    MOLD_RESTORE_API_AUTH_HEADER="x-mold-secretkey: ${decrypted_secret}"
   fi
 }
 
@@ -158,6 +190,9 @@ if [[ ! -d "${RESTORE_ROOT}" ]]; then
   log_line "RESTORE root not found path=${RESTORE_ROOT}"
   exit 0
 fi
+
+load_restore_config
+load_restore_secret
 
 handled=0
 while IFS= read -r meta_file; do
