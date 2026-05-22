@@ -390,7 +390,21 @@
             <a-radio-button value="fat">{{ $t('label.provisioningtype.fat') }}</a-radio-button>
           </a-radio-group>
         </a-form-item>
-        <a-form-item name="cachemode" ref="cachemode">
+        <a-form-item v-if="!form.shareable" name="kvdoenable" ref="kvdoenable">
+          <template #label>
+            <tooltip-label :title="$t('label.kvdoenable')" :tooltip="apiParams.kvdoenable ? apiParams.kvdoenable.description : ''"/>
+          </template>
+          <a-switch v-model:checked="form.kvdoenable" />
+        </a-form-item>
+
+        <a-form-item v-if="!form.kvdoenable" name="shareable" ref="shareable">
+          <template #label>
+            <tooltip-label :title="$t('label.shareable')" :tooltip="apiParams.shareable ? apiParams.shareable.description : ''"/>
+          </template>
+          <a-switch v-model:checked="form.shareable" />
+        </a-form-item>
+
+        <a-form-item v-if="!form.shareable" name="cachemode" ref="cachemode">
           <template #label>
             <tooltip-label :title="$t('label.cachemode')" :tooltip="apiParams.cachemode.description"/>
           </template>
@@ -621,6 +635,8 @@ export default {
         diskofferingid: null,
         diskofferingstrictness: false,
         encryptdisk: false,
+        kvdoenable: false,
+        shareable: false,
         leaseduration: undefined,
         leaseexpiryaction: undefined
       }, this.initialValues || {})),

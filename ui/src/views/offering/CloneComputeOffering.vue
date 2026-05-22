@@ -224,6 +224,8 @@ export default {
         diskofferingid: this.selectedDiskOfferingId,
         diskofferingstrictness: this.diskofferingstrictness,
         encryptdisk: this.encryptdisk,
+        kvdoenable: false,
+        shareable: false,
         leaseduration: this.leaseduration,
         leaseexpiryaction: this.leaseexpiryaction
       })
@@ -309,6 +311,7 @@ export default {
 
       // Pre-fill form with source offering values
       const r = sourceResource
+      const isTrueValue = value => value === true || value === 'true' || value === 1 || value === '1'
       const offeringDetails = r.serviceofferingdetails || {}
       this.form.name = r.name + ' - Clone'
       this.form.displaytext = r.displaytext
@@ -368,8 +371,14 @@ export default {
         this.diskofferingstrictness = r.diskofferingstrictness
       }
       if (r.encryptroot !== undefined) {
-        this.form.encryptdisk = r.encryptroot
-        this.encryptdisk = r.encryptroot
+        this.form.encryptdisk = isTrueValue(r.encryptroot)
+        this.encryptdisk = isTrueValue(r.encryptroot)
+      }
+      if (r.kvdoenable !== undefined) {
+        this.form.kvdoenable = isTrueValue(r.kvdoenable)
+      }
+      if (r.shareable !== undefined) {
+        this.form.shareable = isTrueValue(r.shareable)
       }
 
       if (r.diskBytesReadRate || r.diskBytesWriteRate || r.diskIopsReadRate || r.diskIopsWriteRate) {
@@ -539,9 +548,15 @@ export default {
           dynamicscalingenabled: values.dynamicscalingenabled,
           diskofferingstrictness: values.diskofferingstrictness,
           encryptroot: values.encryptdisk,
+          shareable: values.shareable,
+          kvdoEnable: values.kvdoenable,
           purgeresources: values.purgeresources,
           leaseduration: values.leaseduration,
           leaseexpiryaction: values.leaseexpiryaction
+        }
+
+        if (values.shareable === true) {
+          params.cacheMode = 'none'
         }
 
         if (values.diskofferingid) {
