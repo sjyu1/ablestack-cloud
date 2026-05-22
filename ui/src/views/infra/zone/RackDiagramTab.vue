@@ -76,6 +76,34 @@
             ]"
             @click="openRackDetail(idx)"
           >
+            <div class="rack-list-card-actions">
+              <a-dropdown :trigger="['click']">
+                <a-button
+                  size="small"
+                  type="text"
+                  class="rack-list-more-btn"
+                  @click.stop
+                >
+                  <template #icon><MoreOutlined /></template>
+                </a-button>
+                <template #overlay>
+                  <a-menu>
+                    <a-menu-item @click.stop="cloneRack(idx)">
+                      <CopyOutlined /> {{ t('rackDiagram.cloneRack') }}
+                    </a-menu-item>
+                    <a-menu-item @click.stop="openRackModal('edit', idx)">
+                      <SettingOutlined /> {{ t('rackDiagram.edit') }}
+                    </a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item danger>
+                      <a-popconfirm :title="t('rackDiagram.deleteConfirm')" @confirm="deleteRack(idx)">
+                        <span @click.stop><DeleteOutlined /> {{ t('rackDiagram.delete') }}</span>
+                      </a-popconfirm>
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </div>
             <div v-if="hasSearchQuery && getRackMatchCount(rack) > 0" class="rack-list-card-match">
               <a-tag color="blue">{{ t('rackDiagram.searchMatched', { count: getRackMatchCount(rack) }) }}</a-tag>
             </div>
@@ -451,12 +479,46 @@
           :validateStatus="quickLinksError ? 'error' : ''"
           :help="quickLinksError"
         >
-          <a-textarea
-            v-model:value="deviceForm.quickLinksText"
-            :rows="3"
-            :placeholder="t('rackDiagram.quickLinksPlaceholder')"
-            @change="quickLinksError = ''"
-          />
+          <div class="quick-links-editor">
+            <a-table
+              size="small"
+              :pagination="false"
+              :data-source="quickLinkRows"
+              :columns="quickLinkColumns"
+              row-key="key"
+            >
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'label'">
+                  <a-input
+                    v-model:value="record.label"
+                    :placeholder="t('rackDiagram.quickLinkNamePlaceholder')"
+                    @change="quickLinksError = ''"
+                  />
+                </template>
+                <template v-else-if="column.key === 'url'">
+                  <a-input
+                    v-model:value="record.url"
+                    :placeholder="t('rackDiagram.quickLinkUrlPlaceholder')"
+                    @change="quickLinksError = ''"
+                  />
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <a-button
+                    size="small"
+                    type="text"
+                    danger
+                    @click="removeQuickLinkRow(index)"
+                  >
+                    <template #icon><DeleteOutlined /></template>
+                  </a-button>
+                </template>
+              </template>
+            </a-table>
+            <a-button size="small" type="dashed" class="quick-links-add-btn" @click="addQuickLinkRow">
+              <template #icon><PlusOutlined /></template>
+              {{ t('rackDiagram.quickLinkAddRow') }}
+            </a-button>
+          </div>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -1225,8 +1287,7 @@ const deviceForm = reactive({
   height: 1,
   customType: '',
   memo: '',
-  sourceRef: undefined,
-  quickLinksText: ''
+  sourceRef: undefined
 })
 
 const inventoryLoading = ref(false)
@@ -1239,6 +1300,28 @@ const hostVmList = ref([])
 const hostVmFallbackList = ref([])
 const dragSource = ref({ rIndex: -1, iIndex: -1 })
 const quickLinksError = ref('')
+const quickLinkRows = ref([])
+const quickLinkColumns = computed(() => ([
+  { title: t('rackDiagram.quickLinkName'), key: 'label', dataIndex: 'label', width: '35%' },
+  { title: t('rackDiagram.quickLinkUrl'), key: 'url', dataIndex: 'url' },
+  { title: t('rackDiagram.quickLinkAction'), key: 'action', dataIndex: 'action', width: 56 }
+]))
+
+const makeQuickLinkRow = (label = '', url = '') => ({
+  key: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  label,
+  url
+})
+
+const addQuickLinkRow = () => {
+  quickLinkRows.value.push(makeQuickLinkRow())
+}
+
+const removeQuickLinkRow = (index) => {
+  quickLinkRows.value.splice(index, 1)
+  if (!quickLinkRows.value.length) quickLinkRows.value.push(makeQuickLinkRow())
+}
+// 샘플 VM 목록
 const ENABLE_VM_FALLBACK_MOCK = true
 const HOST_ACTIVE_VM_STATES = new Set(['running', 'starting', 'stopping', 'migrating'])
 
@@ -1336,36 +1419,35 @@ const isHostLinked = (item) => {
   return !!getLinkedHostId(item)
 }
 
-const parseQuickLinksTextWithValidation = (text) => {
-  if (!text) return { links: [], errors: [] }
-  const lines = text.split('\n')
+const parseQuickLinksRowsWithValidation = (rows) => {
+  if (!rows || !rows.length) return { links: [], errors: [] }
   const links = []
   const errors = []
 
-  lines.forEach((raw, idx) => {
-    const line = raw.trim()
-    if (!line) return
+  rows.forEach((row, idx) => {
+    const label = String(row?.label || '').trim()
+    const rawUrl = String(row?.url || '').trim()
+    if (!label && !rawUrl) return
 
-    let label = ''
-    let url = ''
-    if (line.includes('|')) {
-      const parts = line.split('|')
-      label = (parts[0] || '').trim()
-      url = (parts.slice(1).join('|') || '').trim()
-    } else {
-      url = line
-    }
-
-    if (!url) {
+    if (!rawUrl) {
       errors.push(t('rackDiagram.msg.quickLinkUrlEmpty', { line: idx + 1 }))
       return
     }
-    if (!/^https?:\/\//i.test(url)) {
+
+    // 스키마를 생략한 입력도 허용 (예: 10.10.12.2:9090)
+    const normalizedUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`
+    let parsed = null
+    try {
+      parsed = new URL(normalizedUrl)
+    } catch (e) {
+      parsed = null
+    }
+    if (!parsed || !/^https?:$/i.test(parsed.protocol)) {
       errors.push(t('rackDiagram.msg.quickLinkUrlInvalid', { line: idx + 1 }))
       return
     }
 
-    links.push({ label, url })
+    links.push({ label, url: normalizedUrl })
   })
 
   return { links, errors }
@@ -1685,7 +1767,7 @@ const openDeviceModal = (rIndex, iIndex) => {
     deviceForm.customType = ''
     deviceForm.memo = ''
     deviceForm.sourceRef = undefined
-    deviceForm.quickLinksText = ''
+    quickLinkRows.value = [makeQuickLinkRow()]
     quickLinksError.value = ''
   } else {
     // 수정 모드일 때는 기존 데이터 로드
@@ -1695,7 +1777,9 @@ const openDeviceModal = (rIndex, iIndex) => {
     deviceForm.customType = item.customType || ''
     deviceForm.memo = item.memo || ''
     deviceForm.sourceRef = item.sourceRef || undefined
-    deviceForm.quickLinksText = getQuickLinks(item).map(link => `${link.label || ''}|${link.url || ''}`.replace(/^\|/, '')).join('\n')
+    quickLinkRows.value = getQuickLinks(item).length
+      ? getQuickLinks(item).map(link => makeQuickLinkRow(link.label || '', link.url || ''))
+      : [makeQuickLinkRow()]
     quickLinksError.value = ''
   }
   if (!inventoryOptions.value.length) {
@@ -1753,7 +1837,7 @@ const submitDeviceModal = () => {
     message.warning(t('rackDiagram.msg.deviceHeightInteger'))
     return
   }
-  const quickLinkParsed = parseQuickLinksTextWithValidation(deviceForm.quickLinksText)
+  const quickLinkParsed = parseQuickLinksRowsWithValidation(quickLinkRows.value)
   if (quickLinkParsed.errors.length > 0) {
     quickLinksError.value = quickLinkParsed.errors[0]
     return
@@ -2470,6 +2554,22 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.rack-list-card-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+
+.rack-list-more-btn {
+  color: #64748b !important;
+}
+
+.rack-list-more-btn:hover {
+  color: #334155 !important;
+  background: #f1f5f9 !important;
+}
+
 .rack-list-card-match {
   position: absolute;
   top: 10px;
@@ -2645,6 +2745,16 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   word-break: break-word;
   color: #334155;
+}
+
+.quick-links-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-links-add-btn {
+  align-self: flex-start;
 }
 
 /* 랙 컨테이너 (가로 정렬) */
@@ -3307,6 +3417,15 @@ onBeforeUnmount(() => {
 .rack-diagram-root.is-dark .rack-list-card--matched {
   border-color: #4c93ff;
   box-shadow: 0 0 0 1px rgba(76, 147, 255, 0.32) inset;
+}
+
+.rack-diagram-root.is-dark .rack-list-more-btn {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.rack-diagram-root.is-dark .rack-list-more-btn:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background: #273244 !important;
 }
 
 .rack-diagram-root.is-dark .rack-list-card-title {
