@@ -27,17 +27,24 @@ import com.cloud.utils.script.Script;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.junit.rules.TemporaryFolder;
 import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
+import java.io.IOException;
+
 @RunWith(MockitoJUnitRunner.class)
 public class LibvirtAblestackN2KConvertInstanceCommandWrapperTest {
 
     private LibvirtAblestackN2KConvertInstanceCommandWrapper wrapper;
+
+    @Rule
+    public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Mock
     private LibvirtComputingResource libvirtComputingResource;
@@ -85,8 +92,9 @@ public class LibvirtAblestackN2KConvertInstanceCommandWrapperTest {
     }
 
     @Test
-    public void executeBuildsAblestackN2KRunCommandWithoutPassingPlainCredentialsAsArguments() {
-        AblestackN2KConvertInstanceCommand cmd = validCommand();
+    public void executeBuildsAblestackN2KRunCommandWithoutPassingPlainCredentialsAsArguments() throws IOException {
+        String workdir = temporaryFolder.newFolder("rhel").getAbsolutePath();
+        AblestackN2KConvertInstanceCommand cmd = validCommand(workdir);
 
         try (MockedConstruction<Script> ignored = Mockito.mockConstruction(Script.class, (mock, context) -> {
             Mockito.when(mock.execute(Mockito.any(OutputInterpreter.class))).thenReturn("");
@@ -96,7 +104,7 @@ public class LibvirtAblestackN2KConvertInstanceCommandWrapperTest {
 
             Assert.assertTrue(answer.getResult());
             Script script = ignored.constructed().get(0);
-            Mockito.verify(script).add("--workdir", "/work/rhel");
+            Mockito.verify(script).add("--workdir", workdir);
             Mockito.verify(script).add("run");
             Mockito.verify(script).add("--vm", "rhel");
             Mockito.verify(script).add("--pc", "https://pc:9440");
@@ -124,8 +132,12 @@ public class LibvirtAblestackN2KConvertInstanceCommandWrapperTest {
     }
 
     private AblestackN2KConvertInstanceCommand validCommand() {
+        return validCommand("/work/rhel");
+    }
+
+    private AblestackN2KConvertInstanceCommand validCommand(String workdir) {
         AblestackN2KConvertInstanceCommand cmd = new AblestackN2KConvertInstanceCommand("rhel", "https://pc:9440",
-                "admin", "secret", primaryDataStore, "phase1", "v3", true, "/work/rhel");
+                "admin", "secret", primaryDataStore, "phase1", "v3", true, workdir);
         cmd.setTargetFormat("raw");
         cmd.setTargetStorage("rbd");
         cmd.setTargetMapJson("{\"scsi0:0\":\"rbd:rbd/rhel-disk0\"}");
