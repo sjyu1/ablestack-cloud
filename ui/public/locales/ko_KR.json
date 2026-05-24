@@ -4117,6 +4117,7 @@
   "message.success.edit.primary.storage": "Primary Storage를 수정하였습니다.",
   "message.success.edit.rule": "규칙을 수정했습니다.",
   "message.success.enable.saml.auth": "SAML 승인을 사용 설정했습니다.",
+  "message.import.vm.task.submitted": "VM 가져오기 작업을 등록했습니다.",
   "message.success.import.instance": "인스턴스를 가져왔습니다.",
   "message.success.import.volume": "볼륨을 성공적으로 가져왔습니다",
   "message.success.manage.gpu.devices": "GPU 장치가 성공적으로 관리되었습니다.",

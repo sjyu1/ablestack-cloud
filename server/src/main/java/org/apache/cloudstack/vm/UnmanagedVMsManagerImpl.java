@@ -4810,13 +4810,11 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         if (!StringUtils.equals(task.getMigrationTool(), ImportVmTask.MigrationTool.AblestackN2K.getValue())) {
             throw new InvalidParameterValueException(String.format("Import VM task %s is not an ablestack-n2k task", cmd.getImportVmTaskId()));
         }
-        if (!StringUtils.equals(task.getV2kStep(), ImportVmTask.V2KStep.Phase1_Completed.name())) {
-            throw new InvalidParameterValueException(String.format("Import VM task %s is not ready for phase2 execution", cmd.getImportVmTaskId()));
-        }
         HostVO convertHost = hostDao.findById(task.getConvertHostId());
         if (convertHost == null || convertHost.getStatus() != Status.Up) {
             throw new CloudRuntimeException(String.format("Original conversion host for task %s is unavailable", cmd.getImportVmTaskId()));
         }
+        task = ensureAblestackN2KTaskReadyForPhase2(cmd.getImportVmTaskId(), task, convertHost);
         if (task.getV2kTargetStoragePoolId() == null) {
             throw new CloudRuntimeException(String.format("Import VM task %s does not have a stored ablestack-n2k target storage pool", cmd.getImportVmTaskId()));
         }
@@ -4871,6 +4869,48 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                     StringUtils.defaultIfBlank(e.getMessage(), "ablestack-n2k phase2 workflow failed"));
             throw e;
         }
+    }
+
+    private ImportVMTaskVO ensureAblestackN2KTaskReadyForPhase2(String taskUuid, ImportVMTaskVO task, HostVO convertHost) {
+        if (isAblestackN2KTaskReadyForPhase2(task)) {
+            return task;
+        }
+
+        refreshImportVMTaskWithAblestackN2KStatus(task, convertHost);
+        ImportVMTaskVO latestTask = importVMTaskDao.findById(task.getId());
+        if (latestTask != null) {
+            task = latestTask;
+        }
+        if (isAblestackN2KTaskReadyForPhase2(task)) {
+            return task;
+        }
+
+        throw new InvalidParameterValueException(String.format(
+                "Import VM task %s is not ready for phase2 execution. Current state: v2kStep=%s, phase=%s, migrationState=%s, migrationStep=%s, workdir=%s",
+                taskUuid, task != null ? task.getV2kStep() : null, task != null ? task.getCurrentPhase() : null,
+                task != null ? task.getMigrationState() : null, task != null ? task.getMigrationStep() : null,
+                task != null ? task.getWorkdir() : null));
+    }
+
+    private boolean isAblestackN2KTaskReadyForPhase2(ImportVMTaskVO task) {
+        if (task == null) {
+            return false;
+        }
+        if (StringUtils.equals(task.getV2kStep(), ImportVmTask.V2KStep.Phase1_Completed.name())) {
+            return true;
+        }
+        if (StringUtils.equalsIgnoreCase(task.getCurrentPhase(), ImportVmTask.MigrationPhase.Phase1.getValue()) &&
+                StringUtils.equalsIgnoreCase(task.getMigrationState(), ImportVmTask.MigrationState.Completed.getValue())) {
+            return true;
+        }
+        if (StringUtils.containsIgnoreCase(task.getMigrationStep(), ImportVmTask.V2KStep.Phase1_Completed.name()) ||
+                StringUtils.containsIgnoreCase(task.getMigrationStep(), "phase1_done")) {
+            return true;
+        }
+        String description = StringUtils.defaultString(task.getDescription());
+        return StringUtils.containsIgnoreCase(description, "[N2K] PHASE: phase1") &&
+                (StringUtils.containsIgnoreCase(description, "STATE: completed") ||
+                        StringUtils.containsIgnoreCase(description, "STATE: done"));
     }
 
     protected void resumeAblestackN2KVmImport(ImportUnmanagedInstanceForAblestackN2KCmd cmd) {

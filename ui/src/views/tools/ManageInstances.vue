@@ -1434,6 +1434,12 @@ export default {
       }
       postAPI(importApi, params).then(response => {
         const jobId = response[responseKey].jobid
+        if (isN2KTask) {
+          this.finishN2KImportTaskBackgroundJob(jobId, this.$t('label.phase2.execute'), taskRecord.displayname || taskRecord.sourcevmname)
+          this.fetchImportVmTasks()
+          window.setTimeout(() => this.fetchImportVmTasks(), 3000)
+          return
+        }
         this.$pollJob({
           jobId,
           title: this.$t('label.phase2.execute'),
@@ -1450,6 +1456,21 @@ export default {
         })
       }).catch(error => {
         this.$notifyError(error)
+      })
+    },
+    finishN2KImportTaskBackgroundJob (jobId, title, description) {
+      this.$message.success({
+        content: this.$t('message.import.vm.task.submitted') + ' ' + description,
+        key: jobId,
+        duration: 2
+      })
+      this.$store.dispatch('AddHeaderNotice', {
+        key: jobId,
+        title,
+        description,
+        status: 'done',
+        duration: 2,
+        timestamp: new Date()
       })
     },
     fetchImportVmTasks () {

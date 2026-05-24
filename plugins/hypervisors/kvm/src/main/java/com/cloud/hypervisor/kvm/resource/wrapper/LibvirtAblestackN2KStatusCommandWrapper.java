@@ -58,10 +58,13 @@ public class LibvirtAblestackN2KStatusCommandWrapper extends CommandWrapper<Able
             JsonObject resume = getObject(status, "resume");
             JsonObject runtime = getObject(status, "runtime");
             JsonObject phases = getObject(status, "phases");
+            JsonObject progress = getObject(runtime, "progress");
 
-            String phase = resolvePhase(runtime, phases, resume);
-            String migrationState = resolveMigrationState(runtime, phases, resume);
-            String migrationStep = StringUtils.defaultIfBlank(getString(resume, "next_step"), getString(resume, "last_step"));
+            String phase = resolvePhase(runtime, phases, resume, progress);
+            String migrationState = resolveMigrationState(runtime, phases, resume, progress);
+            String migrationStep = StringUtils.defaultIfBlank(getString(resume, "next_step"),
+                    StringUtils.defaultIfBlank(getString(resume, "last_step"),
+                            StringUtils.defaultIfBlank(getString(progress, "next_step"), getString(progress, "last_step"))));
             String syncPhysical = getPercent(resume);
             String workdir = StringUtils.defaultIfBlank(getString(status, "workdir"), cmd.getWorkdir());
             JsonObject target = getObject(status, "target");
@@ -97,12 +100,12 @@ public class LibvirtAblestackN2KStatusCommandWrapper extends CommandWrapper<Able
         }
     }
 
-    private String resolvePhase(JsonObject runtime, JsonObject phases, JsonObject resume) {
+    private String resolvePhase(JsonObject runtime, JsonObject phases, JsonObject resume, JsonObject progress) {
         JsonObject split = getObject(runtime, "split");
         if (isDone(getObject(split, "phase2")) || isDone(getObject(phases, "cutover"))) {
             return "phase2";
         }
-        if (isDone(getObject(split, "phase1"))) {
+        if (isPhase1Done(split, phases, progress)) {
             return "phase1";
         }
         String nextStep = getString(resume, "next_step");
@@ -116,14 +119,26 @@ public class LibvirtAblestackN2KStatusCommandWrapper extends CommandWrapper<Able
         return "phase1";
     }
 
-    private String resolveMigrationState(JsonObject runtime, JsonObject phases, JsonObject resume) {
+    private String resolveMigrationState(JsonObject runtime, JsonObject phases, JsonObject resume, JsonObject progress) {
         if (getBoolean(resume, "completed") || isDone(getObject(getObject(runtime, "split"), "phase2")) || isDone(getObject(phases, "cutover"))) {
             return "completed";
         }
-        if (isDone(getObject(getObject(runtime, "split"), "phase1"))) {
+        if (isPhase1Done(getObject(runtime, "split"), phases, progress)) {
             return "completed";
         }
         return "running";
+    }
+
+    private boolean isPhase1Done(JsonObject split, JsonObject phases, JsonObject progress) {
+        if (isDone(getObject(split, "phase1"))) {
+            return true;
+        }
+        String lastStep = StringUtils.defaultIfBlank(getString(progress, "last_step"), getString(progress, "step"));
+        if (StringUtils.equalsIgnoreCase(lastStep, "phase1_done") || StringUtils.equalsIgnoreCase(lastStep, "phase1_completed")) {
+            return true;
+        }
+        return isDone(getObject(phases, "base_sync")) && isDone(getObject(phases, "incr_sync")) &&
+                !isDone(getObject(phases, "final_sync")) && !isDone(getObject(phases, "cutover"));
     }
 
     private boolean isDone(JsonObject object) {

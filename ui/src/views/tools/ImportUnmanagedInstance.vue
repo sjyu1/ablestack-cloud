@@ -1804,6 +1804,13 @@ export default {
               const kvmHost = this.kvmHostsForConversion.filter(x => x.id === this.selectedKvmHostForConversion)[0]
               msgLoading += ' on host ' + kvmHost.name
             }
+            if (importapi === 'importUnmanagedInstanceForAblestackN2K') {
+              this.finishAblestackN2KBackgroundJob(jobId, this.$t('label.import.instance'), name)
+              this.$emit('refresh-data')
+              window.setTimeout(() => this.$emit('refresh-data'), 3000)
+              resolve(response)
+              return
+            }
             this.$pollJob({
               jobId,
               title: this.$t('label.import.instance'),
@@ -1832,99 +1839,17 @@ export default {
         this.$emit('loading-changed', false)
       })
     },
-    pollAblestackN2KPhase1Job (jobId, name, loadingMessage, resolve, reject, attempt = 0) {
-      const maxAttempts = 600
-      const taskName = name || this.resource?.name
-      const title = this.$t('label.import.instance')
-      this.$message.loading({
-        content: loadingMessage,
+    finishAblestackN2KBackgroundJob (jobId, title, description) {
+      this.$message.success({
+        content: this.$t('message.import.vm.task.submitted') + ' ' + description,
         key: jobId,
-        duration: 0
+        duration: 2
       })
-      this.$store.dispatch('AddHeaderNotice', {
-        key: jobId,
-        title,
-        description: taskName,
-        status: 'progress',
-        timestamp: new Date()
-      })
-
-      Promise.all([
-        getAPI('queryAsyncJobResult', { jobId }).catch(error => ({ error })),
-        getAPI('listImportVmTasks', {
-          zoneid: this.zoneid,
-          tasksfilter: 'running',
-          migrationtool: 'ablestack_n2k',
-          sourceprovider: 'nutanix',
-          targetprovider: 'cloud',
-          page: 1,
-          pagesize: 20
-        }).catch(error => ({ error }))
-      ]).then(([jobResponse, taskResponse]) => {
-        const jobResult = jobResponse.queryasyncjobresultresponse
-        const jobStatus = Number(jobResult?.jobstatus)
-        if (jobStatus === 2) {
-          this.finishAblestackN2KPhase1Job(jobId, title, taskName, 'failed')
-          const errText = jobResult?.jobresult?.errortext || this.$t('message.request.failed')
-          this.$notifyError(errText)
-          reject(jobResult)
-          return
-        }
-
-        const tasks = taskResponse.listimportvmtasksresponse?.importvmtask || []
-        const matchingTask = tasks.find(task => {
-          return task.migrationtool === 'ablestack_n2k' &&
-            (task.sourcevmname === taskName || task.displayname === taskName || task.targetvmname === taskName)
-        })
-        if (jobStatus === 1 || this.isAblestackN2KPhase1Ready(matchingTask)) {
-          this.finishAblestackN2KPhase1Job(jobId, title, taskName, 'done')
-          this.$emit('refresh-data')
-          resolve(jobResult || matchingTask)
-          return
-        }
-
-        if (attempt >= maxAttempts) {
-          this.finishAblestackN2KPhase1Job(jobId, title, taskName, 'failed')
-          const timeoutMessage = this.$t('error.fetching.async.job.result')
-          this.$notifyError(timeoutMessage)
-          reject(new Error(timeoutMessage))
-          return
-        }
-
-        setTimeout(() => {
-          this.pollAblestackN2KPhase1Job(jobId, name, loadingMessage, resolve, reject, attempt + 1)
-        }, 3000)
-      }).catch(error => {
-        this.finishAblestackN2KPhase1Job(jobId, title, taskName, 'failed')
-        this.$notifyError(error)
-        reject(error)
-      })
-    },
-    isAblestackN2KPhase1Ready (task) {
-      if (!task) {
-        return false
-      }
-      const v2kStep = String(task.v2kstep || '')
-      const phase = String(task.phase || task.currentphase || '').toLowerCase()
-      const migrationState = String(task.migrationstate || '').toLowerCase()
-      return v2kStep === 'Phase1_Completed' ||
-        (phase === 'phase1' && ['done', 'complete', 'completed', 'success', 'finished'].includes(migrationState))
-    },
-    finishAblestackN2KPhase1Job (jobId, title, description, status) {
-      if (status === 'done') {
-        this.$message.success({
-          content: this.$t('message.success.import.instance') + ' ' + description,
-          key: jobId,
-          duration: 2
-        })
-      } else {
-        this.$message.destroy(jobId)
-      }
       this.$store.dispatch('AddHeaderNotice', {
         key: jobId,
         title,
         description,
-        status,
+        status: 'done',
         duration: 2,
         timestamp: new Date()
       })

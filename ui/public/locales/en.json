@@ -4117,6 +4117,7 @@
   "message.success.edit.primary.storage": "Successfully edited Primary Storage",
   "message.success.edit.rule": "Successfully edited rule",
   "message.success.enable.saml.auth": "Successfully enabled SAML Authorization",
+  "message.import.vm.task.submitted": "VM import task has been submitted.",
   "message.success.import.instance": "Successfully imported Instance",
   "message.success.import.volume": "Successfully imported Volume",
   "message.success.manage.gpu.devices": "Successfully managed GPU device(s)",
