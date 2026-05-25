@@ -20,6 +20,24 @@ package org.apache.cloudstack.storage.dataservice.dao;
 import org.apache.cloudstack.storage.dataservice.StorageServiceInstanceVO;
 
 import com.cloud.utils.db.GenericDaoBase;
+import com.cloud.utils.db.SearchBuilder;
+import com.cloud.utils.db.SearchCriteria;
+
+import java.util.List;
 
 public class StorageServiceInstanceDaoImpl extends GenericDaoBase<StorageServiceInstanceVO, Long> implements StorageServiceInstanceDao {
+    protected final SearchBuilder<StorageServiceInstanceVO> ZoneSearch;
+
+    public StorageServiceInstanceDaoImpl() {
+        ZoneSearch = createSearchBuilder();
+        ZoneSearch.and("dataCenterId", ZoneSearch.entity().getDataCenterId(), SearchCriteria.Op.EQ);
+        ZoneSearch.done();
+    }
+
+    @Override
+    public List<StorageServiceInstanceVO> listByZoneId(Long zoneId) {
+        SearchCriteria<StorageServiceInstanceVO> sc = ZoneSearch.create();
+        sc.setParameters("dataCenterId", zoneId);
+        return listBy(sc);
+    }
 }

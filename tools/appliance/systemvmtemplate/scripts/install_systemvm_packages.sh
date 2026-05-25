@@ -20,7 +20,7 @@ set -e
 set -x
 
 function install_vhd_util() {
-  [[ -f /bin/vhd-util ]] && retun
+  [[ -f /bin/vhd-util ]] && return
 
   wget --no-check-certificate https://download.cloudstack.org/tools/vhd-util -O /bin/vhd-util
   chmod a+x /bin/vhd-util
@@ -121,4 +121,4 @@ function install_packages() {
   fi
 }
 
-retun 2>/dev/null || install_packages
+return 2>/dev/null || install_packages

@@ -36,22 +36,22 @@ public class StorageServiceGuestCommand {
     }
 
     public long getVmId() {
-        retun vmId;
+        return vmId;
     }
 
     public String getOperation() {
-        retun operation;
+        return operation;
     }
 
     public String getPayload() {
-        retun payload;
+        return payload;
     }
 
     public int getTimeoutSeconds() {
-        retun timeoutSeconds;
+        return timeoutSeconds;
     }
 
     public Set<String> getMaskedFields() {
-        retun maskedFields;
+        return maskedFields;
     }
 }

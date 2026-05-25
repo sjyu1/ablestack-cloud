@@ -62,15 +62,70 @@ public class StorageServiceProtocolVO {
     @Column(name = "config_json")
     private String configJson;
 
+    public StorageServiceProtocolVO() {
+    }
+
+    public StorageServiceProtocolVO(long instanceId, StorageServiceInstance.Protocol protocol, boolean enabled, String listenIp, Integer port) {
+        this.instanceId = instanceId;
+        this.protocol = protocol;
+        this.enabled = enabled;
+        this.listenIp = listenIp;
+        this.port = port;
+    }
+
     public long getId() {
-        retun id;
+        return id;
     }
 
     public String getUuid() {
-        retun uuid;
+        return uuid;
     }
 
     public long getInstanceId() {
-        retun instanceId;
+        return instanceId;
+    }
+
+    public StorageServiceInstance.Protocol getProtocol() {
+        return protocol;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public String getListenIp() {
+        return listenIp;
+    }
+
+    public void setListenIp(String listenIp) {
+        this.listenIp = listenIp;
+    }
+
+    public Integer getPort() {
+        return port;
+    }
+
+    public void setPort(Integer port) {
+        this.port = port;
+    }
+
+    public StorageServiceInstance.ResourceState getState() {
+        return state;
+    }
+
+    public void setState(StorageServiceInstance.ResourceState state) {
+        this.state = state;
+    }
+
+    public String getConfigJson() {
+        return configJson;
+    }
+
+    public void setConfigJson(String configJson) {
+        this.configJson = configJson;
     }
 }

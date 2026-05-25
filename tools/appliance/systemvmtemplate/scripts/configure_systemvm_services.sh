@@ -159,4 +159,4 @@ EOF
   configure_cacerts
 }
 
-retun 2>/dev/null || configure_services
+return 2>/dev/null || configure_services

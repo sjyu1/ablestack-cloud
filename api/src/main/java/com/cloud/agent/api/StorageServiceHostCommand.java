@@ -45,23 +45,23 @@ public class StorageServiceHostCommand extends Command {
     }
 
     public String getVmName() {
-        retun vmName;
+        return vmName;
     }
 
     public String getOperation() {
-        retun operation;
+        return operation;
     }
 
     public String getPayload() {
-        retun payload;
+        return payload;
     }
 
     public int getTimeoutSeconds() {
-        retun timeoutSeconds;
+        return timeoutSeconds;
     }
 
     public Set<String> getMaskedFields() {
-        retun maskedFields;
+        return maskedFields;
     }
 
     public void setMaskedFields(Set<String> maskedFields) {
@@ -70,6 +70,6 @@ public class StorageServiceHostCommand extends Command {
 
     @Override
     public boolean executeInSequence() {
-        retun true;
+        return true;
     }
 }

@@ -97,42 +97,42 @@ public class StorageServiceInstanceVO implements StorageServiceInstance {
 
     @Override
     public long getId() {
-        retun id;
+        return id;
     }
 
     @Override
     public String getUuid() {
-        retun uuid;
+        return uuid;
     }
 
     @Override
     public String getName() {
-        retun name;
+        return name;
     }
 
     @Override
     public String getDescription() {
-        retun description;
+        return description;
     }
 
     @Override
     public long getDomainId() {
-        retun domainId;
+        return domainId;
     }
 
     @Override
     public long getAccountId() {
-        retun accountId;
+        return accountId;
     }
 
     @Override
     public long getDataCenterId() {
-        retun dataCenterId;
+        return dataCenterId;
     }
 
     @Override
     public Long getVmId() {
-        retun vmId;
+        return vmId;
     }
 
     public void setVmId(Long vmId) {
@@ -141,17 +141,25 @@ public class StorageServiceInstanceVO implements StorageServiceInstance {
 
     @Override
     public Long getServiceOfferingId() {
-        retun serviceOfferingId;
+        return serviceOfferingId;
+    }
+
+    public void setServiceOfferingId(Long serviceOfferingId) {
+        this.serviceOfferingId = serviceOfferingId;
     }
 
     @Override
     public String getProvider() {
-        retun provider;
+        return provider;
+    }
+
+    public void setProvider(String provider) {
+        this.provider = provider;
     }
 
     @Override
     public State getState() {
-        retun state;
+        return state;
     }
 
     public void setState(State state) {
@@ -160,19 +168,19 @@ public class StorageServiceInstanceVO implements StorageServiceInstance {
 
     @Override
     public Date getCreated() {
-        retun created;
+        return created;
     }
 
     public Date getUpdated() {
-        retun updated;
+        return updated;
     }
 
     public Date getRemoved() {
-        retun removed;
+        return removed;
     }
 
     @Override
     public Class<?> getEntityType() {
-        retun StorageServiceInstance.class;
+        return StorageServiceInstance.class;
     }
 }

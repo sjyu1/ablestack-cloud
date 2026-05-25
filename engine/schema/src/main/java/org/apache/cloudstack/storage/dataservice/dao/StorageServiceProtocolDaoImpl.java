@@ -17,9 +17,42 @@
 
 package org.apache.cloudstack.storage.dataservice.dao;
 
+import java.util.List;
+
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
 import org.apache.cloudstack.storage.dataservice.StorageServiceProtocolVO;
 
 import com.cloud.utils.db.GenericDaoBase;
+import com.cloud.utils.db.SearchBuilder;
+import com.cloud.utils.db.SearchCriteria;
 
 public class StorageServiceProtocolDaoImpl extends GenericDaoBase<StorageServiceProtocolVO, Long> implements StorageServiceProtocolDao {
+    protected final SearchBuilder<StorageServiceProtocolVO> InstanceProtocolSearch;
+    protected final SearchBuilder<StorageServiceProtocolVO> InstanceSearch;
+
+    public StorageServiceProtocolDaoImpl() {
+        InstanceProtocolSearch = createSearchBuilder();
+        InstanceProtocolSearch.and("instanceId", InstanceProtocolSearch.entity().getInstanceId(), SearchCriteria.Op.EQ);
+        InstanceProtocolSearch.and("protocol", InstanceProtocolSearch.entity().getProtocol(), SearchCriteria.Op.EQ);
+        InstanceProtocolSearch.done();
+
+        InstanceSearch = createSearchBuilder();
+        InstanceSearch.and("instanceId", InstanceSearch.entity().getInstanceId(), SearchCriteria.Op.EQ);
+        InstanceSearch.done();
+    }
+
+    @Override
+    public StorageServiceProtocolVO findByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol) {
+        SearchCriteria<StorageServiceProtocolVO> sc = InstanceProtocolSearch.create();
+        sc.setParameters("instanceId", instanceId);
+        sc.setParameters("protocol", protocol);
+        return findOneBy(sc);
+    }
+
+    @Override
+    public List<StorageServiceProtocolVO> listByInstanceId(long instanceId) {
+        SearchCriteria<StorageServiceProtocolVO> sc = InstanceSearch.create();
+        sc.setParameters("instanceId", instanceId);
+        return listBy(sc);
+    }
 }

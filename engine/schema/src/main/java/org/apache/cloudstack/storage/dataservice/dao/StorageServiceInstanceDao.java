@@ -21,5 +21,8 @@ import org.apache.cloudstack.storage.dataservice.StorageServiceInstanceVO;
 
 import com.cloud.utils.db.GenericDao;
 
+import java.util.List;
+
 public interface StorageServiceInstanceDao extends GenericDao<StorageServiceInstanceVO, Long> {
+    List<StorageServiceInstanceVO> listByZoneId(Long zoneId);
 }

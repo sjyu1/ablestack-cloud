@@ -29,14 +29,14 @@ public class StorageServiceGuestCommandResult {
     }
 
     public boolean isSuccess() {
-        retun success;
+        return success;
     }
 
     public String getDetails() {
-        retun details;
+        return details;
     }
 
     public String getResultJson() {
-        retun resultJson;
+        return resultJson;
     }
 }
