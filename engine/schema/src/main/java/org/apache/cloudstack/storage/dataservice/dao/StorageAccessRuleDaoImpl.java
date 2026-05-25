@@ -17,9 +17,30 @@
 
 package org.apache.cloudstack.storage.dataservice.dao;
 
+import java.util.List;
+
 import org.apache.cloudstack.storage.dataservice.StorageAccessRuleVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
 
 import com.cloud.utils.db.GenericDaoBase;
+import com.cloud.utils.db.SearchBuilder;
+import com.cloud.utils.db.SearchCriteria;
 
 public class StorageAccessRuleDaoImpl extends GenericDaoBase<StorageAccessRuleVO, Long> implements StorageAccessRuleDao {
+    protected final SearchBuilder<StorageAccessRuleVO> ResourceSearch;
+
+    public StorageAccessRuleDaoImpl() {
+        ResourceSearch = createSearchBuilder();
+        ResourceSearch.and("resourceType", ResourceSearch.entity().getResourceType(), SearchCriteria.Op.EQ);
+        ResourceSearch.and("resourceId", ResourceSearch.entity().getResourceId(), SearchCriteria.Op.EQ);
+        ResourceSearch.done();
+    }
+
+    @Override
+    public List<StorageAccessRuleVO> listByResource(StorageServiceInstance.AccessResourceType resourceType, long resourceId) {
+        SearchCriteria<StorageAccessRuleVO> sc = ResourceSearch.create();
+        sc.setParameters("resourceType", resourceType);
+        sc.setParameters("resourceId", resourceId);
+        return listBy(sc);
+    }
 }

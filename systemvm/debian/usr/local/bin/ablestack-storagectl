@@ -44,11 +44,100 @@ log_command() {
   printf '%s command=%s payload=%s\n' "$(date -Is)" "${1:-}" "${2:-}" >> "$LOG_FILE"
 }
 
+apply_nfs_exports() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import re
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+exports_dir = "/etc/exports.d"
+quota_dir = "/etc/ablestack-storage"
+os.makedirs(exports_dir, exist_ok=True)
+os.makedirs(quota_dir, exist_ok=True)
+
+def truth(config, key, default):
+    value = config.get(key, default) if isinstance(config, dict) else default
+    return bool(value)
+
+def safe_uuid(value):
+    value = str(value or "")
+    if not re.match(r"^[A-Za-z0-9_.-]+$", value):
+        raise ValueError(f"invalid export uuid: {value}")
+    return value
+
+quota_state = {}
+managed_files = set()
+enabled = bool(payload.get("enabled", True))
+
+for export in payload.get("exports", []):
+    uuid = safe_uuid(export.get("uuid"))
+    export_file = os.path.join(exports_dir, f"ablestack-{uuid}.exports")
+    managed_files.add(export_file)
+    path = export.get("path")
+    state = export.get("state", "Ready")
+    lines = []
+    if enabled and path and state not in ("Disabled", "Destroyed", "Error"):
+        os.makedirs(path, exist_ok=True)
+        export_config = export.get("config") or {}
+        for acl in export.get("acls", []):
+            acl_state = acl.get("state", "Ready")
+            if acl_state in ("Disabled", "Destroyed", "Error"):
+                continue
+            principal = acl.get("principal")
+            if not principal:
+                continue
+            permission = acl.get("permission", "READ_ONLY")
+            acl_config = acl.get("config") or {}
+            read_write = "rw" if permission == "READ_WRITE" and not truth(export_config, "readOnly", False) else "ro"
+            root_squash = "root_squash" if truth(acl_config, "rootSquash", truth(export_config, "rootSquash", True)) else "no_root_squash"
+            sync = "sync" if truth(acl_config, "sync", truth(export_config, "sync", True)) else "async"
+            secure = "secure" if truth(acl_config, "secure", truth(export_config, "secure", True)) else "insecure"
+            options = ",".join([read_write, sync, root_squash, secure, "no_subtree_check"])
+            lines.append(f"{path} {principal}({options})")
+        if export.get("quotaBytes") is not None:
+            quota_state[uuid] = {
+                "path": path,
+                "quotaBytes": export.get("quotaBytes"),
+                "filesystem": export.get("filesystem"),
+            }
+    with open(export_file, "w", encoding="utf-8") as export_fp:
+        if lines:
+            export_fp.write("\n".join(lines) + "\n")
+
+for name in os.listdir(exports_dir):
+    if name.startswith("ablestack-") and name.endswith(".exports"):
+        full_path = os.path.join(exports_dir, name)
+        if full_path not in managed_files:
+            with open(full_path, "w", encoding="utf-8"):
+                pass
+
+with open(os.path.join(quota_dir, "nfs-quotas.json"), "w", encoding="utf-8") as quota_fp:
+    json.dump(quota_state, quota_fp, sort_keys=True, indent=2)
+
+print(json.dumps({"success": True, "exports": len(payload.get("exports", [])), "quotas": len(quota_state)}))
+PY
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now nfs-server >/dev/null 2>&1 || systemctl enable --now nfs-kernel-server >/dev/null 2>&1 || true
+  fi
+  exportfs -ra
+}
+
 command="${1:-}"
-payload="${2:-}"
+subcommand="${2:-}"
+action="${3:-}"
+payload="${4:-}"
 
 case "$command" in
   apply)
+    payload="${2:-}"
     if [[ -z "$payload" || ! -r "$payload" ]]; then
       emit_error "A readable payload file is required for apply."
       exit 2
@@ -63,6 +152,18 @@ case "$command" in
   inventory)
     log_command "$command" ""
     printf '{"success":true,"protocols":[],"exports":[],"targets":[]}\n'
+    ;;
+  nfs)
+    if [[ "$subcommand" != "export" || "$action" != "apply" ]]; then
+      emit_error "Unsupported nfs operation: ${subcommand:-<empty>} ${action:-<empty>}"
+      exit 2
+    fi
+    if [[ -z "$payload" || ! -r "$payload" ]]; then
+      emit_error "A readable payload file is required for nfs export apply."
+      exit 2
+    fi
+    log_command "$command $subcommand $action" "$payload"
+    apply_nfs_exports "$payload"
     ;;
   *)
     emit_error "Unsupported storagectl command: ${command:-<empty>}"

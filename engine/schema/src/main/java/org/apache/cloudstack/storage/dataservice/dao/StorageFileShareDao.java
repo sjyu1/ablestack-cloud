@@ -18,8 +18,12 @@
 package org.apache.cloudstack.storage.dataservice.dao;
 
 import org.apache.cloudstack.storage.dataservice.StorageFileShareVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
 
 import com.cloud.utils.db.GenericDao;
 
+import java.util.List;
+
 public interface StorageFileShareDao extends GenericDao<StorageFileShareVO, Long> {
+    List<StorageFileShareVO> listByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol);
 }

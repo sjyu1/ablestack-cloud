@@ -17,9 +17,30 @@
 
 package org.apache.cloudstack.storage.dataservice.dao;
 
+import java.util.List;
+
 import org.apache.cloudstack.storage.dataservice.StorageFileShareVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
 
 import com.cloud.utils.db.GenericDaoBase;
+import com.cloud.utils.db.SearchBuilder;
+import com.cloud.utils.db.SearchCriteria;
 
 public class StorageFileShareDaoImpl extends GenericDaoBase<StorageFileShareVO, Long> implements StorageFileShareDao {
+    protected final SearchBuilder<StorageFileShareVO> InstanceProtocolSearch;
+
+    public StorageFileShareDaoImpl() {
+        InstanceProtocolSearch = createSearchBuilder();
+        InstanceProtocolSearch.and("instanceId", InstanceProtocolSearch.entity().getInstanceId(), SearchCriteria.Op.EQ);
+        InstanceProtocolSearch.and("protocol", InstanceProtocolSearch.entity().getProtocol(), SearchCriteria.Op.EQ);
+        InstanceProtocolSearch.done();
+    }
+
+    @Override
+    public List<StorageFileShareVO> listByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol) {
+        SearchCriteria<StorageFileShareVO> sc = InstanceProtocolSearch.create();
+        sc.setParameters("instanceId", instanceId);
+        sc.setParameters("protocol", protocol);
+        return listBy(sc);
+    }
 }

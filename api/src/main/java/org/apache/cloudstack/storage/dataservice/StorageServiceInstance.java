@@ -21,10 +21,10 @@ import java.util.Date;
 
 import org.apache.cloudstack.acl.ControlledEntity;
 import org.apache.cloudstack.api.Identity;
-import org.apache.cloudstack.api.IntenalIdentity;
+import org.apache.cloudstack.api.InternalIdentity;
 import org.apache.cloudstack.framework.config.ConfigKey;
 
-public interface StorageServiceInstance extends ControlledEntity, Identity, IntenalIdentity {
+public interface StorageServiceInstance extends ControlledEntity, Identity, InternalIdentity {
     ConfigKey<Boolean> StorageServiceFeatureEnabled = new ConfigKey<Boolean>("Advanced", Boolean.class,
             "storage.service.feature.enabled",
             "false",

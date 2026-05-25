@@ -68,15 +68,91 @@ public class StorageFileShareVO {
     @Column(name = "config_json")
     private String configJson;
 
+    public StorageFileShareVO() {
+    }
+
+    public StorageFileShareVO(long instanceId, StorageServiceInstance.Protocol protocol, String name, String path, Long volumeId,
+            String filesystem, Long quotaBytes, StorageServiceInstance.ResourceState state, String configJson) {
+        this.instanceId = instanceId;
+        this.protocol = protocol;
+        this.name = name;
+        this.path = path;
+        this.volumeId = volumeId;
+        this.filesystem = filesystem;
+        this.quotaBytes = quotaBytes;
+        this.state = state;
+        this.configJson = configJson;
+    }
+
     public long getId() {
-        retun id;
+        return id;
     }
 
     public String getUuid() {
-        retun uuid;
+        return uuid;
     }
 
     public long getInstanceId() {
-        retun instanceId;
+        return instanceId;
+    }
+
+    public StorageServiceInstance.Protocol getProtocol() {
+        return protocol;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    public Long getVolumeId() {
+        return volumeId;
+    }
+
+    public void setVolumeId(Long volumeId) {
+        this.volumeId = volumeId;
+    }
+
+    public String getFilesystem() {
+        return filesystem;
+    }
+
+    public void setFilesystem(String filesystem) {
+        this.filesystem = filesystem;
+    }
+
+    public Long getQuotaBytes() {
+        return quotaBytes;
+    }
+
+    public void setQuotaBytes(Long quotaBytes) {
+        this.quotaBytes = quotaBytes;
+    }
+
+    public StorageServiceInstance.ResourceState getState() {
+        return state;
+    }
+
+    public void setState(StorageServiceInstance.ResourceState state) {
+        this.state = state;
+    }
+
+    public String getConfigJson() {
+        return configJson;
+    }
+
+    public void setConfigJson(String configJson) {
+        this.configJson = configJson;
     }
 }

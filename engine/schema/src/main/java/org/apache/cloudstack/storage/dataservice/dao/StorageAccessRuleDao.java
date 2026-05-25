@@ -18,8 +18,12 @@
 package org.apache.cloudstack.storage.dataservice.dao;
 
 import org.apache.cloudstack.storage.dataservice.StorageAccessRuleVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
 
 import com.cloud.utils.db.GenericDao;
 
+import java.util.List;
+
 public interface StorageAccessRuleDao extends GenericDao<StorageAccessRuleVO, Long> {
+    List<StorageAccessRuleVO> listByResource(StorageServiceInstance.AccessResourceType resourceType, long resourceId);
 }

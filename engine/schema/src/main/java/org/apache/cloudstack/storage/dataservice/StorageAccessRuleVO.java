@@ -67,11 +67,74 @@ public class StorageAccessRuleVO {
     @Column(name = "config_json")
     private String configJson;
 
+    public StorageAccessRuleVO() {
+    }
+
+    public StorageAccessRuleVO(StorageServiceInstance.AccessResourceType resourceType, long resourceId,
+            StorageServiceInstance.PrincipalType principalType, String principal, StorageServiceInstance.Permission permission,
+            StorageServiceInstance.ResourceState state, String configJson) {
+        this.resourceType = resourceType;
+        this.resourceId = resourceId;
+        this.principalType = principalType;
+        this.principal = principal;
+        this.permission = permission;
+        this.state = state;
+        this.configJson = configJson;
+    }
+
     public long getId() {
-        retun id;
+        return id;
     }
 
     public String getUuid() {
-        retun uuid;
+        return uuid;
+    }
+
+    public StorageServiceInstance.AccessResourceType getResourceType() {
+        return resourceType;
+    }
+
+    public long getResourceId() {
+        return resourceId;
+    }
+
+    public StorageServiceInstance.PrincipalType getPrincipalType() {
+        return principalType;
+    }
+
+    public void setPrincipalType(StorageServiceInstance.PrincipalType principalType) {
+        this.principalType = principalType;
+    }
+
+    public String getPrincipal() {
+        return principal;
+    }
+
+    public void setPrincipal(String principal) {
+        this.principal = principal;
+    }
+
+    public StorageServiceInstance.Permission getPermission() {
+        return permission;
+    }
+
+    public void setPermission(StorageServiceInstance.Permission permission) {
+        this.permission = permission;
+    }
+
+    public StorageServiceInstance.ResourceState getState() {
+        return state;
+    }
+
+    public void setState(StorageServiceInstance.ResourceState state) {
+        this.state = state;
+    }
+
+    public String getConfigJson() {
+        return configJson;
+    }
+
+    public void setConfigJson(String configJson) {
+        this.configJson = configJson;
     }
 }

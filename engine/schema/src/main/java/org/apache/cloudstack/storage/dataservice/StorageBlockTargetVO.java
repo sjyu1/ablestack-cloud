@@ -63,14 +63,14 @@ public class StorageBlockTargetVO {
     private String configJson;
 
     public long getId() {
-        retun id;
+        return id;
     }
 
     public String getUuid() {
-        retun uuid;
+        return uuid;
     }
 
     public long getInstanceId() {
-        retun instanceId;
+        return instanceId;
     }
 }

@@ -56,6 +56,6 @@ public class StorageServiceGuestCommandDispatcherImpl implements StorageServiceG
         }
 
         StorageServiceHostAnswer storageAnswer = (StorageServiceHostAnswer) answer;
-        retun new StorageServiceGuestCommandResult(storageAnswer.getResult(), storageAnswer.getDetails(), storageAnswer.getResultJson());
+        return new StorageServiceGuestCommandResult(storageAnswer.getResult(), storageAnswer.getDetails(), storageAnswer.getResultJson());
     }
 }

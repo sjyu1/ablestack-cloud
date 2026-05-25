@@ -29,6 +29,6 @@ public class StorageServiceHostAnswer extends Answer {
     }
 
     public String getResultJson() {
-        retun resultJson;
+        return resultJson;
     }
 }
