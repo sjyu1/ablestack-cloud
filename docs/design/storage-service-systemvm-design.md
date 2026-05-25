@@ -291,28 +291,51 @@ Important columns:
 All post-boot storage operations should be applied through QGA. Cloud-init
 should be limited to bootstrap.
 
-Management server flow:
+The Mold UI must only submit asynchronous Cloud API requests and poll the async
+job result. It must not execute storage commands directly. The actual command
+execution path is:
+
+```text
+Mold UI
+  -> Management Server API
+  -> Management Server async job
+  -> Mold Host Agent on the host running the Storage Service System VM
+  -> QGA guest command/file operation
+  -> ablestack-storagectl inside the Storage Service System VM
+```
+
+The management server is responsible for validation, desired-state persistence,
+job orchestration, and state reconciliation. The host-side Mold Agent is
+responsible for interacting with the hypervisor/QGA channel for the specific
+Storage Service System VM running on that host.
+
+Command flow:
 
 1. API request is validated.
 2. Desired state is stored in the database.
 3. An async job starts.
-4. The manager writes a JSON payload into the service VM through QGA.
-5. The manager executes `ablestack-storagectl apply <payload>` through QGA
-   `guest-exec`.
-6. The manager polls QGA for command completion.
-7. The manager reads the result JSON.
-8. Database state, operation status, and event details are updated.
+4. The manager locates the host currently running the Storage Service System VM.
+5. The manager sends a storage service command to that Mold Host Agent.
+6. The Mold Host Agent writes a JSON payload into the service VM through QGA.
+7. The Mold Host Agent executes `ablestack-storagectl apply <payload>` through
+   QGA `guest-exec`.
+8. The Mold Host Agent polls QGA for command completion and reads the result
+   JSON.
+9. The manager receives the structured result from the Mold Host Agent.
+10. Database state, operation status, and event details are updated.
 
-Required management-side abstraction:
+Required management-side and agent-side abstractions:
 
 ```text
 StorageServiceGuestCommandDispatcher
 StorageServiceGuestCommand
 StorageServiceGuestCommandResult
+StorageServiceHostCommand
+StorageServiceHostCommandWrapper
 StorageServiceQgaClient
 ```
 
-The QGA client should support:
+The QGA client lives on the Mold Host Agent side and should support:
 
 - guest file write
 - guest command execution
