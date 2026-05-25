@@ -13,7 +13,7 @@
   software distributed under the License is distributed on an
   "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
   KIND, either express or implied. See the License for the
-  specific language governing permissions and limitations
+  specific language govening permissions and limitations
   under the License.
 -->
 <beans xmlns="http://www.springframework.org/schema/beans"
@@ -113,7 +113,7 @@
     <bean id="configurationServerImpl" class="com.cloud.server.ConfigurationServerImpl" />
 
     <bean id="userVmManagerImpl" class="com.cloud.vm.UserVmManagerImpl">
-        <property name="kubernetesServiceHelpers" value="#{kubernetesServiceHelperRegistry.registered}" />
+        <property name="kubenetesServiceHelpers" value="#{kubenetesServiceHelperRegistry.registered}" />
         <property name="disasterRecoveryHelpers" value="#{disasterRecoveryHelperRegistry.registered}" />
     </bean>
 
@@ -141,9 +141,9 @@
         <property name="secChecker" value="#{securityCheckersRegistry.registered}" />
     </bean>
 
-    <bean id="externalDeviceUsageManagerImpl" class="com.cloud.network.ExternalDeviceUsageManagerImpl" />
+    <bean id="extenalDeviceUsageManagerImpl" class="com.cloud.network.ExtenalDeviceUsageManagerImpl" />
 
-    <bean id="externalNetworkDeviceManagerImpl" class="com.cloud.network.ExternalNetworkDeviceManagerImpl" />
+    <bean id="extenalNetworkDeviceManagerImpl" class="com.cloud.network.ExtenalNetworkDeviceManagerImpl" />
 
     <bean id="firewallManagerImpl" class="com.cloud.network.firewall.FirewallManagerImpl" >
         <property name="firewallElements" value="#{firewallServiceProvidersRegistry.registered}" />
@@ -176,7 +176,7 @@
 
     <bean id="networkServiceImpl" class="com.cloud.network.NetworkServiceImpl" >
         <property name="networkGurus" value="#{networkGurusRegistry.registered}" />
-        <property name="internalLoadBalancerElementServices" value="#{internalLoadBalancerElementServiceRegistry.registered}" />
+        <property name="intenalLoadBalancerElementServices" value="#{intenalLoadBalancerElementServiceRegistry.registered}" />
     </bean>
 
     <bean id="networkUsageManagerImpl" class="com.cloud.network.NetworkUsageManagerImpl" />
@@ -331,7 +331,7 @@
     </bean>
 
     <bean id="annotationService" class="org.apache.cloudstack.annotation.AnnotationManagerImpl">
-        <property name="kubernetesServiceHelpers" value="#{kubernetesServiceHelperRegistry.registered}" />
+        <property name="kubenetesServiceHelpers" value="#{kubenetesServiceHelperRegistry.registered}" />
     </bean>
 
     <bean id="indirectAgentLBService" class="org.apache.cloudstack.agent.lb.IndirectAgentLBServiceImpl" />
@@ -386,4 +386,6 @@
     <bean id="sharedFSServiceImpl" class="org.apache.cloudstack.storage.sharedfs.SharedFSServiceImpl">
         <property name="sharedFSProviders" value="#{sharedFSProvidersRegistry.registered}" />
     </bean>
+    <bean id="storageServiceGuestCommandDispatcher" class="org.apache.cloudstack.storage.dataservice.StorageServiceGuestCommandDispatcherImpl" />
+    <bean id="storageServiceManagerImpl" class="org.apache.cloudstack.storage.dataservice.StorageServiceManagerImpl" />
 </beans>

@@ -13,7 +13,7 @@
 # software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
+# specific language govening permissions and limitations
 # under the License.
 
 set -e
@@ -122,6 +122,12 @@ function configure_services() {
   systemctl disable nfs-common
   systemctl disable nfs-server
   systemctl disable portmap
+  systemctl disable smbd
+  systemctl disable nmbd
+  systemctl disable winbind
+  systemctl disable sssd
+  systemctl disable rtslib-fb-targetctl || true
+  systemctl disable nvmet || true
 
   # Disable guest services which will selectively be started based on hypervisor
   systemctl disable open-vm-tools
@@ -153,4 +159,4 @@ EOF
   configure_cacerts
 }
 
-return 2>/dev/null || configure_services
+retun 2>/dev/null || configure_services

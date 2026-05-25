@@ -1,0 +1,71 @@
+#!/bin/bash
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language govening permissions and limitations
+# under the License.
+
+set -euo pipefail
+
+LOG_FILE="/var/log/ablestack-storagectl.log"
+
+json_escape() {
+  local value="${1:-}"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  printf '%s' "$value"
+}
+
+emit_success() {
+  local message="$1"
+  printf '{"success":true,"message":"%s"}\n' "$(json_escape "$message")"
+}
+
+emit_error() {
+  local message="$1"
+  printf '{"success":false,"message":"%s"}\n' "$(json_escape "$message")" >&2
+}
+
+log_command() {
+  mkdir -p "$(dirname "$LOG_FILE")"
+  printf '%s command=%s payload=%s\n' "$(date -Is)" "${1:-}" "${2:-}" >> "$LOG_FILE"
+}
+
+command="${1:-}"
+payload="${2:-}"
+
+case "$command" in
+  apply)
+    if [[ -z "$payload" || ! -r "$payload" ]]; then
+      emit_error "A readable payload file is required for apply."
+      exit 2
+    fi
+    log_command "$command" "$payload"
+    emit_success "Storage Service apply skeleton accepted the payload."
+    ;;
+  health)
+    log_command "$command" ""
+    printf '{"success":true,"status":"ok"}\n'
+    ;;
+  inventory)
+    log_command "$command" ""
+    printf '{"success":true,"protocols":[],"exports":[],"targets":[]}\n'
+    ;;
+  *)
+    emit_error "Unsupported storagectl command: ${command:-<empty>}"
+    exit 2
+    ;;
+esac
