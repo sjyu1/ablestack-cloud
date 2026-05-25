@@ -521,6 +521,17 @@ directly through `ablestack-storagectl`.
 Add a new Storage section, tentatively named `Storage Services` or
 `File & Block Services`.
 
+The UI implementation must follow the existing Vue and Ant Design Vue patterns
+used by the CloudStack UI. New views should reuse the current section/action,
+resource table, details tab, popup form, async job polling, status, metric, and
+event tab conventions instead of introducing an unrelated visual system.
+
+Styles must be compatible with both normal and dark modes. New components should
+use existing theme tokens, Ant Design Vue component states, and local CloudStack
+UI styling conventions so that colors, borders, backgrounds, hover states,
+disabled states, charts, tables, forms, and status indicators remain readable in
+both modes.
+
 Views:
 
 - Instances
@@ -599,4 +610,3 @@ adopt the new UI immediately.
   implemented only through one-volume-per-export initially.
 - Whether SMB identity should standardize on winbind, sssd, or support both.
 - Whether NVMe-oF should require `nvmetcli` or use configfs directly.
-
