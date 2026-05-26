@@ -27,6 +27,7 @@ PRE_HELPER_PATH="${PRE_HELPER_PATH:-/usr/share/cloudstack-common/scripts/vm/hype
 POST_HELPER_PATH="${POST_HELPER_PATH:-/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpend_notify.sh}"
 HOOK_LOG_PATH="${HOOK_LOG_PATH:-/var/log/netbackup-cloudstack-hook.log}"
 SECRET_CIPHER="${SECRET_CIPHER:-aes-256-cbc}"
+SECRET_KEY_FILE="${SECRET_KEY_FILE:-/root/.ssh/ablestack.key}"
 NETBACKUP_BP_CONF_PATH="${NETBACKUP_BP_CONF_PATH:-/usr/openv/netbackup/bp.conf}"
 NETBACKUP_SERVICE_NAME="${NETBACKUP_SERVICE_NAME:-netbackup}"
 
@@ -38,7 +39,6 @@ MAX_INCREMENTAL_CHAIN=""
 MOLD_URL=""
 ADMIN_APIKEY=""
 ADMIN_SECRETKEY=""
-ENCRYPTION_PASSPHRASE=""
 CONFIG_SCOPE=""
 
 usage() {
@@ -60,6 +60,7 @@ Environment overrides:
   POST_HELPER_PATH
   HOOK_LOG_PATH
   SECRET_CIPHER
+  SECRET_KEY_FILE
   NETBACKUP_BP_CONF_PATH
   NETBACKUP_SERVICE_NAME
 EOF
@@ -72,6 +73,15 @@ fail() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+file_mode() {
+  local target="$1"
+  if stat -c '%a' "${target}" >/dev/null 2>&1; then
+    stat -c '%a' "${target}"
+    return 0
+  fi
+  stat -f '%OLp' "${target}"
 }
 
 set_bp_conf_value() {
@@ -124,6 +134,15 @@ validate_positive_integer() {
   local label="$2"
 
   [[ "${value}" =~ ^[1-9][0-9]*$ ]] || fail "${label} must be a positive integer."
+}
+
+validate_secret_key_file() {
+  [[ -f "${SECRET_KEY_FILE}" ]] || fail "Secret key file not found: ${SECRET_KEY_FILE}"
+  [[ -r "${SECRET_KEY_FILE}" ]] || fail "Secret key file is not readable: ${SECRET_KEY_FILE}"
+
+  local mode
+  mode="$(file_mode "${SECRET_KEY_FILE}")"
+  [[ "${mode}" == "600" ]] || fail "Secret key file must have permission 600: ${SECRET_KEY_FILE} (current: ${mode})"
 }
 
 backup_existing_file() {
@@ -243,11 +262,11 @@ write_encrypted_secret_file() {
   local target="$1"
 
   command_exists openssl || fail "openssl command is required to encrypt ADMIN_SECRETKEY."
+  validate_secret_key_file
   backup_existing_file "${target}"
   umask 077
   printf '%s' "${ADMIN_SECRETKEY}" | \
-    ENCRYPTION_PASSPHRASE="${ENCRYPTION_PASSPHRASE}" \
-    openssl enc -"${SECRET_CIPHER}" -pbkdf2 -salt -pass env:ENCRYPTION_PASSPHRASE -out "${target}"
+    openssl enc -"${SECRET_CIPHER}" -pbkdf2 -salt -pass file:"${SECRET_KEY_FILE}" -out "${target}"
   chmod 0600 "${target}"
 }
 
@@ -317,13 +336,6 @@ collect_inputs() {
   prompt_value ADMIN_APIKEY "ADMIN_APIKEY"
   prompt_secret_value ADMIN_SECRETKEY "ADMIN_SECRETKEY"
   [[ -n "${ADMIN_SECRETKEY}" ]] || fail "ADMIN_SECRETKEY is required."
-
-  prompt_secret_value ENCRYPTION_PASSPHRASE "Encryption passphrase for ADMIN_SECRETKEY"
-  [[ -n "${ENCRYPTION_PASSPHRASE}" ]] || fail "Encryption passphrase is required."
-
-  local confirm_passphrase=""
-  prompt_secret_value confirm_passphrase "Confirm encryption passphrase"
-  [[ "${ENCRYPTION_PASSPHRASE}" == "${confirm_passphrase}" ]] || fail "Encryption passphrases do not match."
 }
 
 generate_outputs() {

@@ -29,7 +29,7 @@ MOLD_RESTORE_MODE="${MOLD_RESTORE_MODE:-validate-only}"
 MOLD_CONFIG_FILE="${MOLD_CONFIG_FILE:-}"
 MOLD_SECRET_FILE="${MOLD_SECRET_FILE:-}"
 SECRET_HELPER="${SECRET_HELPER:-/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup_secret_helper.sh}"
-NETBACKUP_SECRET_PASSPHRASE="${NETBACKUP_SECRET_PASSPHRASE:-}"
+SECRET_KEY_FILE="${SECRET_KEY_FILE:-/root/.ssh/ablestack.key}"
 
 log_line() {
   printf '%s %s\n' "$(date '+%F %T')" "$1" >> "${LOG_FILE}" 2>&1
@@ -65,7 +65,7 @@ Optional environment:
 - MOLD_CONFIG_FILE
 - MOLD_SECRET_FILE
 - SECRET_HELPER
-- NETBACKUP_SECRET_PASSPHRASE
+- SECRET_KEY_FILE
 - LOG_FILE
 EOF
 }

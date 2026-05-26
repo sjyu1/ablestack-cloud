@@ -20,7 +20,7 @@
 set -euo pipefail
 
 SECRET_CIPHER="${SECRET_CIPHER:-aes-256-cbc}"
-NETBACKUP_SECRET_PASSPHRASE="${NETBACKUP_SECRET_PASSPHRASE:-}"
+SECRET_KEY_FILE="${SECRET_KEY_FILE:-/root/.ssh/ablestack.key}"
 
 usage() {
   cat <<EOF
@@ -28,7 +28,7 @@ Usage:
   $(basename "$0") decrypt <secret_file>
 
 Environment:
-  NETBACKUP_SECRET_PASSPHRASE   Passphrase used to decrypt the secret file
+  SECRET_KEY_FILE               Key file used to decrypt the secret file
   SECRET_CIPHER                 OpenSSL cipher, default: aes-256-cbc
 EOF
 }
@@ -38,12 +38,30 @@ fail() {
   exit 1
 }
 
+file_mode() {
+  local target="$1"
+  if stat -c '%a' "${target}" >/dev/null 2>&1; then
+    stat -c '%a' "${target}"
+    return 0
+  fi
+  stat -f '%OLp' "${target}"
+}
+
+validate_secret_key_file() {
+  [[ -f "${SECRET_KEY_FILE}" ]] || fail "Secret key file not found: ${SECRET_KEY_FILE}"
+  [[ -r "${SECRET_KEY_FILE}" ]] || fail "Secret key file is not readable: ${SECRET_KEY_FILE}"
+
+  local mode
+  mode="$(file_mode "${SECRET_KEY_FILE}")"
+  [[ "${mode}" == "600" ]] || fail "Secret key file must have permission 600: ${SECRET_KEY_FILE} (current: ${mode})"
+}
+
 decrypt_secret() {
   local secret_file="$1"
   [[ -f "${secret_file}" ]] || fail "Secret file not found: ${secret_file}"
-  [[ -n "${NETBACKUP_SECRET_PASSPHRASE}" ]] || fail "NETBACKUP_SECRET_PASSPHRASE is required."
+  validate_secret_key_file
 
-  openssl enc -"${SECRET_CIPHER}" -d -pbkdf2 -pass env:NETBACKUP_SECRET_PASSPHRASE -in "${secret_file}"
+  openssl enc -"${SECRET_CIPHER}" -d -pbkdf2 -pass file:"${SECRET_KEY_FILE}" -in "${secret_file}"
 }
 
 ACTION="${1:-}"

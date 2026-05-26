@@ -45,8 +45,8 @@ MOLD_CREATE_BACKUP_API_URL="${MOLD_CREATE_BACKUP_API_URL:-}"
 MOLD_CREATE_BACKUP_API_METHOD="${MOLD_CREATE_BACKUP_API_METHOD:-POST}"
 MOLD_LIST_VMS_API_URL="${MOLD_LIST_VMS_API_URL:-}"
 MOLD_LIST_VMS_API_METHOD="${MOLD_LIST_VMS_API_METHOD:-GET}"
-MOLD_API_AUTH_HEADER_NAME="${MOLD_API_AUTH_HEADER_NAME:-x-mold-apikey}"
-MOLD_SECRET_AUTH_HEADER_NAME="${MOLD_SECRET_AUTH_HEADER_NAME:-x-mold-secretkey}"
+MOLD_API_RESPONSE_FORMAT="${MOLD_API_RESPONSE_FORMAT:-json}"
+MOLD_API_SKIP_TLS_VERIFY="${MOLD_API_SKIP_TLS_VERIFY:-false}"
 
 verb="${verb:-0}"
 POLICY_NAME="${POLICY_NAME:-}"
@@ -303,6 +303,7 @@ sanity_checks() {
   command -v virsh >/dev/null 2>&1 || fail "virsh command not found"
   command -v curl >/dev/null 2>&1 || fail "curl command not found"
   command -v python3 >/dev/null 2>&1 || fail "python3 command not found"
+  command -v openssl >/dev/null 2>&1 || fail "openssl command not found"
 }
 
 netbackup_job_success_confirmed() {
@@ -350,29 +351,97 @@ json_escape() {
   printf '%s' "${value}"
 }
 
+url_encode() {
+  local value="$1"
+  python3 - "$value" <<'PY'
+import sys
+from urllib.parse import quote_plus
+
+print(quote_plus(sys.argv[1]), end="")
+PY
+}
+
+build_mold_api_params() {
+  local command_name="$1"
+  shift
+
+  local param_string="command=$(url_encode "${command_name}")"
+  while [[ $# -gt 1 ]]; do
+    local key="$1"
+    local value="$2"
+    shift 2
+    param_string="${param_string}&${key}=$(url_encode "${value}")"
+  done
+
+  param_string="${param_string}&response=$(url_encode "${MOLD_API_RESPONSE_FORMAT}")"
+  printf '%s' "${param_string}"
+}
+
+sign_mold_request() {
+  local request="$1"
+  local signature
+
+  signature="$(printf '%s' "${request}" | openssl dgst -sha256 -hmac "${ADMIN_SECRETKEY}" -binary | openssl base64 -A)" || fail "Failed to sign Mold API request"
+  url_encode "${signature}"
+}
+
+build_mold_signed_url() {
+  local base_url="$1"
+  local api_params="$2"
+
+  python3 - "$base_url" "$api_params" "$ADMIN_APIKEY" "$ADMIN_SECRETKEY" <<'PY'
+import base64
+import hashlib
+import hmac
+import sys
+from urllib.parse import quote_plus
+
+base_url = sys.argv[1]
+api_params = sys.argv[2]
+api_key = sys.argv[3]
+secret_key = sys.argv[4]
+
+sorted_params = [f"apikey={quote_plus(api_key).lower()}"]
+for token in api_params.split("&"):
+    key, value = token.split("=", 1)
+    sorted_params.append(f"{key.lower()}={value.lower()}")
+
+sorted_url = "&".join(sorted(sorted_params))
+signature = base64.b64encode(
+    hmac.new(secret_key.encode(), sorted_url.encode(), hashlib.sha256).digest()
+).decode()
+encoded_signature = quote_plus(signature)
+final_url = f"{base_url}?{api_params}&apiKey={quote_plus(api_key)}&signature={encoded_signature}"
+print(final_url, end="")
+PY
+}
+
 invoke_mold_api() {
   local method="$1"
   local url="$2"
-  local payload="${3:-}"
+  local command_name="$3"
+  shift 3
+  local api_params
+  local signed_url
   local response=""
+
+  api_params="$(build_mold_api_params "${command_name}" "$@")"
+  signed_url="$(build_mold_signed_url "${url}" "${api_params}")" || fail "Failed to build signed Mold API URL for command=${command_name}"
 
   local curl_args=(
     --silent
     --show-error
     --fail
     -X "${method}"
-    -H "${MOLD_API_AUTH_HEADER_NAME}: ${ADMIN_APIKEY}"
-    -H "${MOLD_SECRET_AUTH_HEADER_NAME}: ${ADMIN_SECRETKEY}"
+    -H "Accept: application/json"
+    -H "Content-type: application/x-www-form-urlencoded"
   )
 
-  if [[ -n "${payload}" ]]; then
-    curl_args+=(
-      -H "Content-Type: application/json"
-      --data "${payload}"
-    )
+  if [[ "${MOLD_API_SKIP_TLS_VERIFY}" == "true" && "${signed_url}" == https://* ]]; then
+    curl_args+=(-k)
   fi
 
-  response="$(curl "${curl_args[@]}" "${url}")" || fail "Mold API call failed: method=${method} url=${url}"
+  response="$(curl "${curl_args[@]}" "${signed_url}")" || fail "Mold API call failed: method=${method} command=${command_name} url=${url}"
   printf '%s' "${response}"
 }
 
@@ -383,7 +452,7 @@ cache_mold_virtual_machines() {
   fi
 
   log -ne "Calling Mold listVirtualMachines API url=${MOLD_LIST_VMS_API_URL}"
-  invoke_mold_api "${MOLD_LIST_VMS_API_METHOD}" "${MOLD_LIST_VMS_API_URL}" > "${MOLD_VM_CACHE_FILE}"
+  invoke_mold_api "${MOLD_LIST_VMS_API_METHOD}" "${MOLD_LIST_VMS_API_URL}" "listVirtualMachines" > "${MOLD_VM_CACHE_FILE}"
 }
 
 lookup_mold_vm_id() {
@@ -440,26 +509,26 @@ write_backup_metadata() {
     MAX_INCREMENTAL_CHAIN "${MAX_INCREMENTAL_CHAIN}"
 }
 
-build_create_backup_payload() {
-  local vm_name="$1"
-  local vm_id="$2"
-  local dest="$3"
-  cat <<EOF
-{"command":"createBackup","vmName":"$(json_escape "${vm_name}")","vmId":"$(json_escape "${vm_id}")","policyName":"$(json_escape "${POLICY_NAME}")","scheduleName":"$(json_escape "${SCHEDULE_NAME}")","clientName":"$(json_escape "${CLIENT_NAME}")","sessionTimestamp":"$(json_escape "${SESSION_TIMESTAMP}")","backupRoot":"$(json_escape "${dest}")","maxIncrementalChain":${MAX_INCREMENTAL_CHAIN}}
-EOF
-}
-
 invoke_mold_create_backup() {
   local vm_name="$1"
   local vm_id="$2"
   local dest="$3"
-  local payload
-  payload="$(build_create_backup_payload "${vm_name}" "${vm_id}" "${dest}")"
 
   log -ne "Calling Mold createBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
 
   local response
-  response="$(invoke_mold_api "${MOLD_CREATE_BACKUP_API_METHOD}" "${MOLD_CREATE_BACKUP_API_URL}" "${payload}")" || fail "Mold createBackup API call failed for vm=${vm_name}"
+  response="$(invoke_mold_api \
+    "${MOLD_CREATE_BACKUP_API_METHOD}" \
+    "${MOLD_CREATE_BACKUP_API_URL}" \
+    "createBackup" \
+    "vmName" "${vm_name}" \
+    "vmId" "${vm_id}" \
+    "policyName" "${POLICY_NAME}" \
+    "scheduleName" "${SCHEDULE_NAME}" \
+    "clientName" "${CLIENT_NAME}" \
+    "sessionTimestamp" "${SESSION_TIMESTAMP}" \
+    "backupRoot" "${dest}" \
+    "maxIncrementalChain" "${MAX_INCREMENTAL_CHAIN}")" || fail "Mold createBackup API call failed for vm=${vm_name}"
 
   printf '%s\n' "${response}" > "${dest}/create-backup.response.json"
 }
