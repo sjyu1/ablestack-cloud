@@ -28,12 +28,19 @@ import com.cloud.utils.db.SearchCriteria;
 
 public class StorageFileShareDaoImpl extends GenericDaoBase<StorageFileShareVO, Long> implements StorageFileShareDao {
     protected final SearchBuilder<StorageFileShareVO> InstanceProtocolSearch;
+    protected final SearchBuilder<StorageFileShareVO> InstanceVolumeProtocolSearch;
 
     public StorageFileShareDaoImpl() {
         InstanceProtocolSearch = createSearchBuilder();
         InstanceProtocolSearch.and("instanceId", InstanceProtocolSearch.entity().getInstanceId(), SearchCriteria.Op.EQ);
         InstanceProtocolSearch.and("protocol", InstanceProtocolSearch.entity().getProtocol(), SearchCriteria.Op.EQ);
         InstanceProtocolSearch.done();
+
+        InstanceVolumeProtocolSearch = createSearchBuilder();
+        InstanceVolumeProtocolSearch.and("instanceId", InstanceVolumeProtocolSearch.entity().getInstanceId(), SearchCriteria.Op.EQ);
+        InstanceVolumeProtocolSearch.and("volumeId", InstanceVolumeProtocolSearch.entity().getVolumeId(), SearchCriteria.Op.EQ);
+        InstanceVolumeProtocolSearch.and("protocol", InstanceVolumeProtocolSearch.entity().getProtocol(), SearchCriteria.Op.EQ);
+        InstanceVolumeProtocolSearch.done();
     }
 
     @Override
@@ -42,5 +49,14 @@ public class StorageFileShareDaoImpl extends GenericDaoBase<StorageFileShareVO, 
         sc.setParameters("instanceId", instanceId);
         sc.setParameters("protocol", protocol);
         return listBy(sc);
+    }
+
+    @Override
+    public StorageFileShareVO findByInstanceIdVolumeIdAndProtocol(long instanceId, long volumeId, StorageServiceInstance.Protocol protocol) {
+        SearchCriteria<StorageFileShareVO> sc = InstanceVolumeProtocolSearch.create();
+        sc.setParameters("instanceId", instanceId);
+        sc.setParameters("volumeId", volumeId);
+        sc.setParameters("protocol", protocol);
+        return findOneBy(sc);
     }
 }
