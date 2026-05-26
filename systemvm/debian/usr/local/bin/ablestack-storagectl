@@ -130,6 +130,261 @@ PY
   exportfs -ra
 }
 
+apply_smb_shares() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import pwd
+import re
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+state_dir = "/etc/ablestack-storage"
+os.makedirs(state_dir, exist_ok=True)
+
+def truth(config, key, default):
+    value = config.get(key, default) if isinstance(config, dict) else default
+    return bool(value)
+
+def safe_share_name(value):
+    value = str(value or "")
+    if not re.match(r"^[A-Za-z0-9_.-]+$", value):
+        raise ValueError(f"invalid SMB share name: {value}")
+    return value
+
+def smb_identity(value):
+    value = str(value or "")
+    if not value:
+        return ""
+    if value.startswith("@"):
+        return value
+    return value.replace("/", "\\")
+
+def smb_group(value):
+    value = smb_identity(value)
+    return value if value.startswith("@") else f"@{value}"
+
+def ensure_local_smb_user(user, password):
+    if not user or not password:
+        return
+    try:
+        pwd.getpwnam(user)
+    except KeyError:
+        subprocess.run(["useradd", "-M", "-s", "/usr/sbin/nologin", user], check=True)
+    subprocess.run(["smbpasswd", "-s", "-a", user], input=f"{password}\n{password}\n", text=True, check=True)
+    subprocess.run(["smbpasswd", "-e", user], check=True)
+
+identity = payload.get("identityDomain") or {}
+identity_config = identity.get("config") or {}
+domain_name = identity.get("domainName")
+join_state = identity.get("joinState")
+workgroup = identity_config.get("workgroup") or "WORKGROUP"
+ad_joined = bool(domain_name and join_state == "JOINED")
+
+lines = [
+    "[global]",
+    "   server string = ABLESTACK Storage Service",
+    "   load printers = no",
+    "   printing = bsd",
+    "   disable spoolss = yes",
+    "   map to guest = Bad User",
+    "   passdb backend = tdbsam",
+]
+if ad_joined:
+    lines.extend([
+        f"   workgroup = {workgroup}",
+        f"   realm = {domain_name.upper()}",
+        "   security = ADS",
+        "   kerberos method = secrets and keytab",
+        "   winbind use default domain = yes",
+        "   winbind enum users = yes",
+        "   winbind enum groups = yes",
+    ])
+else:
+    lines.extend([
+        f"   workgroup = {workgroup}",
+        "   security = user",
+    ])
+
+quota_state = {}
+enabled = bool(payload.get("enabled", True))
+for share in payload.get("shares", []):
+    name = safe_share_name(share.get("name") or share.get("uuid"))
+    path = share.get("path")
+    state = share.get("state", "Ready")
+    if not enabled or not path or state in ("Disabled", "Destroyed", "Error"):
+        continue
+    os.makedirs(path, exist_ok=True)
+    config = share.get("config") or {}
+    valid_users = []
+    write_list = []
+    admin_users = []
+    for acl in share.get("acls", []):
+        if acl.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+            continue
+        principal = acl.get("principal")
+        if not principal:
+            continue
+        principal_type = acl.get("principalType")
+        if principal_type == "LOCAL_USER" and acl.get("password"):
+            ensure_local_smb_user(principal, acl.get("password"))
+        smb_principal = smb_group(principal) if principal_type in ("LOCAL_GROUP", "AD_GROUP") else smb_identity(principal)
+        permission = acl.get("permission", "READ_ONLY")
+        valid_users.append(smb_principal)
+        if permission in ("READ_WRITE", "ADMIN"):
+            write_list.append(smb_principal)
+        if permission == "ADMIN":
+            admin_users.append(smb_principal)
+
+    lines.extend([
+        "",
+        f"[{name}]",
+        f"   path = {path}",
+        f"   read only = {'yes' if truth(config, 'readOnly', False) else 'no'}",
+        f"   browseable = {'yes' if truth(config, 'browseable', True) else 'no'}",
+        f"   guest ok = {'yes' if truth(config, 'guestOk', False) else 'no'}",
+        "   create mask = 0660",
+        "   directory mask = 0770",
+    ])
+    if valid_users:
+        lines.append("   valid users = " + " ".join(valid_users))
+    if write_list:
+        lines.append("   write list = " + " ".join(write_list))
+    if admin_users:
+        lines.append("   admin users = " + " ".join(admin_users))
+    if share.get("quotaBytes") is not None:
+        quota_state[str(share.get("uuid"))] = {
+            "path": path,
+            "quotaBytes": share.get("quotaBytes"),
+            "filesystem": share.get("filesystem"),
+        }
+
+with open("/etc/samba/smb.conf", "w", encoding="utf-8") as smb_fp:
+    smb_fp.write("\n".join(lines) + "\n")
+
+with open(os.path.join(state_dir, "smb-quotas.json"), "w", encoding="utf-8") as quota_fp:
+    json.dump(quota_state, quota_fp, sort_keys=True, indent=2)
+
+subprocess.run(["testparm", "-s"], stdout=subprocess.DEVNULL, check=True)
+print(json.dumps({"success": True, "shares": len(payload.get("shares", [])), "quotas": len(quota_state), "adJoined": ad_joined}))
+PY
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now smbd >/dev/null 2>&1 || true
+    systemctl enable --now nmbd >/dev/null 2>&1 || true
+    systemctl restart smbd >/dev/null 2>&1 || true
+    systemctl restart nmbd >/dev/null 2>&1 || true
+    systemctl restart winbind >/dev/null 2>&1 || true
+  fi
+}
+
+smb_domain_join() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+state_dir = "/etc/ablestack-storage"
+os.makedirs(state_dir, exist_ok=True)
+
+domain = payload.get("domainName")
+username = payload.get("username")
+password = payload.get("password")
+ou = payload.get("organizationalUnit")
+dns_servers = payload.get("dnsServers")
+config = payload.get("config") or {}
+workgroup = config.get("workgroup") or "WORKGROUP"
+
+if not domain or not username or not password:
+    raise SystemExit("domainName, username, and password are required for SMB domain join")
+
+lines = [
+    "[global]",
+    "   server string = ABLESTACK Storage Service",
+    f"   workgroup = {workgroup}",
+    f"   realm = {domain.upper()}",
+    "   security = ADS",
+    "   kerberos method = secrets and keytab",
+    "   winbind use default domain = yes",
+    "   winbind enum users = yes",
+    "   winbind enum groups = yes",
+    "   load printers = no",
+    "   printing = bsd",
+    "   disable spoolss = yes",
+    "   map to guest = Bad User",
+]
+with open("/etc/samba/smb.conf", "w", encoding="utf-8") as smb_fp:
+    smb_fp.write("\n".join(lines) + "\n")
+
+if dns_servers:
+    with open(os.path.join(state_dir, "smb-dns-servers"), "w", encoding="utf-8") as dns_fp:
+        dns_fp.write(str(dns_servers) + "\n")
+
+cmd = ["net", "ads", "join", "-U", f"{username}%{password}"]
+if ou:
+    cmd.append(f"createcomputer={ou}")
+subprocess.run(cmd, check=True)
+
+with open(os.path.join(state_dir, "smb-domain.json"), "w", encoding="utf-8") as state_fp:
+    json.dump({"domainName": domain, "organizationalUnit": ou, "dnsServers": dns_servers, "workgroup": workgroup}, state_fp, sort_keys=True, indent=2)
+
+print(json.dumps({"success": True, "domainName": domain}))
+PY
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now smbd >/dev/null 2>&1 || true
+    systemctl enable --now winbind >/dev/null 2>&1 || true
+    systemctl restart smbd >/dev/null 2>&1 || true
+    systemctl restart winbind >/dev/null 2>&1 || true
+  fi
+}
+
+smb_domain_leave() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+username = payload.get("username")
+password = payload.get("password")
+cmd = ["net", "ads", "leave"]
+if username and password:
+    cmd.extend(["-U", f"{username}%{password}"])
+subprocess.run(cmd, check=True)
+
+domain_state = "/etc/ablestack-storage/smb-domain.json"
+if os.path.exists(domain_state):
+    os.remove(domain_state)
+
+print(json.dumps({"success": True}))
+PY
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart smbd >/dev/null 2>&1 || true
+    systemctl restart winbind >/dev/null 2>&1 || true
+  fi
+}
+
 command="${1:-}"
 subcommand="${2:-}"
 action="${3:-}"
@@ -164,6 +419,28 @@ case "$command" in
     fi
     log_command "$command $subcommand $action" "$payload"
     apply_nfs_exports "$payload"
+    ;;
+  smb)
+    if [[ -z "$payload" || ! -r "$payload" ]]; then
+      emit_error "A readable payload file is required for smb ${subcommand:-<empty>} ${action:-<empty>}."
+      exit 2
+    fi
+    log_command "$command $subcommand $action" "$payload"
+    case "$subcommand $action" in
+      "share apply")
+        apply_smb_shares "$payload"
+        ;;
+      "domain join")
+        smb_domain_join "$payload"
+        ;;
+      "domain leave")
+        smb_domain_leave "$payload"
+        ;;
+      *)
+        emit_error "Unsupported smb operation: ${subcommand:-<empty>} ${action:-<empty>}"
+        exit 2
+        ;;
+    esac
     ;;
   *)
     emit_error "Unsupported storagectl command: ${command:-<empty>}"

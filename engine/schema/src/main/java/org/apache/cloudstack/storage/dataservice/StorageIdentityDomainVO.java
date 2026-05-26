@@ -61,6 +61,20 @@ public class StorageIdentityDomainVO {
     @Column(name = "config_json")
     private String configJson;
 
+    public StorageIdentityDomainVO() {
+    }
+
+    public StorageIdentityDomainVO(long instanceId, String domainName, String organizationalUnit, String dnsServers,
+            StorageServiceInstance.DomainJoinState joinState, String healthState, String configJson) {
+        this.instanceId = instanceId;
+        this.domainName = domainName;
+        this.organizationalUnit = organizationalUnit;
+        this.dnsServers = dnsServers;
+        this.joinState = joinState;
+        this.healthState = healthState;
+        this.configJson = configJson;
+    }
+
     public long getId() {
         return id;
     }
@@ -71,5 +85,53 @@ public class StorageIdentityDomainVO {
 
     public long getInstanceId() {
         return instanceId;
+    }
+
+    public String getDomainName() {
+        return domainName;
+    }
+
+    public void setDomainName(String domainName) {
+        this.domainName = domainName;
+    }
+
+    public String getOrganizationalUnit() {
+        return organizationalUnit;
+    }
+
+    public void setOrganizationalUnit(String organizationalUnit) {
+        this.organizationalUnit = organizationalUnit;
+    }
+
+    public String getDnsServers() {
+        return dnsServers;
+    }
+
+    public void setDnsServers(String dnsServers) {
+        this.dnsServers = dnsServers;
+    }
+
+    public StorageServiceInstance.DomainJoinState getJoinState() {
+        return joinState;
+    }
+
+    public void setJoinState(StorageServiceInstance.DomainJoinState joinState) {
+        this.joinState = joinState;
+    }
+
+    public String getHealthState() {
+        return healthState;
+    }
+
+    public void setHealthState(String healthState) {
+        this.healthState = healthState;
+    }
+
+    public String getConfigJson() {
+        return configJson;
+    }
+
+    public void setConfigJson(String configJson) {
+        this.configJson = configJson;
     }
 }

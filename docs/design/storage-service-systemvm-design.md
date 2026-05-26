@@ -360,6 +360,7 @@ ablestack-storagectl inventory
 ablestack-storagectl nfs export apply <payload.json>
 ablestack-storagectl smb share apply <payload.json>
 ablestack-storagectl smb domain join <payload.json>
+ablestack-storagectl smb domain leave <payload.json>
 ablestack-storagectl iscsi target apply <payload.json>
 ablestack-storagectl nvmeof subsystem apply <payload.json>
 ```
