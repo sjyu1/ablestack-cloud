@@ -474,6 +474,12 @@
                   </template>
                   <span>{{ $t('message.ip.address.changes.effect.after.vm.restart') }}</span>
                 </a-form-item>
+                <a-alert
+                  v-if="isAblestackN2KImport && resource.nic && resource.nic.length > 0"
+                  class="import-form-alert ablestack-import-alert"
+                  type="info"
+                  :showIcon="true"
+                  :message="$t('message.ablestack.n2k.preserve.source.mac')" />
                 <a-row v-if="selectedVmwareVcenter" :gutter="12" justify="end">
                   <a-col style="text-align: right">
                     <a-form-item name="forced" ref="forced">
