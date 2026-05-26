@@ -34,6 +34,37 @@ including:
   - a design update
   - a documented limitation with an operator-visible error message
 - SPDK must remain gated until VM Runtime Capability support is implemented.
+- Functional test cases `TC-01` through `TC-12` must not be marked `Pass` until
+  all required preparation stages `P-00` through `P-08` are complete or the test
+  case explicitly states that it is an API/DB-only dry run.
+
+## Validation Flow Overview
+
+The validation is split into preparation stages and functional test cases.
+
+Preparation stages are mandatory because the current implementation depends on:
+
+- an updated Management Server and API set
+- KVM host agent support for `StorageServiceHostCommand`
+- a Storage Service SystemVM template that includes QGA, service packages, and
+  `/usr/local/bin/ablestack-storagectl`
+- a running Storage Service SystemVM or equivalent test VM
+- client VMs and data volumes for protocol-level validation
+
+Overall sequence:
+
+| Order | ID | Type | Name | Required Before |
+| --- | --- | --- | --- | --- |
+| 0 | P-00 | Preparation | Repository and build artifact readiness | Any deployment |
+| 1 | P-01 | Preparation | Management Server deployment readiness | API tests |
+| 2 | P-02 | Preparation | KVM host agent deployment readiness | QGA/SystemVM tests |
+| 3 | P-03 | Preparation | Storage Service SystemVM template build readiness | Storage Service VM creation |
+| 4 | P-04 | Preparation | Storage Service SystemVM package verification | Protocol tests |
+| 5 | P-05 | Preparation | Cloud environment readiness | API and VM lifecycle tests |
+| 6 | P-06 | Preparation | Test volume readiness | Existing-volume and resize tests |
+| 7 | P-07 | Preparation | Client VM readiness | NFS/SMB/NVMe-oF client tests |
+| 8 | P-08 | Preparation | Observability and rollback readiness | Any destructive or stateful test |
+| 9-20 | TC-01..TC-12 | Functional | Feature validation scenarios | Release readiness |
 
 ## Test Environment Record
 
@@ -52,9 +83,294 @@ Create one row per validation pass.
 | API module build | `mvn -pl api -DskipTests install` | Pass | Verified in WSL ext4 worktree |
 | Server/schema build | `mvn -pl engine/schema,server -am -DskipTests install` | Pass | Verified in WSL ext4 worktree |
 
+## Current Readiness Status
+
+As of 2026-05-26, only static code/build verification has been completed. No
+real Storage Service functional validation can be marked `Pass` yet because the
+host deployment, Management Server deployment, Storage Service SystemVM
+template, test volumes, and client VMs are not prepared.
+
+| ID | Area | Current Status | Impact |
+| --- | --- | --- | --- |
+| P-00 | Repository and build artifact readiness | Partially Complete | Static builds passed, deployment artifacts still need to be selected for target hosts |
+| P-01 | Management Server deployment readiness | Not Started | Storage Service APIs cannot be validated in the target cloud yet |
+| P-02 | KVM host agent deployment readiness | Not Started | QGA command path cannot be validated yet |
+| P-03 | Storage Service SystemVM template build readiness | Not Started | Storage Service VM cannot provide NFS/SMB/iSCSI/NVMe-oF services yet |
+| P-04 | Storage Service SystemVM package verification | Not Started | Runtime package/script presence is unknown |
+| P-05 | Cloud environment readiness | Not Started | Zone/host/network/service offering readiness is unknown |
+| P-06 | Test volume readiness | Not Started | Existing-volume import and resize tests cannot run yet |
+| P-07 | Client VM readiness | Not Started | Client-side NFS/SMB/NVMe-oF access tests cannot run yet |
+| P-08 | Observability and rollback readiness | Not Started | Stateful tests should not begin yet |
+
+## Preparation Stages
+
+### P-00 Repository And Build Artifact Readiness
+
+Goal: verify the source branch can produce deployable artifacts.
+
+Steps:
+
+1. Confirm local `ablestack-diplo`, `origin/ablestack-diplo`, and
+   `upstream/ablestack-diplo` are synchronized.
+2. Confirm the work branch is based on the updated local `ablestack-diplo`.
+3. Build API, schema, server, KVM plugin, and SystemVM package/script artifacts
+   needed for deployment.
+4. Record artifact paths and commit SHA.
+
+Expected:
+
+- Static build succeeds.
+- Deployable jars/scripts are available.
+- No unrelated local files are included in deployment.
+
+Result:
+
+| Run ID | Branch | Commit | Artifact | Status | Evidence | Defect/Improvement |
+| --- | --- | --- | --- | --- | --- | --- |
+| STATIC-20260526-01 | `codex/diplo-storage-service-design` | `610f2bdf78` | API/server/schema build | Pass | Maven build passed in WSL ext4 worktree |  |
+
+### P-01 Management Server Deployment Readiness
+
+Goal: prepare the Management Server so Storage Service APIs and managers are
+available in the target cloud.
+
+Steps:
+
+1. Back up the current Management Server deployment.
+2. Deploy updated API/server/schema artifacts.
+3. Apply `schema-Diplo-After.sql` changes if the target database does not
+   already contain the Storage Service tables.
+4. Restart Management Server.
+5. Verify API discovery includes:
+   - `createStorageServiceInstance`
+   - `enableStorageServiceProtocol`
+   - `attachStorageVolumeToFileShare`
+   - `resizeStorageFileShare`
+   - `prepareStorageServiceNvmeOfVm`
+6. Set or confirm `storage.service.feature.enabled=true`.
+
+Expected:
+
+- Management Server starts normally.
+- New Storage Service APIs are registered.
+- Existing SharedFS APIs still exist.
+- No `503` or schema-related startup error occurs.
+
+Result:
+
+| Run ID | Host | Artifact/Commit | DB Migration | Status | Evidence | Defect/Improvement |
+| --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  | Not Run |  |  |
+
+### P-02 KVM Host Agent Deployment Readiness
+
+Goal: prepare every target KVM host that may run the Storage Service SystemVM.
+
+Steps:
+
+1. Identify candidate hosts in the target zone/cluster.
+2. Back up the deployed KVM plugin or agent jar on each candidate host.
+3. Deploy the code that includes `StorageServiceHostCommand` handling and the
+   QGA guest-exec wrapper.
+4. Restart the host agent service.
+5. Verify the agent reconnects to Management Server.
+
+Expected:
+
+- Host agent is running and connected.
+- Storage Service QGA command wrapper is available.
+- Existing VM operations on the host are not regressed.
+
+Result:
+
+| Run ID | Host | Agent Service | Artifact/Commit | Status | Evidence | Defect/Improvement |
+| --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  | Not Run |  |  |
+
+### P-03 Storage Service SystemVM Template Build Readiness
+
+Goal: produce or identify a SystemVM template that can run Storage Service
+protocol services.
+
+Required packages and files:
+
+| Area | Requirement |
+| --- | --- |
+| QGA | `qemu-guest-agent` installed and enabled |
+| Control script | `/usr/local/bin/ablestack-storagectl` installed and executable |
+| NFS | `nfs-kernel-server` or equivalent, `exportfs` |
+| SMB | `samba`, `smbd`, `nmbd`, `smbpasswd`, `testparm` |
+| AD domain join | `winbind`, `net`, Kerberos/Samba AD join dependencies |
+| iSCSI | `targetcli-fb` or equivalent `targetcli` |
+| NVMe-oF kernel | `nvme-cli`, kernel `configfs`, `nvmet`, `nvmet-tcp` support |
+| Filesystem grow | `xfs_growfs`, `resize2fs`, `findmnt`, `lsblk` |
+| Diagnostics | `ss`, `systemctl`, useful logging tools |
+
+Steps:
+
+1. Locate the current SystemVM template build process.
+2. Add Storage Service package requirements to the template build profile.
+3. Add `ablestack-storagectl` to the template.
+4. Build the template.
+5. Register the template in the target zone.
+6. Record template name, ID, checksum, and build commit.
+
+Expected:
+
+- Template is registered and usable by the target zone.
+- Required packages and scripts are present before functional tests begin.
+
+Result:
+
+| Run ID | Template Name | Template ID | Build Commit | Status | Evidence | Defect/Improvement |
+| --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  | Not Run |  |  |
+
+### P-04 Storage Service SystemVM Package Verification
+
+Goal: verify the running Storage Service SystemVM actually contains and runs the
+required components.
+
+Steps:
+
+1. Deploy or start a VM from the Storage Service-ready SystemVM template.
+2. Verify QGA is active from the host.
+3. Inside the VM, verify:
+   - `/usr/local/bin/ablestack-storagectl`
+   - `qemu-guest-agent`
+   - `exportfs`
+   - `smbd`
+   - `net`
+   - `targetcli`
+   - `nvme`
+   - `xfs_growfs`
+   - `resize2fs`
+4. Run `ablestack-storagectl health`.
+5. Run `ablestack-storagectl inventory`.
+
+Expected:
+
+- QGA guest-exec works.
+- `health` returns structured JSON.
+- Missing packages are documented before protocol tests begin.
+
+Result:
+
+| Run ID | VM | Host | QGA | Script | Packages | Status | Evidence | Defect/Improvement |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  | Not Run |  |  |
+
+### P-05 Cloud Environment Readiness
+
+Goal: verify the target cloud can host and manage Storage Service resources.
+
+Steps:
+
+1. Confirm target zone, pod, cluster, and hosts are healthy.
+2. Confirm primary storage has enough capacity.
+3. Confirm network connectivity from client VMs to the Storage Service SystemVM
+   for:
+   - NFS TCP/UDP 2049 as required
+   - SMB TCP 445
+   - iSCSI TCP 3260
+   - NVMe-oF TCP 4420
+4. Confirm suitable service offering exists for the Storage Service SystemVM.
+5. Confirm test account/domain/project state is active.
+
+Expected:
+
+- No infrastructure blocker exists before functional tests.
+- Network/firewall policy allows protocol-level tests.
+
+Result:
+
+| Run ID | Zone | Cluster | Storage | Network | Service Offering | Status | Evidence | Defect/Improvement |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  | Not Run |  |  |
+
+### P-06 Test Volume Readiness
+
+Goal: prepare volumes that can safely be attached to the Storage Service
+SystemVM.
+
+Steps:
+
+1. Create one unused blank data volume for basic attach testing.
+2. Create one XFS volume with known test files.
+3. Create one ext4 volume with known test files.
+4. Create one volume suitable for resize testing.
+5. Confirm none of the volumes are attached to another VM before import.
+6. Record volume IDs, filesystem type, initial size, and test-file checksum.
+
+Expected:
+
+- Volumes are safe to attach.
+- Existing-volume tests can prove non-destructive import.
+- Resize tests have known before/after size.
+
+Result:
+
+| Run ID | Volume | Filesystem | Initial Size | Attached To | Test Data | Status | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  | Not Run |  |
+
+### P-07 Client VM Readiness
+
+Goal: prepare protocol clients for end-to-end access tests.
+
+Steps:
+
+1. Prepare an NFS client VM with mount utilities.
+2. Prepare an SMB client VM with Linux CIFS tools or Windows SMB access.
+3. Prepare an NVMe-oF client VM with `nvme-cli`.
+4. Verify each client can route to the Storage Service network.
+5. Record client VM IDs and IPs.
+
+Expected:
+
+- Clients can reach the Storage Service SystemVM IP.
+- Required client tools are installed.
+
+Result:
+
+| Run ID | Client | Protocol | Tools | Network Reachability | Status | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+|  |  | NFS |  |  | Not Run |  |
+|  |  | SMB |  |  | Not Run |  |
+|  |  | NVME_OF |  |  | Not Run |  |
+
+### P-08 Observability And Rollback Readiness
+
+Goal: make every state-changing test recoverable.
+
+Steps:
+
+1. Confirm log locations:
+   - Management Server log
+   - Host agent log
+   - SystemVM `/var/log/ablestack-storagectl.log`
+   - protocol service logs
+2. Prepare rollback plan for:
+   - Management Server artifact restore
+   - host agent artifact restore
+   - SystemVM template rollback
+   - test volume detach/recovery
+3. Confirm no production workload volumes are used.
+
+Expected:
+
+- Failures can be diagnosed and rolled back.
+- Test volumes and client VMs are clearly identified.
+
+Result:
+
+| Run ID | Logs Verified | Rollback Verified | Test Resources Isolated | Status | Evidence |
+| --- | --- | --- | --- | --- | --- |
+|  |  |  |  | Not Run |  |
+
 ## Required Test Data
 
-Prepare these resources before functional validation.
+Prepare these resources after `P-00` through `P-08` are complete.
 
 | ID | Resource | Requirement | Notes |
 | --- | --- | --- | --- |
@@ -70,6 +386,10 @@ Prepare these resources before functional validation.
 
 Use CloudMonkey, direct signed API calls, or the Mold UI API client. Replace all
 placeholder values at runtime.
+
+Do not start this order as a real functional validation until preparation
+stages `P-00` through `P-08` are complete. Before then, only API/DB dry-run
+checks are allowed and results must be marked as `Dry Run`, not `Pass`.
 
 1. Enable feature flag if needed.
 2. Create or locate a Storage Service instance.
@@ -88,6 +408,12 @@ placeholder values at runtime.
 
 Goal: verify the instance model can track a running Storage Service SystemVM.
 
+Preparation dependency:
+
+- Full validation requires `P-01` through `P-05`.
+- Without a Storage Service-ready SystemVM template, this test can only verify
+  API registration and DB persistence with no `virtualmachineid`.
+
 Steps:
 
 1. Call `createStorageServiceInstance` with `zoneid`, `name`,
@@ -98,17 +424,26 @@ Expected:
 
 - Response object is `storageserviceinstance`.
 - State is `Running` when `virtualmachineid` is supplied.
+- State is `Allocated` when no SystemVM is attached.
 - Zone, service offering, and VM IDs resolve to UUIDs.
+- QGA and runtime operations are not expected to work until the SystemVM
+  template and host agent preparation stages are complete.
 
 Result:
 
-| Run ID | Status | Evidence | Defect/Improvement |
-| --- | --- | --- | --- |
-|  | Not Run |  |  |
+| Run ID | Mode | Status | Evidence | Defect/Improvement |
+| --- | --- | --- | --- | --- |
+|  | Dry Run or Full | Not Run |  |  |
 
 ### TC-02 Enable NFS And SMB Protocols
 
 Goal: verify protocol state is persisted and QGA desired-state apply is invoked.
+
+Preparation dependency:
+
+- Requires `P-01` through `P-05`.
+- If the SystemVM template or host agent is not prepared, this test must remain
+  `Not Run`.
 
 Steps:
 
@@ -133,6 +468,11 @@ Result:
 ### TC-03 Attach Existing XFS Volume To NFS Export
 
 Goal: verify non-destructive existing-volume import for NFS.
+
+Preparation dependency:
+
+- Requires `P-01` through `P-07`.
+- Requires prepared XFS test volume from `P-06`.
 
 Steps:
 
@@ -160,6 +500,11 @@ Result:
 ### TC-04 Attach Existing ext4 Volume To SMB Share
 
 Goal: verify non-destructive existing-volume import for SMB.
+
+Preparation dependency:
+
+- Requires `P-01` through `P-07`.
+- Requires prepared ext4 test volume from `P-06`.
 
 Steps:
 
@@ -208,6 +553,11 @@ Result:
 ### TC-06 Resize NFS File Share
 
 Goal: verify storage capacity expansion for NFS.
+
+Preparation dependency:
+
+- Requires `P-01` through `P-08`.
+- Requires a dedicated resize test volume from `P-06`.
 
 Steps:
 
@@ -285,6 +635,11 @@ Result:
 ### TC-09 NVMe-oF Kernel Preparation
 
 Goal: verify `KERNEL_NVMET` prerequisite validation.
+
+Preparation dependency:
+
+- Requires `P-01` through `P-07`.
+- Requires NVMe-oF kernel packages and modules from `P-03` and `P-04`.
 
 Steps:
 
@@ -364,6 +719,11 @@ Result:
 
 Goal: verify UI can drive the same API workflows without owning storage logic.
 
+Preparation dependency:
+
+- Requires `P-01` and deployed UI changes for API-driven workflows.
+- Full protocol workflow validation also requires `P-02` through `P-08`.
+
 Steps:
 
 1. Open Storage Service UI.
@@ -417,9 +777,10 @@ Use this table for every issue found during validation.
 
 The feature is ready for the next integration step only when:
 
-1. TC-01 through TC-11 pass in at least one real `ablestack-diplo` environment.
-2. TC-12 passes for the implemented UI surface.
-3. All High/Critical defects are fixed and retested.
-4. Remaining limitations are documented in this file and in operator-facing API
+1. P-00 through P-08 pass in the target `ablestack-diplo` environment.
+2. TC-01 through TC-11 pass in at least one real `ablestack-diplo` environment.
+3. TC-12 passes for the implemented UI surface.
+4. All High/Critical defects are fixed and retested.
+5. Remaining limitations are documented in this file and in operator-facing API
    or UI messages.
-5. SPDK remains gated until VM Runtime Capability support is implemented.
+6. SPDK remains gated until VM Runtime Capability support is implemented.
