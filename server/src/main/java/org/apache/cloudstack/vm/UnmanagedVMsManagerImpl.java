@@ -4776,8 +4776,10 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             Map<String, String> sourceContext = new LinkedHashMap<>();
             sourceContext.put("sourceApi", cmd.getSourceApi());
             sourceContext.put("resolvedSourceApi", inventory.getSourceApi());
+            boolean startTargetVm = getAblestackN2KStartTargetVm(cmd, sourceContext);
             sourceContext.put("insecure", Boolean.toString(cmd.isInsecure()));
             sourceContext.put("retentionSeconds", Long.toString(retentionSeconds));
+            sourceContext.put("startTargetVm", Boolean.toString(startTargetVm));
             importVmTasksManager.updateImportVMTaskN2KContext(importVMTask, destinationCluster.getId(), serviceOffering.getId(),
                     targetStoragePool.getId(), cmd.getHost(), cmd.getSourceApi(), gson.toJson(sourceNutanixInstance),
                     serviceOfferingDetails, buildNicSelectionMap(nicNetworkMap, nicIpAddressMap), targetStoragePlan.getTargetProfile(),
@@ -4787,7 +4789,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             startNutanixInstanceToKVMUsingAblestackN2K(sourceVMName, convertHost, targetStorageLocation, cmd.getHost(),
                     cmd.getUsername(), cmd.getPassword(), cmd.getSplitMode(), cmd.getSourceApi(), cmd.isInsecure(), workdir,
                     nfsHost, targetStoragePlan, persistedImportTask, zone, owner, serviceOffering, targetStoragePool, nicNetworkMap,
-                    hostName, displayName, retentionSeconds);
+                    hostName, displayName, retentionSeconds, false, startTargetVm);
             if (StringUtils.equalsIgnoreCase(cmd.getSplitMode(), "full")) {
                 AblestackN2KStatusAnswer status = refreshImportVMTaskWithAblestackN2KStatus(persistedImportTask, convertHost);
                 importVmTasksManager.updateImportVMTaskV2KStep(persistedImportTask, ImportVmTask.V2KStep.Phase2_Completed);
@@ -4830,7 +4832,9 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         String targetVmName = StringUtils.defaultIfBlank(task.getTargetVMName(), task.getDisplayName());
         Map<String, String> sourceContext = getTaskSourceContextMap(task);
         long retentionSeconds = getAblestackN2KRetentionSeconds(cmd, sourceContext);
+        boolean startTargetVm = getAblestackN2KStartTargetVm(cmd, sourceContext);
         sourceContext.put("retentionSeconds", Long.toString(retentionSeconds));
+        sourceContext.put("startTargetVm", Boolean.toString(startTargetVm));
 
         ImportVmTaskSourceCredential storedCredential = importVmTasksManager.getImportVMTaskSourceCredential(task);
         String prismEndpoint = StringUtils.defaultIfBlank(cmd.getHost(), task.getSourceEndpoint());
@@ -4860,7 +4864,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             startNutanixInstanceToKVMUsingAblestackN2K(task.getSourceVMName(), convertHost, targetStorageLocation,
                     prismEndpoint, username, password, "phase2", "v3", cmd.isInsecure(), task.getWorkdir(), nfsHost,
                     targetStoragePlan, task, zone, owner, serviceOffering, targetStoragePool, nicNetworkMap, targetVmName, targetVmName,
-                    retentionSeconds);
+                    retentionSeconds, false, startTargetVm);
             triggerAblestackN2KPhase2MonitoringInBackground(task.getUuid());
         } catch (RuntimeException e) {
             logger.error(String.format("Error while executing ablestack-n2k phase2 workflow for task %s", task.getUuid()), e);
@@ -4974,6 +4978,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         String sourceApi = StringUtils.defaultIfBlank(cmd.getSourceApi(), StringUtils.defaultIfBlank(sourceContext.get("sourceApi"), "v3"));
         boolean insecure = cmd.isInsecure();
         long retentionSeconds = getAblestackN2KRetentionSeconds(cmd, sourceContext);
+        boolean startTargetVm = getAblestackN2KStartTargetVm(cmd, sourceContext);
 
         try {
             if (!resume) {
@@ -4992,6 +4997,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             }
             sourceContext.put("insecure", Boolean.toString(insecure));
             sourceContext.put("retentionSeconds", Long.toString(retentionSeconds));
+            sourceContext.put("startTargetVm", Boolean.toString(startTargetVm));
             importVmTasksManager.updateImportVMTaskN2KContext(task, task.getClusterId(), task.getServiceOfferingId(),
                     targetStoragePool.getId(), prismEndpoint, sourceApi, gson.toJson(sourceInstance),
                     getTaskServiceOfferingDetails(task), getTaskNicSelectionMap(task), targetStoragePlan.getTargetProfile(),
@@ -5006,7 +5012,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
             startNutanixInstanceToKVMUsingAblestackN2K(task.getSourceVMName(), convertHost, targetStorageLocation,
                     prismEndpoint, username, password, splitMode, sourceApi, insecure, workdir, nfsHost,
                     targetStoragePlan, task, zone, owner, serviceOffering, targetStoragePool, nicNetworkMap, targetVmName, targetVmName,
-                    retentionSeconds, resume);
+                    retentionSeconds, resume, startTargetVm);
             if (StringUtils.equalsIgnoreCase(splitMode, "phase2")) {
                 triggerAblestackN2KPhase2MonitoringInBackground(task.getUuid());
             }
@@ -5028,7 +5034,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                                                             Map<String, Long> nicNetworkMap, String hostName, String displayName) {
         startNutanixInstanceToKVMUsingAblestackN2K(sourceVM, convertHost, targetStorageLocation, prismEndpoint, username, password,
                 splitMode, sourceApi, insecure, workdir, nfsHost, targetStoragePlan, importTask, zone, owner,
-                serviceOffering, targetStoragePool, nicNetworkMap, hostName, displayName, ABLESTACK_N2K_DEFAULT_RETENTION_SECONDS, false);
+                serviceOffering, targetStoragePool, nicNetworkMap, hostName, displayName, ABLESTACK_N2K_DEFAULT_RETENTION_SECONDS, false, true);
     }
 
     private void startNutanixInstanceToKVMUsingAblestackN2K(String sourceVM, HostVO convertHost, DataStoreTO targetStorageLocation,
@@ -5041,7 +5047,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                                                             long retentionSeconds) {
         startNutanixInstanceToKVMUsingAblestackN2K(sourceVM, convertHost, targetStorageLocation, prismEndpoint, username, password,
                 splitMode, sourceApi, insecure, workdir, nfsHost, targetStoragePlan, importTask, zone, owner,
-                serviceOffering, targetStoragePool, nicNetworkMap, hostName, displayName, retentionSeconds, false);
+                serviceOffering, targetStoragePool, nicNetworkMap, hostName, displayName, retentionSeconds, false, true);
     }
 
     private void startNutanixInstanceToKVMUsingAblestackN2K(String sourceVM, HostVO convertHost, DataStoreTO targetStorageLocation,
@@ -5051,7 +5057,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
                                                             ImportVMTaskVO importTask, DataCenter zone, Account owner,
                                                             ServiceOfferingVO serviceOffering, StoragePoolVO targetStoragePool,
                                                             Map<String, Long> nicNetworkMap, String hostName, String displayName,
-                                                            long retentionSeconds, boolean resume) {
+                                                            long retentionSeconds, boolean resume, boolean startTargetVm) {
         logger.debug("Delegating the conversion of instance {} from Nutanix to KVM to the host {} using ablestack-n2k", sourceVM, convertHost);
 
         List<String> missingParams = new ArrayList<>();
@@ -5083,6 +5089,7 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         AblestackN2KConvertInstanceCommand cmd = new AblestackN2KConvertInstanceCommand(sourceVM, prismEndpoint, username, password,
                 targetStorageLocation, splitMode, sourceApi, insecure, workdir);
         cmd.setResume(resume);
+        cmd.setStartTargetVm(startTargetVm);
         cmd.setNfsHost(nfsHost);
         cmd.setRetentionSeconds(retentionSeconds);
         cmd.setTargetFormat(targetStoragePlan.getTargetFormat());
@@ -5538,6 +5545,20 @@ public class UnmanagedVMsManagerImpl implements UnmanagedVMsManager {
         }
 
         return ABLESTACK_N2K_DEFAULT_RETENTION_SECONDS;
+    }
+
+    protected boolean getAblestackN2KStartTargetVm(ImportUnmanagedInstanceForAblestackN2KCmd cmd, Map<String, String> sourceContext) {
+        Boolean requestedStartTargetVm = cmd != null ? cmd.getRequestedStartTargetVm() : null;
+        if (requestedStartTargetVm != null) {
+            return BooleanUtils.toBoolean(requestedStartTargetVm);
+        }
+
+        String storedStartTargetVm = sourceContext != null ? StringUtils.trimToNull(sourceContext.get("startTargetVm")) : null;
+        if (StringUtils.isNotBlank(storedStartTargetVm)) {
+            return BooleanUtils.toBoolean(storedStartTargetVm);
+        }
+
+        return true;
     }
 
     protected String getAblestackTaskResumeSplitMode(ImportVMTaskVO task) {

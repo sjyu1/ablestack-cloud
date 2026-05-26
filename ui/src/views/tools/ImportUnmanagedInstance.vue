@@ -193,6 +193,14 @@
                 :showIcon="true"
                 :message="$t('label.ablestack.n2k.use')"
                 :description="$t('message.select.ablestack.n2k.primary.storage.migration')" />
+              <a-form-item v-if="isAblestackN2KImport" name="starttargetvm" ref="starttargetvm">
+                <template #label>
+                  <tooltip-label
+                    :title="$t('label.n2k.start.target.vm')"
+                    :tooltip="$t('message.n2k.start.target.vm')" />
+                </template>
+                <a-switch v-model:checked="form.starttargetvm" />
+              </a-form-item>
               <a-form-item v-if="isAblestackN2KImport" name="n2kretentiondays" ref="n2kretentiondays">
                 <template #label>
                   <tooltip-label
@@ -1044,6 +1052,7 @@ export default {
         forcemstoimportvmfiles: this.switches.forceMsToImportVmFiles,
         forceconverttopool: this.switches.forceConvertToPool,
         useablestackv2k: this.defaultUseAblestackV2K(),
+        starttargetvm: true,
         n2kretentiondays: 14,
         domainid: null,
         account: null,
@@ -1723,6 +1732,7 @@ export default {
             return
           }
           params.retentionseconds = Math.round(retentionDays * 24 * 60 * 60)
+          params.starttargetvm = values.starttargetvm !== false
           if (this.selectedKvmHostForConversion) {
             params.convertinstancehostid = this.selectedKvmHostForConversion
           }
@@ -1877,6 +1887,7 @@ export default {
       this.form.usevddk = false
       this.form.forceconverttopool = false
       this.form.forcemstoimportvmfiles = false
+      this.form.starttargetvm = true
       this.form.n2kretentiondays = 14
       this.userModifiedVddkSetting = false
       this.selectedKvmHostForConversion = null

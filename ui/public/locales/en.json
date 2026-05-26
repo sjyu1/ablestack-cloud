@@ -5575,5 +5575,10 @@
   "message.confirm.retry.import.vm.task.from.start": "Keep the existing task record and start a new import task from the beginning with the same selections.",
   "message.confirm.cancel.import.vm.task": "Cancel the running import task and try to cleanup temporary migration resources on the conversion host.",
   "message.confirm.delete.import.vm.task": "Delete the import task from the list. Stored credentials and temporary work directories are also cleaned up when selected.",
-  "message.confirm.clear.import.vm.task.credentials": "Delete the encrypted source credential stored for this task. You may need to enter credentials again for Phase2 or resume."
+  "message.confirm.clear.import.vm.task.credentials": "Delete the encrypted source credential stored for this task. You may need to enter credentials again for Phase2 or resume.",
+  "label.n2k.start.target.vm": "Start target VM after cutover",
+  "label.n2k.keep.target.vm.stopped": "Keep target VM stopped",
+  "label.n2k.target.vm.power.policy": "Target VM power policy",
+  "label.keep.current.setting": "Keep current setting",
+  "message.n2k.start.target.vm": "When enabled, Phase2 starts the imported Cloud VM after cutover. Disable it to leave the target VM stopped after import."
 }

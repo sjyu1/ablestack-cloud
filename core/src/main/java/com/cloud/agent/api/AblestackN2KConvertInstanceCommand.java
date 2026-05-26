@@ -51,6 +51,7 @@ public class AblestackN2KConvertInstanceCommand extends Command {
     private String cloudDisplayName;
     private String cloudCpuSpeed;
     private Long retentionSeconds;
+    private boolean startTargetVm = true;
     private boolean resume;
 
     public AblestackN2KConvertInstanceCommand() {
@@ -280,6 +281,14 @@ public class AblestackN2KConvertInstanceCommand extends Command {
 
     public void setRetentionSeconds(Long retentionSeconds) {
         this.retentionSeconds = retentionSeconds;
+    }
+
+    public boolean isStartTargetVm() {
+        return startTargetVm;
+    }
+
+    public void setStartTargetVm(boolean startTargetVm) {
+        this.startTargetVm = startTargetVm;
     }
 
     public boolean isResume() {
