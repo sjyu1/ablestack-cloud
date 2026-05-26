@@ -86,15 +86,16 @@ Create one row per validation pass.
 
 ## Current Readiness Status
 
-As of 2026-05-26, only static code/build verification has been completed. No
-real Storage Service functional validation can be marked `Pass` yet because the
-host deployment, Management Server deployment, Storage Service SystemVM
+As of 2026-05-26, static code/build verification and Management Server
+preflight checks have been completed. No real Storage Service functional
+validation can be marked `Pass` yet because the Management Server still needs
+an aligned deployment, and the host deployment, Storage Service SystemVM
 template, test volumes, and client VMs are not prepared.
 
 | ID | Area | Current Status | Impact |
 | --- | --- | --- | --- |
 | P-00 | Repository and build artifact readiness | Complete | Base branch synchronized and API/server/schema/KVM artifacts built in WSL ext4 worktree |
-| P-01 | Management Server deployment readiness | In Progress | Network reachability and SSH key access were confirmed; backup, deployment, DB migration, and API registration checks still need to run |
+| P-01 | Management Server deployment readiness | Blocked | Management Server is reachable, DB access and backup succeeded, but target runtime is `4.22.0.0-SNAPSHOT` while current branch artifacts are `4.21.0.0-SNAPSHOT`; deployment and restart are deferred until aligned `4.22` artifacts or an approved class-level patch plan are available |
 | P-02 | KVM host agent deployment readiness | Not Started | QGA command path cannot be validated yet |
 | P-03 | Storage Service SystemVM template build readiness | Not Started | Storage Service VM cannot provide NFS/SMB/iSCSI/NVMe-oF services yet |
 | P-04 | Storage Service SystemVM package verification | Not Started | Runtime package/script presence is unknown |
@@ -190,7 +191,7 @@ Result:
 | Run ID | Host | Artifact/Commit | DB Migration | Status | Evidence | Defect/Improvement |
 | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  | Not Run |  |  |
-| P01-20260526-01 | `10.10.22.10` | `1d67d683c609` | Not checked | In Progress | TCP 8080 reachable; TCP 10022 reachable; TCP 22 closed; unauthenticated API returned HTTP 401; key file copied to WSL temp path with mode 600; SSH hostname check succeeded for `10.10.22.10` (`ccvm`) and host nodes `10.10.22.1` (`ablecube22-1`), `10.10.22.2` (`ablecube22-2`), `10.10.22.3` (`ablecube22-3`) | Management Server backup, DB schema check, artifact deployment, service restart, and API registration checks are not started yet. No Management Server files, DB schema, or service state were changed. |
+| P01-20260526-01 | `10.10.22.10` | local branch `4.21.0.0-SNAPSHOT`; target runtime `4.22.0.0-SNAPSHOT` | Not applied | Blocked | TCP 8080 reachable; TCP 10022 reachable; TCP 22 closed; unauthenticated API returned HTTP 401; SSH hostname check succeeded for `10.10.22.10` (`ccvm`) and host nodes `10.10.22.1` (`ablecube22-1`), `10.10.22.2` (`ablecube22-2`), `10.10.22.3` (`ablecube22-3`); `mold` and `mold-usage` are active; current management jars are `cloud-api/core/server-4.22.0.0-SNAPSHOT.jar`; DB password decryption and DB connectivity succeeded without printing secrets; expected Storage Service tables count is `0`; expected Storage Service configuration keys are absent; current `4.22` jars do not contain the new Storage Service API/manager classes; backup created at `/root/codex-backups/storage-service-p01-20260526-170947` with SHA-256 records for the existing API/core/server jars | Deployment, DB migration, Management Server restart, and API registration checks were intentionally not executed because replacing or mixing `4.21` artifacts into the shared `4.22` environment is unsafe. Prepare aligned `4.22` build artifacts or approve a minimal class-level patch plan against the existing `4.22` jars before continuing P-01. |
 
 ### P-02 KVM Host Agent Deployment Readiness
 
