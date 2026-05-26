@@ -294,6 +294,7 @@ For NVMe-oF, `config_json` should distinguish:
 
 - `type`: `subsystem` or `namespace`
 - `engine`: `KERNEL_NVMET` or `SPDK`
+- `engineState`: `SUPPORTED`, `PLANNED`, or `PREPARATION_REQUIRED`
 - `allowAnyHost`
 - `backingPath`
 - `transport`: initially `tcp`
@@ -491,14 +492,14 @@ template explicitly.
 NVMe-oF template and service-offering strategy:
 
 - `KERNEL_NVMET` mode belongs in the normal Storage Service System VM template.
-- `SPDK` mode should be exposed through a separate advanced service offering or
-  a dedicated Storage Service template profile because it can require reserved
-  hugepages, larger memory, CPU pinning, NUMA hints, and optional SR-IOV or PCI
-  passthrough.
-- The manager must validate host and offering capability before accepting SPDK
-  mode. If the current VM cannot satisfy the request, it should return a clear
-  `PreparationRequired` state and recommended offering/template changes instead
-  of partially enabling NVMe-oF.
+- `SPDK` mode is kept as a Storage Service extension point, but it must not own
+  HugePage, NUMA, CPU pinning, memlock, SR-IOV, or PCI passthrough controls.
+  Those controls belong to a future VM Runtime Capability feature in the VM
+  creation and management layer.
+- Until the VM Runtime Capability feature exists, Storage Service should expose
+  only SPDK design metadata and prerequisite reporting. It must reject actual
+  SPDK enablement with a clear `PreparationRequired` state that points to the
+  missing VM runtime capability support.
 
 ## NFS Design
 
@@ -714,11 +715,12 @@ NVMe-oF should support two target engines:
   - Requires kernel modules such as `nvmet`, `nvmet-tcp`, and `configfs`.
   - Does not require guest hugepages by design.
 - `SPDK`
-  - Optional high-performance mode.
+  - Planned high-performance mode.
   - Uses an SPDK NVMe-oF target process.
-  - Requires hugepages and DPDK/SPDK runtime preparation.
-  - May require CPU pinning, NUMA placement, memlock limits, and optional PCI
-    passthrough or SR-IOV/VF assignment for high-throughput networking.
+  - Requires future VM Runtime Capability support for HugePage, NUMA, CPU
+    pinning, memlock, and optional PCI passthrough or SR-IOV/VF assignment.
+  - Stays in this Storage Service design only as protocol metadata,
+    prerequisite reporting, and a later integration target.
 
 The API `prepareStorageServiceNvmeOfVm` should prepare or validate the System VM
 for the requested engine before NVMe-oF subsystems are enabled.
@@ -728,11 +730,8 @@ Parameters:
 - `instanceid`
 - `engine`: `KERNEL_NVMET` or `SPDK`
 - `transport`: initially `tcp`
-- `hugepagesmib`: required only for `SPDK`
-- `cpuset`: optional dedicated vCPU set for SPDK pollers
-- `numanode`: optional NUMA placement hint
-- `memlock`: optional process memlock limit, default `unlimited` for SPDK
-- `networkmode`: `VIRTIO`, `SRIOV_VF`, or `PCI_PASSTHROUGH`
+- `runtimecapabilityprofileid`: future parameter, accepted only after VM
+  Runtime Capability support is implemented
 - `validateonly`: report missing prerequisites without changing the VM
 
 Management-side VM preparation:
@@ -740,35 +739,28 @@ Management-side VM preparation:
 1. Validate the Storage Service System VM service offering.
 2. For `KERNEL_NVMET`, ensure the template has `nvme-cli`, `nvmetcli` when
    available, and a kernel with NVMe target modules.
-3. For `SPDK`, select or update a service offering that provides:
-   - enough memory for normal OS use plus requested hugepages
-   - optional CPU pinning or host affinity
-   - optional NUMA-aware placement
-   - optional SR-IOV VF or PCI passthrough network capability
+3. For `SPDK`, do not attempt guest-side HugePage or NUMA changes from Storage
+   Service. Return `PreparationRequired` until a VM Runtime Capability profile
+   can be attached to the System VM.
 4. Generate a desired capability document in `StorageServiceProtocol.config_json`.
-5. Send QGA `nvmeof prepare` to the System VM.
+5. Send QGA `nvmeof prepare` to the System VM only for supported engine states.
 
-Guest-side SPDK preparation:
+Deferred SPDK integration:
 
-1. Install or verify SPDK runtime packages and `setup.sh` prerequisites in the
-   template.
-2. Reserve hugepages:
-   - runtime: write to `/sys/kernel/mm/hugepages/.../nr_hugepages`
-   - persistent: render `/etc/sysctl.d/ablestack-spdk-hugepages.conf`
-3. Mount `hugetlbfs` at `/dev/hugepages` if not already mounted.
-4. Apply `LimitMEMLOCK=infinity` to the SPDK service unit.
-5. Optionally bind selected PCI devices to a userspace driver only when the
-   operator requested passthrough/SR-IOV and CloudStack attached the device to
-   the VM.
-6. Start or reload the SPDK NVMe-oF service.
-7. Return a readiness report with hugepage totals/free count, NUMA node,
-   transport, NIC mode, and engine version.
+1. VM management adds Runtime Capability profiles for HugePage, NUMA, CPU
+   pinning, memlock, and optional passthrough or SR-IOV.
+2. Storage Service accepts `runtimecapabilityprofileid` for SPDK requests and
+   validates that the target System VM was created or restarted with that
+   profile.
+3. The System VM template verifies SPDK runtime packages, `setup.sh`
+   prerequisites, `hugetlbfs`, service limits, and SPDK target service state.
+4. QGA `nvmeof prepare` reports SPDK readiness only after the VM-level runtime
+   profile is present and active.
 
-The first implementation should keep `KERNEL_NVMET` as the default and expose
-`SPDK` as an explicit advanced mode. If the System VM runs on normal virtio
-networking, SPDK can still be prepared for lab use, but the UI should clearly
-mark it as "accelerated mode prerequisites not fully satisfied" unless CPU,
-hugepages, and network placement checks pass.
+The first implementation must keep `KERNEL_NVMET` as the only enabled NVMe-oF
+engine. The UI may show `SPDK` as planned or unavailable, but it must not offer
+HugePage, CPU, NUMA, memlock, SR-IOV, or PCI passthrough controls inside the
+Storage Service workflow.
 
 ## UI Design
 
@@ -867,7 +859,7 @@ Implementation note:
 - Add upgrade and template compatibility checks.
 - Evaluate dedicated Storage Service System VM template profile.
 
-### Phase 7: Existing Volumes, Resize, And NVMe-oF VM Preparation
+### Phase 7: Existing Volumes, Resize, And NVMe-oF Kernel Preparation
 
 - Add explicit existing-volume import APIs for NFS and SMB file shares.
 - Implement QGA `volume attach inspect` and non-destructive mount discovery.
@@ -875,14 +867,16 @@ Implementation note:
   ext4 grow.
 - Add XFS project quota support for multi-share-on-one-volume capacity
   enforcement.
-- Add `prepareStorageServiceNvmeOfVm` for `KERNEL_NVMET` validation and SPDK
-  hugepage/service preparation.
+- Add `prepareStorageServiceNvmeOfVm` for `KERNEL_NVMET` validation.
+- Keep SPDK as a planned engine state that returns prerequisite information and
+  `PreparationRequired` until VM Runtime Capability support is available.
 - Add UI workflows for:
   - selecting existing CloudStack volumes
   - choosing import mode
   - reviewing detected filesystem and mount status
   - resizing file services
-  - selecting NVMe-oF engine mode and viewing prerequisite checks.
+  - selecting NVMe-oF `KERNEL_NVMET` mode and viewing prerequisite checks
+  - showing SPDK as planned or unavailable without exposing VM runtime controls.
 
 Recommended implementation order:
 
@@ -890,7 +884,7 @@ Recommended implementation order:
 2. QGA volume inspection and mount workflow.
 3. File share resize API and filesystem grow workflow.
 4. NVMe-oF `KERNEL_NVMET` prerequisite validation.
-5. SPDK preparation API and template/service-offering capability checks.
+5. SPDK planned-state response and VM Runtime Capability dependency message.
 6. UI integration and end-to-end validation.
 
 ## Open Decisions
@@ -904,9 +898,11 @@ Recommended implementation order:
   implemented only through one-volume-per-export initially.
 - Whether SMB identity should standardize on winbind, sssd, or support both.
 - Whether NVMe-oF should require `nvmetcli` or use configfs directly.
-- Whether SPDK mode should be supported in the same Storage Service System VM
-  template or require a dedicated high-performance template and service
-  offering.
+- Whether SPDK mode should later use the same Storage Service System VM
+  template or require a dedicated high-performance template after VM Runtime
+  Capability profiles are implemented.
+- Whether VM Runtime Capability should be modeled only through service offering
+  details first or receive normalized profile tables before SPDK is enabled.
 - Whether existing volumes that are currently attached to another VM should be
   automatically detached by the Storage Service workflow or require an explicit
   operator detach step first.
