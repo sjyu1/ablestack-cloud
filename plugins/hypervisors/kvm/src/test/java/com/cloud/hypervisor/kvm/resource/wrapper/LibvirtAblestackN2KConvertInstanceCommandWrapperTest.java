@@ -122,12 +122,32 @@ public class LibvirtAblestackN2KConvertInstanceCommandWrapperTest {
             Mockito.verify(script).add("--cleanup-source-points");
             Mockito.verify(script).add("--target-map-json", "{\"scsi0:0\":\"rbd:rbd/rhel-disk0\"}");
             Mockito.verify(script).add("--start");
+            Mockito.verify(script, Mockito.never()).add("--apply");
             Mockito.verify(script).add(Mockito.eq("--cloud-cred-file"), Mockito.anyString());
             Mockito.verify(script).add("--cloud-zone-id", "zone-uuid");
             Mockito.verify(script).add("--cloud-service-offering-id", "service-offering-uuid");
             Mockito.verify(script).add("--cloud-network-ids", "network-uuid");
             Mockito.verify(script).add("--cloud-storage-id", "storage-uuid");
             Mockito.verify(script, Mockito.never()).add(Mockito.contains("secret"));
+        }
+    }
+
+    @Test
+    public void executeUsesApplyWithoutStartWhenCloudTargetVmShouldRemainStopped() throws IOException {
+        String workdir = temporaryFolder.newFolder("rhel-stopped").getAbsolutePath();
+        AblestackN2KConvertInstanceCommand cmd = validCommand(workdir);
+        cmd.setStartTargetVm(false);
+
+        try (MockedConstruction<Script> ignored = Mockito.mockConstruction(Script.class, (mock, context) -> {
+            Mockito.when(mock.execute(Mockito.any(OutputInterpreter.class))).thenReturn("");
+            Mockito.when(mock.getExitValue()).thenReturn(0);
+        })) {
+            Answer answer = wrapper.execute(cmd, libvirtComputingResource);
+
+            Assert.assertTrue(answer.getResult());
+            Script script = ignored.constructed().get(0);
+            Mockito.verify(script).add("--apply");
+            Mockito.verify(script, Mockito.never()).add("--start");
         }
     }
 

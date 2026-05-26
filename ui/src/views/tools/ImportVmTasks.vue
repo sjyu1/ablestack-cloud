@@ -239,6 +239,13 @@
             <a-select-option value="v3">{{ $t('label.nutanix.api.v3') }}</a-select-option>
           </a-select>
         </a-form-item>
+        <a-form-item v-if="isN2KTask(phase2Task)" :label="$t('label.n2k.target.vm.power.policy')">
+          <a-select v-model:value="phase2Form.starttargetvm">
+            <a-select-option :value="null">{{ $t('label.keep.current.setting') }}</a-select-option>
+            <a-select-option :value="true">{{ $t('label.n2k.start.target.vm') }}</a-select-option>
+            <a-select-option :value="false">{{ $t('label.n2k.keep.target.vm.stopped') }}</a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item v-if="isN2KTask(phase2Task)" :label="$t('label.n2k.snapshot.retention.days')">
           <a-input-number
             v-model:value="phase2Form.retentiondays"
@@ -400,6 +407,7 @@ export default {
         username: '',
         password: '',
         sourceapi: 'v3',
+        starttargetvm: null,
         insecure: true,
         retentiondays: 14
       },
@@ -452,6 +460,7 @@ export default {
         username: '',
         password: '',
         sourceapi: 'v3',
+        starttargetvm: null,
         insecure: true,
         retentiondays: 14
       }
@@ -464,6 +473,9 @@ export default {
       if (this.phase2Form.password) credential.password = this.phase2Form.password
       if (this.isN2KTask(this.phase2Task)) {
         credential.sourceapi = 'v3'
+        if (this.phase2Form.starttargetvm !== null && this.phase2Form.starttargetvm !== undefined) {
+          credential.starttargetvm = this.phase2Form.starttargetvm
+        }
         credential.insecure = this.phase2Form.insecure !== false
         const retentionDays = Number(this.phase2Form.retentiondays || 14)
         if (!Number.isFinite(retentionDays) || retentionDays < 1) {

@@ -75,6 +75,11 @@ public class ImportUnmanagedInstanceForAblestackN2KCmd extends ImportVmCmd {
             description = "source snapshot/recovery point retention time in seconds for ablestack-n2k. Default is 1209600 seconds (14 days)")
     private Long retentionSeconds;
 
+    @Parameter(name = "starttargetvm",
+            type = CommandType.BOOLEAN,
+            description = "start the imported Cloud target VM after ablestack-n2k phase2 cutover. Default is true")
+    private Boolean startTargetVm;
+
     public String getSplitMode() {
         return StringUtils.defaultIfBlank(splitMode, DEFAULT_SPLIT_MODE);
     }
@@ -101,6 +106,14 @@ public class ImportUnmanagedInstanceForAblestackN2KCmd extends ImportVmCmd {
 
     public long getRetentionSeconds() {
         return retentionSeconds != null ? retentionSeconds : DEFAULT_RETENTION_SECONDS;
+    }
+
+    public Boolean getRequestedStartTargetVm() {
+        return startTargetVm;
+    }
+
+    public boolean isStartTargetVm() {
+        return BooleanUtils.toBooleanDefaultIfNull(startTargetVm, true);
     }
 
     @Override

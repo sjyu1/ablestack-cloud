@@ -150,7 +150,7 @@ public class LibvirtAblestackN2KConvertInstanceCommandWrapper extends CommandWra
                 script.add("--target-map-json", cmd.getTargetMapJson());
             }
             if (StringUtils.equals(targetProvider, CLOUD_TARGET_PROVIDER)) {
-                script.add("--start");
+                script.add(cmd.isStartTargetVm() ? "--start" : "--apply");
                 script.add("--cloud-cred-file", cloudCredentialFile.toString());
                 addIfNotBlank(script, "--cloud-zone-id", cmd.getCloudZoneId());
                 addIfNotBlank(script, "--cloud-service-offering-id", cmd.getCloudServiceOfferingId());

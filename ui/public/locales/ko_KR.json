@@ -5564,6 +5564,7 @@
   "message.skip.tls.verify.nutanix": "자체 서명 인증서를 사용하는 Nutanix Prism 엔드포인트 접속을 허용합니다.",
   "message.nutanix.prism.endpoint.tooltip": "Nutanix Prism Central 또는 Prism Element 엔드포인트를 입력합니다. 예: https://10.10.132.100:9440",
   "message.select.ablestack.n2k.primary.storage.migration": "N2K 마이그레이션에 사용할 ABLESTACK 기본 스토리지 대상을 선택합니다. 풀을 선택하지 않으면 Cloud가 호환 가능한 기본값을 선택합니다.",
+  "message.ablestack.n2k.preserve.source.mac": "Phase2 cutover에서 원본 VM을 종료한 뒤 첫 번째 NIC의 MAC 주소를 Cloud VM 기본 NIC에 유지해 배포합니다.",
   "message.n2k.snapshot.retention.days": "Phase 분리 이관에 사용하는 Nutanix Recovery Point를 지정한 기간 동안 보존합니다. 기본값은 14일입니다.",
   "message.select.kvm.host.ablestack.import": "Import 작업자를 실행할 ABLESTACK 호스트를 선택합니다.",
   "message.select.primary.storage.ablestack.import": "가져온 VM 디스크를 배치할 대상 기본 스토리지를 선택합니다.",
@@ -5574,5 +5575,10 @@
   "message.confirm.retry.import.vm.task.from.start": "기존 작업은 보존하고 동일한 조건으로 새 가져오기 작업을 처음부터 다시 시작합니다.",
   "message.confirm.cancel.import.vm.task": "진행 중인 가져오기 작업을 취소하고 변환 호스트의 임시 작업 리소스 정리를 시도합니다.",
   "message.confirm.delete.import.vm.task": "가져오기 작업 기록을 목록에서 삭제합니다. 선택한 경우 저장된 Credential과 임시 작업 디렉터리도 함께 정리됩니다.",
-  "message.confirm.clear.import.vm.task.credentials": "이 작업에 저장된 암호화 소스 Credential을 삭제합니다. 삭제 후 Phase2 또는 재개 시 Credential을 다시 입력해야 할 수 있습니다."
+  "message.confirm.clear.import.vm.task.credentials": "이 작업에 저장된 암호화 소스 Credential을 삭제합니다. 삭제 후 Phase2 또는 재개 시 Credential을 다시 입력해야 할 수 있습니다.",
+  "label.n2k.start.target.vm": "Cutover 후 대상 VM 시작",
+  "label.n2k.keep.target.vm.stopped": "대상 VM 정지 상태 유지",
+  "label.n2k.target.vm.power.policy": "대상 VM 전원 정책",
+  "label.keep.current.setting": "기존 설정 유지",
+  "message.n2k.start.target.vm": "활성화하면 Phase2 cutover 후 가져온 Cloud VM을 시작합니다. 비활성화하면 가져오기 완료 후 대상 VM을 정지 상태로 유지합니다."
 }

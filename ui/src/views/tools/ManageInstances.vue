@@ -1422,6 +1422,9 @@ export default {
       if (credential.retentionseconds) {
         params.retentionseconds = credential.retentionseconds
       }
+      if (credential.starttargetvm !== undefined) {
+        params.starttargetvm = credential.starttargetvm
+      }
       if (!isN2KTask && this.selectedVmwareVcenter) {
         if (this.selectedVmwareVcenter.existingvcenterid) {
           params.existingvcenterid = this.selectedVmwareVcenter.existingvcenterid
