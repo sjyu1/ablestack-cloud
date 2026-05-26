@@ -19,27 +19,45 @@ package org.apache.cloudstack.storage.dataservice;
 
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageIscsiAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageIscsiTargetCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNvmeOfHostAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNvmeOfNamespaceCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageServiceInstanceCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageIscsiAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNvmeOfHostAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNvmeOfNamespaceCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.EnableStorageServiceProtocolCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.JoinStorageServiceToAdDomainCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.LeaveStorageServiceFromAdDomainCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageIscsiAclsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageIscsiTargetsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsExportsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfHostAclsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfSubsystemsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceDomainStatusCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbShareCmd;
 import org.apache.cloudstack.api.response.ListResponse;
+import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
 import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
@@ -91,4 +109,38 @@ public interface StorageService {
     StorageIdentityDomainResponse leaveStorageServiceFromAdDomain(LeaveStorageServiceFromAdDomainCmd cmd);
 
     ListResponse<StorageIdentityDomainResponse> listStorageServiceDomainStatus(ListStorageServiceDomainStatusCmd cmd);
+
+    StorageBlockTargetResponse createStorageIscsiTarget(CreateStorageIscsiTargetCmd cmd);
+
+    StorageBlockTargetResponse updateStorageIscsiTarget(UpdateStorageIscsiTargetCmd cmd);
+
+    boolean deleteStorageIscsiTarget(DeleteStorageIscsiTargetCmd cmd);
+
+    ListResponse<StorageBlockTargetResponse> listStorageIscsiTargets(ListStorageIscsiTargetsCmd cmd);
+
+    StorageAccessRuleResponse createStorageIscsiAcl(CreateStorageIscsiAclCmd cmd);
+
+    StorageAccessRuleResponse updateStorageIscsiAcl(UpdateStorageIscsiAclCmd cmd);
+
+    boolean deleteStorageIscsiAcl(DeleteStorageIscsiAclCmd cmd);
+
+    ListResponse<StorageAccessRuleResponse> listStorageIscsiAcls(ListStorageIscsiAclsCmd cmd);
+
+    StorageBlockTargetResponse createStorageNvmeOfSubsystem(CreateStorageNvmeOfSubsystemCmd cmd);
+
+    StorageBlockTargetResponse updateStorageNvmeOfSubsystem(UpdateStorageNvmeOfSubsystemCmd cmd);
+
+    boolean deleteStorageNvmeOfSubsystem(DeleteStorageNvmeOfSubsystemCmd cmd);
+
+    ListResponse<StorageBlockTargetResponse> listStorageNvmeOfSubsystems(ListStorageNvmeOfSubsystemsCmd cmd);
+
+    StorageBlockTargetResponse createStorageNvmeOfNamespace(CreateStorageNvmeOfNamespaceCmd cmd);
+
+    boolean deleteStorageNvmeOfNamespace(DeleteStorageNvmeOfNamespaceCmd cmd);
+
+    StorageAccessRuleResponse createStorageNvmeOfHostAcl(CreateStorageNvmeOfHostAclCmd cmd);
+
+    boolean deleteStorageNvmeOfHostAcl(DeleteStorageNvmeOfHostAclCmd cmd);
+
+    ListResponse<StorageAccessRuleResponse> listStorageNvmeOfHostAcls(ListStorageNvmeOfHostAclsCmd cmd);
 }

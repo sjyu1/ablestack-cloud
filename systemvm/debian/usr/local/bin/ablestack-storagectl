@@ -385,6 +385,167 @@ PY
   fi
 }
 
+apply_iscsi_targets() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+state_dir = "/etc/ablestack-storage"
+os.makedirs(state_dir, exist_ok=True)
+with open(os.path.join(state_dir, "iscsi-targets.json"), "w", encoding="utf-8") as state_fp:
+    json.dump(payload, state_fp, sort_keys=True, indent=2)
+
+def run_targetcli(*args):
+    return subprocess.run(["targetcli", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+def ok_or_exists(result):
+    text = f"{result.stdout}\n{result.stderr}".lower()
+    return result.returncode == 0 or "exists" in text or "already" in text
+
+enabled = bool(payload.get("enabled", True))
+applied = 0
+skipped = 0
+if enabled and subprocess.run(["sh", "-c", "command -v targetcli >/dev/null 2>&1"]).returncode == 0:
+    for target in payload.get("targets", []):
+        if target.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+            continue
+        iqn = target.get("targetName")
+        lun = str(target.get("lunOrNamespace") or "0")
+        config = target.get("config") or {}
+        backing_path = config.get("backingPath")
+        if not iqn or not backing_path:
+            skipped += 1
+            continue
+        backstore = f"ablestack-{target.get('uuid')}"
+        if not ok_or_exists(run_targetcli("/backstores/block", "create", backstore, backing_path)):
+            raise SystemExit(f"failed to create iSCSI backstore {backstore}")
+        if not ok_or_exists(run_targetcli("/iscsi", "create", iqn)):
+            raise SystemExit(f"failed to create iSCSI target {iqn}")
+        run_targetcli(f"/iscsi/{iqn}/tpg1/portals", "delete", "0.0.0.0", "3260")
+        listen_ip = payload.get("listenIp") or "0.0.0.0"
+        port = str(payload.get("port") or 3260)
+        ok_or_exists(run_targetcli(f"/iscsi/{iqn}/tpg1/portals", "create", listen_ip, port))
+        ok_or_exists(run_targetcli(f"/iscsi/{iqn}/tpg1/luns", "create", f"/backstores/block/{backstore}", lun))
+        for acl in target.get("acls", []):
+            if acl.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+                continue
+            initiator = acl.get("principal")
+            if not initiator:
+                continue
+            ok_or_exists(run_targetcli(f"/iscsi/{iqn}/tpg1/acls", "create", initiator))
+            acl_config = acl.get("config") or {}
+            secrets = acl.get("secrets") or {}
+            if acl_config.get("chapUsername"):
+                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"userid={acl_config.get('chapUsername')}")
+            if secrets.get("chapSecret"):
+                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"password={secrets.get('chapSecret')}")
+            if acl_config.get("mutualChapUsername"):
+                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"mutual_userid={acl_config.get('mutualChapUsername')}")
+            if secrets.get("mutualChapSecret"):
+                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"mutual_password={secrets.get('mutualChapSecret')}")
+        applied += 1
+    run_targetcli("saveconfig")
+else:
+    skipped = len(payload.get("targets", []))
+
+print(json.dumps({"success": True, "targets": len(payload.get("targets", [])), "applied": applied, "skipped": skipped}))
+PY
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now target >/dev/null 2>&1 || true
+    systemctl restart target >/dev/null 2>&1 || true
+  fi
+}
+
+apply_nvmeof_subsystems() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+state_dir = "/etc/ablestack-storage"
+os.makedirs(state_dir, exist_ok=True)
+with open(os.path.join(state_dir, "nvmeof-subsystems.json"), "w", encoding="utf-8") as state_fp:
+    json.dump(payload, state_fp, sort_keys=True, indent=2)
+
+def write_file(path, value):
+    with open(path, "w", encoding="utf-8") as fp:
+        fp.write(str(value))
+
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
+
+enabled = bool(payload.get("enabled", True))
+base = "/sys/kernel/config/nvmet"
+applied = 0
+skipped = 0
+if enabled:
+    subprocess.run(["modprobe", "nvmet"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["modprobe", "nvmet-tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+if enabled and os.path.isdir(base):
+    port_id = "1"
+    port_dir = os.path.join(base, "ports", port_id)
+    ensure_dir(port_dir)
+    write_file(os.path.join(port_dir, "addr_trtype"), "tcp")
+    write_file(os.path.join(port_dir, "addr_adrfam"), "ipv4")
+    write_file(os.path.join(port_dir, "addr_traddr"), payload.get("listenIp") or "0.0.0.0")
+    write_file(os.path.join(port_dir, "addr_trsvcid"), payload.get("port") or 4420)
+
+    for subsystem in payload.get("subsystems", []):
+        if subsystem.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+            continue
+        nqn = subsystem.get("targetName")
+        if not nqn:
+            skipped += 1
+            continue
+        subsystem_dir = os.path.join(base, "subsystems", nqn)
+        ensure_dir(subsystem_dir)
+        config = subsystem.get("config") or {}
+        write_file(os.path.join(subsystem_dir, "attr_allow_any_host"), "1" if config.get("allowAnyHost") else "0")
+        for host in subsystem.get("hosts", []):
+            host_nqn = host.get("principal")
+            if host_nqn:
+                ensure_dir(os.path.join(subsystem_dir, "allowed_hosts", host_nqn))
+        for namespace in subsystem.get("namespaces", []):
+            if namespace.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+                continue
+            nsid = str(namespace.get("lunOrNamespace") or "1")
+            ns_config = namespace.get("config") or {}
+            backing_path = ns_config.get("backingPath")
+            if not backing_path:
+                skipped += 1
+                continue
+            ns_dir = os.path.join(subsystem_dir, "namespaces", nsid)
+            ensure_dir(ns_dir)
+            write_file(os.path.join(ns_dir, "device_path"), backing_path)
+            write_file(os.path.join(ns_dir, "enable"), "1")
+        link_path = os.path.join(port_dir, "subsystems", nqn)
+        if not os.path.exists(link_path):
+            os.symlink(subsystem_dir, link_path)
+        applied += 1
+else:
+    skipped = len(payload.get("subsystems", []))
+
+print(json.dumps({"success": True, "subsystems": len(payload.get("subsystems", [])), "applied": applied, "skipped": skipped}))
+PY
+}
+
 command="${1:-}"
 subcommand="${2:-}"
 action="${3:-}"
@@ -441,6 +602,30 @@ case "$command" in
         exit 2
         ;;
     esac
+    ;;
+  iscsi)
+    if [[ "$subcommand" != "target" || "$action" != "apply" ]]; then
+      emit_error "Unsupported iscsi operation: ${subcommand:-<empty>} ${action:-<empty>}"
+      exit 2
+    fi
+    if [[ -z "$payload" || ! -r "$payload" ]]; then
+      emit_error "A readable payload file is required for iscsi target apply."
+      exit 2
+    fi
+    log_command "$command $subcommand $action" "$payload"
+    apply_iscsi_targets "$payload"
+    ;;
+  nvmeof)
+    if [[ "$subcommand" != "subsystem" || "$action" != "apply" ]]; then
+      emit_error "Unsupported nvmeof operation: ${subcommand:-<empty>} ${action:-<empty>}"
+      exit 2
+    fi
+    if [[ -z "$payload" || ! -r "$payload" ]]; then
+      emit_error "A readable payload file is required for nvmeof subsystem apply."
+      exit 2
+    fi
+    log_command "$command $subcommand $action" "$payload"
+    apply_nvmeof_subsystems "$payload"
     ;;
   *)
     emit_error "Unsupported storagectl command: ${command:-<empty>}"
