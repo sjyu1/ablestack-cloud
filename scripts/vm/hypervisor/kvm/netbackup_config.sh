@@ -23,6 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_OUTPUT_DIR="${HOOK_OUTPUT_DIR:-/usr/openv/netbackup/bin}"
 CONFIG_OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-/etc/ablestack/netbackup}"
 SECRET_OUTPUT_DIR="${SECRET_OUTPUT_DIR:-/etc/ablestack/netbackup/secrets}"
+BACKUP_STAGING_ROOT="${BACKUP_STAGING_ROOT:-/tmp/mold/netbackup}"
 PRE_HELPER_PATH="${PRE_HELPER_PATH:-/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpstart_notify.sh}"
 POST_HELPER_PATH="${POST_HELPER_PATH:-/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpend_notify.sh}"
 HOOK_LOG_PATH="${HOOK_LOG_PATH:-/var/log/netbackup-cloudstack-hook.log}"
@@ -56,6 +57,7 @@ Environment overrides:
   HOOK_OUTPUT_DIR
   CONFIG_OUTPUT_DIR
   SECRET_OUTPUT_DIR
+  BACKUP_STAGING_ROOT
   PRE_HELPER_PATH
   POST_HELPER_PATH
   HOOK_LOG_PATH
@@ -278,6 +280,12 @@ apply_permissions() {
   fi
 }
 
+ensure_backup_staging_root() {
+  mkdir -p "${BACKUP_STAGING_ROOT}"
+  chown root:root "${BACKUP_STAGING_ROOT}"
+  chmod 755 "${BACKUP_STAGING_ROOT}"
+}
+
 apply_netbackup_bp_conf() {
   if [[ ! -f "${NETBACKUP_BP_CONF_PATH}" ]]; then
     printf 'NetBackup bp.conf not found: %s\n' "${NETBACKUP_BP_CONF_PATH}"
@@ -365,6 +373,7 @@ generate_outputs() {
   write_post_hook "${post_hook_path}" "bpend_notify.${hook_name_suffix}"
   write_config_file "${config_path}"
   write_encrypted_secret_file "${secret_path}"
+  ensure_backup_staging_root
   apply_permissions
   if apply_netbackup_bp_conf; then
     restart_netbackup_service
@@ -377,6 +386,7 @@ generate_outputs() {
   printf '  POST hook  : %s\n' "${post_hook_path}"
   printf '  Config     : %s\n' "${config_path}"
   printf '  Secret(enc): %s\n' "${secret_path}"
+  printf '  Staging dir: %s\n' "${BACKUP_STAGING_ROOT}"
 }
 
 main() {
