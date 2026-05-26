@@ -26,30 +26,48 @@ import java.util.Map;
 import javax.inject.Inject;
 
 import org.apache.cloudstack.api.ApiCommandResourceType;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageIscsiAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNvmeOfHostAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNvmeOfNamespaceCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageServiceInstanceCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageIscsiAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNvmeOfHostAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNvmeOfNamespaceCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.EnableStorageServiceProtocolCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.JoinStorageServiceToAdDomainCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.LeaveStorageServiceFromAdDomainCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageIscsiAclsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageIscsiTargetsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsExportsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfHostAclsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfSubsystemsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceDomainStatusCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbShareCmd;
 import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
+import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
 import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
@@ -59,6 +77,7 @@ import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.Configurable;
 import org.apache.cloudstack.storage.dataservice.dao.StorageAccessRuleDao;
+import org.apache.cloudstack.storage.dataservice.dao.StorageBlockTargetDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageFileShareDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageIdentityDomainDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageServiceInstanceDao;
@@ -95,6 +114,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     private StorageFileShareDao storageFileShareDao;
     @Inject
     private StorageIdentityDomainDao storageIdentityDomainDao;
+    @Inject
+    private StorageBlockTargetDao storageBlockTargetDao;
     @Inject
     private StorageAccessRuleDao storageAccessRuleDao;
     @Inject
@@ -138,6 +159,23 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         commands.add(JoinStorageServiceToAdDomainCmd.class);
         commands.add(LeaveStorageServiceFromAdDomainCmd.class);
         commands.add(ListStorageServiceDomainStatusCmd.class);
+        commands.add(CreateStorageIscsiTargetCmd.class);
+        commands.add(UpdateStorageIscsiTargetCmd.class);
+        commands.add(DeleteStorageIscsiTargetCmd.class);
+        commands.add(ListStorageIscsiTargetsCmd.class);
+        commands.add(CreateStorageIscsiAclCmd.class);
+        commands.add(UpdateStorageIscsiAclCmd.class);
+        commands.add(DeleteStorageIscsiAclCmd.class);
+        commands.add(ListStorageIscsiAclsCmd.class);
+        commands.add(CreateStorageNvmeOfSubsystemCmd.class);
+        commands.add(UpdateStorageNvmeOfSubsystemCmd.class);
+        commands.add(DeleteStorageNvmeOfSubsystemCmd.class);
+        commands.add(ListStorageNvmeOfSubsystemsCmd.class);
+        commands.add(CreateStorageNvmeOfNamespaceCmd.class);
+        commands.add(DeleteStorageNvmeOfNamespaceCmd.class);
+        commands.add(CreateStorageNvmeOfHostAclCmd.class);
+        commands.add(DeleteStorageNvmeOfHostAclCmd.class);
+        commands.add(ListStorageNvmeOfHostAclsCmd.class);
         return commands;
     }
 
@@ -199,10 +237,6 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     public StorageServiceProtocolResponse enableStorageServiceProtocol(final EnableStorageServiceProtocolCmd cmd) {
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
         final StorageServiceInstance.Protocol protocol = parseProtocol(cmd.getProtocol());
-        if (protocol != StorageServiceInstance.Protocol.NFS && protocol != StorageServiceInstance.Protocol.SMB) {
-            throw new InvalidParameterValueException("Storage Service file protocol enablement supports NFS and SMB");
-        }
-
         StorageServiceProtocolVO protocolVO = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocol);
         if (protocolVO == null) {
             protocolVO = new StorageServiceProtocolVO(instance.getId(), protocol, true, cmd.getListenIp(), cmd.getPort());
@@ -218,8 +252,12 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
 
         if (protocol == StorageServiceInstance.Protocol.NFS) {
             applyNfsDesiredState(instance);
-        } else {
+        } else if (protocol == StorageServiceInstance.Protocol.SMB) {
             applySmbDesiredState(instance);
+        } else if (protocol == StorageServiceInstance.Protocol.ISCSI) {
+            applyIscsiDesiredState(instance);
+        } else if (protocol == StorageServiceInstance.Protocol.NVME_OF) {
+            applyNvmeOfDesiredState(instance);
         }
         return createProtocolResponse(protocolVO);
     }
@@ -624,6 +662,234 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return response;
     }
 
+    @Override
+    public StorageBlockTargetResponse createStorageIscsiTarget(final CreateStorageIscsiTargetCmd cmd) {
+        final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        validateVolume(cmd.getVolumeId());
+        ensureProtocol(instance, StorageServiceInstance.Protocol.ISCSI);
+        StorageBlockTargetVO target = new StorageBlockTargetVO(instance.getId(), StorageServiceInstance.Protocol.ISCSI, cmd.getTargetName(),
+                StringUtils.defaultIfBlank(cmd.getLun(), "0"), cmd.getVolumeId(), StorageServiceInstance.ResourceState.Creating,
+                buildIscsiTargetConfigJson(null, cmd.getBackingPath()));
+        target = storageBlockTargetDao.persist(target);
+        target.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageBlockTargetDao.update(target.getId(), target);
+        applyIscsiDesiredState(instance);
+        return createBlockTargetResponse(target, "storageiscsitarget");
+    }
+
+    @Override
+    public StorageBlockTargetResponse updateStorageIscsiTarget(final UpdateStorageIscsiTargetCmd cmd) {
+        final StorageBlockTargetVO target = requireBlockTarget(cmd.getId(), StorageServiceInstance.Protocol.ISCSI);
+        final StorageServiceInstanceVO instance = requireInstance(target.getInstanceId());
+        if (cmd.getTargetName() != null) {
+            target.setTargetName(cmd.getTargetName());
+        }
+        if (cmd.getLun() != null) {
+            target.setLunOrNamespace(cmd.getLun());
+        }
+        if (cmd.getVolumeId() != null) {
+            validateVolume(cmd.getVolumeId());
+            target.setVolumeId(cmd.getVolumeId());
+        }
+        target.setConfigJson(buildIscsiTargetConfigJson(target.getConfigJson(), cmd.getBackingPath()));
+        target.setState(StorageServiceInstance.ResourceState.Updating);
+        storageBlockTargetDao.update(target.getId(), target);
+        applyIscsiDesiredState(instance);
+        target.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageBlockTargetDao.update(target.getId(), target);
+        return createBlockTargetResponse(target, "storageiscsitarget");
+    }
+
+    @Override
+    public boolean deleteStorageIscsiTarget(final DeleteStorageIscsiTargetCmd cmd) {
+        final StorageBlockTargetVO target = requireBlockTarget(cmd.getId(), StorageServiceInstance.Protocol.ISCSI);
+        final StorageServiceInstanceVO instance = requireInstance(target.getInstanceId());
+        for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId())) {
+            storageAccessRuleDao.remove(rule.getId());
+        }
+        storageBlockTargetDao.remove(target.getId());
+        applyIscsiDesiredState(instance);
+        return true;
+    }
+
+    @Override
+    public ListResponse<StorageBlockTargetResponse> listStorageIscsiTargets(final ListStorageIscsiTargetsCmd cmd) {
+        final List<StorageBlockTargetVO> targets = listBlockTargets(cmd.getId(), cmd.getInstanceId(), StorageServiceInstance.Protocol.ISCSI);
+        final List<StorageBlockTargetResponse> responses = new ArrayList<>();
+        for (final StorageBlockTargetVO target : targets) {
+            if (cmd.getTargetName() != null && !cmd.getTargetName().equals(target.getTargetName())) {
+                continue;
+            }
+            responses.add(createBlockTargetResponse(target, "storageiscsitarget"));
+        }
+        final ListResponse<StorageBlockTargetResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
+    }
+
+    @Override
+    public StorageAccessRuleResponse createStorageIscsiAcl(final CreateStorageIscsiAclCmd cmd) {
+        final StorageBlockTargetVO target = requireBlockTarget(cmd.getTargetId(), StorageServiceInstance.Protocol.ISCSI);
+        final StorageServiceInstanceVO instance = requireInstance(target.getInstanceId());
+        final StorageServiceInstance.Permission permission = parseBlockPermission(cmd.getPermission());
+        StorageAccessRuleVO rule = new StorageAccessRuleVO(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId(),
+                StorageServiceInstance.PrincipalType.ISCSI_INITIATOR_IQN, cmd.getInitiatorIqn(), permission, StorageServiceInstance.ResourceState.Creating,
+                buildIscsiAclConfigJson(null, cmd.getChapUsername(), cmd.getMutualChapUsername(), cmd.getChapSecret(), cmd.getMutualChapSecret()));
+        rule = storageAccessRuleDao.persist(rule);
+        rule.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageAccessRuleDao.update(rule.getId(), rule);
+        applyIscsiDesiredState(instance, buildChapSecretMap(rule.getId(), cmd.getChapSecret(), cmd.getMutualChapSecret()));
+        return createAclResponse(rule);
+    }
+
+    @Override
+    public StorageAccessRuleResponse updateStorageIscsiAcl(final UpdateStorageIscsiAclCmd cmd) {
+        final StorageAccessRuleVO rule = requireBlockAcl(cmd.getId(), StorageServiceInstance.Protocol.ISCSI);
+        final StorageBlockTargetVO target = requireBlockTarget(rule.getResourceId(), StorageServiceInstance.Protocol.ISCSI);
+        final StorageServiceInstanceVO instance = requireInstance(target.getInstanceId());
+        if (cmd.getInitiatorIqn() != null) {
+            rule.setPrincipal(cmd.getInitiatorIqn());
+        }
+        if (cmd.getPermission() != null) {
+            rule.setPermission(parseBlockPermission(cmd.getPermission()));
+        }
+        rule.setConfigJson(buildIscsiAclConfigJson(rule.getConfigJson(), cmd.getChapUsername(), cmd.getMutualChapUsername(), cmd.getChapSecret(), cmd.getMutualChapSecret()));
+        rule.setState(StorageServiceInstance.ResourceState.Updating);
+        storageAccessRuleDao.update(rule.getId(), rule);
+        applyIscsiDesiredState(instance, buildChapSecretMap(rule.getId(), cmd.getChapSecret(), cmd.getMutualChapSecret()));
+        rule.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageAccessRuleDao.update(rule.getId(), rule);
+        return createAclResponse(rule);
+    }
+
+    @Override
+    public boolean deleteStorageIscsiAcl(final DeleteStorageIscsiAclCmd cmd) {
+        final StorageAccessRuleVO rule = requireBlockAcl(cmd.getId(), StorageServiceInstance.Protocol.ISCSI);
+        final StorageBlockTargetVO target = requireBlockTarget(rule.getResourceId(), StorageServiceInstance.Protocol.ISCSI);
+        final StorageServiceInstanceVO instance = requireInstance(target.getInstanceId());
+        storageAccessRuleDao.remove(rule.getId());
+        applyIscsiDesiredState(instance);
+        return true;
+    }
+
+    @Override
+    public ListResponse<StorageAccessRuleResponse> listStorageIscsiAcls(final ListStorageIscsiAclsCmd cmd) {
+        return listBlockAcls(cmd.getId(), cmd.getTargetId(), StorageServiceInstance.Protocol.ISCSI);
+    }
+
+    @Override
+    public StorageBlockTargetResponse createStorageNvmeOfSubsystem(final CreateStorageNvmeOfSubsystemCmd cmd) {
+        final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        ensureProtocol(instance, StorageServiceInstance.Protocol.NVME_OF);
+        StorageBlockTargetVO subsystem = new StorageBlockTargetVO(instance.getId(), StorageServiceInstance.Protocol.NVME_OF, cmd.getSubsystemNqn(),
+                null, null, StorageServiceInstance.ResourceState.Creating, buildNvmeOfConfigJson(null, "subsystem", cmd.getAllowAnyHost(), null));
+        subsystem = storageBlockTargetDao.persist(subsystem);
+        subsystem.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageBlockTargetDao.update(subsystem.getId(), subsystem);
+        applyNvmeOfDesiredState(instance);
+        return createBlockTargetResponse(subsystem, "storagenvmeofsubsystem");
+    }
+
+    @Override
+    public StorageBlockTargetResponse updateStorageNvmeOfSubsystem(final UpdateStorageNvmeOfSubsystemCmd cmd) {
+        final StorageBlockTargetVO subsystem = requireNvmeOfSubsystem(cmd.getId());
+        final StorageServiceInstanceVO instance = requireInstance(subsystem.getInstanceId());
+        if (cmd.getSubsystemNqn() != null) {
+            updateNvmeOfSubsystemName(subsystem, cmd.getSubsystemNqn());
+        }
+        subsystem.setConfigJson(buildNvmeOfConfigJson(subsystem.getConfigJson(), "subsystem", cmd.getAllowAnyHost(), null));
+        subsystem.setState(StorageServiceInstance.ResourceState.Updating);
+        storageBlockTargetDao.update(subsystem.getId(), subsystem);
+        applyNvmeOfDesiredState(instance);
+        subsystem.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageBlockTargetDao.update(subsystem.getId(), subsystem);
+        return createBlockTargetResponse(subsystem, "storagenvmeofsubsystem");
+    }
+
+    @Override
+    public boolean deleteStorageNvmeOfSubsystem(final DeleteStorageNvmeOfSubsystemCmd cmd) {
+        final StorageBlockTargetVO subsystem = requireNvmeOfSubsystem(cmd.getId());
+        final StorageServiceInstanceVO instance = requireInstance(subsystem.getInstanceId());
+        for (final StorageBlockTargetVO target : storageBlockTargetDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NVME_OF)) {
+            if (subsystem.getTargetName().equals(target.getTargetName())) {
+                for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId())) {
+                    storageAccessRuleDao.remove(rule.getId());
+                }
+                storageBlockTargetDao.remove(target.getId());
+            }
+        }
+        applyNvmeOfDesiredState(instance);
+        return true;
+    }
+
+    @Override
+    public ListResponse<StorageBlockTargetResponse> listStorageNvmeOfSubsystems(final ListStorageNvmeOfSubsystemsCmd cmd) {
+        final List<StorageBlockTargetVO> targets = listBlockTargets(cmd.getId(), cmd.getInstanceId(), StorageServiceInstance.Protocol.NVME_OF);
+        final List<StorageBlockTargetResponse> responses = new ArrayList<>();
+        for (final StorageBlockTargetVO target : targets) {
+            if (cmd.getSubsystemNqn() != null && !cmd.getSubsystemNqn().equals(target.getTargetName())) {
+                continue;
+            }
+            responses.add(createBlockTargetResponse(target, isNvmeOfSubsystem(target) ? "storagenvmeofsubsystem" : "storagenvmeofnamespace"));
+        }
+        final ListResponse<StorageBlockTargetResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
+    }
+
+    @Override
+    public StorageBlockTargetResponse createStorageNvmeOfNamespace(final CreateStorageNvmeOfNamespaceCmd cmd) {
+        final StorageBlockTargetVO subsystem = requireNvmeOfSubsystem(cmd.getSubsystemId());
+        final StorageServiceInstanceVO instance = requireInstance(subsystem.getInstanceId());
+        validateVolume(cmd.getVolumeId());
+        StorageBlockTargetVO namespace = new StorageBlockTargetVO(instance.getId(), StorageServiceInstance.Protocol.NVME_OF, subsystem.getTargetName(),
+                StringUtils.defaultIfBlank(cmd.getNamespaceId(), "1"), cmd.getVolumeId(), StorageServiceInstance.ResourceState.Creating,
+                buildNvmeOfConfigJson(null, "namespace", null, cmd.getBackingPath()));
+        namespace = storageBlockTargetDao.persist(namespace);
+        namespace.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageBlockTargetDao.update(namespace.getId(), namespace);
+        applyNvmeOfDesiredState(instance);
+        return createBlockTargetResponse(namespace, "storagenvmeofnamespace");
+    }
+
+    @Override
+    public boolean deleteStorageNvmeOfNamespace(final DeleteStorageNvmeOfNamespaceCmd cmd) {
+        final StorageBlockTargetVO namespace = requireNvmeOfNamespace(cmd.getId());
+        final StorageServiceInstanceVO instance = requireInstance(namespace.getInstanceId());
+        storageBlockTargetDao.remove(namespace.getId());
+        applyNvmeOfDesiredState(instance);
+        return true;
+    }
+
+    @Override
+    public StorageAccessRuleResponse createStorageNvmeOfHostAcl(final CreateStorageNvmeOfHostAclCmd cmd) {
+        final StorageBlockTargetVO subsystem = requireNvmeOfSubsystem(cmd.getSubsystemId());
+        final StorageServiceInstanceVO instance = requireInstance(subsystem.getInstanceId());
+        StorageAccessRuleVO rule = new StorageAccessRuleVO(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, subsystem.getId(),
+                StorageServiceInstance.PrincipalType.NVME_HOST_NQN, cmd.getHostNqn(), StorageServiceInstance.Permission.READ_WRITE,
+                StorageServiceInstance.ResourceState.Creating, null);
+        rule = storageAccessRuleDao.persist(rule);
+        rule.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageAccessRuleDao.update(rule.getId(), rule);
+        applyNvmeOfDesiredState(instance);
+        return createAclResponse(rule);
+    }
+
+    @Override
+    public boolean deleteStorageNvmeOfHostAcl(final DeleteStorageNvmeOfHostAclCmd cmd) {
+        final StorageAccessRuleVO rule = requireBlockAcl(cmd.getId(), StorageServiceInstance.Protocol.NVME_OF);
+        final StorageBlockTargetVO target = requireBlockTarget(rule.getResourceId(), StorageServiceInstance.Protocol.NVME_OF);
+        final StorageServiceInstanceVO instance = requireInstance(target.getInstanceId());
+        storageAccessRuleDao.remove(rule.getId());
+        applyNvmeOfDesiredState(instance);
+        return true;
+    }
+
+    @Override
+    public ListResponse<StorageAccessRuleResponse> listStorageNvmeOfHostAcls(final ListStorageNvmeOfHostAclsCmd cmd) {
+        return listBlockAcls(cmd.getId(), cmd.getSubsystemId(), StorageServiceInstance.Protocol.NVME_OF);
+    }
+
     protected void applyNfsDesiredState(final StorageServiceInstanceVO instance) {
         if (instance.getVmId() == null) {
             logger.debug("Storage Service instance [{}] has no System VM yet; NFS state is stored but not applied", instance.getUuid());
@@ -803,6 +1069,125 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected void applyIscsiDesiredState(final StorageServiceInstanceVO instance) {
+        applyIscsiDesiredState(instance, Collections.emptyMap());
+    }
+
+    protected void applyIscsiDesiredState(final StorageServiceInstanceVO instance, final Map<Long, JsonObject> chapSecrets) {
+        if (instance.getVmId() == null) {
+            logger.debug("Storage Service instance [{}] has no System VM yet; iSCSI state is stored but not applied", instance.getUuid());
+            return;
+        }
+
+        final JsonObject payload = buildBlockProtocolPayload(instance, StorageServiceInstance.Protocol.ISCSI);
+        final JsonArray targets = new JsonArray();
+        for (final StorageBlockTargetVO target : storageBlockTargetDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.ISCSI)) {
+            final JsonObject targetJson = createBlockTargetJson(target);
+            final JsonArray acls = new JsonArray();
+            for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId())) {
+                if (rule.getPrincipalType() != StorageServiceInstance.PrincipalType.ISCSI_INITIATOR_IQN) {
+                    continue;
+                }
+                final JsonObject acl = createBlockAclJson(rule);
+                if (chapSecrets != null && chapSecrets.containsKey(rule.getId())) {
+                    acl.add("secrets", chapSecrets.get(rule.getId()));
+                }
+                acls.add(acl);
+            }
+            targetJson.add("acls", acls);
+            targets.add(targetJson);
+        }
+        payload.add("targets", targets);
+
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "iscsi target apply", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(),
+                Collections.singleton("chapSecret")));
+        if (!result.isSuccess()) {
+            throw new CloudRuntimeException("Failed to apply iSCSI desired state on Storage Service System VM: " + result.getDetails());
+        }
+    }
+
+    protected void applyNvmeOfDesiredState(final StorageServiceInstanceVO instance) {
+        if (instance.getVmId() == null) {
+            logger.debug("Storage Service instance [{}] has no System VM yet; NVMe-oF state is stored but not applied", instance.getUuid());
+            return;
+        }
+
+        final JsonObject payload = buildBlockProtocolPayload(instance, StorageServiceInstance.Protocol.NVME_OF);
+        final JsonArray subsystems = new JsonArray();
+        for (final StorageBlockTargetVO target : storageBlockTargetDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NVME_OF)) {
+            if (!isNvmeOfSubsystem(target)) {
+                continue;
+            }
+            final JsonObject subsystem = createBlockTargetJson(target);
+            final JsonArray namespaces = new JsonArray();
+            for (final StorageBlockTargetVO namespace : storageBlockTargetDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NVME_OF)) {
+                if (!isNvmeOfNamespace(namespace) || !target.getTargetName().equals(namespace.getTargetName())) {
+                    continue;
+                }
+                namespaces.add(createBlockTargetJson(namespace));
+            }
+            final JsonArray hosts = new JsonArray();
+            for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId())) {
+                if (rule.getPrincipalType() == StorageServiceInstance.PrincipalType.NVME_HOST_NQN) {
+                    hosts.add(createBlockAclJson(rule));
+                }
+            }
+            subsystem.add("namespaces", namespaces);
+            subsystem.add("hosts", hosts);
+            subsystems.add(subsystem);
+        }
+        payload.add("subsystems", subsystems);
+
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "nvmeof subsystem apply", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
+        if (!result.isSuccess()) {
+            throw new CloudRuntimeException("Failed to apply NVMe-oF desired state on Storage Service System VM: " + result.getDetails());
+        }
+    }
+
+    protected JsonObject buildBlockProtocolPayload(final StorageServiceInstanceVO instance, final StorageServiceInstance.Protocol protocolType) {
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("instanceId", instance.getId());
+        final StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocolType);
+        payload.addProperty("enabled", protocol == null || protocol.isEnabled());
+        if (protocol != null) {
+            payload.addProperty("listenIp", protocol.getListenIp());
+            if (protocol.getPort() != null) {
+                payload.addProperty("port", protocol.getPort());
+            }
+        }
+        return payload;
+    }
+
+    protected JsonObject createBlockTargetJson(final StorageBlockTargetVO target) {
+        final JsonObject targetJson = new JsonObject();
+        targetJson.addProperty("id", target.getId());
+        targetJson.addProperty("uuid", target.getUuid());
+        targetJson.addProperty("protocol", target.getProtocol().name());
+        targetJson.addProperty("targetName", target.getTargetName());
+        targetJson.addProperty("lunOrNamespace", target.getLunOrNamespace());
+        if (target.getVolumeId() != null) {
+            targetJson.addProperty("volumeId", target.getVolumeId());
+        }
+        targetJson.addProperty("state", target.getState().name());
+        targetJson.add("config", parseJsonObject(target.getConfigJson()));
+        return targetJson;
+    }
+
+    protected JsonObject createBlockAclJson(final StorageAccessRuleVO rule) {
+        final JsonObject acl = new JsonObject();
+        acl.addProperty("id", rule.getId());
+        acl.addProperty("uuid", rule.getUuid());
+        acl.addProperty("principalType", rule.getPrincipalType().name());
+        acl.addProperty("principal", rule.getPrincipal());
+        acl.addProperty("permission", rule.getPermission().name());
+        acl.addProperty("state", rule.getState().name());
+        acl.add("config", parseJsonObject(rule.getConfigJson()));
+        return acl;
+    }
+
     protected StorageServiceInstanceVO requireInstance(final Long id) {
         if (id == null) {
             throw new InvalidParameterValueException("Storage Service instance id is required");
@@ -856,6 +1241,89 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             throw new InvalidParameterValueException("Unable to find SMB ACL with id " + id);
         }
         return rule;
+    }
+
+    protected StorageBlockTargetVO requireBlockTarget(final Long id, final StorageServiceInstance.Protocol protocol) {
+        if (id == null) {
+            throw new InvalidParameterValueException("Block target id is required");
+        }
+        final StorageBlockTargetVO target = storageBlockTargetDao.findById(id);
+        if (target == null || target.getProtocol() != protocol) {
+            throw new InvalidParameterValueException("Unable to find " + protocol + " block target with id " + id);
+        }
+        return target;
+    }
+
+    protected StorageBlockTargetVO requireNvmeOfSubsystem(final Long id) {
+        final StorageBlockTargetVO target = requireBlockTarget(id, StorageServiceInstance.Protocol.NVME_OF);
+        if (!isNvmeOfSubsystem(target)) {
+            throw new InvalidParameterValueException("Unable to find NVMe-oF subsystem with id " + id);
+        }
+        return target;
+    }
+
+    protected StorageBlockTargetVO requireNvmeOfNamespace(final Long id) {
+        final StorageBlockTargetVO target = requireBlockTarget(id, StorageServiceInstance.Protocol.NVME_OF);
+        if (!isNvmeOfNamespace(target)) {
+            throw new InvalidParameterValueException("Unable to find NVMe-oF namespace with id " + id);
+        }
+        return target;
+    }
+
+    protected StorageAccessRuleVO requireBlockAcl(final Long id, final StorageServiceInstance.Protocol protocol) {
+        if (id == null) {
+            throw new InvalidParameterValueException("Block ACL id is required");
+        }
+        final StorageAccessRuleVO rule = storageAccessRuleDao.findById(id);
+        if (rule == null || rule.getResourceType() != StorageServiceInstance.AccessResourceType.BLOCK_TARGET) {
+            throw new InvalidParameterValueException("Unable to find block ACL with id " + id);
+        }
+        requireBlockTarget(rule.getResourceId(), protocol);
+        return rule;
+    }
+
+    protected List<StorageBlockTargetVO> listBlockTargets(final Long id, final Long instanceId, final StorageServiceInstance.Protocol protocol) {
+        final List<StorageBlockTargetVO> targets = new ArrayList<>();
+        if (id != null) {
+            final StorageBlockTargetVO target = storageBlockTargetDao.findById(id);
+            if (target != null && target.getProtocol() == protocol) {
+                targets.add(target);
+            }
+        } else if (instanceId != null) {
+            targets.addAll(storageBlockTargetDao.listByInstanceIdAndProtocol(instanceId, protocol));
+        } else {
+            targets.addAll(storageBlockTargetDao.listByProtocol(protocol));
+        }
+        return targets;
+    }
+
+    protected ListResponse<StorageAccessRuleResponse> listBlockAcls(final Long id, final Long targetId, final StorageServiceInstance.Protocol protocol) {
+        final List<StorageAccessRuleVO> rules = new ArrayList<>();
+        if (id != null) {
+            final StorageAccessRuleVO rule = storageAccessRuleDao.findById(id);
+            if (rule != null) {
+                rules.add(rule);
+            }
+        } else if (targetId != null) {
+            rules.addAll(storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, targetId));
+        } else {
+            rules.addAll(storageAccessRuleDao.listAll());
+        }
+
+        final List<StorageAccessRuleResponse> responses = new ArrayList<>();
+        for (final StorageAccessRuleVO rule : rules) {
+            if (rule.getResourceType() != StorageServiceInstance.AccessResourceType.BLOCK_TARGET) {
+                continue;
+            }
+            final StorageBlockTargetVO target = storageBlockTargetDao.findById(rule.getResourceId());
+            if (target == null || target.getProtocol() != protocol) {
+                continue;
+            }
+            responses.add(createAclResponse(rule));
+        }
+        final ListResponse<StorageAccessRuleResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
     }
 
     protected void validateVolume(final Long volumeId) {
@@ -922,6 +1390,19 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             return StorageServiceInstance.Permission.valueOf(permission.toUpperCase());
         } catch (final IllegalArgumentException e) {
             throw new InvalidParameterValueException("Invalid SMB ACL permission: " + permission);
+        }
+    }
+
+    protected StorageServiceInstance.Permission parseBlockPermission(final String permission) {
+        final String value = StringUtils.isBlank(permission) ? StorageServiceInstance.Permission.READ_WRITE.name() : permission.toUpperCase();
+        try {
+            final StorageServiceInstance.Permission parsed = StorageServiceInstance.Permission.valueOf(value);
+            if (parsed == StorageServiceInstance.Permission.ADMIN) {
+                throw new InvalidParameterValueException("Block ACL supports only READ_ONLY or READ_WRITE permissions");
+            }
+            return parsed;
+        } catch (final IllegalArgumentException e) {
+            throw new InvalidParameterValueException("Invalid block ACL permission: " + permission);
         }
     }
 
@@ -992,6 +1473,65 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return GSON.toJson(config);
     }
 
+    protected String buildIscsiTargetConfigJson(final String currentConfig, final String backingPath) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        config.addProperty("type", "target");
+        if (backingPath != null) {
+            config.addProperty("backingPath", backingPath);
+        }
+        return GSON.toJson(config);
+    }
+
+    protected String buildIscsiAclConfigJson(final String currentConfig, final String chapUsername, final String mutualChapUsername,
+            final String chapSecret, final String mutualChapSecret) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        if (chapUsername != null) {
+            config.addProperty("chapUsername", chapUsername);
+        }
+        if (mutualChapUsername != null) {
+            config.addProperty("mutualChapUsername", mutualChapUsername);
+        }
+        config.addProperty("chapEnabled", config.has("chapUsername") || StringUtils.isNotBlank(chapSecret));
+        config.addProperty("mutualChapEnabled", config.has("mutualChapUsername") || StringUtils.isNotBlank(mutualChapSecret));
+        return GSON.toJson(config);
+    }
+
+    protected String buildNvmeOfConfigJson(final String currentConfig, final String type, final Boolean allowAnyHost, final String backingPath) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        config.addProperty("type", type);
+        if ("subsystem".equals(type) && !config.has("allowAnyHost")) {
+            config.addProperty("allowAnyHost", false);
+        }
+        if (allowAnyHost != null) {
+            config.addProperty("allowAnyHost", allowAnyHost);
+        }
+        if (backingPath != null) {
+            config.addProperty("backingPath", backingPath);
+        }
+        return GSON.toJson(config);
+    }
+
+    protected boolean isNvmeOfSubsystem(final StorageBlockTargetVO target) {
+        final JsonObject config = parseJsonObject(target.getConfigJson());
+        return "subsystem".equals(config.has("type") ? config.get("type").getAsString() : null);
+    }
+
+    protected boolean isNvmeOfNamespace(final StorageBlockTargetVO target) {
+        final JsonObject config = parseJsonObject(target.getConfigJson());
+        return "namespace".equals(config.has("type") ? config.get("type").getAsString() : null);
+    }
+
+    protected void updateNvmeOfSubsystemName(final StorageBlockTargetVO subsystem, final String newNqn) {
+        final String oldNqn = subsystem.getTargetName();
+        subsystem.setTargetName(newNqn);
+        for (final StorageBlockTargetVO target : storageBlockTargetDao.listByInstanceIdAndProtocol(subsystem.getInstanceId(), StorageServiceInstance.Protocol.NVME_OF)) {
+            if (target.getId() != subsystem.getId() && oldNqn.equals(target.getTargetName())) {
+                target.setTargetName(newNqn);
+                storageBlockTargetDao.update(target.getId(), target);
+            }
+        }
+    }
+
     protected Map<Long, String> buildSecretMap(final long ruleId, final String password) {
         if (StringUtils.isBlank(password)) {
             return Collections.emptyMap();
@@ -1001,10 +1541,30 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return secrets;
     }
 
+    protected Map<Long, JsonObject> buildChapSecretMap(final long ruleId, final String chapSecret, final String mutualChapSecret) {
+        if (StringUtils.isBlank(chapSecret) && StringUtils.isBlank(mutualChapSecret)) {
+            return Collections.emptyMap();
+        }
+        final JsonObject secrets = new JsonObject();
+        if (StringUtils.isNotBlank(chapSecret)) {
+            secrets.addProperty("chapSecret", chapSecret);
+        }
+        if (StringUtils.isNotBlank(mutualChapSecret)) {
+            secrets.addProperty("mutualChapSecret", mutualChapSecret);
+        }
+        final Map<Long, JsonObject> secretMap = new HashMap<>();
+        secretMap.put(ruleId, secrets);
+        return secretMap;
+    }
+
     protected void ensureSmbProtocol(final StorageServiceInstanceVO instance) {
-        StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.SMB);
+        ensureProtocol(instance, StorageServiceInstance.Protocol.SMB);
+    }
+
+    protected void ensureProtocol(final StorageServiceInstanceVO instance, final StorageServiceInstance.Protocol protocolType) {
+        StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocolType);
         if (protocol == null) {
-            protocol = new StorageServiceProtocolVO(instance.getId(), StorageServiceInstance.Protocol.SMB, true, null, null);
+            protocol = new StorageServiceProtocolVO(instance.getId(), protocolType, true, null, null);
             protocol.setState(StorageServiceInstance.ResourceState.Ready);
             storageServiceProtocolDao.persist(protocol);
         } else if (!protocol.isEnabled()) {
@@ -1114,6 +1674,24 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return response;
     }
 
+    protected StorageBlockTargetResponse createBlockTargetResponse(final StorageBlockTargetVO target, final String objectName) {
+        final StorageBlockTargetResponse response = new StorageBlockTargetResponse();
+        response.setId(target.getUuid());
+        final StorageServiceInstanceVO instance = storageServiceInstanceDao.findById(target.getInstanceId());
+        response.setInstanceId(instance == null ? null : instance.getUuid());
+        response.setProtocol(target.getProtocol().name());
+        response.setTargetName(target.getTargetName());
+        response.setLunOrNamespace(target.getLunOrNamespace());
+        if (target.getVolumeId() != null) {
+            final VolumeVO volume = volumeDao.findById(target.getVolumeId());
+            response.setVolumeId(volume == null ? null : volume.getUuid());
+        }
+        response.setState(target.getState().name());
+        response.setConfig(target.getConfigJson());
+        response.setObjectName(objectName);
+        return response;
+    }
+
     protected StorageAccessRuleResponse createAclResponse(final StorageAccessRuleVO rule) {
         final StorageAccessRuleResponse response = new StorageAccessRuleResponse();
         response.setId(rule.getUuid());
@@ -1121,6 +1699,9 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         if (rule.getResourceType() == StorageServiceInstance.AccessResourceType.FILE_SHARE) {
             final StorageFileShareVO share = storageFileShareDao.findById(rule.getResourceId());
             response.setResourceId(share == null ? String.valueOf(rule.getResourceId()) : share.getUuid());
+        } else if (rule.getResourceType() == StorageServiceInstance.AccessResourceType.BLOCK_TARGET) {
+            final StorageBlockTargetVO target = storageBlockTargetDao.findById(rule.getResourceId());
+            response.setResourceId(target == null ? String.valueOf(rule.getResourceId()) : target.getUuid());
         } else {
             response.setResourceId(String.valueOf(rule.getResourceId()));
         }

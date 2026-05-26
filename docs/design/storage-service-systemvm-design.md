@@ -168,6 +168,7 @@ Candidate APIs:
   - `createStorageIscsiAcl`
   - `updateStorageIscsiAcl`
   - `deleteStorageIscsiAcl`
+  - `listStorageIscsiAcls`
 - NVMe-oF
   - `createStorageNvmeOfSubsystem`
   - `listStorageNvmeOfSubsystems`
@@ -177,6 +178,7 @@ Candidate APIs:
   - `deleteStorageNvmeOfNamespace`
   - `createStorageNvmeOfHostAcl`
   - `deleteStorageNvmeOfHostAcl`
+  - `listStorageNvmeOfHostAcls`
 
 ## Database Model
 
@@ -510,7 +512,11 @@ secrets and masked in logs, events, QGA payload traces, and async job details.
 
 ## iSCSI Design
 
-iSCSI should use Linux LIO through `targetcli-fb`.
+iSCSI should use Linux LIO through `targetcli-fb`. The first implementation
+stores the desired state in `storage_block_target` and applies target/LUN/ACL
+configuration through `ablestack-storagectl iscsi target apply <payload.json>`.
+Secrets such as CHAP passwords are runtime-only payload fields and are not
+persisted in the database.
 
 Features:
 
@@ -539,6 +545,10 @@ Features:
 
 Runtime can use `nvmetcli` if available, or manage Linux `configfs`
 directly through `ablestack-storagectl`.
+
+The first implementation uses the shared `storage_block_target` table for both
+subsystems and namespaces. A subsystem row owns the NQN and host ACLs, and
+namespace rows reuse the same NQN with their namespace ID and backing volume.
 
 ## UI Design
 

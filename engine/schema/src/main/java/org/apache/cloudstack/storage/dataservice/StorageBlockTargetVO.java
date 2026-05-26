@@ -62,6 +62,20 @@ public class StorageBlockTargetVO {
     @Column(name = "config_json")
     private String configJson;
 
+    public StorageBlockTargetVO() {
+    }
+
+    public StorageBlockTargetVO(final long instanceId, final StorageServiceInstance.Protocol protocol, final String targetName,
+            final String lunOrNamespace, final Long volumeId, final StorageServiceInstance.ResourceState state, final String configJson) {
+        this.instanceId = instanceId;
+        this.protocol = protocol;
+        this.targetName = targetName;
+        this.lunOrNamespace = lunOrNamespace;
+        this.volumeId = volumeId;
+        this.state = state;
+        this.configJson = configJson;
+    }
+
     public long getId() {
         return id;
     }
@@ -72,5 +86,49 @@ public class StorageBlockTargetVO {
 
     public long getInstanceId() {
         return instanceId;
+    }
+
+    public StorageServiceInstance.Protocol getProtocol() {
+        return protocol;
+    }
+
+    public String getTargetName() {
+        return targetName;
+    }
+
+    public void setTargetName(final String targetName) {
+        this.targetName = targetName;
+    }
+
+    public String getLunOrNamespace() {
+        return lunOrNamespace;
+    }
+
+    public void setLunOrNamespace(final String lunOrNamespace) {
+        this.lunOrNamespace = lunOrNamespace;
+    }
+
+    public Long getVolumeId() {
+        return volumeId;
+    }
+
+    public void setVolumeId(final Long volumeId) {
+        this.volumeId = volumeId;
+    }
+
+    public StorageServiceInstance.ResourceState getState() {
+        return state;
+    }
+
+    public void setState(final StorageServiceInstance.ResourceState state) {
+        this.state = state;
+    }
+
+    public String getConfigJson() {
+        return configJson;
+    }
+
+    public void setConfigJson(final String configJson) {
+        this.configJson = configJson;
     }
 }

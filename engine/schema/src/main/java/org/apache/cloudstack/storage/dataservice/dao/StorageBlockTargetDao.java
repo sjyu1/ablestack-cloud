@@ -17,9 +17,15 @@
 
 package org.apache.cloudstack.storage.dataservice.dao;
 
+import java.util.List;
+
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
 import org.apache.cloudstack.storage.dataservice.StorageBlockTargetVO;
 
 import com.cloud.utils.db.GenericDao;
 
 public interface StorageBlockTargetDao extends GenericDao<StorageBlockTargetVO, Long> {
+    List<StorageBlockTargetVO> listByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol);
+
+    List<StorageBlockTargetVO> listByProtocol(StorageServiceInstance.Protocol protocol);
 }
