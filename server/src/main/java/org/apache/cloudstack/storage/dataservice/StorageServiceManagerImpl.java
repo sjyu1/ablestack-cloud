@@ -26,6 +26,7 @@ import java.util.Map;
 import javax.inject.Inject;
 
 import org.apache.cloudstack.api.ApiCommandResourceType;
+import org.apache.cloudstack.api.command.user.storage.dataservice.AttachStorageVolumeToFileShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageIscsiAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsAclCmd;
@@ -61,6 +62,8 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSer
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceSessionsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.PrepareStorageServiceNvmeOfVmCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ResizeStorageFileShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
@@ -68,9 +71,11 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageN
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbShareCmd;
+import org.apache.cloudstack.api.command.user.volume.ResizeVolumeCmd;
 import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
 import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
+import org.apache.cloudstack.api.response.StorageFileShareResponse;
 import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
@@ -91,8 +96,11 @@ import org.apache.commons.lang3.StringUtils;
 import com.cloud.dc.DataCenterVO;
 import com.cloud.dc.dao.DataCenterDao;
 import com.cloud.exception.InvalidParameterValueException;
+import com.cloud.exception.ResourceAllocationException;
 import com.cloud.service.ServiceOfferingVO;
 import com.cloud.service.dao.ServiceOfferingDao;
+import com.cloud.storage.Volume;
+import com.cloud.storage.VolumeApiService;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.user.Account;
@@ -134,6 +142,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     private VMInstanceDao vmInstanceDao;
     @Inject
     private VolumeDao volumeDao;
+    @Inject
+    private VolumeApiService volumeApiService;
 
     @Override
     public List<Class<?>> getCommands() {
@@ -166,6 +176,9 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         commands.add(ListStorageServiceHealthCmd.class);
         commands.add(ListStorageServiceInventoryCmd.class);
         commands.add(ListStorageServiceSessionsCmd.class);
+        commands.add(AttachStorageVolumeToFileShareCmd.class);
+        commands.add(ResizeStorageFileShareCmd.class);
+        commands.add(PrepareStorageServiceNvmeOfVmCmd.class);
         commands.add(CreateStorageIscsiTargetCmd.class);
         commands.add(UpdateStorageIscsiTargetCmd.class);
         commands.add(DeleteStorageIscsiTargetCmd.class);
@@ -685,6 +698,98 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     @Override
+    public StorageFileShareResponse attachStorageVolumeToFileShare(final AttachStorageVolumeToFileShareCmd cmd) {
+        final StorageFileShareVO share = requireFileShare(cmd.getId());
+        final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        final VolumeVO volume = requireVolume(cmd.getVolumeId());
+        if (volume.getInstanceId() != null && !volume.getInstanceId().equals(instance.getVmId())) {
+            throw new InvalidParameterValueException("Volume " + volume.getUuid() + " is already attached to another VM");
+        }
+
+        share.setState(StorageServiceInstance.ResourceState.Updating);
+        share.setVolumeId(volume.getId());
+        if (cmd.getPath() != null) {
+            share.setPath(cmd.getPath());
+        }
+        if (cmd.getFilesystem() != null) {
+            share.setFilesystem(cmd.getFilesystem());
+        }
+        share.setConfigJson(buildFileShareAttachConfigJson(share.getConfigJson(), cmd.getImportMode(), volume, null));
+        storageFileShareDao.update(share.getId(), share);
+
+        if (instance.getVmId() != null && volume.getInstanceId() == null) {
+            volumeApiService.attachVolumeToVM(instance.getVmId(), volume.getId(), null, true);
+        }
+        if (instance.getVmId() != null) {
+            inspectAttachedFileShareVolume(instance, share, volume, cmd.getImportMode());
+        }
+        applyFileShareDesiredState(instance, share.getProtocol());
+
+        share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageFileShareDao.update(share.getId(), share);
+        return createFileShareResponse(share);
+    }
+
+    @Override
+    public StorageFileShareResponse resizeStorageFileShare(final ResizeStorageFileShareCmd cmd) {
+        if (cmd.getSize() == null && cmd.getQuotaBytes() == null) {
+            throw new InvalidParameterValueException("Either size or quotabytes must be provided");
+        }
+        final StorageFileShareVO share = requireFileShare(cmd.getId());
+        final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        if (share.getVolumeId() == null) {
+            throw new InvalidParameterValueException("File share " + share.getUuid() + " has no backing volume to resize");
+        }
+
+        share.setState(StorageServiceInstance.ResourceState.Updating);
+        storageFileShareDao.update(share.getId(), share);
+
+        if (Boolean.TRUE.equals(cmd.getResizeVolume()) && cmd.getSize() != null) {
+            resizeBackingVolume(share.getVolumeId(), cmd.getSize());
+        }
+        if (cmd.getQuotaBytes() != null) {
+            share.setQuotaBytes(cmd.getQuotaBytes());
+        }
+        if (instance.getVmId() != null) {
+            growFileShareFilesystem(instance, share, cmd.getSize(), cmd.getQuotaBytes());
+        }
+        applyFileShareDesiredState(instance, share.getProtocol());
+
+        share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageFileShareDao.update(share.getId(), share);
+        return createFileShareResponse(share);
+    }
+
+    @Override
+    public StorageServiceRuntimeResponse prepareStorageServiceNvmeOfVm(final PrepareStorageServiceNvmeOfVmCmd cmd) {
+        final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        final String engine = StringUtils.defaultIfBlank(cmd.getEngine(), "KERNEL_NVMET").toUpperCase();
+        if ("SPDK".equals(engine)) {
+            return createRuntimeResponse(instance, "nvmeof prepare", false, "PREPARATION_REQUIRED",
+                    "SPDK NVMe-oF requires VM Runtime Capability support for HugePage, NUMA, CPU pinning, memlock, SR-IOV, or PCI passthrough. " +
+                            "Storage Service keeps SPDK as a planned engine until that VM-level feature is available.",
+                    buildNvmeOfPreparationResult(engine, cmd.getTransport(), cmd.getRuntimeCapabilityProfileId(), cmd.getValidateOnly()));
+        }
+        if (!"KERNEL_NVMET".equals(engine)) {
+            throw new InvalidParameterValueException("Unsupported NVMe-oF engine: " + cmd.getEngine());
+        }
+        if (instance.getVmId() == null) {
+            return createRuntimeResponse(instance, "nvmeof prepare", false, "NOT_ATTACHED", "Storage Service instance has no System VM",
+                    buildNvmeOfPreparationResult(engine, cmd.getTransport(), cmd.getRuntimeCapabilityProfileId(), cmd.getValidateOnly()));
+        }
+
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("engine", engine);
+        payload.addProperty("transport", StringUtils.defaultIfBlank(cmd.getTransport(), "tcp"));
+        payload.addProperty("validateOnly", Boolean.TRUE.equals(cmd.getValidateOnly()));
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "nvmeof prepare", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
+        final String status = extractRuntimeStatus(result);
+        return createRuntimeResponse(instance, "nvmeof prepare", result.isSuccess(), status, result.getDetails(), result.getResultJson());
+    }
+
+    @Override
     public StorageBlockTargetResponse createStorageIscsiTarget(final CreateStorageIscsiTargetCmd cmd) {
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
         validateVolume(cmd.getVolumeId());
@@ -804,7 +909,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
         ensureProtocol(instance, StorageServiceInstance.Protocol.NVME_OF);
         StorageBlockTargetVO subsystem = new StorageBlockTargetVO(instance.getId(), StorageServiceInstance.Protocol.NVME_OF, cmd.getSubsystemNqn(),
-                null, null, StorageServiceInstance.ResourceState.Creating, buildNvmeOfConfigJson(null, "subsystem", cmd.getAllowAnyHost(), null));
+                null, null, StorageServiceInstance.ResourceState.Creating,
+                buildNvmeOfConfigJson(null, "subsystem", cmd.getAllowAnyHost(), null, cmd.getEngine(), cmd.getTransport()));
         subsystem = storageBlockTargetDao.persist(subsystem);
         subsystem.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
         storageBlockTargetDao.update(subsystem.getId(), subsystem);
@@ -819,7 +925,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         if (cmd.getSubsystemNqn() != null) {
             updateNvmeOfSubsystemName(subsystem, cmd.getSubsystemNqn());
         }
-        subsystem.setConfigJson(buildNvmeOfConfigJson(subsystem.getConfigJson(), "subsystem", cmd.getAllowAnyHost(), null));
+        subsystem.setConfigJson(buildNvmeOfConfigJson(subsystem.getConfigJson(), "subsystem", cmd.getAllowAnyHost(), null, cmd.getEngine(), cmd.getTransport()));
         subsystem.setState(StorageServiceInstance.ResourceState.Updating);
         storageBlockTargetDao.update(subsystem.getId(), subsystem);
         applyNvmeOfDesiredState(instance);
@@ -866,7 +972,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         validateVolume(cmd.getVolumeId());
         StorageBlockTargetVO namespace = new StorageBlockTargetVO(instance.getId(), StorageServiceInstance.Protocol.NVME_OF, subsystem.getTargetName(),
                 StringUtils.defaultIfBlank(cmd.getNamespaceId(), "1"), cmd.getVolumeId(), StorageServiceInstance.ResourceState.Creating,
-                buildNvmeOfConfigJson(null, "namespace", null, cmd.getBackingPath()));
+                buildNvmeOfConfigJson(null, "namespace", null, cmd.getBackingPath(), null, null));
         namespace = storageBlockTargetDao.persist(namespace);
         namespace.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
         storageBlockTargetDao.update(namespace.getId(), namespace);
@@ -1168,6 +1274,90 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected void applyFileShareDesiredState(final StorageServiceInstanceVO instance, final StorageServiceInstance.Protocol protocol) {
+        if (protocol == StorageServiceInstance.Protocol.NFS) {
+            applyNfsDesiredState(instance);
+        } else if (protocol == StorageServiceInstance.Protocol.SMB) {
+            applySmbDesiredState(instance);
+        } else {
+            throw new InvalidParameterValueException("Protocol " + protocol + " is not a file service protocol");
+        }
+    }
+
+    protected void inspectAttachedFileShareVolume(final StorageServiceInstanceVO instance, final StorageFileShareVO share,
+            final VolumeVO volume, final String importMode) {
+        final JsonObject payload = createFileShareVolumePayload(instance, share, volume);
+        payload.addProperty("importMode", StringUtils.defaultIfBlank(importMode, "MOUNT_EXISTING").toUpperCase());
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "volume attach inspect", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
+        if (!result.isSuccess()) {
+            throw new CloudRuntimeException("Failed to inspect attached Storage Service volume: " + result.getDetails());
+        }
+        final JsonObject resultJson = parseJsonObject(result.getResultJson());
+        if (resultJson.has("filesystem") && !resultJson.get("filesystem").isJsonNull()) {
+            share.setFilesystem(resultJson.get("filesystem").getAsString());
+        }
+        if (resultJson.has("mountPath") && !resultJson.get("mountPath").isJsonNull()) {
+            share.setPath(resultJson.get("mountPath").getAsString());
+        }
+        share.setConfigJson(buildFileShareAttachConfigJson(share.getConfigJson(), importMode, volume, resultJson));
+        storageFileShareDao.update(share.getId(), share);
+    }
+
+    protected void growFileShareFilesystem(final StorageServiceInstanceVO instance, final StorageFileShareVO share,
+            final Long volumeSizeGb, final Long quotaBytes) {
+        final VolumeVO volume = requireVolume(share.getVolumeId());
+        final JsonObject payload = createFileShareVolumePayload(instance, share, volume);
+        if (volumeSizeGb != null) {
+            payload.addProperty("volumeSizeGb", volumeSizeGb);
+        }
+        if (quotaBytes != null) {
+            payload.addProperty("quotaBytes", quotaBytes);
+        }
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "filesystem resize", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
+        if (!result.isSuccess()) {
+            share.setState(StorageServiceInstance.ResourceState.Error);
+            storageFileShareDao.update(share.getId(), share);
+            throw new CloudRuntimeException("Failed to resize Storage Service file share filesystem: " + result.getDetails());
+        }
+        final JsonObject resultJson = parseJsonObject(result.getResultJson());
+        share.setConfigJson(buildFileShareResizeConfigJson(share.getConfigJson(), resultJson, quotaBytes));
+        storageFileShareDao.update(share.getId(), share);
+    }
+
+    protected JsonObject createFileShareVolumePayload(final StorageServiceInstanceVO instance, final StorageFileShareVO share, final VolumeVO volume) {
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("shareId", share.getId());
+        payload.addProperty("shareUuid", share.getUuid());
+        payload.addProperty("protocol", share.getProtocol().name());
+        payload.addProperty("name", share.getName());
+        payload.addProperty("path", share.getPath());
+        payload.addProperty("filesystem", share.getFilesystem());
+        payload.addProperty("quotaBytes", share.getQuotaBytes());
+        payload.addProperty("volumeId", volume.getId());
+        payload.addProperty("volumeUuid", volume.getUuid());
+        payload.addProperty("volumeName", volume.getName());
+        payload.addProperty("volumeSizeBytes", volume.getSize());
+        payload.add("config", parseJsonObject(share.getConfigJson()));
+        return payload;
+    }
+
+    protected void resizeBackingVolume(final Long volumeId, final Long sizeGb) {
+        final ResizeVolumeCmd resizeVolumeCmd = new ResizeVolumeCmd();
+        resizeVolumeCmd.setId(volumeId);
+        resizeVolumeCmd.setSize(sizeGb);
+        try {
+            final Volume resizedVolume = volumeApiService.resizeVolume(resizeVolumeCmd);
+            if (resizedVolume == null) {
+                throw new CloudRuntimeException("CloudStack volume resize returned no volume for id " + volumeId);
+            }
+        } catch (final ResourceAllocationException e) {
+            throw new CloudRuntimeException("Failed to resize backing volume " + volumeId + ": " + e.getMessage(), e);
+        }
+    }
+
     protected JsonObject buildBlockProtocolPayload(final StorageServiceInstanceVO instance, final StorageServiceInstance.Protocol protocolType) {
         final JsonObject payload = new JsonObject();
         payload.addProperty("instanceUuid", instance.getUuid());
@@ -1272,6 +1462,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             throw new InvalidParameterValueException("Unable to find Storage Service instance with id " + id);
         }
         return instance;
+    }
+
+    protected StorageFileShareVO requireFileShare(final Long id) {
+        if (id == null) {
+            throw new InvalidParameterValueException("Storage Service file share id is required");
+        }
+        final StorageFileShareVO share = storageFileShareDao.findById(id);
+        if (share == null || (share.getProtocol() != StorageServiceInstance.Protocol.NFS && share.getProtocol() != StorageServiceInstance.Protocol.SMB)) {
+            throw new InvalidParameterValueException("Unable to find Storage Service file share with id " + id);
+        }
+        return share;
     }
 
     protected StorageFileShareVO requireNfsExport(final Long id) {
@@ -1402,9 +1603,20 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     protected void validateVolume(final Long volumeId) {
-        if (volumeId != null && volumeDao.findById(volumeId) == null) {
+        if (volumeId != null) {
+            requireVolume(volumeId);
+        }
+    }
+
+    protected VolumeVO requireVolume(final Long volumeId) {
+        if (volumeId == null) {
+            throw new InvalidParameterValueException("Volume id is required");
+        }
+        final VolumeVO volume = volumeDao.findById(volumeId);
+        if (volume == null) {
             throw new InvalidParameterValueException("Unable to find volume with id " + volumeId);
         }
+        return volume;
     }
 
     protected StorageServiceInstance.Protocol parseProtocol(final String protocol) {
@@ -1534,6 +1746,45 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return GSON.toJson(config);
     }
 
+    protected String buildFileShareAttachConfigJson(final String currentConfig, final String importMode, final VolumeVO volume,
+            final JsonObject inspection) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        config.addProperty("volumeMode", "EXISTING_VOLUME");
+        config.addProperty("importMode", StringUtils.defaultIfBlank(importMode, "MOUNT_EXISTING").toUpperCase());
+        config.addProperty("attachedVolumeUuid", volume.getUuid());
+        config.addProperty("attachedVolumeName", volume.getName());
+        if (inspection != null && inspection.entrySet() != null) {
+            config.add("lastInspection", inspection);
+        }
+        return GSON.toJson(config);
+    }
+
+    protected String buildFileShareResizeConfigJson(final String currentConfig, final JsonObject resizeResult, final Long quotaBytes) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        if (quotaBytes != null) {
+            config.addProperty("quotaBytes", quotaBytes);
+        }
+        if (resizeResult != null && resizeResult.entrySet() != null) {
+            config.add("lastResize", resizeResult);
+        }
+        return GSON.toJson(config);
+    }
+
+    protected String buildNvmeOfPreparationResult(final String engine, final String transport, final String runtimeCapabilityProfileId,
+            final Boolean validateOnly) {
+        final JsonObject result = new JsonObject();
+        result.addProperty("success", false);
+        result.addProperty("status", "PREPARATION_REQUIRED");
+        result.addProperty("engine", engine);
+        result.addProperty("transport", StringUtils.defaultIfBlank(transport, "tcp"));
+        result.addProperty("validateOnly", Boolean.TRUE.equals(validateOnly));
+        if (runtimeCapabilityProfileId != null) {
+            result.addProperty("runtimeCapabilityProfileId", runtimeCapabilityProfileId);
+        }
+        result.addProperty("vmRuntimeCapabilityRequired", true);
+        return GSON.toJson(result);
+    }
+
     protected String buildSmbAclConfigJson(final StorageServiceInstance.PrincipalType principalType, final String password) {
         final JsonObject config = new JsonObject();
         config.addProperty("localAccount", principalType == StorageServiceInstance.PrincipalType.LOCAL_USER);
@@ -1571,7 +1822,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return GSON.toJson(config);
     }
 
-    protected String buildNvmeOfConfigJson(final String currentConfig, final String type, final Boolean allowAnyHost, final String backingPath) {
+    protected String buildNvmeOfConfigJson(final String currentConfig, final String type, final Boolean allowAnyHost, final String backingPath,
+            final String engine, final String transport) {
         final JsonObject config = parseJsonObject(currentConfig);
         config.addProperty("type", type);
         if ("subsystem".equals(type) && !config.has("allowAnyHost")) {
@@ -1582,6 +1834,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
         if (backingPath != null) {
             config.addProperty("backingPath", backingPath);
+        }
+        if ("subsystem".equals(type)) {
+            final String requestedEngine = StringUtils.defaultIfBlank(engine,
+                    config.has("engine") ? config.get("engine").getAsString() : "KERNEL_NVMET").toUpperCase();
+            if (!"KERNEL_NVMET".equals(requestedEngine) && !"SPDK".equals(requestedEngine)) {
+                throw new InvalidParameterValueException("Unsupported NVMe-oF engine: " + engine);
+            }
+            config.addProperty("engine", requestedEngine);
+            config.addProperty("engineState", "SPDK".equals(requestedEngine) ? "PREPARATION_REQUIRED" : "SUPPORTED");
+            config.addProperty("transport", StringUtils.defaultIfBlank(transport,
+                    config.has("transport") ? config.get("transport").getAsString() : "tcp"));
         }
         return GSON.toJson(config);
     }
@@ -1712,6 +1975,26 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         response.setState(share.getState().name());
         response.setConfig(share.getConfigJson());
         response.setObjectName("storagenfsexport");
+        return response;
+    }
+
+    protected StorageFileShareResponse createFileShareResponse(final StorageFileShareVO share) {
+        final StorageFileShareResponse response = new StorageFileShareResponse();
+        response.setId(share.getUuid());
+        final StorageServiceInstanceVO instance = storageServiceInstanceDao.findById(share.getInstanceId());
+        response.setInstanceId(instance == null ? null : instance.getUuid());
+        response.setProtocol(share.getProtocol().name());
+        response.setName(share.getName());
+        response.setPath(share.getPath());
+        if (share.getVolumeId() != null) {
+            final VolumeVO volume = volumeDao.findById(share.getVolumeId());
+            response.setVolumeId(volume == null ? null : volume.getUuid());
+        }
+        response.setFilesystem(share.getFilesystem());
+        response.setQuotaBytes(share.getQuotaBytes());
+        response.setState(share.getState().name());
+        response.setConfig(share.getConfigJson());
+        response.setObjectName("storagefileshare");
         return response;
     }
 

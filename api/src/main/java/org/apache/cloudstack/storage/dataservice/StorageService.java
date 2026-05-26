@@ -17,6 +17,7 @@
 
 package org.apache.cloudstack.storage.dataservice;
 
+import org.apache.cloudstack.api.command.user.storage.dataservice.AttachStorageVolumeToFileShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsExportCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageIscsiAclCmd;
@@ -52,6 +53,8 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSer
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceSessionsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.PrepareStorageServiceNvmeOfVmCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ResizeStorageFileShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
@@ -64,6 +67,7 @@ import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
 import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
+import org.apache.cloudstack.api.response.StorageFileShareResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageServiceProtocolResponse;
 import org.apache.cloudstack.api.response.StorageServiceRuntimeResponse;
@@ -119,6 +123,12 @@ public interface StorageService {
     ListResponse<StorageServiceRuntimeResponse> listStorageServiceInventory(ListStorageServiceInventoryCmd cmd);
 
     ListResponse<StorageServiceRuntimeResponse> listStorageServiceSessions(ListStorageServiceSessionsCmd cmd);
+
+    StorageFileShareResponse attachStorageVolumeToFileShare(AttachStorageVolumeToFileShareCmd cmd);
+
+    StorageFileShareResponse resizeStorageFileShare(ResizeStorageFileShareCmd cmd);
+
+    StorageServiceRuntimeResponse prepareStorageServiceNvmeOfVm(PrepareStorageServiceNvmeOfVmCmd cmd);
 
     StorageBlockTargetResponse createStorageIscsiTarget(CreateStorageIscsiTargetCmd cmd);
 

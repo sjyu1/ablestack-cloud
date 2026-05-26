@@ -201,6 +201,207 @@ print(json.dumps({"success": True, "status": "ok", "sessions": sessions, "count"
 PY
 }
 
+volume_attach_inspect() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+def run(args):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
+
+def lsblk():
+    result = run(["lsblk", "-J", "-o", "NAME,PATH,TYPE,FSTYPE,UUID,SERIAL,SIZE,MOUNTPOINT"])
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or "lsblk failed")
+    return json.loads(result.stdout).get("blockdevices", [])
+
+def walk(devices):
+    for dev in devices:
+        yield dev
+        for child in dev.get("children") or []:
+            yield from walk([child])
+
+def find_by_id(volume_uuid, volume_name):
+    tokens = [str(v).lower() for v in (volume_uuid, volume_name) if v]
+    by_id = "/dev/disk/by-id"
+    if not tokens or not os.path.isdir(by_id):
+        return None
+    for name in sorted(os.listdir(by_id)):
+        lower = name.lower()
+        if any(token in lower for token in tokens):
+            return os.path.realpath(os.path.join(by_id, name))
+    return None
+
+def find_device():
+    config = payload.get("config") or {}
+    if config.get("devicePath") and os.path.exists(config["devicePath"]):
+        return config["devicePath"]
+    matched = find_by_id(payload.get("volumeUuid"), payload.get("volumeName"))
+    if matched:
+        return matched
+    tokens = [str(v).replace("-", "").lower() for v in (payload.get("volumeUuid"), payload.get("volumeName")) if v]
+    candidates = list(walk(lsblk()))
+    for dev in candidates:
+        text = " ".join(str(dev.get(key) or "") for key in ("name", "path", "serial", "uuid")).replace("-", "").lower()
+        if tokens and any(token in text for token in tokens):
+            return dev.get("path")
+    unmounted = [dev for dev in candidates if dev.get("path") and dev.get("type") in ("disk", "part") and not dev.get("mountpoint")]
+    with_fs = [dev for dev in unmounted if dev.get("fstype")]
+    if len(with_fs) == 1:
+        return with_fs[0].get("path")
+    raise SystemExit("Unable to identify the attached Storage Service volume device")
+
+device = find_device()
+devices = list(walk(lsblk()))
+device_info = next((dev for dev in devices if dev.get("path") == device), {})
+filesystem = payload.get("filesystem") or device_info.get("fstype")
+mount_path = payload.get("path") or f"/srv/ablestack-storage/{str(payload.get('protocol') or 'file').lower()}/{payload.get('shareUuid')}"
+import_mode = str(payload.get("importMode") or "MOUNT_EXISTING").upper()
+
+if import_mode != "INSPECT_ONLY":
+    if not filesystem:
+        raise SystemExit(f"No filesystem was detected on {device}; format workflows are not part of existing-volume import")
+    os.makedirs(mount_path, exist_ok=True)
+    current = run(["findmnt", "-n", "-o", "TARGET", "--source", device])
+    if current.returncode == 0 and current.stdout.strip():
+        mount_path = current.stdout.strip().splitlines()[0]
+    else:
+        mount_result = run(["mount", device, mount_path])
+        if mount_result.returncode != 0:
+            raise SystemExit(mount_result.stderr.strip() or f"failed to mount {device}")
+
+print(json.dumps({
+    "success": True,
+    "status": "ok",
+    "devicePath": device,
+    "filesystem": filesystem,
+    "mountPath": mount_path,
+    "importMode": import_mode,
+}, sort_keys=True))
+PY
+}
+
+filesystem_resize() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+def run(args):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+
+mount_path = payload.get("path")
+config = payload.get("config") or {}
+inspection = config.get("lastInspection") or {}
+device = inspection.get("devicePath") or config.get("devicePath")
+filesystem = payload.get("filesystem") or inspection.get("filesystem")
+
+if mount_path:
+    source_result = run(["findmnt", "-n", "-o", "SOURCE,FSTYPE", "--target", mount_path])
+    if source_result.returncode == 0 and source_result.stdout.strip():
+        parts = source_result.stdout.strip().split()
+        if parts:
+            device = parts[0]
+        if len(parts) > 1:
+            filesystem = filesystem or parts[1]
+
+if not device:
+    raise SystemExit("Unable to resolve mounted device for filesystem resize")
+
+if filesystem == "xfs":
+    if not mount_path:
+        raise SystemExit("XFS resize requires a mounted path")
+    result = run(["xfs_growfs", mount_path])
+elif filesystem in ("ext2", "ext3", "ext4"):
+    result = run(["resize2fs", device])
+else:
+    raise SystemExit(f"Unsupported filesystem for resize: {filesystem}")
+
+if result.returncode != 0:
+    raise SystemExit(result.stderr.strip() or result.stdout.strip() or "filesystem resize failed")
+
+print(json.dumps({
+    "success": True,
+    "status": "ok",
+    "devicePath": device,
+    "filesystem": filesystem,
+    "mountPath": mount_path,
+    "quotaBytes": payload.get("quotaBytes"),
+    "volumeSizeGb": payload.get("volumeSizeGb"),
+}, sort_keys=True))
+PY
+}
+
+nvmeof_prepare() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+engine = str(payload.get("engine") or "KERNEL_NVMET").upper()
+transport = str(payload.get("transport") or "tcp").lower()
+if engine == "SPDK":
+    print(json.dumps({
+        "success": False,
+        "status": "PREPARATION_REQUIRED",
+        "engine": engine,
+        "transport": transport,
+        "vmRuntimeCapabilityRequired": True,
+    }, sort_keys=True))
+    raise SystemExit(1)
+if engine != "KERNEL_NVMET":
+    raise SystemExit(f"Unsupported NVMe-oF engine: {engine}")
+if transport != "tcp":
+    raise SystemExit(f"Unsupported NVMe-oF transport: {transport}")
+
+for module in ("configfs", "nvmet", "nvmet-tcp"):
+    subprocess.run(["modprobe", module], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+commands = {
+    "nvme": shutil.which("nvme") is not None,
+    "nvmetcli": shutil.which("nvmetcli") is not None,
+}
+modules = {
+    "configfs": os.path.isdir("/sys/kernel/config"),
+    "nvmet": os.path.isdir("/sys/kernel/config/nvmet"),
+}
+status = "ok" if modules["configfs"] and modules["nvmet"] else "missing_prerequisites"
+print(json.dumps({
+    "success": status == "ok",
+    "status": status,
+    "engine": engine,
+    "transport": transport,
+    "commands": commands,
+    "modules": modules,
+    "validateOnly": bool(payload.get("validateOnly")),
+}, sort_keys=True))
+if status != "ok":
+    raise SystemExit(1)
+PY
+}
+
 apply_nfs_exports() {
   local payload_file="$1"
 
@@ -672,8 +873,12 @@ if enabled and os.path.isdir(base):
             skipped += 1
             continue
         subsystem_dir = os.path.join(base, "subsystems", nqn)
-        ensure_dir(subsystem_dir)
         config = subsystem.get("config") or {}
+        engine = str(config.get("engine") or "KERNEL_NVMET").upper()
+        if engine != "KERNEL_NVMET":
+            skipped += 1
+            continue
+        ensure_dir(subsystem_dir)
         write_file(os.path.join(subsystem_dir, "attr_allow_any_host"), "1" if config.get("allowAnyHost") else "0")
         for host in subsystem.get("hosts", []):
             host_nqn = host.get("principal")
@@ -730,6 +935,31 @@ case "$command" in
     log_command "$command" ""
     runtime_sessions
     ;;
+  volume)
+    if [[ "$subcommand" != "attach" || "$action" != "inspect" ]]; then
+      emit_error "Unsupported volume operation: ${subcommand:-<empty>} ${action:-<empty>}"
+      exit 2
+    fi
+    if [[ -z "$payload" || ! -r "$payload" ]]; then
+      emit_error "A readable payload file is required for volume attach inspect."
+      exit 2
+    fi
+    log_command "$command $subcommand $action" "$payload"
+    volume_attach_inspect "$payload"
+    ;;
+  filesystem)
+    payload="${3:-}"
+    if [[ "$subcommand" != "resize" ]]; then
+      emit_error "Unsupported filesystem operation: ${subcommand:-<empty>}"
+      exit 2
+    fi
+    if [[ -z "$payload" || ! -r "$payload" ]]; then
+      emit_error "A readable payload file is required for filesystem resize."
+      exit 2
+    fi
+    log_command "$command $subcommand" "$payload"
+    filesystem_resize "$payload"
+    ;;
   nfs)
     if [[ "$subcommand" != "export" || "$action" != "apply" ]]; then
       emit_error "Unsupported nfs operation: ${subcommand:-<empty>} ${action:-<empty>}"
@@ -777,16 +1007,25 @@ case "$command" in
     apply_iscsi_targets "$payload"
     ;;
   nvmeof)
-    if [[ "$subcommand" != "subsystem" || "$action" != "apply" ]]; then
+    if [[ "$subcommand" == "prepare" ]]; then
+      payload="${3:-}"
+      if [[ -z "$payload" || ! -r "$payload" ]]; then
+        emit_error "A readable payload file is required for nvmeof prepare."
+        exit 2
+      fi
+      log_command "$command $subcommand" "$payload"
+      nvmeof_prepare "$payload"
+    elif [[ "$subcommand" == "subsystem" && "$action" == "apply" ]]; then
+      if [[ -z "$payload" || ! -r "$payload" ]]; then
+        emit_error "A readable payload file is required for nvmeof subsystem apply."
+        exit 2
+      fi
+      log_command "$command $subcommand $action" "$payload"
+      apply_nvmeof_subsystems "$payload"
+    else
       emit_error "Unsupported nvmeof operation: ${subcommand:-<empty>} ${action:-<empty>}"
       exit 2
     fi
-    if [[ -z "$payload" || ! -r "$payload" ]]; then
-      emit_error "A readable payload file is required for nvmeof subsystem apply."
-      exit 2
-    fi
-    log_command "$command $subcommand $action" "$payload"
-    apply_nvmeof_subsystems "$payload"
     ;;
   *)
     emit_error "Unsupported storagectl command: ${command:-<empty>}"

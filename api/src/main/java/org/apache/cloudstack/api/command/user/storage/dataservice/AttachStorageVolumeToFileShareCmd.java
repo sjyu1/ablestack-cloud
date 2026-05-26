@@ -27,53 +27,54 @@ import org.apache.cloudstack.api.BaseAsyncCmd;
 import org.apache.cloudstack.api.Parameter;
 import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.user.UserCmd;
-import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
+import org.apache.cloudstack.api.response.StorageFileShareResponse;
+import org.apache.cloudstack.api.response.VolumeResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "updateStorageNvmeOfSubsystem",
-        responseObject = StorageBlockTargetResponse.class,
-        description = "Updates an NVMe-oF subsystem.",
+@APICommand(name = "attachStorageVolumeToFileShare",
+        responseObject = StorageFileShareResponse.class,
+        description = "Attaches an existing CloudStack volume to a Storage Service file share and inspects it through the Storage Service System VM.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class UpdateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements UserCmd {
+public class AttachStorageVolumeToFileShareCmd extends BaseAsyncCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, required = true, description = "NVMe-oF subsystem ID")
+    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageFileShareResponse.class, required = true, description = "Storage Service file share ID")
     private Long id;
 
-    @Parameter(name = "subsystemnqn", type = CommandType.STRING, description = "NVMe-oF subsystem NQN")
-    private String subsystemNqn;
+    @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, required = true, description = "existing CloudStack volume ID")
+    private Long volumeId;
 
-    @Parameter(name = "allowanyhost", type = CommandType.BOOLEAN, description = "allow hosts not explicitly listed")
-    private Boolean allowAnyHost;
+    @Parameter(name = ApiConstants.PATH, type = CommandType.STRING, description = "mount path inside the Storage Service System VM")
+    private String path;
 
-    @Parameter(name = "engine", type = CommandType.STRING, description = "NVMe-oF engine: KERNEL_NVMET or SPDK. SPDK is reported as preparation required until VM Runtime Capability support exists.")
-    private String engine;
+    @Parameter(name = ApiConstants.FILESYSTEM, type = CommandType.STRING, description = "expected filesystem type")
+    private String filesystem;
 
-    @Parameter(name = "transport", type = CommandType.STRING, description = "NVMe-oF transport, initially tcp")
-    private String transport;
+    @Parameter(name = "importmode", type = CommandType.STRING, description = "existing volume import mode: MOUNT_EXISTING or INSPECT_ONLY")
+    private String importMode;
 
     public Long getId() {
         return id;
     }
 
-    public String getSubsystemNqn() {
-        return subsystemNqn;
+    public Long getVolumeId() {
+        return volumeId;
     }
 
-    public Boolean getAllowAnyHost() {
-        return allowAnyHost;
+    public String getPath() {
+        return path;
     }
 
-    public String getEngine() {
-        return engine;
+    public String getFilesystem() {
+        return filesystem;
     }
 
-    public String getTransport() {
-        return transport;
+    public String getImportMode() {
+        return importMode;
     }
 
     @Override
@@ -83,19 +84,19 @@ public class UpdateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements Use
 
     @Override
     public String getEventType() {
-        return "STORAGE.NVMEOF.SUBSYSTEM.UPDATE";
+        return "STORAGE.FILESHARE.VOLUME.ATTACH";
     }
 
     @Override
     public String getEventDescription() {
-        return "Updating Storage Service NVMe-oF subsystem " + id;
+        return "Attaching volume " + volumeId + " to Storage Service file share " + id;
     }
 
     @Override
     public void execute() {
-        StorageBlockTargetResponse response = storageService.updateStorageNvmeOfSubsystem(this);
+        StorageFileShareResponse response = storageService.attachStorageVolumeToFileShare(this);
         if (response == null) {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to update NVMe-oF subsystem");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to attach volume to file share");
         }
         response.setResponseName(getCommandName());
         setResponseObject(response);
