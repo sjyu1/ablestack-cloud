@@ -45,13 +45,22 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+cleanup_failed_pre_run() {
+  local rc=$?
+  if [[ ${rc} -ne 0 ]]; then
+    clear_context_in_progress
+    rm -f "${MANIFEST_FILE}" "${CONTEXT_FILE}" "${MOLD_VM_CACHE_FILE:-}"
+  fi
+  exit ${rc}
+}
+
 ensure_runtime_dirs
 resolve_context "${1:-}" "${2:-}" "${3:-}" "${4:-}"
 load_policy_schedule_config
 acquire_lock
 sanity_checks
 mark_context_in_progress
-trap 'clear_context_in_progress' ERR INT TERM
+trap cleanup_failed_pre_run EXIT
 write_manifest_header
 cache_mold_virtual_machines
 
@@ -76,3 +85,4 @@ fi
 
 sync
 log -ne "NetBackup pre-backup staging complete count=${vm_count} manifest=${MANIFEST_FILE}"
+trap - EXIT
