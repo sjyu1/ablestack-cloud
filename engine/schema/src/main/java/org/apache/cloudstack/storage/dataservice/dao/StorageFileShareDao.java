@@ -26,4 +26,6 @@ import java.util.List;
 
 public interface StorageFileShareDao extends GenericDao<StorageFileShareVO, Long> {
     List<StorageFileShareVO> listByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol);
+
+    StorageFileShareVO findByInstanceIdVolumeIdAndProtocol(long instanceId, long volumeId, StorageServiceInstance.Protocol protocol);
 }

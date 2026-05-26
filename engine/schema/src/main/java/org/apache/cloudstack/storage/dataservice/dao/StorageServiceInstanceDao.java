@@ -25,4 +25,6 @@ import java.util.List;
 
 public interface StorageServiceInstanceDao extends GenericDao<StorageServiceInstanceVO, Long> {
     List<StorageServiceInstanceVO> listByZoneId(Long zoneId);
+
+    StorageServiceInstanceVO findByVmId(long vmId);
 }

@@ -601,6 +601,19 @@ adopt the new UI immediately.
   export, or keep the old path until the new NFS engine is stable.
 - Preserve response shape and existing UI behavior.
 
+Implementation note:
+
+- The existing SharedFS lifecycle remains the compatibility authority for VM
+  deployment, volume creation, and UI/API responses.
+- When `storage.service.feature.enabled` is enabled, SharedFS lifecycle changes
+  are mirrored into the new Storage Service model by matching the SharedFS
+  `vm_id` and `volume_id`.
+- The compatibility mirror creates or updates one `StorageServiceInstance`, one
+  enabled NFS `StorageServiceProtocol`, one NFS `StorageFileShare`, and a
+  default IPv4 CIDR ACL equivalent to the current SharedFS open NFS export.
+- Compatibility mirror failures are logged and do not change existing SharedFS
+  API behavior.
+
 ### Phase 4: SMB
 
 - Implement SMB local user/share mode.

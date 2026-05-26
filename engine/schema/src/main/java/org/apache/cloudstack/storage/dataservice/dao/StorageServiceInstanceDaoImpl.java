@@ -27,11 +27,16 @@ import java.util.List;
 
 public class StorageServiceInstanceDaoImpl extends GenericDaoBase<StorageServiceInstanceVO, Long> implements StorageServiceInstanceDao {
     protected final SearchBuilder<StorageServiceInstanceVO> ZoneSearch;
+    protected final SearchBuilder<StorageServiceInstanceVO> VmSearch;
 
     public StorageServiceInstanceDaoImpl() {
         ZoneSearch = createSearchBuilder();
         ZoneSearch.and("dataCenterId", ZoneSearch.entity().getDataCenterId(), SearchCriteria.Op.EQ);
         ZoneSearch.done();
+
+        VmSearch = createSearchBuilder();
+        VmSearch.and("vmId", VmSearch.entity().getVmId(), SearchCriteria.Op.EQ);
+        VmSearch.done();
     }
 
     @Override
@@ -39,5 +44,12 @@ public class StorageServiceInstanceDaoImpl extends GenericDaoBase<StorageService
         SearchCriteria<StorageServiceInstanceVO> sc = ZoneSearch.create();
         sc.setParameters("dataCenterId", zoneId);
         return listBy(sc);
+    }
+
+    @Override
+    public StorageServiceInstanceVO findByVmId(long vmId) {
+        SearchCriteria<StorageServiceInstanceVO> sc = VmSearch.create();
+        sc.setParameters("vmId", vmId);
+        return findOneBy(sc);
     }
 }
