@@ -20,6 +20,22 @@ package org.apache.cloudstack.storage.dataservice.dao;
 import org.apache.cloudstack.storage.dataservice.StorageIdentityDomainVO;
 
 import com.cloud.utils.db.GenericDaoBase;
+import com.cloud.utils.db.SearchBuilder;
+import com.cloud.utils.db.SearchCriteria;
 
 public class StorageIdentityDomainDaoImpl extends GenericDaoBase<StorageIdentityDomainVO, Long> implements StorageIdentityDomainDao {
+    protected final SearchBuilder<StorageIdentityDomainVO> InstanceSearch;
+
+    public StorageIdentityDomainDaoImpl() {
+        InstanceSearch = createSearchBuilder();
+        InstanceSearch.and("instanceId", InstanceSearch.entity().getInstanceId(), SearchCriteria.Op.EQ);
+        InstanceSearch.done();
+    }
+
+    @Override
+    public StorageIdentityDomainVO findByInstanceId(long instanceId) {
+        SearchCriteria<StorageIdentityDomainVO> sc = InstanceSearch.create();
+        sc.setParameters("instanceId", instanceId);
+        return findOneBy(sc);
+    }
 }

@@ -19,32 +19,48 @@ package org.apache.cloudstack.storage.dataservice;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.inject.Inject;
 
 import org.apache.cloudstack.api.ApiCommandResourceType;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageServiceInstanceCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.EnableStorageServiceProtocolCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.JoinStorageServiceToAdDomainCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.LeaveStorageServiceFromAdDomainCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsExportsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceDomainStatusCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbShareCmd;
 import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
+import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageServiceProtocolResponse;
+import org.apache.cloudstack.api.response.StorageSmbShareResponse;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.Configurable;
 import org.apache.cloudstack.storage.dataservice.dao.StorageAccessRuleDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageFileShareDao;
+import org.apache.cloudstack.storage.dataservice.dao.StorageIdentityDomainDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageServiceInstanceDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageServiceProtocolDao;
 import org.apache.commons.lang3.StringUtils;
@@ -78,6 +94,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     @Inject
     private StorageFileShareDao storageFileShareDao;
     @Inject
+    private StorageIdentityDomainDao storageIdentityDomainDao;
+    @Inject
     private StorageAccessRuleDao storageAccessRuleDao;
     @Inject
     private StorageServiceGuestCommandDispatcher guestCommandDispatcher;
@@ -109,6 +127,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         commands.add(UpdateStorageNfsAclCmd.class);
         commands.add(DeleteStorageNfsAclCmd.class);
         commands.add(ListStorageNfsAclsCmd.class);
+        commands.add(CreateStorageSmbShareCmd.class);
+        commands.add(UpdateStorageSmbShareCmd.class);
+        commands.add(DeleteStorageSmbShareCmd.class);
+        commands.add(ListStorageSmbSharesCmd.class);
+        commands.add(CreateStorageSmbAclCmd.class);
+        commands.add(UpdateStorageSmbAclCmd.class);
+        commands.add(DeleteStorageSmbAclCmd.class);
+        commands.add(ListStorageSmbAclsCmd.class);
+        commands.add(JoinStorageServiceToAdDomainCmd.class);
+        commands.add(LeaveStorageServiceFromAdDomainCmd.class);
+        commands.add(ListStorageServiceDomainStatusCmd.class);
         return commands;
     }
 
@@ -170,8 +199,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     public StorageServiceProtocolResponse enableStorageServiceProtocol(final EnableStorageServiceProtocolCmd cmd) {
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
         final StorageServiceInstance.Protocol protocol = parseProtocol(cmd.getProtocol());
-        if (protocol != StorageServiceInstance.Protocol.NFS) {
-            throw new InvalidParameterValueException("Phase 2 supports only the NFS protocol");
+        if (protocol != StorageServiceInstance.Protocol.NFS && protocol != StorageServiceInstance.Protocol.SMB) {
+            throw new InvalidParameterValueException("Storage Service file protocol enablement supports NFS and SMB");
         }
 
         StorageServiceProtocolVO protocolVO = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocol);
@@ -187,7 +216,11 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             storageServiceProtocolDao.update(protocolVO.getId(), protocolVO);
         }
 
-        applyNfsDesiredState(instance);
+        if (protocol == StorageServiceInstance.Protocol.NFS) {
+            applyNfsDesiredState(instance);
+        } else {
+            applySmbDesiredState(instance);
+        }
         return createProtocolResponse(protocolVO);
     }
 
@@ -350,6 +383,247 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return response;
     }
 
+    @Override
+    public StorageSmbShareResponse createStorageSmbShare(final CreateStorageSmbShareCmd cmd) {
+        final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        validateVolume(cmd.getVolumeId());
+        StorageFileShareVO share = new StorageFileShareVO(instance.getId(), StorageServiceInstance.Protocol.SMB, cmd.getName(), cmd.getPath(),
+                cmd.getVolumeId(), cmd.getFilesystem(), cmd.getQuotaBytes(), StorageServiceInstance.ResourceState.Creating,
+                buildSmbConfigJson(null, cmd.getReadOnly(), cmd.getBrowseable(), cmd.getGuestOk()));
+        share = storageFileShareDao.persist(share);
+        if (StringUtils.isBlank(share.getPath())) {
+            share.setPath("/srv/ablestack-storage/smb/" + share.getUuid());
+        }
+        share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageFileShareDao.update(share.getId(), share);
+        applySmbDesiredState(instance);
+        return createSmbShareResponse(share);
+    }
+
+    @Override
+    public StorageSmbShareResponse updateStorageSmbShare(final UpdateStorageSmbShareCmd cmd) {
+        final StorageFileShareVO share = requireSmbShare(cmd.getId());
+        final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        if (cmd.getName() != null) {
+            share.setName(cmd.getName());
+        }
+        if (cmd.getPath() != null) {
+            share.setPath(cmd.getPath());
+        }
+        if (cmd.getVolumeId() != null) {
+            validateVolume(cmd.getVolumeId());
+            share.setVolumeId(cmd.getVolumeId());
+        }
+        if (cmd.getFilesystem() != null) {
+            share.setFilesystem(cmd.getFilesystem());
+        }
+        if (cmd.getQuotaBytes() != null) {
+            share.setQuotaBytes(cmd.getQuotaBytes());
+        }
+        share.setConfigJson(buildSmbConfigJson(share.getConfigJson(), cmd.getReadOnly(), cmd.getBrowseable(), cmd.getGuestOk()));
+        share.setState(StorageServiceInstance.ResourceState.Updating);
+        storageFileShareDao.update(share.getId(), share);
+        applySmbDesiredState(instance);
+        share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageFileShareDao.update(share.getId(), share);
+        return createSmbShareResponse(share);
+    }
+
+    @Override
+    public boolean deleteStorageSmbShare(final DeleteStorageSmbShareCmd cmd) {
+        final StorageFileShareVO share = requireSmbShare(cmd.getId());
+        final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
+            storageAccessRuleDao.remove(rule.getId());
+        }
+        storageFileShareDao.remove(share.getId());
+        applySmbDesiredState(instance);
+        return true;
+    }
+
+    @Override
+    public ListResponse<StorageSmbShareResponse> listStorageSmbShares(final ListStorageSmbSharesCmd cmd) {
+        final List<StorageFileShareVO> shares = new ArrayList<>();
+        if (cmd.getId() != null) {
+            final StorageFileShareVO share = storageFileShareDao.findById(cmd.getId());
+            if (share != null && share.getProtocol() == StorageServiceInstance.Protocol.SMB) {
+                shares.add(share);
+            }
+        } else if (cmd.getInstanceId() != null) {
+            shares.addAll(storageFileShareDao.listByInstanceIdAndProtocol(cmd.getInstanceId(), StorageServiceInstance.Protocol.SMB));
+        } else {
+            shares.addAll(storageFileShareDao.listAll());
+        }
+
+        final List<StorageSmbShareResponse> responses = new ArrayList<>();
+        for (final StorageFileShareVO share : shares) {
+            if (share.getProtocol() != StorageServiceInstance.Protocol.SMB) {
+                continue;
+            }
+            if (cmd.getName() != null && !cmd.getName().equals(share.getName())) {
+                continue;
+            }
+            responses.add(createSmbShareResponse(share));
+        }
+        final ListResponse<StorageSmbShareResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
+    }
+
+    @Override
+    public StorageAccessRuleResponse createStorageSmbAcl(final CreateStorageSmbAclCmd cmd) {
+        final StorageFileShareVO share = requireSmbShare(cmd.getShareId());
+        final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        final StorageServiceInstance.PrincipalType principalType = parseSmbPrincipalType(cmd.getPrincipalType());
+        final StorageServiceInstance.Permission permission = parseSmbPermission(cmd.getPermission());
+        StorageAccessRuleVO rule = new StorageAccessRuleVO(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId(),
+                principalType, cmd.getPrincipal(), permission, StorageServiceInstance.ResourceState.Creating, buildSmbAclConfigJson(principalType, cmd.getPassword()));
+        rule = storageAccessRuleDao.persist(rule);
+        rule.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageAccessRuleDao.update(rule.getId(), rule);
+        applySmbDesiredState(instance, buildSecretMap(rule.getId(), cmd.getPassword()));
+        return createAclResponse(rule);
+    }
+
+    @Override
+    public StorageAccessRuleResponse updateStorageSmbAcl(final UpdateStorageSmbAclCmd cmd) {
+        final StorageAccessRuleVO rule = requireSmbAcl(cmd.getId());
+        final StorageFileShareVO share = requireSmbShare(rule.getResourceId());
+        final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        if (cmd.getPrincipal() != null) {
+            rule.setPrincipal(cmd.getPrincipal());
+        }
+        if (cmd.getPermission() != null) {
+            rule.setPermission(parseSmbPermission(cmd.getPermission()));
+        }
+        rule.setConfigJson(buildSmbAclConfigJson(rule.getPrincipalType(), cmd.getPassword()));
+        rule.setState(StorageServiceInstance.ResourceState.Updating);
+        storageAccessRuleDao.update(rule.getId(), rule);
+        applySmbDesiredState(instance, buildSecretMap(rule.getId(), cmd.getPassword()));
+        rule.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+        storageAccessRuleDao.update(rule.getId(), rule);
+        return createAclResponse(rule);
+    }
+
+    @Override
+    public boolean deleteStorageSmbAcl(final DeleteStorageSmbAclCmd cmd) {
+        final StorageAccessRuleVO rule = requireSmbAcl(cmd.getId());
+        final StorageFileShareVO share = requireSmbShare(rule.getResourceId());
+        final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        storageAccessRuleDao.remove(rule.getId());
+        applySmbDesiredState(instance);
+        return true;
+    }
+
+    @Override
+    public ListResponse<StorageAccessRuleResponse> listStorageSmbAcls(final ListStorageSmbAclsCmd cmd) {
+        final List<StorageAccessRuleVO> rules = new ArrayList<>();
+        if (cmd.getId() != null) {
+            final StorageAccessRuleVO rule = storageAccessRuleDao.findById(cmd.getId());
+            if (rule != null) {
+                rules.add(rule);
+            }
+        } else if (cmd.getShareId() != null) {
+            rules.addAll(storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, cmd.getShareId()));
+        } else {
+            rules.addAll(storageAccessRuleDao.listAll());
+        }
+
+        final List<StorageAccessRuleResponse> responses = new ArrayList<>();
+        for (final StorageAccessRuleVO rule : rules) {
+            if (rule.getResourceType() != StorageServiceInstance.AccessResourceType.FILE_SHARE || !isSmbPrincipalType(rule.getPrincipalType())) {
+                continue;
+            }
+            responses.add(createAclResponse(rule));
+        }
+        final ListResponse<StorageAccessRuleResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
+    }
+
+    @Override
+    public StorageIdentityDomainResponse joinStorageServiceToAdDomain(final JoinStorageServiceToAdDomainCmd cmd) {
+        final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        ensureSmbProtocol(instance);
+        StorageIdentityDomainVO domain = storageIdentityDomainDao.findByInstanceId(instance.getId());
+        if (domain == null) {
+            domain = new StorageIdentityDomainVO(instance.getId(), cmd.getDomainName(), cmd.getOrganizationalUnit(), cmd.getDnsServers(),
+                    StorageServiceInstance.DomainJoinState.JOINING, "UNKNOWN", buildIdentityDomainConfigJson(cmd.getWorkgroup()));
+            domain = storageIdentityDomainDao.persist(domain);
+        } else {
+            domain.setDomainName(cmd.getDomainName());
+            domain.setOrganizationalUnit(cmd.getOrganizationalUnit());
+            domain.setDnsServers(cmd.getDnsServers());
+            domain.setJoinState(StorageServiceInstance.DomainJoinState.JOINING);
+            domain.setHealthState("UNKNOWN");
+            domain.setConfigJson(buildIdentityDomainConfigJson(cmd.getWorkgroup()));
+            storageIdentityDomainDao.update(domain.getId(), domain);
+        }
+
+        try {
+            applyAdJoin(instance, domain, cmd.getUsername(), cmd.getPassword());
+        } catch (final RuntimeException e) {
+            domain.setJoinState(StorageServiceInstance.DomainJoinState.ERROR);
+            domain.setHealthState("ERROR");
+            storageIdentityDomainDao.update(domain.getId(), domain);
+            throw e;
+        }
+        domain.setJoinState(StorageServiceInstance.DomainJoinState.JOINED);
+        domain.setHealthState("OK");
+        storageIdentityDomainDao.update(domain.getId(), domain);
+        applySmbDesiredState(instance);
+        return createIdentityDomainResponse(domain);
+    }
+
+    @Override
+    public StorageIdentityDomainResponse leaveStorageServiceFromAdDomain(final LeaveStorageServiceFromAdDomainCmd cmd) {
+        final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        StorageIdentityDomainVO domain = storageIdentityDomainDao.findByInstanceId(instance.getId());
+        if (domain == null) {
+            domain = new StorageIdentityDomainVO(instance.getId(), "", null, null,
+                    StorageServiceInstance.DomainJoinState.NOT_JOINED, "UNKNOWN", null);
+            domain = storageIdentityDomainDao.persist(domain);
+        } else {
+            domain.setJoinState(StorageServiceInstance.DomainJoinState.LEAVING);
+            storageIdentityDomainDao.update(domain.getId(), domain);
+        }
+
+        try {
+            applyAdLeave(instance, cmd.getUsername(), cmd.getPassword());
+        } catch (final RuntimeException e) {
+            domain.setJoinState(StorageServiceInstance.DomainJoinState.ERROR);
+            domain.setHealthState("ERROR");
+            storageIdentityDomainDao.update(domain.getId(), domain);
+            throw e;
+        }
+        domain.setJoinState(StorageServiceInstance.DomainJoinState.NOT_JOINED);
+        domain.setHealthState("NOT_JOINED");
+        storageIdentityDomainDao.update(domain.getId(), domain);
+        applySmbDesiredState(instance);
+        return createIdentityDomainResponse(domain);
+    }
+
+    @Override
+    public ListResponse<StorageIdentityDomainResponse> listStorageServiceDomainStatus(final ListStorageServiceDomainStatusCmd cmd) {
+        final List<StorageIdentityDomainVO> domains = new ArrayList<>();
+        if (cmd.getInstanceId() != null) {
+            final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+            StorageIdentityDomainVO domain = storageIdentityDomainDao.findByInstanceId(instance.getId());
+            if (domain != null) {
+                domains.add(domain);
+            }
+        } else {
+            domains.addAll(storageIdentityDomainDao.listAll());
+        }
+        final List<StorageIdentityDomainResponse> responses = new ArrayList<>();
+        for (StorageIdentityDomainVO domain : domains) {
+            responses.add(createIdentityDomainResponse(domain));
+        }
+        final ListResponse<StorageIdentityDomainResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
+    }
+
     protected void applyNfsDesiredState(final StorageServiceInstanceVO instance) {
         if (instance.getVmId() == null) {
             logger.debug("Storage Service instance [{}] has no System VM yet; NFS state is stored but not applied", instance.getUuid());
@@ -409,6 +683,126 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected void applySmbDesiredState(final StorageServiceInstanceVO instance) {
+        applySmbDesiredState(instance, Collections.emptyMap());
+    }
+
+    protected void applySmbDesiredState(final StorageServiceInstanceVO instance, final Map<Long, String> rulePasswords) {
+        if (instance.getVmId() == null) {
+            logger.debug("Storage Service instance [{}] has no System VM yet; SMB state is stored but not applied", instance.getUuid());
+            return;
+        }
+
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("instanceId", instance.getId());
+        final StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.SMB);
+        payload.addProperty("enabled", protocol == null || protocol.isEnabled());
+        if (protocol != null) {
+            payload.addProperty("listenIp", protocol.getListenIp());
+            if (protocol.getPort() != null) {
+                payload.addProperty("port", protocol.getPort());
+            }
+        }
+
+        final StorageIdentityDomainVO domain = storageIdentityDomainDao.findByInstanceId(instance.getId());
+        if (domain != null) {
+            final JsonObject identity = new JsonObject();
+            identity.addProperty("domainName", domain.getDomainName());
+            identity.addProperty("organizationalUnit", domain.getOrganizationalUnit());
+            identity.addProperty("dnsServers", domain.getDnsServers());
+            identity.addProperty("joinState", domain.getJoinState().name());
+            identity.addProperty("healthState", domain.getHealthState());
+            identity.add("config", parseJsonObject(domain.getConfigJson()));
+            payload.add("identityDomain", identity);
+        }
+
+        final JsonArray shares = new JsonArray();
+        for (final StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.SMB)) {
+            final JsonObject smbShare = new JsonObject();
+            smbShare.addProperty("id", share.getId());
+            smbShare.addProperty("uuid", share.getUuid());
+            smbShare.addProperty("name", share.getName());
+            smbShare.addProperty("path", share.getPath());
+            if (share.getVolumeId() != null) {
+                smbShare.addProperty("volumeId", share.getVolumeId());
+            }
+            smbShare.addProperty("filesystem", share.getFilesystem());
+            if (share.getQuotaBytes() != null) {
+                smbShare.addProperty("quotaBytes", share.getQuotaBytes());
+            }
+            smbShare.addProperty("state", share.getState().name());
+            smbShare.add("config", parseJsonObject(share.getConfigJson()));
+
+            final JsonArray acls = new JsonArray();
+            for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
+                if (!isSmbPrincipalType(rule.getPrincipalType())) {
+                    continue;
+                }
+                final JsonObject acl = new JsonObject();
+                acl.addProperty("id", rule.getId());
+                acl.addProperty("uuid", rule.getUuid());
+                acl.addProperty("principalType", rule.getPrincipalType().name());
+                acl.addProperty("principal", rule.getPrincipal());
+                acl.addProperty("permission", rule.getPermission().name());
+                acl.addProperty("state", rule.getState().name());
+                acl.add("config", parseJsonObject(rule.getConfigJson()));
+                if (rulePasswords != null && rulePasswords.containsKey(rule.getId())) {
+                    acl.addProperty("password", rulePasswords.get(rule.getId()));
+                }
+                acls.add(acl);
+            }
+            smbShare.add("acls", acls);
+            shares.add(smbShare);
+        }
+        payload.add("shares", shares);
+
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "smb share apply", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.singleton("password")));
+        if (!result.isSuccess()) {
+            throw new CloudRuntimeException("Failed to apply SMB desired state on Storage Service System VM: " + result.getDetails());
+        }
+    }
+
+    protected void applyAdJoin(final StorageServiceInstanceVO instance, final StorageIdentityDomainVO domain,
+            final String username, final String password) {
+        if (instance.getVmId() == null) {
+            logger.debug("Storage Service instance [{}] has no System VM yet; AD join state is stored but not applied", instance.getUuid());
+            return;
+        }
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("domainName", domain.getDomainName());
+        payload.addProperty("username", username);
+        payload.addProperty("password", password);
+        payload.addProperty("organizationalUnit", domain.getOrganizationalUnit());
+        payload.addProperty("dnsServers", domain.getDnsServers());
+        payload.add("config", parseJsonObject(domain.getConfigJson()));
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "smb domain join", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.singleton("password")));
+        if (!result.isSuccess()) {
+            throw new CloudRuntimeException("Failed to join SMB AD domain on Storage Service System VM: " + result.getDetails());
+        }
+    }
+
+    protected void applyAdLeave(final StorageServiceInstanceVO instance, final String username, final String password) {
+        if (instance.getVmId() == null) {
+            logger.debug("Storage Service instance [{}] has no System VM yet; AD leave state is stored but not applied", instance.getUuid());
+            return;
+        }
+        final StorageIdentityDomainVO domain = storageIdentityDomainDao.findByInstanceId(instance.getId());
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("domainName", domain == null ? null : domain.getDomainName());
+        payload.addProperty("username", username);
+        payload.addProperty("password", password);
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "smb domain leave", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.singleton("password")));
+        if (!result.isSuccess()) {
+            throw new CloudRuntimeException("Failed to leave SMB AD domain on Storage Service System VM: " + result.getDetails());
+        }
+    }
+
     protected StorageServiceInstanceVO requireInstance(final Long id) {
         if (id == null) {
             throw new InvalidParameterValueException("Storage Service instance id is required");
@@ -431,6 +825,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return share;
     }
 
+    protected StorageFileShareVO requireSmbShare(final Long id) {
+        if (id == null) {
+            throw new InvalidParameterValueException("SMB share id is required");
+        }
+        final StorageFileShareVO share = storageFileShareDao.findById(id);
+        if (share == null || share.getProtocol() != StorageServiceInstance.Protocol.SMB) {
+            throw new InvalidParameterValueException("Unable to find SMB share with id " + id);
+        }
+        return share;
+    }
+
     protected StorageAccessRuleVO requireAcl(final Long id) {
         if (id == null) {
             throw new InvalidParameterValueException("ACL id is required");
@@ -438,6 +843,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final StorageAccessRuleVO rule = storageAccessRuleDao.findById(id);
         if (rule == null || rule.getResourceType() != StorageServiceInstance.AccessResourceType.FILE_SHARE) {
             throw new InvalidParameterValueException("Unable to find NFS ACL with id " + id);
+        }
+        return rule;
+    }
+
+    protected StorageAccessRuleVO requireSmbAcl(final Long id) {
+        if (id == null) {
+            throw new InvalidParameterValueException("SMB ACL id is required");
+        }
+        final StorageAccessRuleVO rule = storageAccessRuleDao.findById(id);
+        if (rule == null || rule.getResourceType() != StorageServiceInstance.AccessResourceType.FILE_SHARE || !isSmbPrincipalType(rule.getPrincipalType())) {
+            throw new InvalidParameterValueException("Unable to find SMB ACL with id " + id);
         }
         return rule;
     }
@@ -481,6 +897,34 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected StorageServiceInstance.PrincipalType parseSmbPrincipalType(final String principalType) {
+        final String value = StringUtils.isBlank(principalType) ? StorageServiceInstance.PrincipalType.LOCAL_USER.name() : principalType.toUpperCase();
+        try {
+            final StorageServiceInstance.PrincipalType type = StorageServiceInstance.PrincipalType.valueOf(value);
+            if (!isSmbPrincipalType(type)) {
+                throw new InvalidParameterValueException("SMB ACL supports LOCAL_USER, LOCAL_GROUP, AD_USER, or AD_GROUP principal types");
+            }
+            return type;
+        } catch (final IllegalArgumentException e) {
+            throw new InvalidParameterValueException("Invalid SMB ACL principal type: " + principalType);
+        }
+    }
+
+    protected boolean isSmbPrincipalType(final StorageServiceInstance.PrincipalType principalType) {
+        return principalType == StorageServiceInstance.PrincipalType.LOCAL_USER ||
+                principalType == StorageServiceInstance.PrincipalType.LOCAL_GROUP ||
+                principalType == StorageServiceInstance.PrincipalType.AD_USER ||
+                principalType == StorageServiceInstance.PrincipalType.AD_GROUP;
+    }
+
+    protected StorageServiceInstance.Permission parseSmbPermission(final String permission) {
+        try {
+            return StorageServiceInstance.Permission.valueOf(permission.toUpperCase());
+        } catch (final IllegalArgumentException e) {
+            throw new InvalidParameterValueException("Invalid SMB ACL permission: " + permission);
+        }
+    }
+
     protected String buildNfsConfigJson(final String currentConfig, final Boolean readOnly, final Boolean rootSquash,
             final Boolean sync, final Boolean secure) {
         final JsonObject config = parseJsonObject(currentConfig);
@@ -509,6 +953,65 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             config.addProperty("secure", secure);
         }
         return GSON.toJson(config);
+    }
+
+    protected String buildSmbConfigJson(final String currentConfig, final Boolean readOnly, final Boolean browseable, final Boolean guestOk) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        if (!config.has("readOnly")) {
+            config.addProperty("readOnly", false);
+        }
+        if (!config.has("browseable")) {
+            config.addProperty("browseable", true);
+        }
+        if (!config.has("guestOk")) {
+            config.addProperty("guestOk", false);
+        }
+        if (readOnly != null) {
+            config.addProperty("readOnly", readOnly);
+        }
+        if (browseable != null) {
+            config.addProperty("browseable", browseable);
+        }
+        if (guestOk != null) {
+            config.addProperty("guestOk", guestOk);
+        }
+        return GSON.toJson(config);
+    }
+
+    protected String buildSmbAclConfigJson(final StorageServiceInstance.PrincipalType principalType, final String password) {
+        final JsonObject config = new JsonObject();
+        config.addProperty("localAccount", principalType == StorageServiceInstance.PrincipalType.LOCAL_USER);
+        config.addProperty("passwordSupplied", principalType == StorageServiceInstance.PrincipalType.LOCAL_USER && StringUtils.isNotBlank(password));
+        return GSON.toJson(config);
+    }
+
+    protected String buildIdentityDomainConfigJson(final String workgroup) {
+        final JsonObject config = new JsonObject();
+        config.addProperty("identityProvider", "active_directory");
+        config.addProperty("workgroup", StringUtils.isBlank(workgroup) ? "WORKGROUP" : workgroup);
+        return GSON.toJson(config);
+    }
+
+    protected Map<Long, String> buildSecretMap(final long ruleId, final String password) {
+        if (StringUtils.isBlank(password)) {
+            return Collections.emptyMap();
+        }
+        final Map<Long, String> secrets = new HashMap<>();
+        secrets.put(ruleId, password);
+        return secrets;
+    }
+
+    protected void ensureSmbProtocol(final StorageServiceInstanceVO instance) {
+        StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.SMB);
+        if (protocol == null) {
+            protocol = new StorageServiceProtocolVO(instance.getId(), StorageServiceInstance.Protocol.SMB, true, null, null);
+            protocol.setState(StorageServiceInstance.ResourceState.Ready);
+            storageServiceProtocolDao.persist(protocol);
+        } else if (!protocol.isEnabled()) {
+            protocol.setEnabled(true);
+            protocol.setState(StorageServiceInstance.ResourceState.Ready);
+            storageServiceProtocolDao.update(protocol.getId(), protocol);
+        }
     }
 
     protected JsonObject parseJsonObject(final String json) {
@@ -574,6 +1077,40 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         response.setState(share.getState().name());
         response.setConfig(share.getConfigJson());
         response.setObjectName("storagenfsexport");
+        return response;
+    }
+
+    protected StorageSmbShareResponse createSmbShareResponse(final StorageFileShareVO share) {
+        final StorageSmbShareResponse response = new StorageSmbShareResponse();
+        response.setId(share.getUuid());
+        final StorageServiceInstanceVO instance = storageServiceInstanceDao.findById(share.getInstanceId());
+        response.setInstanceId(instance == null ? null : instance.getUuid());
+        response.setName(share.getName());
+        response.setPath(share.getPath());
+        if (share.getVolumeId() != null) {
+            final VolumeVO volume = volumeDao.findById(share.getVolumeId());
+            response.setVolumeId(volume == null ? null : volume.getUuid());
+        }
+        response.setFilesystem(share.getFilesystem());
+        response.setQuotaBytes(share.getQuotaBytes());
+        response.setState(share.getState().name());
+        response.setConfig(share.getConfigJson());
+        response.setObjectName("storagesmbshare");
+        return response;
+    }
+
+    protected StorageIdentityDomainResponse createIdentityDomainResponse(final StorageIdentityDomainVO domain) {
+        final StorageIdentityDomainResponse response = new StorageIdentityDomainResponse();
+        response.setId(domain.getUuid());
+        final StorageServiceInstanceVO instance = storageServiceInstanceDao.findById(domain.getInstanceId());
+        response.setInstanceId(instance == null ? null : instance.getUuid());
+        response.setDomainName(domain.getDomainName());
+        response.setOrganizationalUnit(domain.getOrganizationalUnit());
+        response.setDnsServers(domain.getDnsServers());
+        response.setJoinState(domain.getJoinState().name());
+        response.setHealthState(domain.getHealthState());
+        response.setConfig(domain.getConfigJson());
+        response.setObjectName("storageidentitydomain");
         return response;
     }
 

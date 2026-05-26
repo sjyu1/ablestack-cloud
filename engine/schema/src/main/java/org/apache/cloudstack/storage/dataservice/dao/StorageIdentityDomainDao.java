@@ -22,4 +22,5 @@ import org.apache.cloudstack.storage.dataservice.StorageIdentityDomainVO;
 import com.cloud.utils.db.GenericDao;
 
 public interface StorageIdentityDomainDao extends GenericDao<StorageIdentityDomainVO, Long> {
+    StorageIdentityDomainVO findByInstanceId(long instanceId);
 }

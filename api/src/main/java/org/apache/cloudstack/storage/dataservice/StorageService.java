@@ -19,20 +19,33 @@ package org.apache.cloudstack.storage.dataservice;
 
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.CreateStorageServiceInstanceCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbShareCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.EnableStorageServiceProtocolCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.JoinStorageServiceToAdDomainCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.LeaveStorageServiceFromAdDomainCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsExportsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceDomainStatusCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbShareCmd;
 import org.apache.cloudstack.api.response.ListResponse;
+import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageServiceProtocolResponse;
+import org.apache.cloudstack.api.response.StorageSmbShareResponse;
 
 public interface StorageService {
     StorageServiceInstanceResponse createStorageServiceInstance(CreateStorageServiceInstanceCmd cmd);
@@ -56,4 +69,26 @@ public interface StorageService {
     boolean deleteStorageNfsAcl(DeleteStorageNfsAclCmd cmd);
 
     ListResponse<StorageAccessRuleResponse> listStorageNfsAcls(ListStorageNfsAclsCmd cmd);
+
+    StorageSmbShareResponse createStorageSmbShare(CreateStorageSmbShareCmd cmd);
+
+    StorageSmbShareResponse updateStorageSmbShare(UpdateStorageSmbShareCmd cmd);
+
+    boolean deleteStorageSmbShare(DeleteStorageSmbShareCmd cmd);
+
+    ListResponse<StorageSmbShareResponse> listStorageSmbShares(ListStorageSmbSharesCmd cmd);
+
+    StorageAccessRuleResponse createStorageSmbAcl(CreateStorageSmbAclCmd cmd);
+
+    StorageAccessRuleResponse updateStorageSmbAcl(UpdateStorageSmbAclCmd cmd);
+
+    boolean deleteStorageSmbAcl(DeleteStorageSmbAclCmd cmd);
+
+    ListResponse<StorageAccessRuleResponse> listStorageSmbAcls(ListStorageSmbAclsCmd cmd);
+
+    StorageIdentityDomainResponse joinStorageServiceToAdDomain(JoinStorageServiceToAdDomainCmd cmd);
+
+    StorageIdentityDomainResponse leaveStorageServiceFromAdDomain(LeaveStorageServiceFromAdDomainCmd cmd);
+
+    ListResponse<StorageIdentityDomainResponse> listStorageServiceDomainStatus(ListStorageServiceDomainStatusCmd cmd);
 }
