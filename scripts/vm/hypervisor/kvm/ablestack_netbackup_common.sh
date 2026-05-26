@@ -45,8 +45,11 @@ MOLD_CREATE_BACKUP_API_URL="${MOLD_CREATE_BACKUP_API_URL:-}"
 MOLD_CREATE_BACKUP_API_METHOD="${MOLD_CREATE_BACKUP_API_METHOD:-POST}"
 MOLD_LIST_VMS_API_URL="${MOLD_LIST_VMS_API_URL:-}"
 MOLD_LIST_VMS_API_METHOD="${MOLD_LIST_VMS_API_METHOD:-GET}"
+MOLD_QUERY_ASYNC_JOB_API_URL="${MOLD_QUERY_ASYNC_JOB_API_URL:-}"
 MOLD_API_RESPONSE_FORMAT="${MOLD_API_RESPONSE_FORMAT:-json}"
 MOLD_API_SKIP_TLS_VERIFY="${MOLD_API_SKIP_TLS_VERIFY:-false}"
+MOLD_ASYNC_JOB_POLL_INTERVAL="${MOLD_ASYNC_JOB_POLL_INTERVAL:-5}"
+MOLD_ASYNC_JOB_TIMEOUT="${MOLD_ASYNC_JOB_TIMEOUT:-1800}"
 
 verb="${verb:-0}"
 POLICY_NAME="${POLICY_NAME:-}"
@@ -237,11 +240,15 @@ load_policy_schedule_config() {
   MAX_INCREMENTAL_CHAIN="${MAX_INCREMENTAL_CHAIN:-10}"
   MOLD_CREATE_BACKUP_API_URL="${MOLD_CREATE_BACKUP_API_URL:-${MOLD_URL}}"
   MOLD_LIST_VMS_API_URL="${MOLD_LIST_VMS_API_URL:-${MOLD_URL}}"
+  MOLD_QUERY_ASYNC_JOB_API_URL="${MOLD_QUERY_ASYNC_JOB_API_URL:-${MOLD_URL}}"
 
   [[ "${MAX_INCREMENTAL_CHAIN}" =~ ^[1-9][0-9]*$ ]] || fail "Invalid MAX_INCREMENTAL_CHAIN=${MAX_INCREMENTAL_CHAIN}. It must be a positive integer."
   [[ -n "${MOLD_CREATE_BACKUP_API_URL}" ]] || fail "MOLD_URL or MOLD_CREATE_BACKUP_API_URL must be configured."
   [[ -n "${MOLD_LIST_VMS_API_URL}" ]] || fail "MOLD_URL or MOLD_LIST_VMS_API_URL must be configured."
+  [[ -n "${MOLD_QUERY_ASYNC_JOB_API_URL}" ]] || fail "MOLD_URL or MOLD_QUERY_ASYNC_JOB_API_URL must be configured."
   [[ -n "${ADMIN_APIKEY}" ]] || fail "ADMIN_APIKEY must be configured."
+  [[ "${MOLD_ASYNC_JOB_POLL_INTERVAL}" =~ ^[1-9][0-9]*$ ]] || fail "Invalid MOLD_ASYNC_JOB_POLL_INTERVAL=${MOLD_ASYNC_JOB_POLL_INTERVAL}. It must be a positive integer."
+  [[ "${MOLD_ASYNC_JOB_TIMEOUT}" =~ ^[1-9][0-9]*$ ]] || fail "Invalid MOLD_ASYNC_JOB_TIMEOUT=${MOLD_ASYNC_JOB_TIMEOUT}. It must be a positive integer."
 
   load_admin_secretkey
 
@@ -445,6 +452,86 @@ invoke_mold_api() {
   printf '%s' "${response}"
 }
 
+extract_json_value_by_key() {
+  local payload="$1"
+  local key_name="$2"
+
+  python3 - "$payload" "$key_name" <<'PY'
+import json
+import sys
+
+payload = sys.argv[1]
+target_key = sys.argv[2].lower()
+
+try:
+    data = json.loads(payload)
+except Exception:
+    sys.exit(1)
+
+def walk(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if str(key).lower() == target_key:
+                if isinstance(value, (dict, list)):
+                    print(json.dumps(value), end="")
+                elif value is None:
+                    print("", end="")
+                else:
+                    print(str(value), end="")
+                return True
+            if walk(value):
+                return True
+    elif isinstance(node, list):
+        for item in node:
+            if walk(item):
+                return True
+    return False
+
+if not walk(data):
+    sys.exit(1)
+PY
+}
+
+wait_for_mold_async_job() {
+  local operation_name="$1"
+  local job_id="$2"
+  local start_time
+  start_time="$(date +%s)"
+
+  while true; do
+    local response
+    response="$(invoke_mold_api "${MOLD_LIST_VMS_API_METHOD}" "${MOLD_QUERY_ASYNC_JOB_API_URL}" "queryAsyncJobResult" "jobid" "${job_id}")" || \
+      fail "Failed to query async job status for ${operation_name} jobId=${job_id}"
+
+    local job_status=""
+    job_status="$(extract_json_value_by_key "${response}" "jobstatus" 2>/dev/null || true)"
+
+    case "${job_status}" in
+      1)
+        printf '%s' "${response}"
+        return 0
+        ;;
+      2)
+        local error_text=""
+        error_text="$(extract_json_value_by_key "${response}" "errortext" 2>/dev/null || true)"
+        [[ -n "${error_text}" ]] || error_text="$(extract_json_value_by_key "${response}" "jobresult" 2>/dev/null || true)"
+        fail "Mold async job failed for ${operation_name} jobId=${job_id}: ${error_text:-unknown error}"
+        ;;
+      0|"")
+        ;;
+      *)
+        log -ne "Unexpected Mold async job status for ${operation_name} jobId=${job_id}: ${job_status}"
+        ;;
+    esac
+
+    if (( $(date +%s) - start_time >= MOLD_ASYNC_JOB_TIMEOUT )); then
+      fail "Timed out waiting for Mold async job ${operation_name} jobId=${job_id} after ${MOLD_ASYNC_JOB_TIMEOUT}s"
+    fi
+
+    sleep "${MOLD_ASYNC_JOB_POLL_INTERVAL}"
+  done
+}
+
 cache_mold_virtual_machines() {
   [[ -n "${MOLD_VM_CACHE_FILE}" ]] || fail "MOLD_VM_CACHE_FILE is not initialized."
   if [[ -f "${MOLD_VM_CACHE_FILE}" ]]; then
@@ -513,11 +600,13 @@ invoke_mold_create_backup() {
   local vm_name="$1"
   local vm_id="$2"
   local dest="$3"
+  local initial_response=""
+  local final_response=""
+  local job_id=""
 
   log -ne "Calling Mold createBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
 
-  local response
-  response="$(invoke_mold_api \
+  initial_response="$(invoke_mold_api \
     "${MOLD_CREATE_BACKUP_API_METHOD}" \
     "${MOLD_CREATE_BACKUP_API_URL}" \
     "createBackup" \
@@ -530,7 +619,15 @@ invoke_mold_create_backup() {
     "backupRoot" "${dest}" \
     "maxIncrementalChain" "${MAX_INCREMENTAL_CHAIN}")" || fail "Mold createBackup API call failed for vm=${vm_name}"
 
-  printf '%s\n' "${response}" > "${dest}/create-backup.response.json"
+  printf '%s\n' "${initial_response}" > "${dest}/create-backup.response.json"
+
+  job_id="$(extract_json_value_by_key "${initial_response}" "jobid" 2>/dev/null || true)"
+  [[ -n "${job_id}" ]] || fail "Mold createBackup API did not return jobid for vm=${vm_name}"
+  printf '%s\n' "${job_id}" > "${dest}/create-backup.jobid"
+
+  log -ne "Waiting for Mold createBackup async job vm=${vm_name} jobId=${job_id}"
+  final_response="$(wait_for_mold_async_job "createBackup" "${job_id}")"
+  printf '%s\n' "${final_response}" > "${dest}/create-backup.job-result.json"
 }
 
 stage_vm_backup() {
