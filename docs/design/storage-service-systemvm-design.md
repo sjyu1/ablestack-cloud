@@ -60,6 +60,13 @@ Current behavior:
   management server to the service VM.
 - Make System VM template contents part of the product: all required runtime
   packages and storage control scripts must be preinstalled.
+- Support both newly created backing volumes and operator-selected existing
+  CloudStack volumes. Existing volumes must be attached, inspected, mounted, and
+  exposed without destructive formatting unless the caller explicitly requests
+  a force format mode.
+- Treat capacity expansion as a first-class workflow: resize the CloudStack
+  backing volume first, then rescan and grow the filesystem or block namespace
+  from inside the Storage Service System VM through QGA.
 - Avoid storing passwords, API secrets, SSH passwords, AD join passwords, CHAP
   secrets, or similar credentials in plaintext files or logs.
 - Prefer low-risk incremental implementation: first rebuild NFS on the new
@@ -150,6 +157,9 @@ Candidate APIs:
   - `listStorageNfsExports`
   - `updateStorageNfsExport`
   - `deleteStorageNfsExport`
+  - `attachStorageVolumeToFileShare`
+  - `detachStorageVolumeFromFileShare`
+  - `resizeStorageFileShare`
   - `createStorageNfsAcl`
   - `updateStorageNfsAcl`
   - `deleteStorageNfsAcl`
@@ -158,6 +168,9 @@ Candidate APIs:
   - `listStorageSmbShares`
   - `updateStorageSmbShare`
   - `deleteStorageSmbShare`
+  - `attachStorageVolumeToFileShare`
+  - `detachStorageVolumeFromFileShare`
+  - `resizeStorageFileShare`
   - `createStorageSmbAcl`
   - `updateStorageSmbAcl`
   - `deleteStorageSmbAcl`
@@ -178,7 +191,9 @@ Candidate APIs:
   - `listStorageNvmeOfSubsystems`
   - `updateStorageNvmeOfSubsystem`
   - `deleteStorageNvmeOfSubsystem`
+  - `prepareStorageServiceNvmeOfVm`
   - `createStorageNvmeOfNamespace`
+  - `resizeStorageNvmeOfNamespace`
   - `deleteStorageNvmeOfNamespace`
   - `createStorageNvmeOfHostAcl`
   - `deleteStorageNvmeOfHostAcl`
@@ -243,6 +258,22 @@ Important columns:
 - `state`
 - `config_json`
 
+`config_json` should also carry the volume attachment/import policy:
+
+- `volumeMode`
+  - `NEW_VOLUME`: CloudStack creates the backing volume for this share.
+  - `EXISTING_VOLUME`: an existing CloudStack volume is attached to the
+    Storage Service System VM and exposed.
+- `importMode`
+  - `USE_EXISTING_FS`: inspect and mount an existing filesystem. This is the
+    default for existing volumes.
+  - `FORMAT_IF_EMPTY`: format only if no filesystem signature is detected.
+  - `FORCE_FORMAT`: destructive format, allowed only with explicit API input.
+- `mountOptions`
+- `partition`
+- `fsUuid`
+- `projectQuotaId` for XFS project quota based capacity enforcement.
+
 ### `storage_block_target`
 
 Tracks iSCSI targets and NVMe-oF subsystems/namespaces.
@@ -258,6 +289,15 @@ Important columns:
 - `volume_id`
 - `state`
 - `config_json`
+
+For NVMe-oF, `config_json` should distinguish:
+
+- `type`: `subsystem` or `namespace`
+- `engine`: `KERNEL_NVMET` or `SPDK`
+- `allowAnyHost`
+- `backingPath`
+- `transport`: initially `tcp`
+- `namespaceSizeBytes`
 
 ### `storage_access_rule`
 
@@ -368,6 +408,9 @@ ablestack-storagectl smb share apply <payload.json>
 ablestack-storagectl smb domain join <payload.json>
 ablestack-storagectl smb domain leave <payload.json>
 ablestack-storagectl iscsi target apply <payload.json>
+ablestack-storagectl volume attach inspect <payload.json>
+ablestack-storagectl filesystem resize <payload.json>
+ablestack-storagectl nvmeof prepare <payload.json>
 ablestack-storagectl nvmeof subsystem apply <payload.json>
 ```
 
@@ -376,6 +419,8 @@ The tool should be idempotent:
 - Reapplying the same payload should be safe.
 - Partial failures should return structured error details.
 - Existing OS-level config should be reconciled to desired state.
+- Existing-volume import and filesystem resize commands must be non-destructive
+  unless the payload explicitly requests a destructive mode.
 - All generated files should be under predictable directories, for example:
   - `/etc/exports.d/ablestack-*.exports`
   - `/etc/samba/ablestack-shares.d/*.conf`
@@ -443,6 +488,18 @@ If a dedicated template is introduced, the manager must stop relying only on
 `findSystemVMReadyTemplate(zoneId, hypervisor)` and select the Storage Service
 template explicitly.
 
+NVMe-oF template and service-offering strategy:
+
+- `KERNEL_NVMET` mode belongs in the normal Storage Service System VM template.
+- `SPDK` mode should be exposed through a separate advanced service offering or
+  a dedicated Storage Service template profile because it can require reserved
+  hugepages, larger memory, CPU pinning, NUMA hints, and optional SR-IOV or PCI
+  passthrough.
+- The manager must validate host and offering capability before accepting SPDK
+  mode. If the current VM cannot satisfy the request, it should return a clear
+  `PreparationRequired` state and recommended offering/template changes instead
+  of partially enabling NVMe-oF.
+
 ## NFS Design
 
 NFS must be upgraded from one fixed `/export` share to first-class export
@@ -485,6 +542,99 @@ Runtime implementation:
   `exportfs -v`
   `df`
   `findmnt`
+
+## Existing Volume Attachment For File Services
+
+The Storage Service must support exposing an existing CloudStack volume through
+NFS or SMB. This is required for data migration, recovery, and converting an
+existing data disk into a managed file service without copying data.
+
+Supported attachment modes:
+
+- New volume mode
+  - The Storage Service API creates a new CloudStack data volume.
+  - The manager attaches it to the Storage Service System VM.
+  - QGA formats, mounts, and exports it.
+- Existing volume mode
+  - The caller passes an existing `volumeid`.
+  - The manager validates that the volume is detached or can be safely detached
+    from its current owner according to CloudStack volume rules.
+  - The manager attaches the volume to the Storage Service System VM.
+  - QGA discovers the device by stable disk metadata, probes filesystem
+    signatures, and reports the result.
+  - The default import mode is non-destructive `USE_EXISTING_FS`.
+
+Existing volume safety rules:
+
+- Never format a volume by default.
+- If no supported filesystem is detected, fail with a clear `IMPORT_REQUIRED`
+  state unless `FORMAT_IF_EMPTY` was requested and the device is empty.
+- `FORCE_FORMAT` must be explicit and must be an async operation with an audit
+  event.
+- If the filesystem is dirty or requires repair, return a blocked state and
+  expose the needed operator action. Do not run destructive repairs
+  automatically in the first implementation.
+- NFS/SMB ACLs must be rendered before the service is advertised to clients.
+- On apply failure, the manager should roll back the export/share and leave the
+  volume attached but unexported for inspection, or detach it if no filesystem
+  changes were made.
+
+Guest-side attach workflow:
+
+1. QGA receives `volume attach inspect` with expected volume UUID/device hints.
+2. `ablestack-storagectl` resolves the Linux device using `/dev/disk/by-id`,
+   serial, WWN, or CloudStack-provided metadata.
+3. The tool runs `blkid`, `lsblk`, and `findmnt` to detect signatures and mount
+   state.
+4. The tool mounts the filesystem under:
+   `/srv/ablestack-storage/volumes/<volume-uuid>`
+5. File shares use subpaths under that mount, for example:
+   `/srv/ablestack-storage/volumes/<volume-uuid>/shares/<share-name>`
+6. The resulting device, filesystem UUID, mount path, and capacity are stored in
+   `storage_file_share.config_json`.
+
+Initial filesystem support should be `xfs` and `ext4`. XFS is preferred for new
+file-service volumes because it supports online grow and project quotas.
+
+## File Service Capacity Expansion
+
+File-service resize must be an explicit async workflow that coordinates
+CloudStack volume resize with guest-side filesystem growth.
+
+API direction:
+
+- `resizeStorageFileShare`
+  - Parameters: `id`, `size`, optional `shrink=false`.
+  - Applies to NFS exports and SMB shares.
+  - The first implementation supports grow only.
+- Existing SharedFS `changeSharedFileSystemDiskOffering` remains the
+  compatibility API and can later call this workflow internally.
+
+Resize workflow:
+
+1. Validate the target share and backing volume.
+2. Validate the requested size is larger than the current volume size.
+3. Ask CloudStack to resize the backing volume or change the disk offering.
+4. Send a QGA `filesystem resize` operation to the Storage Service System VM.
+5. Inside the VM, rescan the block device:
+   - `echo 1 > /sys/class/block/<dev>/device/rescan` where available
+   - `partprobe` when partitions are used
+6. Grow the filesystem:
+   - XFS: `xfs_growfs <mountpoint>`
+   - ext4: `resize2fs <device>` after ensuring the block device is resized
+7. If XFS project quota is used, update the project hard limit to
+   `quota_bytes`.
+8. Return health, size, used bytes, filesystem, and mount path in the async job
+   result.
+
+Failure handling:
+
+- If CloudStack volume resize succeeds but filesystem grow fails, mark the
+  share `ResizeError`, keep the service mounted, and expose a retry action.
+- Shrink is not supported in the first implementation because it requires
+  filesystem-specific offline steps and has high data-loss risk.
+- Multi-share-on-one-volume capacity is enforced through XFS project quota; the
+  volume grow and quota grow are separate state transitions.
 
 ## SMB Design
 
@@ -553,6 +703,72 @@ directly through `ablestack-storagectl`.
 The first implementation uses the shared `storage_block_target` table for both
 subsystems and namespaces. A subsystem row owns the NQN and host ACLs, and
 namespace rows reuse the same NQN with their namespace ID and backing volume.
+
+### NVMe-oF Engine Modes And VM Preparation
+
+NVMe-oF should support two target engines:
+
+- `KERNEL_NVMET`
+  - Default first implementation.
+  - Uses Linux kernel `nvmet` with configfs and TCP transport.
+  - Requires kernel modules such as `nvmet`, `nvmet-tcp`, and `configfs`.
+  - Does not require guest hugepages by design.
+- `SPDK`
+  - Optional high-performance mode.
+  - Uses an SPDK NVMe-oF target process.
+  - Requires hugepages and DPDK/SPDK runtime preparation.
+  - May require CPU pinning, NUMA placement, memlock limits, and optional PCI
+    passthrough or SR-IOV/VF assignment for high-throughput networking.
+
+The API `prepareStorageServiceNvmeOfVm` should prepare or validate the System VM
+for the requested engine before NVMe-oF subsystems are enabled.
+
+Parameters:
+
+- `instanceid`
+- `engine`: `KERNEL_NVMET` or `SPDK`
+- `transport`: initially `tcp`
+- `hugepagesmib`: required only for `SPDK`
+- `cpuset`: optional dedicated vCPU set for SPDK pollers
+- `numanode`: optional NUMA placement hint
+- `memlock`: optional process memlock limit, default `unlimited` for SPDK
+- `networkmode`: `VIRTIO`, `SRIOV_VF`, or `PCI_PASSTHROUGH`
+- `validateonly`: report missing prerequisites without changing the VM
+
+Management-side VM preparation:
+
+1. Validate the Storage Service System VM service offering.
+2. For `KERNEL_NVMET`, ensure the template has `nvme-cli`, `nvmetcli` when
+   available, and a kernel with NVMe target modules.
+3. For `SPDK`, select or update a service offering that provides:
+   - enough memory for normal OS use plus requested hugepages
+   - optional CPU pinning or host affinity
+   - optional NUMA-aware placement
+   - optional SR-IOV VF or PCI passthrough network capability
+4. Generate a desired capability document in `StorageServiceProtocol.config_json`.
+5. Send QGA `nvmeof prepare` to the System VM.
+
+Guest-side SPDK preparation:
+
+1. Install or verify SPDK runtime packages and `setup.sh` prerequisites in the
+   template.
+2. Reserve hugepages:
+   - runtime: write to `/sys/kernel/mm/hugepages/.../nr_hugepages`
+   - persistent: render `/etc/sysctl.d/ablestack-spdk-hugepages.conf`
+3. Mount `hugetlbfs` at `/dev/hugepages` if not already mounted.
+4. Apply `LimitMEMLOCK=infinity` to the SPDK service unit.
+5. Optionally bind selected PCI devices to a userspace driver only when the
+   operator requested passthrough/SR-IOV and CloudStack attached the device to
+   the VM.
+6. Start or reload the SPDK NVMe-oF service.
+7. Return a readiness report with hugepage totals/free count, NUMA node,
+   transport, NIC mode, and engine version.
+
+The first implementation should keep `KERNEL_NVMET` as the default and expose
+`SPDK` as an explicit advanced mode. If the System VM runs on normal virtio
+networking, SPDK can still be prepared for lab use, but the UI should clearly
+mark it as "accelerated mode prerequisites not fully satisfied" unless CPU,
+hugepages, and network placement checks pass.
 
 ## UI Design
 
@@ -651,6 +867,32 @@ Implementation note:
 - Add upgrade and template compatibility checks.
 - Evaluate dedicated Storage Service System VM template profile.
 
+### Phase 7: Existing Volumes, Resize, And NVMe-oF VM Preparation
+
+- Add explicit existing-volume import APIs for NFS and SMB file shares.
+- Implement QGA `volume attach inspect` and non-destructive mount discovery.
+- Implement `resizeStorageFileShare` and QGA `filesystem resize` for XFS and
+  ext4 grow.
+- Add XFS project quota support for multi-share-on-one-volume capacity
+  enforcement.
+- Add `prepareStorageServiceNvmeOfVm` for `KERNEL_NVMET` validation and SPDK
+  hugepage/service preparation.
+- Add UI workflows for:
+  - selecting existing CloudStack volumes
+  - choosing import mode
+  - reviewing detected filesystem and mount status
+  - resizing file services
+  - selecting NVMe-oF engine mode and viewing prerequisite checks.
+
+Recommended implementation order:
+
+1. Existing volume import model and API validation.
+2. QGA volume inspection and mount workflow.
+3. File share resize API and filesystem grow workflow.
+4. NVMe-oF `KERNEL_NVMET` prerequisite validation.
+5. SPDK preparation API and template/service-offering capability checks.
+6. UI integration and end-to-end validation.
+
 ## Open Decisions
 
 - Whether Phase 1 should use the common System VM template or immediately add a
@@ -662,3 +904,20 @@ Implementation note:
   implemented only through one-volume-per-export initially.
 - Whether SMB identity should standardize on winbind, sssd, or support both.
 - Whether NVMe-oF should require `nvmetcli` or use configfs directly.
+- Whether SPDK mode should be supported in the same Storage Service System VM
+  template or require a dedicated high-performance template and service
+  offering.
+- Whether existing volumes that are currently attached to another VM should be
+  automatically detached by the Storage Service workflow or require an explicit
+  operator detach step first.
+
+## References
+
+- SPDK System Configuration User Guide:
+  <https://spdk.io/doc/system_configuration.html>
+- SPDK NVMe-oF Target documentation:
+  <https://spdk.io/doc/nvmf.html>
+- SPDK Getting Started guide:
+  <https://spdk.io/doc/getting_started.html>
+- Red Hat Enterprise Linux NVMe-oF configfs workflow:
+  <https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/managing_storage_devices/configuring-nvme-over-fabrics-using-nvme-rdma_managing-storage-devices>
