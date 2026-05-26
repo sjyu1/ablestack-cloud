@@ -73,6 +73,7 @@ Create one row per validation pass.
 | Run ID | Date/Time | Branch | Commit | Cloud | Zone | SystemVM Template | Tester | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | STATIC-20260526-01 | 2026-05-26 Asia/Seoul | `codex/diplo-storage-service-design` | `610f2bdf78` | local build only | N/A | N/A | Codex | Pass |
+| P00-20260526-01 | 2026-05-26 Asia/Seoul | `codex/diplo-storage-service-design` | `1d67d683c609` | local build only | N/A | N/A | Codex | Pass |
 
 ## Current Static Verification Result
 
@@ -92,7 +93,7 @@ template, test volumes, and client VMs are not prepared.
 
 | ID | Area | Current Status | Impact |
 | --- | --- | --- | --- |
-| P-00 | Repository and build artifact readiness | Partially Complete | Static builds passed, deployment artifacts still need to be selected for target hosts |
+| P-00 | Repository and build artifact readiness | Complete | Base branch synchronized and API/server/schema/KVM artifacts built in WSL ext4 worktree |
 | P-01 | Management Server deployment readiness | Not Started | Storage Service APIs cannot be validated in the target cloud yet |
 | P-02 | KVM host agent deployment readiness | Not Started | QGA command path cannot be validated yet |
 | P-03 | Storage Service SystemVM template build readiness | Not Started | Storage Service VM cannot provide NFS/SMB/iSCSI/NVMe-oF services yet |
@@ -128,6 +129,34 @@ Result:
 | Run ID | Branch | Commit | Artifact | Status | Evidence | Defect/Improvement |
 | --- | --- | --- | --- | --- | --- | --- |
 | STATIC-20260526-01 | `codex/diplo-storage-service-design` | `610f2bdf78` | API/server/schema build | Pass | Maven build passed in WSL ext4 worktree |  |
+| P00-20260526-01 | `codex/diplo-storage-service-design` | `1d67d683c609` | Base sync and deployable build artifacts | Pass | `ablestack-diplo`, `origin/ablestack-diplo`, and `upstream/ablestack-diplo` all at `849146ebdecd`; work branch is based on that commit; static checks and Maven builds passed |  |
+
+P00-20260526-01 artifact candidates:
+
+| Area | Artifact |
+| --- | --- |
+| API | `/root/work/ablestack-cloud-p00/api/target/cloud-api-4.21.0.0-SNAPSHOT.jar` |
+| Schema | `/root/work/ablestack-cloud-p00/engine/schema/target/cloud-engine-schema-4.21.0.0-SNAPSHOT.jar` |
+| Server | `/root/work/ablestack-cloud-p00/server/target/cloud-server-4.21.0.0-SNAPSHOT.jar` |
+| Agent | `/root/work/ablestack-cloud-p00/agent/target/cloud-agent-4.21.0.0-SNAPSHOT.jar` |
+| KVM plugin | `/root/work/ablestack-cloud-p00/plugins/hypervisors/kvm/target/cloud-plugin-hypervisor-kvm-4.21.0.0-SNAPSHOT.jar` |
+| SystemVM control script | `/root/work/ablestack-cloud-p00/systemvm/debian/usr/local/bin/ablestack-storagectl` |
+| SystemVM setup script | `/root/work/ablestack-cloud-p00/systemvm/debian/opt/cloud/bin/setup/common.sh` |
+
+P00-20260526-01 executed checks:
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Fetch origin | `git fetch origin` | Pass |
+| Fetch upstream | `git fetch upstream` | Pass |
+| Local vs upstream base | `git rev-list --left-right --count ablestack-diplo...upstream/ablestack-diplo` | Pass, `0 0` |
+| Local vs origin base | `git rev-list --left-right --count ablestack-diplo...origin/ablestack-diplo` | Pass, `0 0` |
+| Work branch ancestry | `git merge-base --is-ancestor ablestack-diplo HEAD` | Pass |
+| Diff whitespace check | `git diff --check` | Pass |
+| Storage control script syntax | `bash -n systemvm/debian/usr/local/bin/ablestack-storagectl` | Pass |
+| API build | `mvn -pl api -DskipTests install` | Pass |
+| Server/schema build | `mvn -pl engine/schema,server -am -DskipTests install` | Pass |
+| KVM plugin build | `mvn -pl plugins/hypervisors/kvm -am -DskipTests install` | Pass |
 
 ### P-01 Management Server Deployment Readiness
 
