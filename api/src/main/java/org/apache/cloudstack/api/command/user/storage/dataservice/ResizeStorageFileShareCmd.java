@@ -27,53 +27,46 @@ import org.apache.cloudstack.api.BaseAsyncCmd;
 import org.apache.cloudstack.api.Parameter;
 import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.user.UserCmd;
-import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
+import org.apache.cloudstack.api.response.StorageFileShareResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "updateStorageNvmeOfSubsystem",
-        responseObject = StorageBlockTargetResponse.class,
-        description = "Updates an NVMe-oF subsystem.",
+@APICommand(name = "resizeStorageFileShare",
+        responseObject = StorageFileShareResponse.class,
+        description = "Expands a Storage Service file share by optionally resizing the backing volume and growing the guest filesystem.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class UpdateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements UserCmd {
+public class ResizeStorageFileShareCmd extends BaseAsyncCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, required = true, description = "NVMe-oF subsystem ID")
+    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageFileShareResponse.class, required = true, description = "Storage Service file share ID")
     private Long id;
 
-    @Parameter(name = "subsystemnqn", type = CommandType.STRING, description = "NVMe-oF subsystem NQN")
-    private String subsystemNqn;
+    @Parameter(name = ApiConstants.SIZE, type = CommandType.LONG, description = "new backing volume size in GB")
+    private Long size;
 
-    @Parameter(name = "allowanyhost", type = CommandType.BOOLEAN, description = "allow hosts not explicitly listed")
-    private Boolean allowAnyHost;
+    @Parameter(name = "quotabytes", type = CommandType.LONG, description = "new file share capacity limit in bytes")
+    private Long quotaBytes;
 
-    @Parameter(name = "engine", type = CommandType.STRING, description = "NVMe-oF engine: KERNEL_NVMET or SPDK. SPDK is reported as preparation required until VM Runtime Capability support exists.")
-    private String engine;
-
-    @Parameter(name = "transport", type = CommandType.STRING, description = "NVMe-oF transport, initially tcp")
-    private String transport;
+    @Parameter(name = "resizevolume", type = CommandType.BOOLEAN, description = "resize the CloudStack backing volume before growing the filesystem")
+    private Boolean resizeVolume;
 
     public Long getId() {
         return id;
     }
 
-    public String getSubsystemNqn() {
-        return subsystemNqn;
+    public Long getSize() {
+        return size;
     }
 
-    public Boolean getAllowAnyHost() {
-        return allowAnyHost;
+    public Long getQuotaBytes() {
+        return quotaBytes;
     }
 
-    public String getEngine() {
-        return engine;
-    }
-
-    public String getTransport() {
-        return transport;
+    public Boolean getResizeVolume() {
+        return resizeVolume;
     }
 
     @Override
@@ -83,19 +76,19 @@ public class UpdateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements Use
 
     @Override
     public String getEventType() {
-        return "STORAGE.NVMEOF.SUBSYSTEM.UPDATE";
+        return "STORAGE.FILESHARE.RESIZE";
     }
 
     @Override
     public String getEventDescription() {
-        return "Updating Storage Service NVMe-oF subsystem " + id;
+        return "Resizing Storage Service file share " + id;
     }
 
     @Override
     public void execute() {
-        StorageBlockTargetResponse response = storageService.updateStorageNvmeOfSubsystem(this);
+        StorageFileShareResponse response = storageService.resizeStorageFileShare(this);
         if (response == null) {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to update NVMe-oF subsystem");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to resize file share");
         }
         response.setResponseName(getCommandName());
         setResponseObject(response);

@@ -50,6 +50,12 @@ public class CreateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements Use
     @Parameter(name = "allowanyhost", type = CommandType.BOOLEAN, description = "allow hosts not explicitly listed")
     private Boolean allowAnyHost;
 
+    @Parameter(name = "engine", type = CommandType.STRING, description = "NVMe-oF engine: KERNEL_NVMET or SPDK. SPDK is reported as preparation required until VM Runtime Capability support exists.")
+    private String engine;
+
+    @Parameter(name = "transport", type = CommandType.STRING, description = "NVMe-oF transport, initially tcp")
+    private String transport;
+
     public Long getInstanceId() {
         return instanceId;
     }
@@ -60,6 +66,14 @@ public class CreateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements Use
 
     public Boolean getAllowAnyHost() {
         return allowAnyHost;
+    }
+
+    public String getEngine() {
+        return engine;
+    }
+
+    public String getTransport() {
+        return transport;
     }
 
     @Override

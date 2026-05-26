@@ -21,51 +21,43 @@ import javax.inject.Inject;
 
 import org.apache.cloudstack.acl.RoleType;
 import org.apache.cloudstack.api.APICommand;
-import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.ApiErrorCode;
 import org.apache.cloudstack.api.BaseAsyncCmd;
 import org.apache.cloudstack.api.Parameter;
 import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.user.UserCmd;
-import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
+import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
+import org.apache.cloudstack.api.response.StorageServiceRuntimeResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "updateStorageNvmeOfSubsystem",
-        responseObject = StorageBlockTargetResponse.class,
-        description = "Updates an NVMe-oF subsystem.",
+@APICommand(name = "prepareStorageServiceNvmeOfVm",
+        responseObject = StorageServiceRuntimeResponse.class,
+        description = "Validates or prepares NVMe-oF runtime prerequisites inside a Storage Service System VM.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class UpdateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements UserCmd {
+public class PrepareStorageServiceNvmeOfVmCmd extends BaseAsyncCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, required = true, description = "NVMe-oF subsystem ID")
-    private Long id;
+    @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, required = true, description = "Storage Service instance ID")
+    private Long instanceId;
 
-    @Parameter(name = "subsystemnqn", type = CommandType.STRING, description = "NVMe-oF subsystem NQN")
-    private String subsystemNqn;
-
-    @Parameter(name = "allowanyhost", type = CommandType.BOOLEAN, description = "allow hosts not explicitly listed")
-    private Boolean allowAnyHost;
-
-    @Parameter(name = "engine", type = CommandType.STRING, description = "NVMe-oF engine: KERNEL_NVMET or SPDK. SPDK is reported as preparation required until VM Runtime Capability support exists.")
+    @Parameter(name = "engine", type = CommandType.STRING, description = "NVMe-oF engine: KERNEL_NVMET or SPDK")
     private String engine;
 
     @Parameter(name = "transport", type = CommandType.STRING, description = "NVMe-oF transport, initially tcp")
     private String transport;
 
-    public Long getId() {
-        return id;
-    }
+    @Parameter(name = "runtimecapabilityprofileid", type = CommandType.STRING, description = "future VM Runtime Capability profile ID for SPDK mode")
+    private String runtimeCapabilityProfileId;
 
-    public String getSubsystemNqn() {
-        return subsystemNqn;
-    }
+    @Parameter(name = "validateonly", type = CommandType.BOOLEAN, description = "validate prerequisites without changing the System VM")
+    private Boolean validateOnly;
 
-    public Boolean getAllowAnyHost() {
-        return allowAnyHost;
+    public Long getInstanceId() {
+        return instanceId;
     }
 
     public String getEngine() {
@@ -76,6 +68,14 @@ public class UpdateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements Use
         return transport;
     }
 
+    public String getRuntimeCapabilityProfileId() {
+        return runtimeCapabilityProfileId;
+    }
+
+    public Boolean getValidateOnly() {
+        return validateOnly;
+    }
+
     @Override
     public long getEntityOwnerId() {
         return 0;
@@ -83,19 +83,19 @@ public class UpdateStorageNvmeOfSubsystemCmd extends BaseAsyncCmd implements Use
 
     @Override
     public String getEventType() {
-        return "STORAGE.NVMEOF.SUBSYSTEM.UPDATE";
+        return "STORAGE.NVMEOF.PREPARE";
     }
 
     @Override
     public String getEventDescription() {
-        return "Updating Storage Service NVMe-oF subsystem " + id;
+        return "Preparing NVMe-oF runtime for Storage Service instance " + instanceId;
     }
 
     @Override
     public void execute() {
-        StorageBlockTargetResponse response = storageService.updateStorageNvmeOfSubsystem(this);
+        StorageServiceRuntimeResponse response = storageService.prepareStorageServiceNvmeOfVm(this);
         if (response == null) {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to update NVMe-oF subsystem");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to prepare NVMe-oF runtime");
         }
         response.setResponseName(getCommandName());
         setResponseObject(response);
