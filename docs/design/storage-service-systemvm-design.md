@@ -861,6 +861,15 @@ Implementation note:
 
 ### Phase 7: Existing Volumes, Resize, And NVMe-oF Kernel Preparation
 
+Confirmed next implementation scope:
+
+1. Storage capacity expansion for file services.
+2. Service activation from existing CloudStack volumes attached to the Storage
+   Service System VM.
+3. NVMe-oF SPDK code adjustment so any VM-level runtime resource handling is
+   removed from Storage Service and left as a dependency on the future VM
+   Runtime Capability feature.
+
 - Add explicit existing-volume import APIs for NFS and SMB file shares.
 - Implement QGA `volume attach inspect` and non-destructive mount discovery.
 - Implement `resizeStorageFileShare` and QGA `filesystem resize` for XFS and
@@ -885,7 +894,10 @@ Recommended implementation order:
 3. File share resize API and filesystem grow workflow.
 4. NVMe-oF `KERNEL_NVMET` prerequisite validation.
 5. SPDK planned-state response and VM Runtime Capability dependency message.
-6. UI integration and end-to-end validation.
+6. Remove or gate any SPDK code path that attempts HugePage, NUMA, CPU pinning,
+   memlock, SR-IOV, PCI passthrough, or other VM-level runtime changes from
+   Storage Service.
+7. UI integration and end-to-end validation.
 
 ## Open Decisions
 
