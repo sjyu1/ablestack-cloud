@@ -87,15 +87,15 @@ Create one row per validation pass.
 ## Current Readiness Status
 
 As of 2026-05-26, static code/build verification, Europa forward-porting, and
-Management Server preflight checks have been completed. No real Storage
-Service functional validation can be marked `Pass` yet because the aligned
-Europa artifacts still need to be deployed, and the host deployment, Storage
+Management Server deployment have been completed. No real Storage Service
+functional validation can be marked `Pass` yet because authenticated API
+discovery still needs to be completed, and the host deployment, Storage
 Service SystemVM template, test volumes, and client VMs are not prepared.
 
 | ID | Area | Current Status | Impact |
 | --- | --- | --- | --- |
 | P-00 | Repository and build artifact readiness | Complete | `ablestack-europa` is synchronized with upstream and aligned `4.22.0.0-SNAPSHOT` API/server/schema/KVM artifacts were built in the WSL ext4 worktree |
-| P-01 | Management Server deployment readiness | Ready To Retry | Management Server is reachable, DB access and backup succeeded, and aligned `4.22.0.0-SNAPSHOT` artifacts are now available; deployment, DB migration, restart, and API registration checks still need to run |
+| P-01 | Management Server deployment readiness | Deployed, API Discovery Pending | Aligned `4.22.0.0-SNAPSHOT` API/server artifacts were deployed, `cloudstack` jar was patched with Storage Service classes/resources, DB migration and configuration succeeded, and `mold` is running; authenticated `listApis` still returns HTTP `401` with the available `api_keypair` credentials, so API discovery must be rerun with a confirmed API credential path |
 | P-02 | KVM host agent deployment readiness | Not Started | QGA command path cannot be validated yet |
 | P-03 | Storage Service SystemVM template build readiness | Not Started | Storage Service VM cannot provide NFS/SMB/iSCSI/NVMe-oF services yet |
 | P-04 | Storage Service SystemVM package verification | Not Started | Runtime package/script presence is unknown |
@@ -221,6 +221,7 @@ Result:
 |  |  |  |  | Not Run |  |  |
 | P01-20260526-01 | `10.10.22.10` | local branch `4.21.0.0-SNAPSHOT`; target runtime `4.22.0.0-SNAPSHOT` | Not applied | Blocked | TCP 8080 reachable; TCP 10022 reachable; TCP 22 closed; unauthenticated API returned HTTP 401; SSH hostname check succeeded for `10.10.22.10` (`ccvm`) and host nodes `10.10.22.1` (`ablecube22-1`), `10.10.22.2` (`ablecube22-2`), `10.10.22.3` (`ablecube22-3`); `mold` and `mold-usage` are active; current management jars are `cloud-api/core/server-4.22.0.0-SNAPSHOT.jar`; DB password decryption and DB connectivity succeeded without printing secrets; expected Storage Service tables count is `0`; expected Storage Service configuration keys are absent; current `4.22` jars do not contain the new Storage Service API/manager classes; backup created at `/root/codex-backups/storage-service-p01-20260526-170947` with SHA-256 records for the existing API/core/server jars | Deployment, DB migration, Management Server restart, and API registration checks were intentionally not executed because replacing or mixing `4.21` artifacts into the shared `4.22` environment is unsafe. Prepare aligned `4.22` build artifacts or approve a minimal class-level patch plan against the existing `4.22` jars before continuing P-01. |
 | P01-20260526-02 | `10.10.22.10` | `codex/europa-storage-service` `a0701701661`, `4.22.0.0-SNAPSHOT` artifacts | Not applied | Ready To Retry | Aligned `4.22` API, schema, server, agent, and KVM plugin artifacts are available in `/root/work/ablestack-cloud`; no additional Management Server files, DB schema, or services were changed during this source alignment pass | Continue P-01 by deploying the aligned `4.22` artifacts, applying the Storage Service schema changes, restarting `mold`, and verifying API registration. |
+| P01-20260526-03 | `10.10.22.10` | `codex/europa-storage-service` `51f75cddd87`, `4.22.0.0-SNAPSHOT` artifacts | Applied | Deployed, API Discovery Pending | Deployment bundle SHA-256 verified; backup created at `/root/codex-backups/storage-service-p01-deploy-20260526-204045`; `cloud-api-4.22.0.0-SNAPSHOT.jar` and `cloud-server-4.22.0.0-SNAPSHOT.jar` were replaced with aligned artifacts; `cloudstack-4.22.0.0-SNAPSHOT.jar` was patched with Storage Service server/schema classes and Spring/DB resources; `storage_service_instance`, `storage_service_protocol`, `storage_file_share`, `storage_block_target`, `storage_access_rule`, and `storage_identity_domain` tables exist; `storage.service.feature.enabled=true`; `storage.service.command.timeout=300`; `mold` restarted and is active with PID `2448052`; unauthenticated API endpoint returns HTTP `401` as expected; JAR inspection confirms required command and manager classes are present | Authenticated `listApis` could not be completed because available `api_keypair` credentials returned HTTP `401` for both `apiKey` and `apikey` signing attempts. Confirm a valid API credential path or session-based API access, then verify discovery for `createStorageServiceInstance`, `enableStorageServiceProtocol`, `attachStorageVolumeToFileShare`, `resizeStorageFileShare`, and `prepareStorageServiceNvmeOfVm`. |
 
 ### P-02 KVM Host Agent Deployment Readiness
 
