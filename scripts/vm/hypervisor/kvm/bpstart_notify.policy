@@ -7,7 +7,7 @@ POLICY="${2:-}"
 SCHEDULE="${3:-}"
 TYPE="${4:-}"
 
-LOG="/var/log/netbackup-cloudstack-hook.log"
+LOG="/var/log/netbackup-mold-hook.log"
 HELPER="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpstart_notify.sh"
 
 log_line() {

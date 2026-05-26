@@ -8,7 +8,7 @@ SCHEDULE="${3:-}"
 TYPE="${4:-}"
 STATUS="${5:-0}"
 
-LOG="/var/log/netbackup-cloudstack-hook.log"
+LOG="/var/log/netbackup-mold-hook.log"
 HELPER="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpend_notify.sh"
 
 log_line() {
