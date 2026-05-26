@@ -86,16 +86,16 @@ Create one row per validation pass.
 
 ## Current Readiness Status
 
-As of 2026-05-26, static code/build verification and Management Server
-preflight checks have been completed. No real Storage Service functional
-validation can be marked `Pass` yet because the Management Server still needs
-an aligned deployment, and the host deployment, Storage Service SystemVM
-template, test volumes, and client VMs are not prepared.
+As of 2026-05-26, static code/build verification, Europa forward-porting, and
+Management Server preflight checks have been completed. No real Storage
+Service functional validation can be marked `Pass` yet because the aligned
+Europa artifacts still need to be deployed, and the host deployment, Storage
+Service SystemVM template, test volumes, and client VMs are not prepared.
 
 | ID | Area | Current Status | Impact |
 | --- | --- | --- | --- |
-| P-00 | Repository and build artifact readiness | Complete | Base branch synchronized and API/server/schema/KVM artifacts built in WSL ext4 worktree |
-| P-01 | Management Server deployment readiness | Blocked | Management Server is reachable, DB access and backup succeeded, but target runtime is `4.22.0.0-SNAPSHOT` while current branch artifacts are `4.21.0.0-SNAPSHOT`; deployment and restart are deferred until aligned `4.22` artifacts or an approved class-level patch plan are available |
+| P-00 | Repository and build artifact readiness | Complete | `ablestack-europa` is synchronized with upstream and aligned `4.22.0.0-SNAPSHOT` API/server/schema/KVM artifacts were built in the WSL ext4 worktree |
+| P-01 | Management Server deployment readiness | Ready To Retry | Management Server is reachable, DB access and backup succeeded, and aligned `4.22.0.0-SNAPSHOT` artifacts are now available; deployment, DB migration, restart, and API registration checks still need to run |
 | P-02 | KVM host agent deployment readiness | Not Started | QGA command path cannot be validated yet |
 | P-03 | Storage Service SystemVM template build readiness | Not Started | Storage Service VM cannot provide NFS/SMB/iSCSI/NVMe-oF services yet |
 | P-04 | Storage Service SystemVM package verification | Not Started | Runtime package/script presence is unknown |
@@ -131,6 +131,7 @@ Result:
 | --- | --- | --- | --- | --- | --- | --- |
 | STATIC-20260526-01 | `codex/diplo-storage-service-design` | `610f2bdf78` | API/server/schema build | Pass | Maven build passed in WSL ext4 worktree |  |
 | P00-20260526-01 | `codex/diplo-storage-service-design` | `1d67d683c609` | Base sync and deployable build artifacts | Pass | `ablestack-diplo`, `origin/ablestack-diplo`, and `upstream/ablestack-diplo` all at `849146ebdecd`; work branch is based on that commit; static checks and Maven builds passed |  |
+| P00-20260526-02 | `codex/europa-storage-service` | `a0701701661` | Europa forward-port and deployable `4.22` build artifacts | Pass | `ablestack-europa`, `origin/ablestack-europa`, and `upstream/ablestack-europa` all at `7eb3b6eeaa`; work branch was created from local `ablestack-europa`; Storage Service commits were forward-ported from diplo; `git diff --check` passed; WSL builds passed for API, engine/schema plus server, and KVM plugin | Europa port required one API compatibility fix: `finalyzeAccountId` was corrected to `finalizeAccountId` |
 
 P00-20260526-01 artifact candidates:
 
@@ -144,6 +145,18 @@ P00-20260526-01 artifact candidates:
 | SystemVM control script | `/root/work/ablestack-cloud-p00/systemvm/debian/usr/local/bin/ablestack-storagectl` |
 | SystemVM setup script | `/root/work/ablestack-cloud-p00/systemvm/debian/opt/cloud/bin/setup/common.sh` |
 
+P00-20260526-02 artifact candidates:
+
+| Area | Artifact |
+| --- | --- |
+| API | `/root/work/ablestack-cloud/api/target/cloud-api-4.22.0.0-SNAPSHOT.jar` |
+| Schema | `/root/work/ablestack-cloud/engine/schema/target/cloud-engine-schema-4.22.0.0-SNAPSHOT.jar` |
+| Server | `/root/work/ablestack-cloud/server/target/cloud-server-4.22.0.0-SNAPSHOT.jar` |
+| Agent | `/root/work/ablestack-cloud/agent/target/cloud-agent-4.22.0.0-SNAPSHOT.jar` |
+| KVM plugin | `/root/work/ablestack-cloud/plugins/hypervisors/kvm/target/cloud-plugin-hypervisor-kvm-4.22.0.0-SNAPSHOT.jar` |
+| SystemVM control script | `/root/work/ablestack-cloud/systemvm/debian/usr/local/bin/ablestack-storagectl` |
+| SystemVM setup script | `/root/work/ablestack-cloud/systemvm/debian/opt/cloud/bin/setup/common.sh` |
+
 P00-20260526-01 executed checks:
 
 | Check | Command | Result |
@@ -155,6 +168,21 @@ P00-20260526-01 executed checks:
 | Work branch ancestry | `git merge-base --is-ancestor ablestack-diplo HEAD` | Pass |
 | Diff whitespace check | `git diff --check` | Pass |
 | Storage control script syntax | `bash -n systemvm/debian/usr/local/bin/ablestack-storagectl` | Pass |
+| API build | `mvn -pl api -DskipTests install` | Pass |
+| Server/schema build | `mvn -pl engine/schema,server -am -DskipTests install` | Pass |
+| KVM plugin build | `mvn -pl plugins/hypervisors/kvm -am -DskipTests install` | Pass |
+
+P00-20260526-02 executed checks:
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Fetch origin | `git fetch origin` | Pass |
+| Fetch upstream | `git fetch upstream` | Pass |
+| Local vs upstream base | `git rev-list --left-right --count ablestack-europa...upstream/ablestack-europa` | Pass, `0 0` |
+| Local vs origin base | `git rev-list --left-right --count ablestack-europa...origin/ablestack-europa` | Pass, `0 0` |
+| Work branch base | `git switch -c codex/europa-storage-service` from local `ablestack-europa` | Pass |
+| Diplo forward-port | `git cherry-pick` Storage Service design, implementation, and validation commits | Pass, with Spring context tail conflicts resolved by preserving Europa beans and adding Storage Service beans |
+| Diff whitespace check | `git diff --check` | Pass |
 | API build | `mvn -pl api -DskipTests install` | Pass |
 | Server/schema build | `mvn -pl engine/schema,server -am -DskipTests install` | Pass |
 | KVM plugin build | `mvn -pl plugins/hypervisors/kvm -am -DskipTests install` | Pass |
@@ -192,6 +220,7 @@ Result:
 | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  | Not Run |  |  |
 | P01-20260526-01 | `10.10.22.10` | local branch `4.21.0.0-SNAPSHOT`; target runtime `4.22.0.0-SNAPSHOT` | Not applied | Blocked | TCP 8080 reachable; TCP 10022 reachable; TCP 22 closed; unauthenticated API returned HTTP 401; SSH hostname check succeeded for `10.10.22.10` (`ccvm`) and host nodes `10.10.22.1` (`ablecube22-1`), `10.10.22.2` (`ablecube22-2`), `10.10.22.3` (`ablecube22-3`); `mold` and `mold-usage` are active; current management jars are `cloud-api/core/server-4.22.0.0-SNAPSHOT.jar`; DB password decryption and DB connectivity succeeded without printing secrets; expected Storage Service tables count is `0`; expected Storage Service configuration keys are absent; current `4.22` jars do not contain the new Storage Service API/manager classes; backup created at `/root/codex-backups/storage-service-p01-20260526-170947` with SHA-256 records for the existing API/core/server jars | Deployment, DB migration, Management Server restart, and API registration checks were intentionally not executed because replacing or mixing `4.21` artifacts into the shared `4.22` environment is unsafe. Prepare aligned `4.22` build artifacts or approve a minimal class-level patch plan against the existing `4.22` jars before continuing P-01. |
+| P01-20260526-02 | `10.10.22.10` | `codex/europa-storage-service` `a0701701661`, `4.22.0.0-SNAPSHOT` artifacts | Not applied | Ready To Retry | Aligned `4.22` API, schema, server, agent, and KVM plugin artifacts are available in `/root/work/ablestack-cloud`; no additional Management Server files, DB schema, or services were changed during this source alignment pass | Continue P-01 by deploying the aligned `4.22` artifacts, applying the Storage Service schema changes, restarting `mold`, and verifying API registration. |
 
 ### P-02 KVM Host Agent Deployment Readiness
 
