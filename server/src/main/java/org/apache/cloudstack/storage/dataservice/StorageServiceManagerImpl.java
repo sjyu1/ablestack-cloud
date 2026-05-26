@@ -148,9 +148,6 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     @Override
     public List<Class<?>> getCommands() {
         final List<Class<?>> commands = new ArrayList<>();
-        if (!StorageServiceInstance.StorageServiceFeatureEnabled.value()) {
-            return commands;
-        }
         commands.add(CreateStorageServiceInstanceCmd.class);
         commands.add(ListStorageServiceInstancesCmd.class);
         commands.add(EnableStorageServiceProtocolCmd.class);
