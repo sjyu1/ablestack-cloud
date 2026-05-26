@@ -94,7 +94,7 @@ template, test volumes, and client VMs are not prepared.
 | ID | Area | Current Status | Impact |
 | --- | --- | --- | --- |
 | P-00 | Repository and build artifact readiness | Complete | Base branch synchronized and API/server/schema/KVM artifacts built in WSL ext4 worktree |
-| P-01 | Management Server deployment readiness | Not Started | Storage Service APIs cannot be validated in the target cloud yet |
+| P-01 | Management Server deployment readiness | In Progress | Network reachability and SSH key access were confirmed; backup, deployment, DB migration, and API registration checks still need to run |
 | P-02 | KVM host agent deployment readiness | Not Started | QGA command path cannot be validated yet |
 | P-03 | Storage Service SystemVM template build readiness | Not Started | Storage Service VM cannot provide NFS/SMB/iSCSI/NVMe-oF services yet |
 | P-04 | Storage Service SystemVM package verification | Not Started | Runtime package/script presence is unknown |
@@ -190,6 +190,7 @@ Result:
 | Run ID | Host | Artifact/Commit | DB Migration | Status | Evidence | Defect/Improvement |
 | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  | Not Run |  |  |
+| P01-20260526-01 | `10.10.22.10` | `1d67d683c609` | Not checked | In Progress | TCP 8080 reachable; TCP 10022 reachable; TCP 22 closed; unauthenticated API returned HTTP 401; key file copied to WSL temp path with mode 600; SSH hostname check succeeded for `10.10.22.10` (`ccvm`) and host nodes `10.10.22.1` (`ablecube22-1`), `10.10.22.2` (`ablecube22-2`), `10.10.22.3` (`ablecube22-3`) | Management Server backup, DB schema check, artifact deployment, service restart, and API registration checks are not started yet. No Management Server files, DB schema, or service state were changed. |
 
 ### P-02 KVM Host Agent Deployment Readiness
 
