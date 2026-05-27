@@ -19,7 +19,6 @@
 
 set -euo pipefail
 
-BACKUP_ROOT_DEFAULT="/var/lib/ablestack/netbackup/staging"
 STATE_ROOT_DEFAULT="/var/lib/ablestack/netbackup"
 LOG_FILE_DEFAULT="/var/log/cloudstack/agent/agent.log"
 LIBVIRT_URI_DEFAULT="qemu:///system"
@@ -28,7 +27,6 @@ SECRET_HELPER_DEFAULT="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ne
 SECRET_SUBDIR_DEFAULT="secrets"
 
 CONFIG_ROOT="${CONFIG_ROOT:-$CONFIG_ROOT_DEFAULT}"
-BACKUP_ROOT="${BACKUP_ROOT:-$BACKUP_ROOT_DEFAULT}"
 STATE_ROOT="${STATE_ROOT:-$STATE_ROOT_DEFAULT}"
 LOG_FILE="${LOG_FILE:-$LOG_FILE_DEFAULT}"
 LIBVIRT_URI="${LIBVIRT_URI:-$LIBVIRT_URI_DEFAULT}"
@@ -81,8 +79,7 @@ fail() {
 }
 
 ensure_runtime_dirs() {
-  mkdir -p "${BACKUP_ROOT}" \
-           "${STATE_ROOT}/contexts" \
+  mkdir -p "${STATE_ROOT}/contexts" \
            "${STATE_ROOT}/locks" \
            "${STATE_ROOT}/sessions"
 }
@@ -149,7 +146,6 @@ resolve_context() {
   CONTEXT_KEY="${POLICY_SAFE}__${SCHEDULE_SAFE}__${CLIENT_SAFE}"
   LOCK_FILE="${STATE_ROOT}/locks/${CONTEXT_KEY}.lock"
   CONTEXT_FILE="${STATE_ROOT}/contexts/${CONTEXT_KEY}.env"
-  MANIFEST_FILE="${STATE_ROOT}/sessions/${CONTEXT_KEY}.manifest"
 }
 
 context_in_progress_file() {
@@ -337,15 +333,8 @@ netbackup_job_success_confirmed() {
   [[ "${NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO}" == "true" ]]
 }
 
-write_manifest_header() {
-  : > "${MANIFEST_FILE}"
+initialize_runtime_cache() {
   MOLD_VM_CACHE_FILE="${STATE_ROOT}/sessions/${CONTEXT_KEY}.listVirtualMachines.json"
-}
-
-append_manifest_line() {
-  local vm_name="$1"
-  local session_dir="$2"
-  printf '%s|%s\n' "${vm_name}" "${session_dir}" >> "${MANIFEST_FILE}"
 }
 
 json_escape() {
@@ -575,34 +564,24 @@ if matches:
 PY
 }
 
-write_backup_metadata() {
-  local vm_name="$1"
-  local dest="$2"
-
-  mkdir -p "${dest}"
-  virsh -c "${LIBVIRT_URI}" dumpxml "${vm_name}" > "${dest}/domain-config.xml" 2>/dev/null || true
-  virsh -c "${LIBVIRT_URI}" dominfo "${vm_name}" > "${dest}/dominfo.xml" 2>/dev/null || true
-  virsh -c "${LIBVIRT_URI}" domiflist "${vm_name}" > "${dest}/domiflist.xml" 2>/dev/null || true
-  virsh -c "${LIBVIRT_URI}" domblklist "${vm_name}" > "${dest}/domblklist.xml" 2>/dev/null || true
-
-  write_state_file "${dest}/backup.meta" \
-    BACKUP_FRAMEWORK "ABLESTACK_NETBACKUP" \
-    BACKUP_MODE "MOLD_API" \
-    VM_NAME "${vm_name}" \
-    POLICY_NAME "${POLICY_NAME}" \
-    SCHEDULE_NAME "${SCHEDULE_NAME}" \
-    CLIENT_NAME "${CLIENT_NAME}" \
-    SESSION_TIMESTAMP "${SESSION_TIMESTAMP}" \
-    MAX_INCREMENTAL_CHAIN "${MAX_INCREMENTAL_CHAIN}"
-}
-
 invoke_mold_create_backup() {
   local vm_name="$1"
   local vm_id="$2"
-  local dest="$3"
   local initial_response=""
   local final_response=""
   local job_id=""
+  local -a api_args=(
+    "vmId" "${vm_id}"
+    "policyName" "${POLICY_NAME}"
+    "scheduleName" "${SCHEDULE_NAME}"
+    "clientName" "${CLIENT_NAME}"
+    "sessionTimestamp" "${SESSION_TIMESTAMP}"
+    "maxIncrementalChain" "${MAX_INCREMENTAL_CHAIN}"
+  )
+
+  if [[ -n "${NETBACKUP_JOB_ID}" ]]; then
+    api_args+=("jobid" "${NETBACKUP_JOB_ID}")
+  fi
 
   log -ne "Calling Mold createBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
 
@@ -610,44 +589,22 @@ invoke_mold_create_backup() {
     "${MOLD_CREATE_BACKUP_API_METHOD}" \
     "${MOLD_CREATE_BACKUP_API_URL}" \
     "createBackup" \
-    "vmName" "${vm_name}" \
-    "vmId" "${vm_id}" \
-    "policyName" "${POLICY_NAME}" \
-    "scheduleName" "${SCHEDULE_NAME}" \
-    "clientName" "${CLIENT_NAME}" \
-    "sessionTimestamp" "${SESSION_TIMESTAMP}" \
-    "backupRoot" "${dest}" \
-    "maxIncrementalChain" "${MAX_INCREMENTAL_CHAIN}")" || fail "Mold createBackup API call failed for vm=${vm_name}"
-
-  printf '%s\n' "${initial_response}" > "${dest}/create-backup.response.json"
+    "${api_args[@]}")" || fail "Mold createBackup API call failed for vm=${vm_name}"
 
   job_id="$(extract_json_value_by_key "${initial_response}" "jobid" 2>/dev/null || true)"
   [[ -n "${job_id}" ]] || fail "Mold createBackup API did not return jobid for vm=${vm_name}"
-  printf '%s\n' "${job_id}" > "${dest}/create-backup.jobid"
 
   log -ne "Waiting for Mold createBackup async job vm=${vm_name} jobId=${job_id}"
   final_response="$(wait_for_mold_async_job "createBackup" "${job_id}")"
-  printf '%s\n' "${final_response}" > "${dest}/create-backup.job-result.json"
+  [[ -n "${final_response}" ]] || fail "Mold createBackup async job returned empty response for vm=${vm_name}"
 }
 
 stage_vm_backup() {
   local vm_name="$1"
-  local dest="${BACKUP_ROOT}/${vm_name}/${SESSION_TIMESTAMP}"
   local vm_id=""
-
-  rm -rf "${dest}"
-  mkdir -p "${dest}"
 
   vm_id="$(lookup_mold_vm_id "${vm_name}")"
   [[ -n "${vm_id}" ]] || fail "Unable to resolve Mold VM id for instance name ${vm_name}"
 
-  write_backup_metadata "${vm_name}" "${dest}"
-  invoke_mold_create_backup "${vm_name}" "${vm_id}" "${dest}"
-  append_manifest_line "${vm_name}" "${dest}"
-}
-
-remove_session_dir() {
-  local session_dir="$1"
-  [[ -d "${session_dir}" ]] || return 0
-  rm -rf "${session_dir}"
+  invoke_mold_create_backup "${vm_name}" "${vm_id}"
 }

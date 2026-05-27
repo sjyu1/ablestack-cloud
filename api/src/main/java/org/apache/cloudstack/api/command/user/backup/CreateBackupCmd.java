@@ -81,6 +81,20 @@ public class CreateBackupCmd extends BaseAsyncCreateCmd {
             since = "4.21.0")
     private Boolean quiesceVM;
 
+    @Parameter(name = ApiConstants.JOB_ID,
+            type = CommandType.STRING,
+            required = false,
+            description = "the job ID for the NetBackup",
+            since = "4.21.0")
+    private String jobId;
+
+    @Parameter(name = "policyName",
+            type = CommandType.STRING,
+            required = false,
+            description = "the policy name for the NetBackup",
+            since = "4.21.0")
+    private String policyName;
+
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
     /////////////////////////////////////////////////////
@@ -101,6 +115,14 @@ public class CreateBackupCmd extends BaseAsyncCreateCmd {
         return quiesceVM;
     }
 
+    public String getJobId() {
+        return jobId;
+    }
+
+    public String getPolicyName() {
+        return policyName;
+    }
+
     /////////////////////////////////////////////////////
     /////////////// API Implementation///////////////////
     /////////////////////////////////////////////////////
@@ -108,7 +130,12 @@ public class CreateBackupCmd extends BaseAsyncCreateCmd {
     @Override
     public void execute() throws ResourceUnavailableException, InsufficientCapacityException, ServerApiException, ConcurrentOperationException, ResourceAllocationException, NetworkRuleConflictException {
         try {
-            boolean result = backupManager.createBackup(this, getJob());
+            boolean result;
+            if (getJobId() != null) {
+                result = backupManager.createBackup(this);
+            } else {
+                result = backupManager.createBackup(this, getJob());
+            }
             if (result) {
                 SuccessResponse response = new SuccessResponse(getCommandName());
                 response.setResponseName(getCommandName());

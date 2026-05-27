@@ -29,7 +29,6 @@ Usage:
   ablestack_netbackup_bpend_notify.sh [policy] [schedule] [client] [status]
 
 Environment overrides:
-  BACKUP_ROOT      Default: /var/lib/ablestack/netbackup/staging
   STATE_ROOT       Default: /var/lib/ablestack/netbackup
   LOG_FILE         Default: /var/log/cloudstack/agent/agent.log
   JOB_STATUS       Client-side bpbkar result code. 0 alone is not treated as full-job success by default.
@@ -78,31 +77,16 @@ if ! load_state_file "${CONTEXT_FILE}"; then
 fi
 
 SESSION_TIMESTAMP="${SESSION_TIMESTAMP:-$(generate_timestamp)}"
-log -ne "NetBackup post-backup cleanup start policy=${POLICY_NAME} schedule=${SCHEDULE_NAME} client=${CLIENT_NAME} status=${JOB_STATUS}"
+log -ne "NetBackup post-backup finalize start policy=${POLICY_NAME} schedule=${SCHEDULE_NAME} client=${CLIENT_NAME} status=${JOB_STATUS}"
 
-COMMIT_ALLOWED=false
 if netbackup_job_success_confirmed; then
-  COMMIT_ALLOWED=true
-  log -ne "NetBackup success confirmed; removing staged backup directories"
+  log -ne "NetBackup success confirmed"
 else
-  log -ne "NetBackup success not confirmed; preserving staged backup directories for investigation"
-fi
-
-if [[ -f "${MANIFEST_FILE}" ]]; then
-  while IFS='|' read -r vm_name session_dir; do
-    [[ -z "${vm_name}" ]] && continue
-
-    if [[ "${COMMIT_ALLOWED}" == "true" ]]; then
-      remove_session_dir "${session_dir}"
-    else
-      log -ne "Preserving staged directory for VM ${vm_name} because NetBackup success was not confirmed: ${session_dir}"
-    fi
-  done < "${MANIFEST_FILE}"
+  log -ne "NetBackup success not confirmed"
 fi
 
 clear_context_in_progress
-rm -f "${MANIFEST_FILE}" "${CONTEXT_FILE}"
-rmdir "${PENDING_DIR}" >/dev/null 2>&1 || true
+rm -f "${CONTEXT_FILE}" "${MOLD_VM_CACHE_FILE:-}"
 sync
 
-log -ne "NetBackup post-backup cleanup complete status=${JOB_STATUS}"
+log -ne "NetBackup post-backup finalize complete status=${JOB_STATUS}"

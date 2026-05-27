@@ -29,10 +29,9 @@ Usage:
   ablestack_netbackup_bpstart_notify.sh [policy] [schedule] [client] [timestamp]
 
 Environment overrides:
-  BACKUP_ROOT      Default: /var/lib/ablestack/netbackup/staging
   STATE_ROOT       Default: /var/lib/ablestack/netbackup
   LOG_FILE         Default: /var/log/cloudstack/agent/agent.log
-  NOTE             Increase NetBackup BPSTART_TIMEOUT/CLIENT_READ_TIMEOUT for large API-driven staging.
+  NOTE             Increase NetBackup BPSTART_TIMEOUT/CLIENT_READ_TIMEOUT for large API-driven backups.
   POLICY_NAME
   SCHEDULE_NAME
   CLIENT_NAME
@@ -49,7 +48,7 @@ cleanup_failed_pre_run() {
   local rc=$?
   if [[ ${rc} -ne 0 ]]; then
     clear_context_in_progress
-    rm -f "${MANIFEST_FILE}" "${CONTEXT_FILE}" "${MOLD_VM_CACHE_FILE:-}"
+    rm -f "${CONTEXT_FILE}" "${MOLD_VM_CACHE_FILE:-}"
   fi
   exit ${rc}
 }
@@ -61,7 +60,7 @@ acquire_lock
 sanity_checks
 mark_context_in_progress
 trap cleanup_failed_pre_run EXIT
-write_manifest_header
+initialize_runtime_cache
 cache_mold_virtual_machines
 
 write_state_file "${CONTEXT_FILE}" \
@@ -70,7 +69,7 @@ write_state_file "${CONTEXT_FILE}" \
   CLIENT_NAME "${CLIENT_NAME}" \
   SESSION_TIMESTAMP "${SESSION_TIMESTAMP}"
 
-log -ne "NetBackup pre-backup staging start policy=${POLICY_NAME} schedule=${SCHEDULE_NAME} client=${CLIENT_NAME} timestamp=${SESSION_TIMESTAMP}"
+log -ne "NetBackup pre-backup API dispatch start policy=${POLICY_NAME} schedule=${SCHEDULE_NAME} client=${CLIENT_NAME} timestamp=${SESSION_TIMESTAMP}"
 
 vm_count=0
 while IFS= read -r vm_name; do
@@ -84,5 +83,5 @@ if [[ ${vm_count} -eq 0 ]]; then
 fi
 
 sync
-log -ne "NetBackup pre-backup staging complete count=${vm_count} manifest=${MANIFEST_FILE}"
+log -ne "NetBackup pre-backup API dispatch complete count=${vm_count}"
 trap - EXIT

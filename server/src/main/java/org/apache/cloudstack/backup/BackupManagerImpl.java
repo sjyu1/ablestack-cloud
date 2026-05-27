@@ -991,7 +991,44 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         Long backupScheduleId = getBackupScheduleId(job);
         boolean isScheduledBackup = backupScheduleId != null;
         Account owner = accountManager.getAccount(vm.getAccountId());
+        Long backupSize = calculateBackupSize(vm.getId());
+        createCheckedBackup(cmd, owner, isScheduledBackup, backupSize, vm, vm.getId(), backupProvider, backupScheduleId);
+        if (isScheduledBackup) {
+            deleteOldestBackupFromScheduleIfRequired(vm.getId(), backupScheduleId);
+        }
+        return true;
+    }
 
+    @Override
+    @ActionEvent(eventType = EventTypes.EVENT_VM_BACKUP_CREATE, eventDescription = "creating VM backup", async = true)
+    public boolean createBackup(final CreateBackupCmd cmd) throws ResourceAllocationException {
+        final Long vmId = cmd.getVmId();
+        final Account caller = CallContext.current().getCallingAccount();
+
+        final VMInstanceVO vm = findVmById(vmId);
+        validateBackupForZone(vm.getDataCenterId());
+        accountManager.checkAccess(caller, null, true, vm);
+
+        ensureNetBackupOfferingForVm(vm, cmd.getPolicyName());
+
+        final BackupOffering offering = backupOfferingDao.findById(vm.getBackupOfferingId());
+        if (offering == null) {
+            throw new CloudRuntimeException("VM backup offering not found");
+        }
+
+        final BackupProvider backupProvider = getBackupProvider(offering.getProvider());
+        if (backupProvider == null) {
+            throw new CloudRuntimeException("VM backup provider not found for the offering");
+        }
+
+        final Account owner = accountManager.getAccount(vm.getAccountId());
+        final Long backupSize = calculateBackupSize(vm.getId());
+
+        createCheckedBackup(cmd, owner, false, backupSize, vm, vm.getId(), backupProvider, null);
+        return true;
+    }
+
+    protected Long calculateBackupSize(final Long vmId) {
         Long backupSize = 0L;
         for (final Volume volume: volumeDao.findByInstance(vmId)) {
             if (Volume.State.Ready.equals(volume.getState())) {
@@ -1002,11 +1039,71 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 backupSize += volumeSize;
             }
         }
-        createCheckedBackup(cmd, owner, isScheduledBackup, backupSize, vm, vmId, backupProvider, backupScheduleId);
-        if (isScheduledBackup) {
-            deleteOldestBackupFromScheduleIfRequired(vmId, backupScheduleId);
+        return backupSize;
+    }
+
+    protected void ensureNetBackupOfferingForVm(final VMInstanceVO vm, final String policyName) {
+        if (vm.getBackupOfferingId() != null) {
+            final BackupOffering existingOffering = backupOfferingDao.findById(vm.getBackupOfferingId());
+            if (existingOffering == null) {
+                throw new CloudRuntimeException("VM backup offering not found");
+            }
+            if (!BackupProviderNameUtils.isNetBackupFamily(existingOffering.getProvider())) {
+                throw new CloudRuntimeException(String.format("VM [%s] is already assigned to backup offering [%s] using provider [%s]. NetBackup backup cannot proceed.",
+                        vm.getInstanceName(), existingOffering.getName(), existingOffering.getProvider()));
+            }
+            return;
         }
-        return true;
+
+        final BackupOfferingVO netbackupOffering = getOrCreateAutoNetBackupOffering(vm.getDataCenterId(), policyName);
+        final BackupProvider backupProvider = getBackupProvider(netbackupOffering.getProvider());
+        if (backupProvider == null) {
+            throw new CloudRuntimeException("Failed to get NetBackup provider for automatic offering assignment");
+        }
+
+        final VMInstanceVO assignedVm = transactionAssignVMToBackupOffering(vm, netbackupOffering, backupProvider);
+        if (assignedVm == null) {
+            throw new CloudRuntimeException(String.format("Failed to automatically assign NetBackup offering [%s] to VM [%s].",
+                    netbackupOffering.getName(), vm.getInstanceName()));
+        }
+    }
+
+    protected BackupOfferingVO getOrCreateAutoNetBackupOffering(final long zoneId, final String policyName) {
+        final String providerName = BackupProviderNameUtils.ABLESTACK_NETBACKUP;
+        final String externalId = normalizeNetBackupPolicyName(policyName);
+        final String offeringName = "netbackup";
+
+        BackupOffering existingOffering = backupOfferingDao.findByExternalId(externalId, zoneId);
+        if (existingOffering == null) {
+            existingOffering = backupOfferingDao.findByName(offeringName, zoneId);
+        }
+        if (existingOffering != null) {
+            if (!BackupProviderNameUtils.isNetBackupFamily(existingOffering.getProvider())) {
+                throw new CloudRuntimeException(String.format("Auto NetBackup offering name/externalId is already used by another provider [%s] in zone [%s].",
+                        existingOffering.getProvider(), zoneId));
+            }
+            return backupOfferingDao.findById(existingOffering.getId());
+        }
+
+        final BackupProvider provider = getBackupProvider(providerName);
+        if (provider == null) {
+            throw new CloudRuntimeException("NetBackup provider is not available");
+        }
+
+        final BackupOfferingVO offering = new BackupOfferingVO(zoneId, externalId, provider.getName(), offeringName,
+                "Automatically created backup offering for NetBackup-triggered backups", false, null);
+        final BackupOfferingVO savedOffering = backupOfferingDao.persist(offering);
+        if (savedOffering == null) {
+            throw new CloudRuntimeException(String.format("Unable to create automatic NetBackup offering for zone [%s].", zoneId));
+        }
+        return savedOffering;
+    }
+
+    protected String normalizeNetBackupPolicyName(final String policyName) {
+        if (StringUtils.isBlank(policyName)) {
+            return null;
+        }
+        return policyName.trim().replaceAll("[^a-zA-Z0-9._-]", "-");
     }
 
     private void createCheckedBackup(CreateBackupCmd cmd, Account owner, boolean isScheduledBackup, Long backupSize,

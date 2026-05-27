@@ -212,6 +212,13 @@ public interface BackupManager extends BackupService, Configurable, PluggableSer
     boolean deleteBackupSchedule(DeleteBackupScheduleCmd cmd);
 
     /**
+     * Creates backup of a VM for NetBackup
+     * @param cmd CreateBackupCmd
+     * @return returns operation success
+     */
+    boolean createBackup(CreateBackupCmd cmd) throws ResourceAllocationException;
+
+    /**
      * Creates backup of a VM
      * @param cmd CreateBackupCmd
      * @param job The async job associated with the backup retention
