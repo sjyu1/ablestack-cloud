@@ -40,7 +40,16 @@ MAX_INCREMENTAL_CHAIN=""
 MOLD_URL=""
 ADMIN_APIKEY=""
 ADMIN_SECRETKEY=""
+NETBACKUP_URL=""
+NETBACKUP_APIKEY=""
 CONFIG_SCOPE=""
+MOLD_API_RESPONSE_FORMAT="json"
+NETBACKUP_PROVIDER_DISPLAY_NAME="netbackup"
+NETBACKUP_PROVIDER_CANONICAL_NAME="ablestack-netbackup"
+NETBACKUP_OFFERING_NAME="netbackup"
+NETBACKUP_OFFERING_DESCRIPTION="netbackup"
+NETBACKUP_OFFERING_EXTERNAL_ID="netbackup"
+ZONE_ID=""
 
 usage() {
   cat <<EOF
@@ -75,6 +84,32 @@ fail() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+json_extract() {
+  local payload="$1"
+  local script="$2"
+
+  python3 - "$payload" "$script" <<'PY'
+import json
+import sys
+
+payload = sys.argv[1]
+script = sys.argv[2]
+
+data = json.loads(payload)
+namespace = {"data": data}
+exec(script, {}, namespace)
+result = namespace.get("result", "")
+if result is None:
+    result = ""
+if isinstance(result, bool):
+    print("true" if result else "false", end="")
+elif isinstance(result, (dict, list)):
+    print(json.dumps(result), end="")
+else:
+    print(str(result), end="")
+PY
 }
 
 file_mode() {
@@ -145,6 +180,250 @@ validate_secret_key_file() {
   local mode
   mode="$(file_mode "${SECRET_KEY_FILE}")"
   [[ "${mode}" == "600" ]] || fail "Secret key file must have permission 600: ${SECRET_KEY_FILE} (current: ${mode})"
+}
+
+validate_prerequisites() {
+  command_exists python3 || fail "python3 command is required."
+  command_exists curl || fail "curl command is required."
+  command_exists openssl || fail "openssl command is required."
+}
+
+url_encode() {
+  local value="$1"
+  python3 - "$value" <<'PY'
+import sys
+from urllib.parse import quote_plus
+
+print(quote_plus(sys.argv[1]), end="")
+PY
+}
+
+build_mold_api_params() {
+  local command_name="$1"
+  shift
+
+  local param_string="command=$(url_encode "${command_name}")"
+  while [[ $# -gt 1 ]]; do
+    local key="$1"
+    local value="$2"
+    shift 2
+    param_string="${param_string}&${key}=$(url_encode "${value}")"
+  done
+
+  param_string="${param_string}&response=$(url_encode "${MOLD_API_RESPONSE_FORMAT}")"
+  printf '%s' "${param_string}"
+}
+
+build_mold_signed_url() {
+  local base_url="$1"
+  local api_params="$2"
+
+  python3 - "$base_url" "$api_params" "$ADMIN_APIKEY" "$ADMIN_SECRETKEY" <<'PY'
+import base64
+import hashlib
+import hmac
+import sys
+from urllib.parse import quote_plus
+
+base_url = sys.argv[1]
+api_params = sys.argv[2]
+api_key = sys.argv[3]
+secret_key = sys.argv[4]
+
+sorted_params = [f"apikey={quote_plus(api_key).lower()}"]
+for token in api_params.split("&"):
+    key, value = token.split("=", 1)
+    sorted_params.append(f"{key.lower()}={value.lower()}")
+
+sorted_url = "&".join(sorted(sorted_params))
+signature = base64.b64encode(
+    hmac.new(secret_key.encode(), sorted_url.encode(), hashlib.sha256).digest()
+).decode()
+encoded_signature = quote_plus(signature)
+final_url = f"{base_url}?{api_params}&apiKey={quote_plus(api_key)}&signature={encoded_signature}"
+print(final_url, end="")
+PY
+}
+
+invoke_mold_api() {
+  local method="$1"
+  local command_name="$2"
+  shift 2
+
+  local api_params
+  local signed_url
+
+  api_params="$(build_mold_api_params "${command_name}" "$@")"
+  signed_url="$(build_mold_signed_url "${MOLD_URL}" "${api_params}")" || fail "Failed to build Mold API URL for ${command_name}"
+
+  curl --silent --show-error --fail \
+    -X "${method}" \
+    -H "Accept: application/json" \
+    -H "Content-type: application/x-www-form-urlencoded" \
+    "${signed_url}"
+}
+
+get_configuration_value() {
+  local config_name="$1"
+  local zone_id="${2:-}"
+  local response=""
+
+  if [[ -n "${zone_id}" ]]; then
+    response="$(invoke_mold_api GET "listConfigurations" \
+      listAll true pagesize 20 page 1 name "${config_name}" zoneid "${zone_id}")"
+  else
+    response="$(invoke_mold_api GET "listConfigurations" \
+      listAll true pagesize 20 page 1 name "${config_name}")"
+  fi
+
+  json_extract "${response}" '
+configs = data.get("listconfigurationsresponse", {}).get("configuration", [])
+if isinstance(configs, dict):
+    configs = [configs]
+for cfg in configs:
+    if str(cfg.get("name", "")).lower() == "'"${config_name,,}"'":
+        result = cfg.get("value", "")
+        break
+else:
+    result = ""
+'
+}
+
+update_configuration_value() {
+  local config_name="$1"
+  local config_value="$2"
+  local zone_id="${3:-}"
+
+  if [[ -n "${zone_id}" ]]; then
+    invoke_mold_api GET "updateConfiguration" name "${config_name}" value "${config_value}" zoneid "${zone_id}" >/dev/null
+  else
+    invoke_mold_api GET "updateConfiguration" name "${config_name}" value "${config_value}" >/dev/null
+  fi
+}
+
+append_provider_if_missing() {
+  local provider_list="$1"
+  local provider_name="$2"
+
+  python3 - "$provider_list" "$provider_name" <<'PY'
+import sys
+
+provider_list = sys.argv[1]
+provider_name = sys.argv[2]
+
+items = [item.strip() for item in provider_list.split(",") if item.strip()]
+lower = {item.lower() for item in items}
+if provider_name.lower() not in lower:
+    items.append(provider_name)
+print(",".join(items), end="")
+PY
+}
+
+resolve_zone_id_from_policy_name() {
+  local response=""
+  response="$(invoke_mold_api GET "listHosts" \
+    listAll true pagesize 500 page 1 type Routing keyword "${POLICY_NAME}")"
+
+  ZONE_ID="$(json_extract "${response}" '
+hosts = data.get("listhostsresponse", {}).get("host", [])
+if isinstance(hosts, dict):
+    hosts = [hosts]
+target = "'"${POLICY_NAME}"'".lower()
+exact = None
+for host in hosts:
+    host_name = str(host.get("name", "")).lower()
+    if host_name == target:
+        exact = host
+        break
+if exact is None and hosts:
+    exact = hosts[0]
+result = exact.get("zoneid", "") if exact else ""
+')"
+
+  [[ -n "${ZONE_ID}" ]] || fail "Unable to resolve zone ID from host/policy name '${POLICY_NAME}' via listHosts."
+}
+
+ensure_backup_framework_configuration() {
+  local current_value=""
+  local updated_plugins=""
+  local current_plugins=""
+
+  current_value="$(get_configuration_value "backup.framework.enabled" "${ZONE_ID}")"
+  if [[ "${current_value,,}" != "true" ]]; then
+    update_configuration_value "backup.framework.enabled" "true" "${ZONE_ID}"
+    printf 'Updated zone configuration: backup.framework.enabled=true (zoneid=%s)\n' "${ZONE_ID}"
+  fi
+
+  current_value="$(get_configuration_value "backup.enable.attach.detach.of.volumes")"
+  if [[ "${current_value,,}" != "true" ]]; then
+    update_configuration_value "backup.enable.attach.detach.of.volumes" "true"
+    printf 'Updated global configuration: backup.enable.attach.detach.of.volumes=true\n'
+  fi
+
+  current_plugins="$(get_configuration_value "backup.framework.provider.plugin" "${ZONE_ID}")"
+  updated_plugins="$(append_provider_if_missing "${current_plugins}" "${NETBACKUP_PROVIDER_DISPLAY_NAME}")"
+  if [[ "${updated_plugins}" != "${current_plugins}" ]]; then
+    update_configuration_value "backup.framework.provider.plugin" "${updated_plugins}" "${ZONE_ID}"
+    printf 'Updated zone configuration: backup.framework.provider.plugin=%s (zoneid=%s)\n' "${updated_plugins}" "${ZONE_ID}"
+  fi
+
+  current_value="$(get_configuration_value "backup.plugin.netbackup.url" "${ZONE_ID}")"
+  if [[ "${current_value}" != "${NETBACKUP_URL}" ]]; then
+    update_configuration_value "backup.plugin.netbackup.url" "${NETBACKUP_URL}" "${ZONE_ID}"
+    printf 'Updated zone configuration: backup.plugin.netbackup.url=%s (zoneid=%s)\n' "${NETBACKUP_URL}" "${ZONE_ID}"
+  fi
+
+  current_value="$(get_configuration_value "backup.plugin.netbackup.apikey" "${ZONE_ID}")"
+  if [[ "${current_value}" != "${NETBACKUP_APIKEY}" ]]; then
+    update_configuration_value "backup.plugin.netbackup.apikey" "${NETBACKUP_APIKEY}" "${ZONE_ID}"
+    printf 'Updated zone configuration: backup.plugin.netbackup.apikey=<hidden> (zoneid=%s)\n' "${ZONE_ID}"
+  fi
+}
+
+provider_matches_netbackup() {
+  local provider_name="$1"
+  local provider_lc="${provider_name,,}"
+  [[ "${provider_lc}" == "${NETBACKUP_PROVIDER_DISPLAY_NAME}" || "${provider_lc}" == "${NETBACKUP_PROVIDER_CANONICAL_NAME}" ]]
+}
+
+ensure_netbackup_offering() {
+  local response=""
+  local offering_exists=""
+
+  response="$(invoke_mold_api GET "listBackupOfferings" listall true page 1 pagesize 500)"
+  offering_exists="$(json_extract "${response}" '
+offerings = data.get("listbackupofferingsresponse", {}).get("backupoffering", [])
+if isinstance(offerings, dict):
+    offerings = [offerings]
+result = False
+for offering in offerings:
+    provider = str(offering.get("provider", "")).lower()
+    zoneid = str(offering.get("zoneid", "") or offering.get("zoneId", ""))
+    if provider in ("netbackup", "ablestack-netbackup") and zoneid == "'"${ZONE_ID}"'":
+        result = True
+        break
+')"
+
+  if [[ "${offering_exists}" == "true" ]]; then
+    printf 'NetBackup backup offering already exists for zoneid=%s\n' "${ZONE_ID}"
+    return 0
+  fi
+
+  invoke_mold_api GET "importBackupOffering" \
+    name "${NETBACKUP_OFFERING_NAME}" \
+    description "${NETBACKUP_OFFERING_DESCRIPTION}" \
+    provider "${NETBACKUP_PROVIDER_DISPLAY_NAME}" \
+    externalid "${NETBACKUP_OFFERING_EXTERNAL_ID}" \
+    allowuserdrivenbackups false \
+    zoneid "${ZONE_ID}" >/dev/null
+
+  printf 'Imported NetBackup backup offering for zoneid=%s\n' "${ZONE_ID}"
+}
+
+configure_mold_for_netbackup() {
+  resolve_zone_id_from_policy_name
+  ensure_backup_framework_configuration
+  ensure_netbackup_offering
 }
 
 backup_existing_file() {
@@ -344,6 +623,10 @@ collect_inputs() {
   prompt_value ADMIN_APIKEY "ADMIN_APIKEY"
   prompt_secret_value ADMIN_SECRETKEY "ADMIN_SECRETKEY"
   [[ -n "${ADMIN_SECRETKEY}" ]] || fail "ADMIN_SECRETKEY is required."
+  prompt_value NETBACKUP_URL "NETBACKUP_URL" "https://netbackup:1556/netbackup"
+  prompt_value NETBACKUP_APIKEY "NETBACKUP_APIKEY"
+  [[ -n "${NETBACKUP_URL}" ]] || fail "NETBACKUP_URL is required."
+  [[ -n "${NETBACKUP_APIKEY}" ]] || fail "NETBACKUP_APIKEY is required."
 }
 
 generate_outputs() {
@@ -380,6 +663,7 @@ generate_outputs() {
   else
     printf 'Skipped NetBackup service restart because bp.conf was not found.\n'
   fi
+  configure_mold_for_netbackup
 
   printf '\nGenerated files:\n'
   printf '  PRE hook   : %s\n' "${pre_hook_path}"
@@ -387,6 +671,7 @@ generate_outputs() {
   printf '  Config     : %s\n' "${config_path}"
   printf '  Secret(enc): %s\n' "${secret_path}"
   printf '  Staging dir: %s\n' "${BACKUP_STAGING_ROOT}"
+  printf '  Zone ID    : %s\n' "${ZONE_ID}"
 }
 
 main() {
@@ -395,6 +680,7 @@ main() {
     exit 0
   fi
 
+  validate_prerequisites
   collect_inputs
   generate_outputs
 }

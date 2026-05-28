@@ -113,6 +113,18 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             true,
             BackupFrameworkEnabled.key());
 
+    public ConfigKey<String> NetBackupUrl = new ConfigKey<>("Advanced", String.class,
+            "backup.plugin.netbackup.url", "https://localhost:1556/netbackup",
+            "NetBackup API URL.", true, ConfigKey.Scope.Zone);
+
+    private ConfigKey<String> NetBackupApiKey = new ConfigKey<>("Advanced", String.class,
+            "backup.plugin.netbackup.apikey", "apikey",
+            "NetBackup API Key.", true, ConfigKey.Scope.Zone);
+
+    private ConfigKey<Integer> NetBackupApiRequestTimeout = new ConfigKey<>("Advanced", Integer.class,
+            "backup.plugin.netbackup.request.timeout", "300",
+            "NetBackup API request timeout in seconds.", true, ConfigKey.Scope.Zone);
+
     @Inject
     private BackupDao backupDao;
     @Inject

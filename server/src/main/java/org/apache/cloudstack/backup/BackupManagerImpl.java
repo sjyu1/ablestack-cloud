@@ -1055,48 +1055,46 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             return;
         }
 
-        final BackupOfferingVO netbackupOffering = getOrCreateAutoNetBackupOffering(vm.getDataCenterId(), policyName);
+        final BackupOfferingVO netbackupOffering = getExistingNetBackupOffering(vm.getDataCenterId(), policyName);
+        if (netbackupOffering == null) {
+            throw new CloudRuntimeException(String.format("No NetBackup backup offering is configured for zone [%s]. Please import a NetBackup backup offering before running NetBackup backups.",
+                    vm.getDataCenterId()));
+        }
         final BackupProvider backupProvider = getBackupProvider(netbackupOffering.getProvider());
         if (backupProvider == null) {
-            throw new CloudRuntimeException("Failed to get NetBackup provider for automatic offering assignment");
+            throw new CloudRuntimeException("Failed to get NetBackup provider for existing offering assignment");
         }
 
         final VMInstanceVO assignedVm = transactionAssignVMToBackupOffering(vm, netbackupOffering, backupProvider);
         if (assignedVm == null) {
-            throw new CloudRuntimeException(String.format("Failed to automatically assign NetBackup offering [%s] to VM [%s].",
+            throw new CloudRuntimeException(String.format("Failed to assign existing NetBackup offering [%s] to VM [%s].",
                     netbackupOffering.getName(), vm.getInstanceName()));
         }
     }
 
-    protected BackupOfferingVO getOrCreateAutoNetBackupOffering(final long zoneId, final String policyName) {
-        final String providerName = BackupProviderNameUtils.ABLESTACK_NETBACKUP;
-        final String externalId = normalizeNetBackupPolicyName(policyName);
+    protected BackupOfferingVO getExistingNetBackupOffering(final long zoneId, final String policyName) {
         final String offeringName = "netbackup";
+        final String defaultExternalId = "netbackup";
+        final String policyExternalId = normalizeNetBackupPolicyName(policyName);
 
-        BackupOffering existingOffering = backupOfferingDao.findByExternalId(externalId, zoneId);
+        BackupOffering existingOffering = null;
+        if (StringUtils.isNotBlank(policyExternalId)) {
+            existingOffering = backupOfferingDao.findByExternalId(policyExternalId, zoneId);
+        }
+        if (existingOffering == null) {
+            existingOffering = backupOfferingDao.findByExternalId(defaultExternalId, zoneId);
+        }
         if (existingOffering == null) {
             existingOffering = backupOfferingDao.findByName(offeringName, zoneId);
         }
-        if (existingOffering != null) {
-            if (!BackupProviderNameUtils.isNetBackupFamily(existingOffering.getProvider())) {
-                throw new CloudRuntimeException(String.format("Auto NetBackup offering name/externalId is already used by another provider [%s] in zone [%s].",
-                        existingOffering.getProvider(), zoneId));
-            }
-            return backupOfferingDao.findById(existingOffering.getId());
+        if (existingOffering == null) {
+            return null;
         }
-
-        final BackupProvider provider = getBackupProvider(providerName);
-        if (provider == null) {
-            throw new CloudRuntimeException("NetBackup provider is not available");
+        if (!BackupProviderNameUtils.isNetBackupFamily(existingOffering.getProvider())) {
+            throw new CloudRuntimeException(String.format("NetBackup offering name/externalId is already used by another provider [%s] in zone [%s].",
+                    existingOffering.getProvider(), zoneId));
         }
-
-        final BackupOfferingVO offering = new BackupOfferingVO(zoneId, externalId, provider.getName(), offeringName,
-                "Automatically created backup offering for NetBackup-triggered backups", false, null);
-        final BackupOfferingVO savedOffering = backupOfferingDao.persist(offering);
-        if (savedOffering == null) {
-            throw new CloudRuntimeException(String.format("Unable to create automatic NetBackup offering for zone [%s].", zoneId));
-        }
-        return savedOffering;
+        return backupOfferingDao.findById(existingOffering.getId());
     }
 
     protected String normalizeNetBackupPolicyName(final String policyName) {
