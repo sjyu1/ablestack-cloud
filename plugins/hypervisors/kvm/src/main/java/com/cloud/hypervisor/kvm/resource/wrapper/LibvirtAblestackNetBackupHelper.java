@@ -27,7 +27,7 @@ import com.cloud.hypervisor.kvm.storage.KVMStoragePoolManager;
 import com.cloud.storage.Storage;
 import com.cloud.utils.Pair;
 import com.cloud.utils.script.Script;
-import org.apache.cloudstack.backup.AblestackNetTakeBackupCommand;
+import org.apache.cloudstack.backup.AblestackNetBackupTakeBackupCommand;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 import org.apache.cloudstack.utils.security.ParserUtils;
 import org.libvirt.Connect;
@@ -124,7 +124,7 @@ class LibvirtAblestackNetBackupHelper {
         return diskPaths;
     }
 
-    private String[] buildBackupScriptCommand(AblestackCommvaultTakeBackupCommand command, List<String> diskPaths, BackupExecutionMode executionMode) {
+    private String[] buildBackupScriptCommand(AblestackNetBackupTakeBackupCommand command, List<String> diskPaths, BackupExecutionMode executionMode) {
         return new String[] {
                 resource.getAbleCvtBackupPath(),
                 "-o", executionMode.getScriptOperation(),
@@ -393,7 +393,7 @@ class LibvirtAblestackNetBackupHelper {
                 .collect(Collectors.toList());
     }
 
-    private Path writeBackupXml(Path dest, AblestackCommvaultTakeBackupCommand command, List<String> diskLabels) throws IOException {
+    private Path writeBackupXml(Path dest, AblestackNetBackupTakeBackupCommand command, List<String> diskLabels) throws IOException {
         StringBuilder xml = new StringBuilder("<domainbackup mode='push'>");
         if (isIncremental(command) && command.getParentCheckpointName() != null && !command.getParentCheckpointName().isEmpty()) {
             xml.append("<incremental>").append(command.getParentCheckpointName()).append("</incremental>");
@@ -410,7 +410,7 @@ class LibvirtAblestackNetBackupHelper {
         return backupXml;
     }
 
-    private Path writeCheckpointXml(Path dest, AblestackCommvaultTakeBackupCommand command, List<String> diskLabels) throws IOException {
+    private Path writeCheckpointXml(Path dest, AblestackNetBackupTakeBackupCommand command, List<String> diskLabels) throws IOException {
         StringBuilder xml = new StringBuilder("<domaincheckpoint><name>").append(command.getCheckpointName()).append("</name><disks>");
         for (String diskLabel : diskLabels) {
             xml.append("<disk name='").append(diskLabel).append("' checkpoint='bitmap'/>");
