@@ -78,7 +78,7 @@ export default {
       },
       storageType: 'shared',
       provisioningType: 'thin',
-      cacheMode: 'none',
+      cacheMode: 'writeback',
       offeringType: 'fixed',
       isCustomizedDiskIops: false,
       isPublic: true,

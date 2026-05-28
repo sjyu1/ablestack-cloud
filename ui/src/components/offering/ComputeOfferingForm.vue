@@ -409,9 +409,9 @@
             <tooltip-label :title="$t('label.cachemode')" :tooltip="apiParams.cachemode.description"/>
           </template>
           <a-radio-group v-model:value="form.cachemode" buttonStyle="solid" @change="selected => { handleCacheModeChange(selected.target.value) }">
-            <a-radio-button value="none">{{ $t('label.nodiskcache') }}</a-radio-button>
             <a-radio-button value="writeback">{{ $t('label.writeback') }}</a-radio-button>
             <a-radio-button value="writethrough">{{ $t('label.writethrough') }}</a-radio-button>
+            <a-radio-button value="none">{{ $t('label.nodiskcache') }}</a-radio-button>
             <a-radio-button value="hypervisor_default">{{ $t('label.hypervisor.default') }}</a-radio-button>
           </a-radio-group>
         </a-form-item>
@@ -629,7 +629,7 @@ export default {
         computeonly: true,
         storagetype: 'shared',
         provisioningtype: 'thin',
-        cachemode: 'none',
+        cachemode: 'writeback',
         qostype: '',
         iscustomizeddiskiops: false,
         diskofferingid: null,
@@ -644,7 +644,7 @@ export default {
       // other UI state copied
       storageType: 'shared',
       provisioningType: 'thin',
-      cacheMode: 'none',
+      cacheMode: 'writeback',
       offeringType: 'fixed',
       isCustomizedDiskIops: false,
       isPublic: true,
