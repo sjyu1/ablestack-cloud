@@ -112,7 +112,13 @@
                 <RackListCardIcon />
               </span>
               <div class="rack-list-card-content">
-                <div class="rack-list-card-title">{{ rack.name }}</div>
+                <a-tooltip :title="getOverflowTitle(`list-${idx}`, rack.name)">
+                  <div
+                    class="rack-list-card-title"
+                    :ref="setOverflowTitleRef(`list-${idx}`)"
+                    @mouseenter="updateOverflowTitle(`list-${idx}`)"
+                  >{{ rack.name }}</div>
+                </a-tooltip>
                 <div class="rack-list-card-meta">{{ t('label.created') }} {{ getRackCreatedDate(rack) }}</div>
                 <div class="rack-list-card-meta rack-list-card-meta-location-row">
                   <a-tooltip :title="`${t('rackDiagram.rackLocation')} ${getRackLocation(rack)}`">
@@ -151,11 +157,15 @@
               <div class="rack-header">
                 <div class="rack-header-top">
                   <div class="rack-header-title-group">
-                    <a-tooltip placement="top">
-                      <template #title>
-                        {{ rack.name }} ({{ rack.totalHeight }}U)
-                      </template>
-                      <span class="rack-header-title">
+                    <a-tooltip
+                      placement="top"
+                      :title="getOverflowTitle(`detail-${rIndex}`, `${rack.name} (${rack.totalHeight}U)`)"
+                    >
+                      <span
+                        class="rack-header-title"
+                        :ref="setOverflowTitleRef(`detail-${rIndex}`)"
+                        @mouseenter="updateOverflowTitle(`detail-${rIndex}`)"
+                      >
                         {{ rack.name }} ({{ rack.totalHeight }}U)
                       </span>
                     </a-tooltip>
@@ -1315,6 +1325,21 @@ const formatRackDate = (value) => {
 }
 const getRackCreatedDate = (rack) => formatRackDate(rack?.createdAt || rack?.created || rack?.createDate)
 const getRackLocation = (rack) => rack?.location || rack?.room || rack?.position || '-'
+const overflowTitleState = reactive({})
+const overflowTitleRefs = new Map()
+
+const setOverflowTitleRef = (key) => (el) => {
+  if (el) overflowTitleRefs.set(key, el)
+  else overflowTitleRefs.delete(key)
+}
+
+const updateOverflowTitle = (key) => {
+  const el = overflowTitleRefs.get(key)
+  overflowTitleState[key] = !!el && (el.scrollWidth > el.clientWidth + 1)
+}
+
+const getOverflowTitle = (key, fullText) => (overflowTitleState[key] ? fullText : null)
+
 const searchQuery = ref('')
 const hasSearchQuery = computed(() => !!searchQuery.value?.trim())
 
