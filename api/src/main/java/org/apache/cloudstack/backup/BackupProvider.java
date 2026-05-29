@@ -83,6 +83,10 @@ public interface BackupProvider {
         return takeBackup(vm, quiesceVM);
     }
 
+    default Pair<Boolean, Backup> takeNetBackup(VirtualMachine vm, String jobId, String policyName, String maxChain) {
+        throw new UnsupportedOperationException("NetBackup is not supported by provider " + getName());
+    }
+
     /**
      * Delete an existing backup
      * @param backup The backup to exclude

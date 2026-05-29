@@ -42,6 +42,7 @@ public class AblestackNetBackupTakeBackupCommand extends Command {
     private List<String> backupFiles;
     private String policyName;
     private String jobId;
+    private String maxChain;
 
     public AblestackNetBackupTakeBackupCommand(final String vmName, final String backupPath) {
         super();
@@ -167,6 +168,14 @@ public class AblestackNetBackupTakeBackupCommand extends Command {
 
     public void setJobId(final String jobId) {
         this.jobId = jobId;
+    }
+
+    public String getMaxChain() {
+        return maxChain;
+    }
+
+    public void setMaxChain(final String maxChain) {
+        this.maxChain = maxChain;
     }
 
     @Override

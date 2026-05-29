@@ -26,6 +26,7 @@ import org.apache.cloudstack.api.command.admin.backup.CloneBackupOfferingCmd;
 import org.apache.cloudstack.api.command.admin.backup.ImportBackupOfferingCmd;
 import org.apache.cloudstack.api.command.admin.backup.UpdateBackupOfferingCmd;
 import org.apache.cloudstack.api.command.user.backup.CreateBackupCmd;
+import org.apache.cloudstack.api.command.user.backup.CreateNetBackupCmd;
 import org.apache.cloudstack.api.command.user.backup.CreateBackupScheduleCmd;
 import org.apache.cloudstack.api.command.user.backup.DeleteBackupScheduleCmd;
 import org.apache.cloudstack.api.command.user.backup.ListBackupOfferingsCmd;
@@ -213,10 +214,10 @@ public interface BackupManager extends BackupService, Configurable, PluggableSer
 
     /**
      * Creates backup of a VM for NetBackup
-     * @param cmd CreateBackupCmd
+     * @param cmd CreateNetBackupCmd
      * @return returns operation success
      */
-    boolean createBackup(CreateBackupCmd cmd) throws ResourceAllocationException;
+    boolean createNetBackup(CreateNetBackupCmd cmd) throws ResourceAllocationException;
 
     /**
      * Creates backup of a VM

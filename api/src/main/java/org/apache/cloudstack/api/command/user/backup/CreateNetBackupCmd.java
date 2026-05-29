@@ -40,11 +40,11 @@ import com.cloud.exception.ResourceAllocationException;
 import com.cloud.exception.ResourceUnavailableException;
 import com.cloud.utils.exception.CloudRuntimeException;
 
-@APICommand(name = "createBackup",
-        description = "Create Instance backup",
-        responseObject = SuccessResponse.class, since = "4.14.0",
+@APICommand(name = "createNetBackup",
+        description = "Create Instance Backup for NetBackup",
+        responseObject = SuccessResponse.class, since = "4.22.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class CreateBackupCmd extends BaseAsyncCreateCmd {
+public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
 
     @Inject
     private BackupManager backupManager;
@@ -81,6 +81,27 @@ public class CreateBackupCmd extends BaseAsyncCreateCmd {
             since = "4.21.0")
     private Boolean quiesceVM;
 
+    @Parameter(name = ApiConstants.JOB_ID,
+            type = CommandType.STRING,
+            required = false,
+            description = "the job ID for the NetBackup",
+            since = "4.21.0")
+    private String jobId;
+
+    @Parameter(name = "policyName",
+            type = CommandType.STRING,
+            required = false,
+            description = "the policy name for the NetBackup",
+            since = "4.21.0")
+    private String policyName;
+
+    @Parameter(name = "maxChain",
+            type = CommandType.STRING,
+            required = false,
+            description = "max chain length for the NetBackup",
+            since = "4.21.0")
+    private String maxChain;
+
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
     /////////////////////////////////////////////////////
@@ -101,6 +122,18 @@ public class CreateBackupCmd extends BaseAsyncCreateCmd {
         return quiesceVM;
     }
 
+    public String getJobId() {
+        return jobId;
+    }
+
+    public String getPolicyName() {
+        return policyName;
+    }
+
+    public String getMaxChain() {
+        return maxChain;
+    }
+
     /////////////////////////////////////////////////////
     /////////////// API Implementation///////////////////
     /////////////////////////////////////////////////////
@@ -108,13 +141,13 @@ public class CreateBackupCmd extends BaseAsyncCreateCmd {
     @Override
     public void execute() throws ResourceUnavailableException, InsufficientCapacityException, ServerApiException, ConcurrentOperationException, ResourceAllocationException, NetworkRuleConflictException {
         try {
-            boolean result= backupManager.createBackup(this, getJob());
+            boolean result = backupManager.createNetBackup(this);
             if (result) {
                 SuccessResponse response = new SuccessResponse(getCommandName());
                 response.setResponseName(getCommandName());
                 setResponseObject(response);
             } else {
-                throw new CloudRuntimeException("Error while creating backup of Instance");
+                throw new CloudRuntimeException("Error while creating backup of Instance for netbackup");
             }
         } catch (Exception e) {
             throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, e.getMessage());
@@ -138,7 +171,7 @@ public class CreateBackupCmd extends BaseAsyncCreateCmd {
 
     @Override
     public String getEventDescription() {
-        return "Creating backup for Instance " + getResourceUuid(ApiConstants.VIRTUAL_MACHINE_ID);
+        return "Creating backup for Instance Netbackup " + getResourceUuid(ApiConstants.VIRTUAL_MACHINE_ID);
     }
 
     @Override
