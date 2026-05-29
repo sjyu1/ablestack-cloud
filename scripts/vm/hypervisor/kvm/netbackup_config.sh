@@ -100,7 +100,16 @@ import sys
 payload = sys.argv[1]
 script = sys.argv[2]
 
-data = json.loads(payload)
+try:
+    data = json.loads(payload)
+except Exception as exc:
+    preview = payload.strip().replace("\n", "\\n")
+    if len(preview) > 240:
+        preview = preview[:240] + "..."
+    sys.stderr.write(f"Failed to parse Mold API response as JSON: {exc}\n")
+    sys.stderr.write(f"Response preview: {preview}\n")
+    sys.exit(1)
+
 namespace = {"data": data}
 exec(script, {}, namespace)
 result = namespace.get("result", "")
@@ -266,6 +275,8 @@ invoke_mold_api() {
     -H "Accept: application/json" \
     -H "Content-type: application/x-www-form-urlencoded" \
     "${signed_url}")" || fail "Mold API call failed: command=${command_name} method=${method} url=${MOLD_URL}"
+
+  [[ -n "${response}" ]] || fail "Mold API returned empty response: command=${command_name} method=${method} url=${MOLD_URL}"
 
   printf '%s' "${response}"
 }
