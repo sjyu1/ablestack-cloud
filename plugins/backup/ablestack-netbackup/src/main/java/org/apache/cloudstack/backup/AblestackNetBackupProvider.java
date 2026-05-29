@@ -722,7 +722,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public ConfigKey<?>[] getConfigKeys() {
-        return new ConfigKey[]{NetBackupRestoreTimeout};
+        return new ConfigKey[]{
+            NetBackupRestoreTimeout,
+            NetBackupUrl,
+            NetBackupApiKey,
+            NetBackupApiRequestTimeout
+        };
     }
 
     @Override
