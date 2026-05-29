@@ -33,7 +33,6 @@ NETBACKUP_BP_CONF_PATH="${NETBACKUP_BP_CONF_PATH:-/usr/openv/netbackup/bp.conf}"
 NETBACKUP_SERVICE_NAME="${NETBACKUP_SERVICE_NAME:-netbackup}"
 
 POLICY_NAME=""
-SCHEDULE_NAME=""
 VM_INCLUDE=""
 VM_EXCLUDE=""
 MAX_INCREMENTAL_CHAIN=""
@@ -42,7 +41,6 @@ ADMIN_APIKEY=""
 ADMIN_SECRETKEY=""
 NETBACKUP_URL=""
 NETBACKUP_APIKEY=""
-CONFIG_SCOPE=""
 MOLD_API_RESPONSE_FORMAT="json"
 NETBACKUP_PROVIDER_DISPLAY_NAME="netbackup"
 NETBACKUP_PROVIDER_CANONICAL_NAME="ablestack-netbackup"
@@ -56,6 +54,7 @@ usage() {
 Usage: $(basename "$0")
 
 Interactive generator for NetBackup policy hook files and config files.
+This generator applies one NetBackup policy to all schedules under that policy.
 
 Default output targets:
   Hook files   -> /usr/openv/netbackup/bin
@@ -600,20 +599,8 @@ restart_netbackup_service() {
 }
 
 collect_inputs() {
-  printf 'Select configuration scope:\n'
-  printf '  1. Apply to all schedules in one policy\n'
-  printf '  2. Apply to a specific schedule in one policy\n'
-  read -r -p "Enter scope (1 or 2): " CONFIG_SCOPE
-
-  [[ "${CONFIG_SCOPE}" == "1" || "${CONFIG_SCOPE}" == "2" ]] || fail "Scope must be 1 or 2."
-
   prompt_value POLICY_NAME "POLICY_NAME"
   validate_name "${POLICY_NAME}" "POLICY_NAME"
-
-  if [[ "${CONFIG_SCOPE}" == "2" ]]; then
-    prompt_value SCHEDULE_NAME "SCHEDULE_NAME"
-    validate_name "${SCHEDULE_NAME}" "SCHEDULE_NAME"
-  fi
 
   prompt_value VM_INCLUDE "VM_INCLUDE" "*"
   prompt_value VM_EXCLUDE "VM_EXCLUDE" ""
@@ -636,19 +623,11 @@ generate_outputs() {
   local post_hook_path=""
   local config_path=""
   local secret_path=""
-  local hook_name_suffix=""
+  local hook_name_suffix="${POLICY_NAME}"
 
-  if [[ "${CONFIG_SCOPE}" == "1" ]]; then
-    hook_name_suffix="${POLICY_NAME}"
-    pre_hook_path="${HOOK_OUTPUT_DIR}/bpstart_notify.${POLICY_NAME}"
-    post_hook_path="${HOOK_OUTPUT_DIR}/bpend_notify.${POLICY_NAME}"
-    config_path="${CONFIG_OUTPUT_DIR}/${POLICY_NAME}.conf"
-  else
-    hook_name_suffix="${POLICY_NAME}.${SCHEDULE_NAME}"
-    pre_hook_path="${HOOK_OUTPUT_DIR}/bpstart_notify.${POLICY_NAME}.${SCHEDULE_NAME}"
-    post_hook_path="${HOOK_OUTPUT_DIR}/bpend_notify.${POLICY_NAME}.${SCHEDULE_NAME}"
-    config_path="${CONFIG_OUTPUT_DIR}/${POLICY_NAME}.${SCHEDULE_NAME}.conf"
-  fi
+  pre_hook_path="${HOOK_OUTPUT_DIR}/bpstart_notify.${POLICY_NAME}"
+  post_hook_path="${HOOK_OUTPUT_DIR}/bpend_notify.${POLICY_NAME}"
+  config_path="${CONFIG_OUTPUT_DIR}/${POLICY_NAME}.conf"
 
   secret_path="${SECRET_OUTPUT_DIR}/secret.enc"
 
