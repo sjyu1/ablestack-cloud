@@ -42,6 +42,24 @@ Environment overrides:
 EOF
 }
 
+cleanup_runtime_backup_paths() {
+  local removed=0
+  local backup_path=""
+
+  while IFS= read -r backup_path; do
+    [[ -z "${backup_path}" ]] && continue
+    if [[ -e "${backup_path}" ]]; then
+      rm -rf "${backup_path}"
+      removed=$((removed + 1))
+      log -ne "Removed NetBackup staged backup path ${backup_path}"
+    else
+      log -ne "NetBackup staged backup path not found, skipping cleanup: ${backup_path}"
+    fi
+  done < <(list_runtime_success_paths)
+
+  builtin echo "${removed}"
+}
+
 resolve_status() {
   local candidate
   if [[ -n "${JOB_STATUS}" ]]; then
@@ -81,8 +99,12 @@ log -ne "NetBackup post-backup finalize start policy=${POLICY_NAME} schedule=${S
 
 if netbackup_job_success_confirmed; then
   log -ne "NetBackup success confirmed"
+  removed_count="$(cleanup_runtime_backup_paths)"
+  update_runtime_status "NBU_CLIENT_SUCCESS_CLEANED"
+  log -ne "NetBackup cleanup complete removed=${removed_count}"
 else
   log -ne "NetBackup success not confirmed"
+  update_runtime_status "NBU_CLIENT_FAILED_PRESERVED"
 fi
 
 clear_context_in_progress

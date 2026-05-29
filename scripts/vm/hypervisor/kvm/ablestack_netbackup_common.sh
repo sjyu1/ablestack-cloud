@@ -25,6 +25,7 @@ LIBVIRT_URI_DEFAULT="qemu:///system"
 CONFIG_ROOT_DEFAULT="/etc/ablestack/netbackup"
 SECRET_HELPER_DEFAULT="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup_secret_helper.sh"
 SECRET_SUBDIR_DEFAULT="secrets"
+BACKUP_STAGING_ROOT_DEFAULT="/tmp/mold/netbackup"
 
 CONFIG_ROOT="${CONFIG_ROOT:-$CONFIG_ROOT_DEFAULT}"
 STATE_ROOT="${STATE_ROOT:-$STATE_ROOT_DEFAULT}"
@@ -32,6 +33,7 @@ LOG_FILE="${LOG_FILE:-$LOG_FILE_DEFAULT}"
 LIBVIRT_URI="${LIBVIRT_URI:-$LIBVIRT_URI_DEFAULT}"
 SECRET_HELPER="${SECRET_HELPER:-$SECRET_HELPER_DEFAULT}"
 SECRET_SUBDIR="${SECRET_SUBDIR:-$SECRET_SUBDIR_DEFAULT}"
+BACKUP_STAGING_ROOT="${BACKUP_STAGING_ROOT:-$BACKUP_STAGING_ROOT_DEFAULT}"
 
 VM_INCLUDE="${VM_INCLUDE:-*}"
 VM_EXCLUDE="${VM_EXCLUDE:-}"
@@ -60,6 +62,12 @@ NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO="${NETBACKUP_COMMIT_ON_CLIENT_STATUS_ZERO
 NETBACKUP_JOB_ID="${NETBACKUP_JOB_ID:-${NB_JOBID:-${JOB_ID:-}}}"
 NETBACKUP_SUCCESS_CONFIRM_CMD="${NETBACKUP_SUCCESS_CONFIRM_CMD:-}"
 MOLD_VM_CACHE_FILE=""
+BACKUP_ID="${BACKUP_ID:-${BACKUPID:-}}"
+BACKUP_TIME="${BACKUP_TIME:-${BACKUPTIME:-}}"
+UNIX_BACKUP_TIME="${UNIX_BACKUP_TIME:-${UNIXBACKUPTIME:-}}"
+RUNTIME_FILE=""
+LAST_MOLD_JOB_ID=""
+LAST_MOLD_FINAL_RESPONSE=""
 
 log() {
   local ts
@@ -81,7 +89,8 @@ fail() {
 ensure_runtime_dirs() {
   mkdir -p "${STATE_ROOT}/contexts" \
            "${STATE_ROOT}/locks" \
-           "${STATE_ROOT}/sessions"
+           "${STATE_ROOT}/sessions" \
+           "${STATE_ROOT}/runtime"
 }
 
 sanitize_name() {
@@ -139,13 +148,17 @@ resolve_context() {
   SCHEDULE_NAME="${SCHEDULE_NAME:-${NB_ORA_SCHEDULE:-manual}}"
   CLIENT_NAME="${CLIENT_NAME:-$(hostname -s)}"
   SESSION_TIMESTAMP="${SESSION_TIMESTAMP:-$(generate_timestamp)}"
+  BACKUP_ID="${BACKUP_ID:-${UNIX_BACKUP_TIME:-${SESSION_TIMESTAMP}}}"
 
   POLICY_SAFE="$(sanitize_name "${POLICY_NAME}")"
   SCHEDULE_SAFE="$(sanitize_name "${SCHEDULE_NAME}")"
   CLIENT_SAFE="$(sanitize_name "${CLIENT_NAME}")"
+  BACKUP_ID_SAFE="$(sanitize_name "${BACKUP_ID}")"
   CONTEXT_KEY="${POLICY_SAFE}__${SCHEDULE_SAFE}__${CLIENT_SAFE}"
   LOCK_FILE="${STATE_ROOT}/locks/${CONTEXT_KEY}.lock"
   CONTEXT_FILE="${STATE_ROOT}/contexts/${CONTEXT_KEY}.env"
+  RUNTIME_DIR="${STATE_ROOT}/runtime/${POLICY_SAFE}"
+  RUNTIME_FILE="${RUNTIME_DIR}/${BACKUP_ID_SAFE}.json"
 }
 
 context_in_progress_file() {
@@ -167,6 +180,137 @@ mark_context_in_progress() {
 
 clear_context_in_progress() {
   rm -f "$(context_in_progress_file)"
+}
+
+init_runtime_state() {
+  mkdir -p "${RUNTIME_DIR}"
+  python3 - "${RUNTIME_FILE}" "${BACKUP_ID}" "${POLICY_NAME}" "${SCHEDULE_NAME}" "${CLIENT_NAME}" \
+    "${SESSION_TIMESTAMP}" "${BACKUP_STAGING_ROOT}" "${BACKUP_TIME}" "${UNIX_BACKUP_TIME}" <<'PY'
+import json
+import sys
+
+path, backup_id, policy, schedule, client, session_ts, backup_root, backup_time, unix_backup_time = sys.argv[1:10]
+payload = {
+    "backupid": backup_id,
+    "policy": policy,
+    "schedule": schedule,
+    "client": client,
+    "session_timestamp": session_ts,
+    "backup_time": backup_time,
+    "unix_backup_time": unix_backup_time,
+    "status": "INITIALIZING",
+    "success_count": 0,
+    "failed_count": 0,
+    "backup_root": backup_root,
+    "vm_results": [],
+}
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(payload, fh, indent=2, sort_keys=True)
+PY
+}
+
+append_runtime_vm_result() {
+  local vm_name="$1"
+  local status="$2"
+  local vm_id="${3:-}"
+  local job_id="${4:-}"
+  local backup_path="${5:-}"
+  local error_text="${6:-}"
+
+  python3 - "${RUNTIME_FILE}" "${vm_name}" "${status}" "${vm_id}" "${job_id}" "${backup_path}" "${error_text}" <<'PY'
+import json
+import sys
+
+path, vm_name, status, vm_id, job_id, backup_path, error_text = sys.argv[1:8]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+
+item = {
+    "vm": vm_name,
+    "status": status,
+}
+if vm_id:
+    item["vm_id"] = vm_id
+if job_id:
+    item["jobid"] = job_id
+if backup_path:
+    item["backup_path"] = backup_path
+if error_text:
+    item["error"] = error_text
+
+payload.setdefault("vm_results", []).append(item)
+if status == "SUCCESS":
+    payload["success_count"] = int(payload.get("success_count", 0)) + 1
+else:
+    payload["failed_count"] = int(payload.get("failed_count", 0)) + 1
+
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(payload, fh, indent=2, sort_keys=True)
+PY
+}
+
+update_runtime_status() {
+  local status="$1"
+  python3 - "${RUNTIME_FILE}" "${status}" <<'PY'
+import json
+import sys
+
+path, status = sys.argv[1:3]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+payload["status"] = status
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(payload, fh, indent=2, sort_keys=True)
+PY
+}
+
+read_runtime_count() {
+  local key="$1"
+  python3 - "${RUNTIME_FILE}" "${key}" <<'PY'
+import json
+import sys
+
+path, key = sys.argv[1:3]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+print(int(payload.get(key, 0)), end="")
+PY
+}
+
+list_runtime_success_paths() {
+  python3 - "${RUNTIME_FILE}" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+for item in payload.get("vm_results", []):
+    if item.get("status") == "SUCCESS" and item.get("backup_path"):
+        print(item["backup_path"])
+PY
+}
+
+discover_vm_backup_path() {
+  local vm_name="$1"
+  local vm_root="${BACKUP_STAGING_ROOT}/${vm_name}"
+  [[ -d "${vm_root}" ]] || return 1
+
+  python3 - "${vm_root}" <<'PY'
+import os
+import sys
+
+root = sys.argv[1]
+candidates = []
+for entry in os.scandir(root):
+    candidates.append((entry.stat().st_mtime, entry.path))
+
+if not candidates:
+    sys.exit(1)
+
+candidates.sort(key=lambda item: item[0], reverse=True)
+print(candidates[0][1], end="")
+PY
 }
 
 schedule_config_file_path() {
@@ -497,6 +641,7 @@ wait_for_mold_async_job() {
 
     case "${job_status}" in
       1)
+        LAST_MOLD_FINAL_RESPONSE="${response}"
         printf '%s' "${response}"
         return 0
         ;;
@@ -593,10 +738,12 @@ invoke_mold_create_backup() {
 
   job_id="$(extract_json_value_by_key "${initial_response}" "jobid" 2>/dev/null || true)"
   [[ -n "${job_id}" ]] || fail "Mold createBackup API did not return jobid for vm=${vm_name}"
+  LAST_MOLD_JOB_ID="${job_id}"
 
   log -ne "Waiting for Mold createBackup async job vm=${vm_name} jobId=${job_id}"
   final_response="$(wait_for_mold_async_job "createBackup" "${job_id}")"
   [[ -n "${final_response}" ]] || fail "Mold createBackup async job returned empty response for vm=${vm_name}"
+  LAST_MOLD_FINAL_RESPONSE="${final_response}"
 }
 
 stage_vm_backup() {
@@ -607,4 +754,20 @@ stage_vm_backup() {
   [[ -n "${vm_id}" ]] || fail "Unable to resolve Mold VM id for instance name ${vm_name}"
 
   invoke_mold_create_backup "${vm_name}" "${vm_id}"
+}
+
+run_stage_vm_backup() {
+  local vm_name="$1"
+  local vm_id=""
+  local backup_path=""
+
+  vm_id="$(lookup_mold_vm_id "${vm_name}")" || fail "Unable to resolve Mold VM id for instance name ${vm_name}"
+  [[ -n "${vm_id}" ]] || fail "Unable to resolve Mold VM id for instance name ${vm_name}"
+
+  invoke_mold_create_backup "${vm_name}" "${vm_id}"
+
+  backup_path="$(discover_vm_backup_path "${vm_name}")" || fail "No backup path found under ${BACKUP_STAGING_ROOT}/${vm_name} for vm=${vm_name}"
+  [[ -n "${backup_path}" ]] || fail "Backup path is empty for vm=${vm_name}"
+
+  printf '%s\t%s\t%s\n' "${vm_id}" "${LAST_MOLD_JOB_ID}" "${backup_path}"
 }

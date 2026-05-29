@@ -48,7 +48,7 @@ cleanup_failed_pre_run() {
   local rc=$?
   if [[ ${rc} -ne 0 ]]; then
     clear_context_in_progress
-    rm -f "${CONTEXT_FILE}" "${MOLD_VM_CACHE_FILE:-}"
+    rm -f "${MOLD_VM_CACHE_FILE:-}"
   fi
   exit ${rc}
 }
@@ -61,27 +61,56 @@ sanity_checks
 mark_context_in_progress
 trap cleanup_failed_pre_run EXIT
 initialize_runtime_cache
+init_runtime_state
 cache_mold_virtual_machines
 
 write_state_file "${CONTEXT_FILE}" \
   POLICY_NAME "${POLICY_NAME}" \
   SCHEDULE_NAME "${SCHEDULE_NAME}" \
   CLIENT_NAME "${CLIENT_NAME}" \
-  SESSION_TIMESTAMP "${SESSION_TIMESTAMP}"
+  SESSION_TIMESTAMP "${SESSION_TIMESTAMP}" \
+  BACKUP_ID "${BACKUP_ID}" \
+  BACKUP_TIME "${BACKUP_TIME}" \
+  UNIX_BACKUP_TIME "${UNIX_BACKUP_TIME}" \
+  RUNTIME_FILE "${RUNTIME_FILE}"
 
 log -ne "NetBackup pre-backup API dispatch start policy=${POLICY_NAME} schedule=${SCHEDULE_NAME} client=${CLIENT_NAME} timestamp=${SESSION_TIMESTAMP}"
 
 vm_count=0
+success_count=0
+failed_count=0
 while IFS= read -r vm_name; do
   [[ -z "${vm_name}" ]] && continue
   vm_count=$((vm_count + 1))
-  stage_vm_backup "${vm_name}"
+  if result="$(run_stage_vm_backup "${vm_name}" 2>&1)"; then
+    IFS=$'\t' read -r vm_id job_id backup_path <<< "${result}"
+    append_runtime_vm_result "${vm_name}" "SUCCESS" "${vm_id}" "${job_id}" "${backup_path}" ""
+    success_count=$((success_count + 1))
+    log -ne "NetBackup pre-backup VM success vm=${vm_name} vmId=${vm_id} jobId=${job_id} backupPath=${backup_path}"
+  else
+    append_runtime_vm_result "${vm_name}" "FAILED" "" "" "" "${result}"
+    failed_count=$((failed_count + 1))
+    log -ne "NetBackup pre-backup VM failed vm=${vm_name} error=${result}"
+    continue
+  fi
 done < <(list_target_vms)
 
 if [[ ${vm_count} -eq 0 ]]; then
+  update_runtime_status "MOLD_BACKUP_FAILED_ALL"
   log -ne "No running VMs found on host for NetBackup staging"
+  exit 1
+fi
+
+if [[ ${success_count} -gt 0 && ${failed_count} -eq 0 ]]; then
+  update_runtime_status "MOLD_BACKUP_READY_ALL"
+elif [[ ${success_count} -gt 0 ]]; then
+  update_runtime_status "MOLD_BACKUP_READY_PARTIAL"
+else
+  update_runtime_status "MOLD_BACKUP_FAILED_ALL"
+  exit 1
 fi
 
 sync
-log -ne "NetBackup pre-backup API dispatch complete count=${vm_count}"
+log -ne "NetBackup pre-backup API dispatch complete count=${vm_count} success=${success_count} failed=${failed_count}"
 trap - EXIT
+clear_context_in_progress
