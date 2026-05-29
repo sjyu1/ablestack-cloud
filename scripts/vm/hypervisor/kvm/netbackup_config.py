@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
@@ -124,7 +125,7 @@ def invoke_mold_api(method: str, command_name: str, params: dict[str, str], mold
     return {}
 
 
-def get_configuration_value(config_name: str, mold_url: str, api_key: str, secret_key: str, zone_id: str | None = None) -> str:
+def get_configuration_value(config_name: str, mold_url: str, api_key: str, secret_key: str, zone_id: Optional[str] = None) -> str:
     params = {"listAll": "true", "pagesize": "20", "page": "1", "name": config_name}
     if zone_id:
         params["zoneid"] = zone_id
@@ -138,7 +139,7 @@ def get_configuration_value(config_name: str, mold_url: str, api_key: str, secre
     return ""
 
 
-def update_configuration_value(config_name: str, config_value: str, mold_url: str, api_key: str, secret_key: str, zone_id: str | None = None) -> None:
+def update_configuration_value(config_name: str, config_value: str, mold_url: str, api_key: str, secret_key: str, zone_id: Optional[str] = None) -> None:
     params = {"name": config_name, "value": config_value}
     if zone_id:
         params["zoneid"] = zone_id
