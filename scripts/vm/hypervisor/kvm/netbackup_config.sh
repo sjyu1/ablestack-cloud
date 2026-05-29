@@ -81,6 +81,10 @@ fail() {
   exit 1
 }
 
+log_info() {
+  printf '%s\n' "$*"
+}
+
 command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
@@ -251,15 +255,19 @@ invoke_mold_api() {
 
   local api_params
   local signed_url
+  local response
 
+  log_info "Calling Mold API: command=${command_name} method=${method}"
   api_params="$(build_mold_api_params "${command_name}" "$@")"
   signed_url="$(build_mold_signed_url "${MOLD_URL}" "${api_params}")" || fail "Failed to build Mold API URL for ${command_name}"
 
-  curl --silent --show-error --fail \
+  response="$(curl --silent --show-error --fail \
     -X "${method}" \
     -H "Accept: application/json" \
     -H "Content-type: application/x-www-form-urlencoded" \
-    "${signed_url}"
+    "${signed_url}")" || fail "Mold API call failed: command=${command_name} method=${method} url=${MOLD_URL}"
+
+  printf '%s' "${response}"
 }
 
 get_configuration_value() {
@@ -320,6 +328,7 @@ PY
 
 resolve_zone_id_from_policy_name() {
   local response=""
+  log_info "Resolving zone ID from listHosts using policy/host name=${POLICY_NAME}"
   response="$(invoke_mold_api GET "listHosts" \
     listAll true pagesize 500 page 1 type Routing keyword "${POLICY_NAME}")"
 
@@ -340,6 +349,7 @@ result = exact.get("zoneid", "") if exact else ""
 ')"
 
   [[ -n "${ZONE_ID}" ]] || fail "Unable to resolve zone ID from host/policy name '${POLICY_NAME}' via listHosts."
+  log_info "Resolved zone ID: ${ZONE_ID}"
 }
 
 ensure_backup_framework_configuration() {
@@ -347,33 +357,43 @@ ensure_backup_framework_configuration() {
   local updated_plugins=""
   local current_plugins=""
 
+  log_info "Checking zone configuration: backup.framework.enabled"
   current_value="$(get_configuration_value "backup.framework.enabled" "${ZONE_ID}")"
   if [[ "${current_value,,}" != "true" ]]; then
+    log_info "Updating zone configuration: backup.framework.enabled=true"
     update_configuration_value "backup.framework.enabled" "true" "${ZONE_ID}"
     printf 'Updated zone configuration: backup.framework.enabled=true (zoneid=%s)\n' "${ZONE_ID}"
   fi
 
+  log_info "Checking global configuration: backup.enable.attach.detach.of.volumes"
   current_value="$(get_configuration_value "backup.enable.attach.detach.of.volumes")"
   if [[ "${current_value,,}" != "true" ]]; then
+    log_info "Updating global configuration: backup.enable.attach.detach.of.volumes=true"
     update_configuration_value "backup.enable.attach.detach.of.volumes" "true"
     printf 'Updated global configuration: backup.enable.attach.detach.of.volumes=true\n'
   fi
 
+  log_info "Checking zone configuration: backup.framework.provider.plugin"
   current_plugins="$(get_configuration_value "backup.framework.provider.plugin" "${ZONE_ID}")"
   updated_plugins="$(append_provider_if_missing "${current_plugins}" "${NETBACKUP_PROVIDER_DISPLAY_NAME}")"
   if [[ "${updated_plugins}" != "${current_plugins}" ]]; then
+    log_info "Updating zone configuration: backup.framework.provider.plugin=${updated_plugins}"
     update_configuration_value "backup.framework.provider.plugin" "${updated_plugins}" "${ZONE_ID}"
     printf 'Updated zone configuration: backup.framework.provider.plugin=%s (zoneid=%s)\n' "${updated_plugins}" "${ZONE_ID}"
   fi
 
+  log_info "Checking zone configuration: backup.plugin.netbackup.url"
   current_value="$(get_configuration_value "backup.plugin.netbackup.url" "${ZONE_ID}")"
   if [[ "${current_value}" != "${NETBACKUP_URL}" ]]; then
+    log_info "Updating zone configuration: backup.plugin.netbackup.url=${NETBACKUP_URL}"
     update_configuration_value "backup.plugin.netbackup.url" "${NETBACKUP_URL}" "${ZONE_ID}"
     printf 'Updated zone configuration: backup.plugin.netbackup.url=%s (zoneid=%s)\n' "${NETBACKUP_URL}" "${ZONE_ID}"
   fi
 
+  log_info "Checking zone configuration: backup.plugin.netbackup.apikey"
   current_value="$(get_configuration_value "backup.plugin.netbackup.apikey" "${ZONE_ID}")"
   if [[ "${current_value}" != "${NETBACKUP_APIKEY}" ]]; then
+    log_info "Updating zone configuration: backup.plugin.netbackup.apikey=<hidden>"
     update_configuration_value "backup.plugin.netbackup.apikey" "${NETBACKUP_APIKEY}" "${ZONE_ID}"
     printf 'Updated zone configuration: backup.plugin.netbackup.apikey=<hidden> (zoneid=%s)\n' "${ZONE_ID}"
   fi
@@ -389,6 +409,7 @@ ensure_netbackup_offering() {
   local response=""
   local offering_exists=""
 
+  log_info "Checking existing NetBackup backup offerings for zoneid=${ZONE_ID}"
   response="$(invoke_mold_api GET "listBackupOfferings" listall true page 1 pagesize 500)"
   offering_exists="$(json_extract "${response}" '
 offerings = data.get("listbackupofferingsresponse", {}).get("backupoffering", [])
@@ -408,6 +429,7 @@ for offering in offerings:
     return 0
   fi
 
+  log_info "Importing NetBackup backup offering for zoneid=${ZONE_ID}"
   invoke_mold_api GET "importBackupOffering" \
     name "${NETBACKUP_OFFERING_NAME}" \
     description "${NETBACKUP_OFFERING_DESCRIPTION}" \
@@ -420,9 +442,11 @@ for offering in offerings:
 }
 
 configure_mold_for_netbackup() {
+  log_info "Starting Mold API configuration for NetBackup"
   resolve_zone_id_from_policy_name
   ensure_backup_framework_configuration
   ensure_netbackup_offering
+  log_info "Completed Mold API configuration for NetBackup"
 }
 
 backup_existing_file() {
@@ -617,6 +641,9 @@ collect_inputs() {
 }
 
 generate_outputs() {
+  configure_mold_for_netbackup
+
+  log_info "Generating local NetBackup hook/config files"
   mkdir -p "${HOOK_OUTPUT_DIR}" "${CONFIG_OUTPUT_DIR}" "${SECRET_OUTPUT_DIR}"
 
   local pre_hook_path=""
@@ -642,7 +669,6 @@ generate_outputs() {
   else
     printf 'Skipped NetBackup service restart because bp.conf was not found.\n'
   fi
-  configure_mold_for_netbackup
 
   printf '\nGenerated files:\n'
   printf '  PRE hook   : %s\n' "${pre_hook_path}"
