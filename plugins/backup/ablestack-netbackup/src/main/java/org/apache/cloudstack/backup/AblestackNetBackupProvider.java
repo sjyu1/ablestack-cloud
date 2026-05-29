@@ -105,6 +105,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_JOB_ID = "netbackup.job.id";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final long STALE_BACKUP_THRESHOLD_MS = 24L * 60L * 60L * 1000L;
+    private static final String NETBACKUP_OFFERING_NAME = "netbackup";
+    private static final String NETBACKUP_OFFERING_EXTERNAL_ID = "netbackup";
 
     private final ConfigKey<Integer> NetBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
             "netbackup.restore.timeout",
@@ -703,16 +705,15 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public List<BackupOffering> listBackupOfferings(final Long zoneId) {
-        return backupOfferingDao.listAll().stream()
-                .filter(offering -> Objects.equals(zoneId, offering.getZoneId()))
-                .filter(offering -> BackupProviderNameUtils.isNetBackupFamily(offering.getProvider()))
-                .map(offering -> (BackupOffering) new AblestackNetBackupOffering(offering.getName(), offering.getExternalId()))
-                .collect(Collectors.toList());
+        return Collections.singletonList(new AblestackNetBackupOffering(
+                NETBACKUP_OFFERING_NAME,
+                NETBACKUP_OFFERING_EXTERNAL_ID
+        ));
     }
 
     @Override
     public boolean isValidProviderOffering(final Long zoneId, final String uuid) {
-        return backupOfferingDao.findByExternalId(uuid, zoneId) != null;
+        return StringUtils.equalsIgnoreCase(uuid, NETBACKUP_OFFERING_EXTERNAL_ID);
     }
 
     @Override
