@@ -38,12 +38,24 @@ NETBACKUP_OFFERING_DESCRIPTION = "netbackup"
 NETBACKUP_OFFERING_EXTERNAL_ID = "netbackup"
 
 
-def log(message: str) -> None:
-    print(message, file=sys.stderr)
+def log_step(message: str) -> None:
+    print(f"\n== {message} ==", file=sys.stderr)
+
+
+def log_info(message: str) -> None:
+    print(f"[INFO] {message}", file=sys.stderr)
+
+
+def log_ok(message: str) -> None:
+    print(f"[ OK ] {message}", file=sys.stderr)
+
+
+def log_api(method: str, command_name: str) -> None:
+    print(f"  -> Mold API {method.upper()} {command_name}", file=sys.stderr)
 
 
 def fail(message: str) -> None:
-    print(message, file=sys.stderr)
+    print(f"[FAIL] {message}", file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -97,7 +109,7 @@ def build_signed_url(base_url: str, api_params: str, api_key: str, secret_key: s
 
 
 def invoke_mold_api(method: str, command_name: str, params: dict[str, str], mold_url: str, api_key: str, secret_key: str) -> dict:
-    log(f"Calling Mold API: command={command_name} method={method}")
+    log_api(method, command_name)
     api_params = build_api_params(command_name, params)
     signed_url = build_signed_url(mold_url, api_params, api_key, secret_key)
     request = Request(signed_url, method=method.upper(), headers={
@@ -131,7 +143,7 @@ def wait_for_async_job(job_id: str, mold_url: str, api_key: str, secret_key: str
         fail(f"Missing async job ID for {description}")
 
     deadline = time.time() + timeout_seconds
-    log(f"Waiting for async Mold job: description={description} jobid={job_id}")
+    log_info(f"Waiting for async Mold job: {description} (jobid={job_id})")
 
     while time.time() < deadline:
         data = invoke_mold_api("GET", "queryAsyncJobResult", {
@@ -145,7 +157,7 @@ def wait_for_async_job(job_id: str, mold_url: str, api_key: str, secret_key: str
             continue
 
         if job_status == 1:
-            log(f"Async Mold job completed: description={description} jobid={job_id}")
+            log_ok(f"Async Mold job completed: {description} (jobid={job_id})")
             return response
 
         job_result = response.get("jobresult", {})
@@ -188,7 +200,8 @@ def append_provider_if_missing(provider_list: str, provider_name: str) -> str:
 
 
 def resolve_zone_id(policy_name: str, mold_url: str, api_key: str, secret_key: str) -> str:
-    log(f"Resolving zone ID from listHosts using policy/host name={policy_name}")
+    log_step("Resolve Zone")
+    log_info(f"Resolving zone ID using policy/host name={policy_name}")
     data = invoke_mold_api("GET", "listHosts", {
         "listAll": "true",
         "pagesize": "500",
@@ -205,50 +218,52 @@ def resolve_zone_id(policy_name: str, mold_url: str, api_key: str, secret_key: s
     if not exact or not exact.get("zoneid"):
         fail(f"Unable to resolve zone ID from host/policy name '{policy_name}' via listHosts.")
     zone_id = str(exact["zoneid"])
-    log(f"Resolved zone ID: {zone_id}")
+    log_ok(f"Resolved zone ID: {zone_id}")
     return zone_id
 
 
 def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace) -> None:
-    log("Checking zone configuration: backup.framework.enabled")
+    log_step("Configure Mold")
+    log_info("Checking zone configuration: backup.framework.enabled")
     current = get_configuration_value("backup.framework.enabled", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
     if current.lower() != "true":
-        log("Updating zone configuration: backup.framework.enabled=true")
+        log_info("Updating zone configuration: backup.framework.enabled=true")
         update_configuration_value("backup.framework.enabled", "true", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
         print(f"Updated zone configuration: backup.framework.enabled=true (zoneid={zone_id})")
 
-    log("Checking global configuration: backup.enable.attach.detach.of.volumes")
+    log_info("Checking global configuration: backup.enable.attach.detach.of.volumes")
     current = get_configuration_value("backup.enable.attach.detach.of.volumes", args.mold_url, args.admin_apikey, args.admin_secretkey)
     if current.lower() != "true":
-        log("Updating global configuration: backup.enable.attach.detach.of.volumes=true")
+        log_info("Updating global configuration: backup.enable.attach.detach.of.volumes=true")
         update_configuration_value("backup.enable.attach.detach.of.volumes", "true", args.mold_url, args.admin_apikey, args.admin_secretkey)
         print("Updated global configuration: backup.enable.attach.detach.of.volumes=true")
 
-    log("Checking zone configuration: backup.framework.provider.plugin")
+    log_info("Checking zone configuration: backup.framework.provider.plugin")
     current = get_configuration_value("backup.framework.provider.plugin", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
     updated = append_provider_if_missing(current, NETBACKUP_PROVIDER_DISPLAY_NAME)
     if updated != current:
-        log(f"Updating zone configuration: backup.framework.provider.plugin={updated}")
+        log_info(f"Updating zone configuration: backup.framework.provider.plugin={updated}")
         update_configuration_value("backup.framework.provider.plugin", updated, args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
         print(f"Updated zone configuration: backup.framework.provider.plugin={updated} (zoneid={zone_id})")
 
-    log("Checking zone configuration: backup.plugin.netbackup.url")
+    log_info("Checking zone configuration: backup.plugin.netbackup.url")
     current = get_configuration_value("backup.plugin.netbackup.url", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
     if current != args.netbackup_url:
-        log(f"Updating zone configuration: backup.plugin.netbackup.url={args.netbackup_url}")
+        log_info(f"Updating zone configuration: backup.plugin.netbackup.url={args.netbackup_url}")
         update_configuration_value("backup.plugin.netbackup.url", args.netbackup_url, args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
         print(f"Updated zone configuration: backup.plugin.netbackup.url={args.netbackup_url} (zoneid={zone_id})")
 
-    log("Checking zone configuration: backup.plugin.netbackup.apikey")
+    log_info("Checking zone configuration: backup.plugin.netbackup.apikey")
     current = get_configuration_value("backup.plugin.netbackup.apikey", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
     if current != args.netbackup_apikey:
-        log("Updating zone configuration: backup.plugin.netbackup.apikey=<hidden>")
+        log_info("Updating zone configuration: backup.plugin.netbackup.apikey=<hidden>")
         update_configuration_value("backup.plugin.netbackup.apikey", args.netbackup_apikey, args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
         print(f"Updated zone configuration: backup.plugin.netbackup.apikey=<hidden> (zoneid={zone_id})")
 
 
 def ensure_netbackup_offering(zone_id: str, args: argparse.Namespace) -> None:
-    log(f"Checking existing NetBackup backup offerings for zoneid={zone_id}")
+    log_step("Ensure Backup Offering")
+    log_info(f"Checking existing NetBackup backup offerings for zoneid={zone_id}")
     data = invoke_mold_api("GET", "listBackupOfferings", {
         "listall": "true",
         "page": "1",
@@ -264,7 +279,7 @@ def ensure_netbackup_offering(zone_id: str, args: argparse.Namespace) -> None:
             print(f"NetBackup backup offering already exists for zoneid={zone_id}")
             return
 
-    log(f"Importing NetBackup backup offering for zoneid={zone_id}")
+    log_info(f"Importing NetBackup backup offering for zoneid={zone_id}")
     data = invoke_mold_api("POST", "importBackupOffering", {
         "name": NETBACKUP_OFFERING_NAME,
         "description": NETBACKUP_OFFERING_DESCRIPTION,
@@ -463,7 +478,8 @@ def restart_netbackup_service() -> None:
 
 
 def generate_outputs(zone_id: str, args: argparse.Namespace) -> None:
-    log("Generating local NetBackup hook/config files")
+    log_step("Generate Local Files")
+    log_info("Generating local NetBackup hook/config files")
     HOOK_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     SECRET_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -509,11 +525,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    log("Starting Mold API configuration for NetBackup")
+    log_step("NetBackup Configuration")
+    log_info("Starting Mold API configuration for NetBackup")
     zone_id = resolve_zone_id(args.policy_name, args.mold_url, args.admin_apikey, args.admin_secretkey)
     ensure_backup_framework_configuration(zone_id, args)
     ensure_netbackup_offering(zone_id, args)
-    log("Completed Mold API configuration for NetBackup")
+    log_ok("Completed Mold API configuration for NetBackup")
     generate_outputs(zone_id, args)
 
 
