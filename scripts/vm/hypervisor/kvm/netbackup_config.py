@@ -125,6 +125,39 @@ def invoke_mold_api(method: str, command_name: str, params: dict[str, str], mold
     return {}
 
 
+def wait_for_async_job(job_id: str, mold_url: str, api_key: str, secret_key: str, *, description: str,
+                       timeout_seconds: int = 300, poll_interval_seconds: int = 5) -> dict:
+    if not job_id:
+        fail(f"Missing async job ID for {description}")
+
+    deadline = time.time() + timeout_seconds
+    log(f"Waiting for async Mold job: description={description} jobid={job_id}")
+
+    while time.time() < deadline:
+        data = invoke_mold_api("GET", "queryAsyncJobResult", {
+            "jobid": job_id,
+        }, mold_url, api_key, secret_key)
+        response = data.get("queryasyncjobresultresponse", {})
+        job_status = int(response.get("jobstatus", 0) or 0)
+
+        if job_status == 0:
+            time.sleep(poll_interval_seconds)
+            continue
+
+        if job_status == 1:
+            log(f"Async Mold job completed: description={description} jobid={job_id}")
+            return response
+
+        job_result = response.get("jobresult", {})
+        error_text = response.get("errortext") or response.get("jobresultcode")
+        if isinstance(job_result, dict):
+            error_text = job_result.get("errortext") or job_result.get("error") or error_text
+        fail(f"Async Mold job failed: description={description} jobid={job_id} error={error_text}")
+
+    fail(f"Timed out waiting for async Mold job: description={description} jobid={job_id}")
+    return {}
+
+
 def get_configuration_value(config_name: str, mold_url: str, api_key: str, secret_key: str, zone_id: Optional[str] = None) -> str:
     params = {"listAll": "true", "pagesize": "20", "page": "1", "name": config_name}
     if zone_id:
@@ -232,7 +265,7 @@ def ensure_netbackup_offering(zone_id: str, args: argparse.Namespace) -> None:
             return
 
     log(f"Importing NetBackup backup offering for zoneid={zone_id}")
-    invoke_mold_api("POST", "importBackupOffering", {
+    data = invoke_mold_api("POST", "importBackupOffering", {
         "name": NETBACKUP_OFFERING_NAME,
         "description": NETBACKUP_OFFERING_DESCRIPTION,
         "provider": NETBACKUP_PROVIDER_DISPLAY_NAME,
@@ -240,7 +273,31 @@ def ensure_netbackup_offering(zone_id: str, args: argparse.Namespace) -> None:
         "allowuserdrivenbackups": "false",
         "zoneid": zone_id,
     }, args.mold_url, args.admin_apikey, args.admin_secretkey)
-    print(f"Imported NetBackup backup offering for zoneid={zone_id}")
+    response = data.get("importbackupofferingresponse", {})
+    job_id = str(response.get("jobid", "") or "")
+    wait_for_async_job(
+        job_id,
+        args.mold_url,
+        args.admin_apikey,
+        args.admin_secretkey,
+        description=f"importBackupOffering zoneid={zone_id}",
+    )
+
+    verify = invoke_mold_api("GET", "listBackupOfferings", {
+        "listall": "true",
+        "page": "1",
+        "pagesize": "500",
+    }, args.mold_url, args.admin_apikey, args.admin_secretkey)
+    offerings = verify.get("listbackupofferingsresponse", {}).get("backupoffering", [])
+    if isinstance(offerings, dict):
+        offerings = [offerings]
+    for offering in offerings:
+        provider = str(offering.get("provider", "")).lower()
+        offering_zone = str(offering.get("zoneid", "") or offering.get("zoneId", ""))
+        if provider in {NETBACKUP_PROVIDER_DISPLAY_NAME, NETBACKUP_PROVIDER_CANONICAL_NAME} and offering_zone == zone_id:
+            print(f"Imported NetBackup backup offering for zoneid={zone_id}")
+            return
+    fail(f"importBackupOffering async job completed but NetBackup backup offering was not found for zoneid={zone_id}")
 
 
 def write_hook(path: Path, comment_name: str, helper_path: str, is_post: bool) -> None:
