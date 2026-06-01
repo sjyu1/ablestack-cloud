@@ -99,12 +99,10 @@ public class UpdateNetBackupCmd extends BaseCmd {
         return ApiCommandResourceType.Backup;
     }
 
-    @Override
     public String getEventType() {
         return EventTypes.EVENT_VM_BACKUP_CREATE;
     }
 
-    @Override
     public String getEventDescription() {
         return "Updating NetBackup metadata for Instance backup " + vmId;
     }
