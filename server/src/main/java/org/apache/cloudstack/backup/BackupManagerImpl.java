@@ -992,15 +992,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         Long backupScheduleId = getBackupScheduleId(job);
         boolean isScheduledBackup = backupScheduleId != null;
         Account owner = accountManager.getAccount(vm.getAccountId());
-        Long backupSize = calculateBackupSize(vm.getId());
-        createCheckedBackup(cmd, owner, isScheduledBackup, backupSize, vm, vm.getId(), backupProvider, backupScheduleId);
-        if (isScheduledBackup) {
-            deleteOldestBackupFromScheduleIfRequired(vm.getId(), backupScheduleId);
-        }
-        return true;
-    }
 
-    protected Long calculateBackupSize(final Long vmId) {
         Long backupSize = 0L;
         for (final Volume volume: volumeDao.findByInstance(vmId)) {
             if (Volume.State.Ready.equals(volume.getState())) {
@@ -1011,7 +1003,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 backupSize += volumeSize;
             }
         }
-        return backupSize;
+        createCheckedBackup(cmd, owner, isScheduledBackup, backupSize, vm, vmId, backupProvider, backupScheduleId);
+        if (isScheduledBackup) {
+            deleteOldestBackupFromScheduleIfRequired(vmId, backupScheduleId);
+        }
+        return true;
     }
 
     private void createCheckedBackup(CreateBackupCmd cmd, Account owner, boolean isScheduledBackup, Long backupSize,
@@ -1050,6 +1046,20 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             }
             throw e;
         }
+    }
+
+    protected Long calculateBackupSize(final Long vmId) {
+        Long backupSize = 0L;
+        for (final Volume volume: volumeDao.findByInstance(vmId)) {
+            if (Volume.State.Ready.equals(volume.getState())) {
+                Long volumeSize = volumeApiService.getVolumePhysicalSize(volume.getFormat(), volume.getPath(), volume.getChainInfo());
+                if (volumeSize == null) {
+                    volumeSize = volume.getSize();
+                }
+                backupSize += volumeSize;
+            }
+        }
+        return backupSize;
     }
 
         @Override
