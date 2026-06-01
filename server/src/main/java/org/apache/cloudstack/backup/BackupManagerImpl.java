@@ -1087,10 +1087,14 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             }
         }
 
-        final BackupOfferingVO netBackupOffering = backupOfferingDao.findByExternalId(defaultExternalId, vm.getDataCenterId());
-        if (netBackupOffering == null) {
+        final BackupOffering netBackupOfferingRef = backupOfferingDao.findByExternalId(defaultExternalId, vm.getDataCenterId());
+        if (netBackupOfferingRef == null) {
             throw new CloudRuntimeException(String.format("No NetBackup backup offering is configured for zone [%s]. Please import a NetBackup backup offering before running NetBackup backups.",
                     vm.getDataCenterId()));
+        }
+        final BackupOfferingVO netBackupOffering = backupOfferingDao.findById(netBackupOfferingRef.getId());
+        if (netBackupOffering == null) {
+            throw new CloudRuntimeException("NetBackup backup offering record not found");
         }
         final BackupProvider backupProvider = getBackupProvider(netBackupOffering.getProvider());
         if (backupProvider == null) {
