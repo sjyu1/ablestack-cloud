@@ -1000,7 +1000,59 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         return true;
     }
 
-    @Override
+    protected Long calculateBackupSize(final Long vmId) {
+        Long backupSize = 0L;
+        for (final Volume volume: volumeDao.findByInstance(vmId)) {
+            if (Volume.State.Ready.equals(volume.getState())) {
+                Long volumeSize = volumeApiService.getVolumePhysicalSize(volume.getFormat(), volume.getPath(), volume.getChainInfo());
+                if (volumeSize == null) {
+                    volumeSize = volume.getSize();
+                }
+                backupSize += volumeSize;
+            }
+        }
+        return backupSize;
+    }
+
+    private void createCheckedBackup(CreateBackupCmd cmd, Account owner, boolean isScheduledBackup, Long backupSize,
+                 VMInstanceVO vm, Long vmId, BackupProvider backupProvider, Long backupScheduleId)
+            throws ResourceAllocationException {
+        try (CheckedReservation backupReservation = new CheckedReservation(owner, Resource.ResourceType.backup,
+                1L, reservationDao, resourceLimitMgr);
+             CheckedReservation backupStorageReservation = new CheckedReservation(owner,
+                     Resource.ResourceType.backup_storage, backupSize, reservationDao, resourceLimitMgr)) {
+
+            ActionEventUtils.onStartedActionEvent(User.UID_SYSTEM, vm.getAccountId(),
+                    EventTypes.EVENT_VM_BACKUP_CREATE, "creating backup for VM ID:" + vm.getUuid(),
+                    vmId, ApiCommandResourceType.VirtualMachine.toString(),
+                    true, 0);
+
+            Pair<Boolean, Backup> result = backupProvider.takeBackup(vm, cmd.getQuiesceVM());
+            if (!result.first()) {
+                throw new CloudRuntimeException("Failed to create VM backup");
+            }
+            Backup backup = result.second();
+            if (backup != null) {
+                BackupVO vmBackup = backupDao.findById(result.second().getId());
+                vmBackup.setBackupScheduleId(backupScheduleId);
+                if (cmd.getName() != null) {
+                    vmBackup.setName(cmd.getName());
+                }
+                vmBackup.setDescription(cmd.getDescription());
+                backupDao.update(vmBackup.getId(), vmBackup);
+                resourceLimitMgr.incrementResourceCount(vm.getAccountId(), Resource.ResourceType.backup);
+                resourceLimitMgr.incrementResourceCount(vm.getAccountId(), Resource.ResourceType.backup_storage, backup.getSize());
+            }
+        } catch (ResourceAllocationException e) {
+            if (isScheduledBackup && (Resource.ResourceType.backup.equals(e.getResourceType()) ||
+                    Resource.ResourceType.backup_storage.equals(e.getResourceType()))) {
+                sendExceededBackupLimitAlert(owner.getUuid(), e.getResourceType());
+            }
+            throw e;
+        }
+    }
+
+        @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_BACKUP_CREATE, eventDescription = "creating VM backup for NetBackup", async = true)
     public boolean createNetBackup(final CreateNetBackupCmd cmd) throws ResourceAllocationException {
         final Long vmId = cmd.getVmId();
@@ -1045,20 +1097,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         return true;
     }
 
-    protected Long calculateBackupSize(final Long vmId) {
-        Long backupSize = 0L;
-        for (final Volume volume: volumeDao.findByInstance(vmId)) {
-            if (Volume.State.Ready.equals(volume.getState())) {
-                Long volumeSize = volumeApiService.getVolumePhysicalSize(volume.getFormat(), volume.getPath(), volume.getChainInfo());
-                if (volumeSize == null) {
-                    volumeSize = volume.getSize();
-                }
-                backupSize += volumeSize;
-            }
-        }
-        return backupSize;
-    }
-
     private void createCheckedBackup(CreateNetBackupCmd cmd, Account owner, boolean isScheduledBackup, Long backupSize,
                  VMInstanceVO vm, Long vmId, BackupProvider backupProvider, Long backupScheduleId)
             throws ResourceAllocationException {
@@ -1075,44 +1113,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getJobId(), cmd.getPolicyName(), cmd.getMaxChain());
             if (!result.first()) {
                 throw new CloudRuntimeException("Failed to create VM backup for NetBackup");
-            }
-            Backup backup = result.second();
-            if (backup != null) {
-                BackupVO vmBackup = backupDao.findById(result.second().getId());
-                vmBackup.setBackupScheduleId(backupScheduleId);
-                if (cmd.getName() != null) {
-                    vmBackup.setName(cmd.getName());
-                }
-                vmBackup.setDescription(cmd.getDescription());
-                backupDao.update(vmBackup.getId(), vmBackup);
-                resourceLimitMgr.incrementResourceCount(vm.getAccountId(), Resource.ResourceType.backup);
-                resourceLimitMgr.incrementResourceCount(vm.getAccountId(), Resource.ResourceType.backup_storage, backup.getSize());
-            }
-        } catch (ResourceAllocationException e) {
-            if (isScheduledBackup && (Resource.ResourceType.backup.equals(e.getResourceType()) ||
-                    Resource.ResourceType.backup_storage.equals(e.getResourceType()))) {
-                sendExceededBackupLimitAlert(owner.getUuid(), e.getResourceType());
-            }
-            throw e;
-        }
-    }
-
-    private void createCheckedBackup(CreateBackupCmd cmd, Account owner, boolean isScheduledBackup, Long backupSize,
-                 VMInstanceVO vm, Long vmId, BackupProvider backupProvider, Long backupScheduleId)
-            throws ResourceAllocationException {
-        try (CheckedReservation backupReservation = new CheckedReservation(owner, Resource.ResourceType.backup,
-                1L, reservationDao, resourceLimitMgr);
-             CheckedReservation backupStorageReservation = new CheckedReservation(owner,
-                     Resource.ResourceType.backup_storage, backupSize, reservationDao, resourceLimitMgr)) {
-
-            ActionEventUtils.onStartedActionEvent(User.UID_SYSTEM, vm.getAccountId(),
-                    EventTypes.EVENT_VM_BACKUP_CREATE, "creating backup for VM ID:" + vm.getUuid(),
-                    vmId, ApiCommandResourceType.VirtualMachine.toString(),
-                    true, 0);
-
-            Pair<Boolean, Backup> result = backupProvider.takeBackup(vm, cmd.getQuiesceVM());
-            if (!result.first()) {
-                throw new CloudRuntimeException("Failed to create VM backup");
             }
             Backup backup = result.second();
             if (backup != null) {
