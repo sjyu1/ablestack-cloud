@@ -24,6 +24,7 @@ import com.cloud.capacity.Capacity;
 import com.cloud.exception.ResourceAllocationException;
 import org.apache.cloudstack.api.command.admin.backup.CloneBackupOfferingCmd;
 import org.apache.cloudstack.api.command.admin.backup.ImportBackupOfferingCmd;
+import org.apache.cloudstack.api.command.admin.backup.UpdateNetBackupCmd;
 import org.apache.cloudstack.api.command.admin.backup.UpdateBackupOfferingCmd;
 import org.apache.cloudstack.api.command.user.backup.CreateBackupCmd;
 import org.apache.cloudstack.api.command.user.backup.CreateNetBackupCmd;
@@ -218,6 +219,13 @@ public interface BackupManager extends BackupService, Configurable, PluggableSer
      * @return returns operation success
      */
     boolean createNetBackup(CreateNetBackupCmd cmd) throws ResourceAllocationException;
+
+    /**
+     * Updates NetBackup-specific backup metadata for a VM backup row.
+     * @param cmd UpdateNetBackupCmd
+     * @return returns operation success
+     */
+    boolean updateNetBackup(UpdateNetBackupCmd cmd);
 
     /**
      * Creates backup of a VM

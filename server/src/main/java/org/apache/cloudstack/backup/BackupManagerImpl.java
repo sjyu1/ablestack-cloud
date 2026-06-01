@@ -50,6 +50,7 @@ import org.apache.cloudstack.api.command.admin.backup.ListBackupProviderOffering
 import org.apache.cloudstack.api.command.admin.backup.ListBackupProvidersForZoneCmd;
 import org.apache.cloudstack.api.command.admin.backup.ListBackupProvidersCmd;
 import org.apache.cloudstack.api.command.admin.backup.UpdateBackupOfferingCmd;
+import org.apache.cloudstack.api.command.admin.backup.UpdateNetBackupCmd;
 import org.apache.cloudstack.api.command.admin.vm.CreateVMFromBackupCmdByAdmin;
 import org.apache.cloudstack.api.command.user.backup.AssignVirtualMachineToBackupOfferingCmd;
 import org.apache.cloudstack.api.command.user.backup.CreateBackupCmd;
@@ -260,6 +261,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private static final long POST_RESTORE_MAINTENANCE_RETRY_INTERVAL_MS = 60_000L;
 
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
+    private static final String DETAIL_NETBACKUP_BACKUP_ID = "netbackup.backup.id";
+    private static final String DETAIL_NETBACKUP_JOB_ID = "netbackup.job.id";
     private List<BackupProvider> backupProviders;
     private final List<PostRestoreMaintenanceTask> postRestoreMaintenanceTasks = Collections.synchronizedList(new ArrayList<>());
 
@@ -1104,6 +1107,38 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         final Long backupSize = calculateBackupSize(vm.getId());
 
         createCheckedBackup(cmd, owner, false, backupSize, vm, vm.getId(), backupProvider, null);
+        return true;
+    }
+
+    @Override
+    public boolean updateNetBackup(final UpdateNetBackupCmd cmd) {
+        final Long vmId = cmd.getVmId();
+        final Account caller = CallContext.current().getCallingAccount();
+
+        final VMInstanceVO vm = findVmById(vmId);
+        validateBackupForZone(vm.getDataCenterId());
+        accountManager.checkAccess(caller, null, true, vm);
+
+        final BackupVO backup = backupDao.listByVmId(vm.getDataCenterId(), vmId).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .peek(backupDao::loadDetails)
+                .filter(candidate -> Backup.Status.BackedUp.equals(candidate.getStatus()) || Backup.Status.BackingUp.equals(candidate.getStatus()))
+                .filter(candidate -> {
+                    final BackupOffering offering = backupOfferingDao.findById(candidate.getBackupOfferingId());
+                    return offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider());
+                })
+                .filter(candidate -> StringUtils.isBlank(cmd.getJobId()) ||
+                        StringUtils.equals(candidate.getDetail(DETAIL_NETBACKUP_JOB_ID), cmd.getJobId()))
+                .max(Comparator.comparing(BackupVO::getDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(BackupVO::getId))
+                .orElseThrow(() -> new CloudRuntimeException(String.format(
+                        "Unable to find NetBackup backup row for VM [%s] and jobId [%s].",
+                        vm.getInstanceName(), cmd.getJobId())));
+
+        backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID);
+        backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId(), false);
+        backupDao.loadDetails(backup);
         return true;
     }
 
@@ -2233,6 +2268,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         cmdList.add(ListBackupOfferingsCmd.class);
         cmdList.add(DeleteBackupOfferingCmd.class);
         cmdList.add(UpdateBackupOfferingCmd.class);
+        cmdList.add(UpdateNetBackupCmd.class);
         // Assignment
         cmdList.add(AssignVirtualMachineToBackupOfferingCmd.class);
         cmdList.add(RemoveVirtualMachineFromBackupOfferingCmd.class);

@@ -291,6 +291,22 @@ for item in payload.get("vm_results", []):
 PY
 }
 
+list_runtime_success_vm_refs() {
+  python3 - "${RUNTIME_FILE}" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+for item in payload.get("vm_results", []):
+    if item.get("status") == "SUCCESS" and item.get("vm_id"):
+        vm_id = item.get("vm_id", "")
+        job_id = item.get("jobid", "")
+        print(f"{vm_id}\t{job_id}")
+PY
+}
+
 discover_vm_backup_path() {
   local vm_name="$1"
   local vm_root="${BACKUP_STAGING_ROOT}/${vm_name}"
@@ -488,6 +504,14 @@ json_escape() {
   value="${value//$'\n'/\\n}"
   value="${value//$'\r'/\\r}"
   value="${value//$'\t'/\\t}"
+  printf '%s' "${value}"
+}
+
+tsv_escape() {
+  local value="$1"
+  value="${value//$'\t'/ }"
+  value="${value//$'\n'/ }"
+  value="${value//$'\r'/ }"
   printf '%s' "${value}"
 }
 
@@ -718,31 +742,28 @@ invoke_mold_create_backup() {
   local -a api_args=(
     "vmId" "${vm_id}"
     "policyName" "${POLICY_NAME}"
-    "scheduleName" "${SCHEDULE_NAME}"
-    "clientName" "${CLIENT_NAME}"
-    "sessionTimestamp" "${SESSION_TIMESTAMP}"
-    "maxIncrementalChain" "${MAX_INCREMENTAL_CHAIN}"
+    "maxChain" "${MAX_INCREMENTAL_CHAIN}"
   )
 
   if [[ -n "${NETBACKUP_JOB_ID}" ]]; then
     api_args+=("jobid" "${NETBACKUP_JOB_ID}")
   fi
 
-  log -ne "Calling Mold createBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
+  log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
 
   initial_response="$(invoke_mold_api \
     "${MOLD_CREATE_BACKUP_API_METHOD}" \
     "${MOLD_CREATE_BACKUP_API_URL}" \
-    "createBackup" \
-    "${api_args[@]}")" || fail "Mold createBackup API call failed for vm=${vm_name}"
+    "createNetBackup" \
+    "${api_args[@]}")" || fail "Mold createNetBackup API call failed for vm=${vm_name}"
 
   job_id="$(extract_json_value_by_key "${initial_response}" "jobid" 2>/dev/null || true)"
-  [[ -n "${job_id}" ]] || fail "Mold createBackup API did not return jobid for vm=${vm_name}"
+  [[ -n "${job_id}" ]] || fail "Mold createNetBackup API did not return jobid for vm=${vm_name}"
   LAST_MOLD_JOB_ID="${job_id}"
 
-  log -ne "Waiting for Mold createBackup async job vm=${vm_name} jobId=${job_id}"
-  final_response="$(wait_for_mold_async_job "createBackup" "${job_id}")"
-  [[ -n "${final_response}" ]] || fail "Mold createBackup async job returned empty response for vm=${vm_name}"
+  log -ne "Waiting for Mold createNetBackup async job vm=${vm_name} jobId=${job_id}"
+  final_response="$(wait_for_mold_async_job "createNetBackup" "${job_id}")"
+  [[ -n "${final_response}" ]] || fail "Mold createNetBackup async job returned empty response for vm=${vm_name}"
   LAST_MOLD_FINAL_RESPONSE="${final_response}"
 }
 
@@ -759,15 +780,56 @@ stage_vm_backup() {
 run_stage_vm_backup() {
   local vm_name="$1"
   local vm_id=""
+  local job_id=""
   local backup_path=""
+  local initial_response=""
+  local final_response=""
+  local error_text=""
+  local -a api_args=()
 
-  vm_id="$(lookup_mold_vm_id "${vm_name}")" || fail "Unable to resolve Mold VM id for instance name ${vm_name}"
-  [[ -n "${vm_id}" ]] || fail "Unable to resolve Mold VM id for instance name ${vm_name}"
+  vm_id="$(lookup_mold_vm_id "${vm_name}" 2>/dev/null || true)"
+  if [[ -z "${vm_id}" ]]; then
+    printf 'FAILED\t\t\t\t%s\n' "$(tsv_escape "Unable to resolve Mold VM id for instance name ${vm_name}")"
+    return 1
+  fi
 
-  invoke_mold_create_backup "${vm_name}" "${vm_id}"
+  api_args=(
+    "vmId" "${vm_id}"
+    "policyName" "${POLICY_NAME}"
+    "maxChain" "${MAX_INCREMENTAL_CHAIN}"
+  )
+  if [[ -n "${NETBACKUP_JOB_ID}" ]]; then
+    api_args+=("jobid" "${NETBACKUP_JOB_ID}")
+  fi
 
-  backup_path="$(discover_vm_backup_path "${vm_name}")" || fail "No backup path found under ${BACKUP_STAGING_ROOT}/${vm_name} for vm=${vm_name}"
-  [[ -n "${backup_path}" ]] || fail "Backup path is empty for vm=${vm_name}"
+  log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
+  if ! initial_response="$(invoke_mold_api \
+    "${MOLD_CREATE_BACKUP_API_METHOD}" \
+    "${MOLD_CREATE_BACKUP_API_URL}" \
+    "createNetBackup" \
+    "${api_args[@]}" 2>&1)"; then
+    printf 'FAILED\t%s\t\t\t%s\n' "${vm_id}" "$(tsv_escape "${initial_response}")"
+    return 1
+  fi
 
-  printf '%s\t%s\t%s\n' "${vm_id}" "${LAST_MOLD_JOB_ID}" "${backup_path}"
+  job_id="$(extract_json_value_by_key "${initial_response}" "jobid" 2>/dev/null || true)"
+  if [[ -z "${job_id}" ]]; then
+    printf 'FAILED\t%s\t\t\t%s\n' "${vm_id}" "$(tsv_escape "Mold createNetBackup API did not return jobid for vm=${vm_name}")"
+    return 1
+  fi
+
+  log -ne "Waiting for Mold createNetBackup async job vm=${vm_name} jobId=${job_id}"
+  if ! final_response="$(wait_for_mold_async_job "createNetBackup" "${job_id}" 2>&1)"; then
+    error_text="${final_response}"
+    printf 'FAILED\t%s\t%s\t\t%s\n' "${vm_id}" "${job_id}" "$(tsv_escape "${error_text}")"
+    return 1
+  fi
+
+  backup_path="$(discover_vm_backup_path "${vm_name}" 2>/dev/null || true)"
+  if [[ -z "${backup_path}" ]]; then
+    printf 'FAILED\t%s\t%s\t\t%s\n' "${vm_id}" "${job_id}" "$(tsv_escape "No backup path found under ${BACKUP_STAGING_ROOT}/${vm_name} for vm=${vm_name}")"
+    return 1
+  fi
+
+  printf 'SUCCESS\t%s\t%s\t%s\t\n' "${vm_id}" "${job_id}" "${backup_path}"
 }

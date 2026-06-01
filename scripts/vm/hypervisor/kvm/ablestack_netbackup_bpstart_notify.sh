@@ -82,15 +82,16 @@ failed_count=0
 while IFS= read -r vm_name; do
   [[ -z "${vm_name}" ]] && continue
   vm_count=$((vm_count + 1))
-  if result="$(run_stage_vm_backup "${vm_name}" 2>&1)"; then
-    IFS=$'\t' read -r vm_id job_id backup_path <<< "${result}"
+  if result="$(run_stage_vm_backup "${vm_name}")"; then
+    IFS=$'\t' read -r stage_status vm_id job_id backup_path error_text <<< "${result}"
     append_runtime_vm_result "${vm_name}" "SUCCESS" "${vm_id}" "${job_id}" "${backup_path}" ""
     success_count=$((success_count + 1))
     log -ne "NetBackup pre-backup VM success vm=${vm_name} vmId=${vm_id} jobId=${job_id} backupPath=${backup_path}"
   else
-    append_runtime_vm_result "${vm_name}" "FAILED" "" "" "" "${result}"
+    IFS=$'\t' read -r stage_status vm_id job_id backup_path error_text <<< "${result}"
+    append_runtime_vm_result "${vm_name}" "FAILED" "${vm_id}" "${job_id}" "${backup_path}" "${error_text}"
     failed_count=$((failed_count + 1))
-    log -ne "NetBackup pre-backup VM failed vm=${vm_name} error=${result}"
+    log -ne "NetBackup pre-backup VM failed vm=${vm_name} vmId=${vm_id} jobId=${job_id} error=${error_text}"
     continue
   fi
 done < <(list_target_vms)

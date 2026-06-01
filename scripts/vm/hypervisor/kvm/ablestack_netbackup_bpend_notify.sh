@@ -60,6 +60,33 @@ cleanup_runtime_backup_paths() {
   builtin echo "${removed}"
 }
 
+update_netbackup_backup_ids() {
+  local updated=0
+  local vm_id=""
+  local job_id=""
+  local response=""
+
+  [[ -n "${BACKUP_ID:-}" ]] || fail "NetBackup BACKUP_ID is empty; cannot update backup_details"
+
+  while IFS=$'\t' read -r vm_id job_id; do
+    [[ -z "${vm_id}" ]] && continue
+    if [[ -n "${job_id}" ]]; then
+      response="$(invoke_mold_api "POST" "${MOLD_CREATE_BACKUP_API_URL}" "updateNetBackup" \
+        "vmId" "${vm_id}" \
+        "backupId" "${BACKUP_ID}" \
+        "jobId" "${job_id}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id} jobId=${job_id}"
+    else
+      response="$(invoke_mold_api "POST" "${MOLD_CREATE_BACKUP_API_URL}" "updateNetBackup" \
+        "vmId" "${vm_id}" \
+        "backupId" "${BACKUP_ID}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id}"
+    fi
+    updated=$((updated + 1))
+    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} jobId=${job_id}"
+  done < <(list_runtime_success_vm_refs)
+
+  builtin echo "${updated}"
+}
+
 resolve_status() {
   local candidate
   if [[ -n "${JOB_STATUS}" ]]; then
@@ -94,11 +121,15 @@ if ! load_state_file "${CONTEXT_FILE}"; then
   fail "NetBackup post-backup cleanup could not find context state: ${CONTEXT_FILE}"
 fi
 
+BACKUP_ID="${BACKUPID:-${BACKUP_ID:-}}"
+load_policy_schedule_config
 SESSION_TIMESTAMP="${SESSION_TIMESTAMP:-$(generate_timestamp)}"
 log -ne "NetBackup post-backup finalize start policy=${POLICY_NAME} schedule=${SCHEDULE_NAME} client=${CLIENT_NAME} status=${JOB_STATUS}"
 
 if netbackup_job_success_confirmed; then
   log -ne "NetBackup success confirmed"
+  updated_count="$(update_netbackup_backup_ids)"
+  log -ne "NetBackup metadata update complete count=${updated_count} backupId=${BACKUP_ID}"
   removed_count="$(cleanup_runtime_backup_paths)"
   update_runtime_status "NBU_CLIENT_SUCCESS_CLEANED"
   log -ne "NetBackup cleanup complete removed=${removed_count}"
