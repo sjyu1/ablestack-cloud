@@ -1108,11 +1108,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     }
 
     private void createCheckedBackup(CreateNetBackupCmd cmd, Account owner, boolean isScheduledBackup, Long backupSize,
-                 VMInstanceVO vm, Long vmId, BackupProvider backupProvider, Long backupScheduleId)
+                VMInstanceVO vm, Long vmId, BackupProvider backupProvider, Long backupScheduleId)
             throws ResourceAllocationException {
         try (CheckedReservation backupReservation = new CheckedReservation(owner, Resource.ResourceType.backup,
                 1L, reservationDao, resourceLimitMgr);
-             CheckedReservation backupStorageReservation = new CheckedReservation(owner,
+            CheckedReservation backupStorageReservation = new CheckedReservation(owner,
                      Resource.ResourceType.backup_storage, backupSize, reservationDao, resourceLimitMgr)) {
 
             ActionEventUtils.onStartedActionEvent(User.UID_SYSTEM, vm.getAccountId(),

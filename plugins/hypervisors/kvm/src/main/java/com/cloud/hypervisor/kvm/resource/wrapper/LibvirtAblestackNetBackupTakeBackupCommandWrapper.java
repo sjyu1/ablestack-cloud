@@ -34,7 +34,7 @@ public class LibvirtAblestackNetBackupTakeBackupCommandWrapper extends CommandWr
 
     @Override
     public Answer execute(final AblestackNetBackupTakeBackupCommand command, final LibvirtComputingResource libvirtComputingResource) {
-        final AblestackCommvaultTakeBackupCommand delegate = new AblestackCommvaultTakeBackupCommand(command.getVmName(), command.getBackupPath());
+        final AblestackNetBackupTakeBackupCommand delegate = new AblestackNetBackupTakeBackupCommand(command.getVmName(), command.getBackupPath());
         delegate.setQuiesce(command.getQuiesce());
         delegate.setVolumePools(command.getVolumePools());
         delegate.setVolumePaths(command.getVolumePaths());
@@ -47,14 +47,14 @@ public class LibvirtAblestackNetBackupTakeBackupCommandWrapper extends CommandWr
         delegate.setParentCheckpointXmlChain(command.getParentCheckpointXmlChain());
         delegate.setBackupFiles(command.getBackupFiles());
 
-        final LibvirtAblestackCommvaultBackupHelper backupHelper = new LibvirtAblestackCommvaultBackupHelper(libvirtComputingResource);
+        final LibvirtAblestackNetBackupHelper backupHelper = new LibvirtAblestackNetBackupHelper(libvirtComputingResource);
         final Pair<Integer, String> result = backupHelper.executeBackup(delegate);
         if (result.first() != 0) {
             final String failureDetails = StringUtils.defaultIfBlank(result.second(),
                     "NetBackup backup helper returned failure without details");
             logger.warn("Failed to take NetBackup VM backup for [{}]: {}", command.getVmName(), failureDetails);
             final BackupAnswer answer = new BackupAnswer(command, false, failureDetails);
-            if (result.first() == LibvirtAblestackCommvaultBackupHelper.EXIT_CLEANUP_FAILED) {
+            if (result.first() == LibvirtAblestackNetBackupHelper.EXIT_CLEANUP_FAILED) {
                 answer.setNeedsCleanup(true);
             }
             return answer;
