@@ -849,6 +849,11 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return true;
     }
 
+    @Override
+    public boolean supportsOutOfBandBackupSync() {
+        return false;
+    }
+
     private static final class BackupExecutionResult {
         private final boolean success;
         private final Backup backup;
