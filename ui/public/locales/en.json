@@ -5464,7 +5464,7 @@
   "label.years": "Years",
   "label.infinite": "Infinite",
   "label.update.backupoffering": "Update Backup Offering",
-  "message.error.import.backup.offering": "For Commvuault backups, only one backup offering can be imported, and the backup offering already exists.",
+  "message.error.import.backup.offering": "For Commvuault, NetBackup backups, only one backup offering can be imported, and the backup offering already exists.",
   "label.hba.devices": "HBA Devices",
   "label.create.vhba": "Create vHBA",
   "message.confirm.create.vhba": "Do you want to create a vHBA?",
