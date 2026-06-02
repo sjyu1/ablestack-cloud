@@ -388,10 +388,10 @@ export default {
       return this.selectedAddNetworkType === 'isolated'
     },
     canListAvailableGuestIps () {
-      return this.isSelectedAddNetworkIsolated && 'listAvailableGuestIps' in this.$store.getters.apis
+      return this.isSelectedAddNetworkIsolated
     },
     canListEditNicAvailableGuestIps () {
-      return this.editNicResource.type === 'Isolated' && 'listAvailableGuestIps' in this.$store.getters.apis
+      return this.editNicResource.type === 'Isolated'
     }
   },
   methods: {
@@ -472,6 +472,8 @@ export default {
             ipaddress: selectedIp
           })
         }
+      }).catch(error => {
+        this.$notifyError(error)
       }).finally(() => {
         this.listIps.loading = false
       })
