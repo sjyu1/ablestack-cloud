@@ -88,19 +88,19 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
             since = "4.21.0")
     private String jobId;
 
-    @Parameter(name = "policyName",
+    @Parameter(name = ApiConstants.POLICY_ID,
             type = CommandType.STRING,
             required = false,
-            description = "the policy name for the NetBackup",
+            description = "the policy ID for the NetBackup",
             since = "4.21.0")
-    private String policyName;
+    private String policyId;
 
-    @Parameter(name = "maxChain",
+    @Parameter(name = ApiConstants.MAX_BACKUPS,
             type = CommandType.STRING,
             required = false,
             description = "max chain length for the NetBackup",
             since = "4.21.0")
-    private String maxChain;
+    private String maxBackups;
 
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
@@ -126,12 +126,12 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
         return jobId;
     }
 
-    public String getPolicyName() {
-        return policyName;
+    public String getPolicyId() {
+        return policyId;
     }
 
-    public String getMaxChain() {
-        return maxChain;
+    public String getMaxBackups() {
+        return maxBackups;
     }
 
     /////////////////////////////////////////////////////

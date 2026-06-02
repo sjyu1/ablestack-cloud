@@ -21,6 +21,7 @@ import javax.inject.Inject;
 import org.apache.cloudstack.acl.RoleType;
 import org.apache.cloudstack.api.APICommand;
 import org.apache.cloudstack.api.ApiCommandResourceType;
+import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.ApiErrorCode;
 import org.apache.cloudstack.api.BaseCmd;
 import org.apache.cloudstack.api.Parameter;
@@ -42,36 +43,36 @@ public class UpdateNetBackupCmd extends BaseCmd {
     @Inject
     private BackupManager backupManager;
 
-    @Parameter(name = "vmId",
+    @Parameter(name = ApiConstants.VIRTUAL_MACHINE_ID,
             type = CommandType.UUID,
             entityType = UserVmResponse.class,
             required = true,
             description = "ID of the Instance")
     private Long vmId;
 
-    @Parameter(name = "backupId",
+    @Parameter(name = ApiConstants.BACKUP_ID,
             type = CommandType.STRING,
             required = true,
             description = "NetBackup backup ID")
     private String backupId;
 
-    @Parameter(name = "jobId",
+    @Parameter(name = ApiConstants.JOB_ID,
             type = CommandType.STRING,
             required = false,
             description = "NetBackup async job ID used to correlate the CloudStack backup row")
     private String jobId;
 
-    @Parameter(name = "policyName",
+    @Parameter(name = ApiConstants.POLICY_ID,
             type = CommandType.STRING,
             required = false,
-            description = "NetBackup policy name")
-    private String policyName;
+            description = "NetBackup policy ID")
+    private String policyId;
 
-    @Parameter(name = "maxChain",
+    @Parameter(name = ApiConstants.MAX_BACKUPS,
             type = CommandType.STRING,
             required = false,
             description = "NetBackup max chain length")
-    private String maxChain;
+    private String maxBackups;
 
     public Long getVmId() {
         return vmId;
@@ -85,12 +86,12 @@ public class UpdateNetBackupCmd extends BaseCmd {
         return jobId;
     }
 
-    public String getPolicyName() {
-        return policyName;
+    public String getPolicyId() {
+        return policyId;
     }
 
-    public String getMaxChain() {
-        return maxChain;
+    public String getMaxBackups() {
+        return maxBackups;
     }
 
     @Override

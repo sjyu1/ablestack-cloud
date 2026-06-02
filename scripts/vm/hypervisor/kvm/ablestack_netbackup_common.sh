@@ -834,8 +834,8 @@ invoke_mold_create_backup() {
   local job_id=""
   local -a api_args=(
     "virtualmachineid" "${vm_id}"
-    "policyName" "${POLICY_NAME}"
-    "maxChain" "${MAX_INCREMENTAL_CHAIN}"
+    "policyid" "${POLICY_NAME}"
+    "maxbackups" "${MAX_INCREMENTAL_CHAIN}"
   )
 
   if [[ -n "${NETBACKUP_JOB_ID}" ]]; then
@@ -888,8 +888,8 @@ run_stage_vm_backup() {
 
   api_args=(
     "virtualmachineid" "${vm_id}"
-    "policyName" "${POLICY_NAME}"
-    "maxChain" "${MAX_INCREMENTAL_CHAIN}"
+    "policyid" "${POLICY_NAME}"
+    "maxbackups" "${MAX_INCREMENTAL_CHAIN}"
   )
   if [[ -n "${NETBACKUP_JOB_ID}" ]]; then
     api_args+=("jobid" "${NETBACKUP_JOB_ID}")

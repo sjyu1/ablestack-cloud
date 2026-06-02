@@ -1144,13 +1144,13 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID);
         backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId(), false);
-        if (StringUtils.isNotBlank(cmd.getPolicyName())) {
+        if (StringUtils.isNotBlank(cmd.getPolicyId())) {
             backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME);
-            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME, cmd.getPolicyName(), false);
+            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME, cmd.getPolicyId(), false);
         }
-        if (StringUtils.isNotBlank(cmd.getMaxChain())) {
+        if (StringUtils.isNotBlank(cmd.getMaxBackups())) {
             backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN);
-            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN, cmd.getMaxChain(), false);
+            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN, cmd.getMaxBackups(), false);
         }
         backupDao.loadDetails(backup);
         return true;
@@ -1169,7 +1169,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     vmId, ApiCommandResourceType.VirtualMachine.toString(),
                     true, 0);
 
-            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getJobId(), cmd.getPolicyName(), cmd.getMaxChain());
+            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getJobId(), cmd.getPolicyId(), cmd.getMaxBackups());
             if (!result.first()) {
                 throw new CloudRuntimeException("Failed to create VM backup for NetBackup");
             }
