@@ -230,9 +230,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         command.setBackupType(requestedBackupType);
         command.setCheckpointName(checkpointName);
         command.setBackupFiles(backupFiles);
-        command.setPolicyName(backupDetails.get(DETAIL_POLICY_NAME));
+        command.setPolicyId(backupDetails.get(DETAIL_POLICY_NAME));
         command.setJobId(backupDetails.get(DETAIL_JOB_ID));
-        command.setMaxChain(backupDetails.get(DETAIL_MAX_CHAIN));
+        command.setMaxBackups(backupDetails.get(DETAIL_MAX_CHAIN));
         if (incrementalBackup && latestBackup != null) {
             command.setParentBackupPath(getBackupDetail(latestBackup, DETAIL_PARENT_BACKUP_PATH,
                     latestBackup.getExternalId()));
