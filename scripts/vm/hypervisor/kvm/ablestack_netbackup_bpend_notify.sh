@@ -117,7 +117,9 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 ensure_runtime_dirs
+cleanup_stale_transient_state
 resolve_context "${1:-}" "${2:-}" "${3:-}" ""
+cleanup_runtime_history
 JOB_STATUS="$(resolve_status "$@")"
 acquire_lock
 

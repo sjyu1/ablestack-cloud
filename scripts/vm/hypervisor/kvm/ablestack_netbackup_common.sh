@@ -50,6 +50,8 @@ MOLD_API_RESPONSE_FORMAT="${MOLD_API_RESPONSE_FORMAT:-json}"
 MOLD_API_SKIP_TLS_VERIFY="${MOLD_API_SKIP_TLS_VERIFY:-false}"
 MOLD_ASYNC_JOB_POLL_INTERVAL="${MOLD_ASYNC_JOB_POLL_INTERVAL:-5}"
 MOLD_ASYNC_JOB_TIMEOUT="${MOLD_ASYNC_JOB_TIMEOUT:-1800}"
+NETBACKUP_TRANSIENT_STATE_RETENTION_MINUTES="${NETBACKUP_TRANSIENT_STATE_RETENTION_MINUTES:-1440}"
+NETBACKUP_RUNTIME_MAX_FILES="${NETBACKUP_RUNTIME_MAX_FILES:-14}"
 
 verb="${verb:-0}"
 POLICY_NAME="${POLICY_NAME:-}"
@@ -95,6 +97,50 @@ ensure_runtime_dirs() {
            "${STATE_ROOT}/locks" \
            "${STATE_ROOT}/sessions" \
            "${STATE_ROOT}/runtime"
+}
+
+cleanup_stale_transient_state() {
+  local retention_minutes="${NETBACKUP_TRANSIENT_STATE_RETENTION_MINUTES}"
+  local cleaned=0
+  local file=""
+
+  [[ "${retention_minutes}" =~ ^[1-9][0-9]*$ ]] || return 0
+
+  while IFS= read -r file; do
+    [[ -n "${file}" ]] || continue
+    rm -f "${file}"
+    cleaned=$((cleaned + 1))
+    log -ne "Removed stale NetBackup transient state file ${file}"
+  done < <(find "${STATE_ROOT}/contexts" "${STATE_ROOT}/sessions" -type f -mmin "+${retention_minutes}" 2>/dev/null)
+
+  if (( cleaned > 0 )); then
+    log -ne "Cleaned stale NetBackup transient state files count=${cleaned} retentionMinutes=${retention_minutes}"
+  fi
+}
+
+cleanup_runtime_history() {
+  local max_files="${NETBACKUP_RUNTIME_MAX_FILES}"
+  local cleaned=0
+  local runtime_dir=""
+  local file=""
+
+  [[ "${max_files}" =~ ^[1-9][0-9]*$ ]] || return 0
+  [[ -n "${POLICY_SAFE:-}" ]] || return 0
+
+  runtime_dir="${STATE_ROOT}/runtime/${POLICY_SAFE}"
+  [[ -d "${runtime_dir}" ]] || return 0
+
+  while IFS= read -r file; do
+    [[ -n "${file}" ]] || continue
+    rm -f "${file}"
+    cleaned=$((cleaned + 1))
+    log -ne "Removed old NetBackup runtime file ${file}"
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name '*.json' -print0 2>/dev/null | \
+    xargs -0 ls -1t 2>/dev/null | awk -v keep="${max_files}" 'NR > keep')
+
+  if (( cleaned > 0 )); then
+    log -ne "Cleaned old NetBackup runtime files count=${cleaned} policy=${POLICY_NAME:-${POLICY_SAFE}} keep=${max_files}"
+  fi
 }
 
 sanitize_name() {

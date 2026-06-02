@@ -54,7 +54,9 @@ cleanup_failed_pre_run() {
 }
 
 ensure_runtime_dirs
+cleanup_stale_transient_state
 resolve_context "${1:-}" "${2:-}" "${3:-}" "${4:-}"
+cleanup_runtime_history
 load_policy_schedule_config
 acquire_lock
 sanity_checks
