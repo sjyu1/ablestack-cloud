@@ -187,7 +187,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return new Pair<>(result.success, result.backup);
     }
 
-    @Override
     public Pair<Boolean, Backup> takeNetBackup(final VirtualMachine vm, final String jobId, final String policyName, final String maxChain) {
         final Host host = getVMHypervisorHostForBackup(vm);
         validateNoKvmFileBasedVmSnapshots(vm);
@@ -223,7 +222,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 incrementalBackup, jobId, policyName, maxChain);
 
         final BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
-        final AblestackNetBackupTakeBackupCommand command = new AblestackNetBackupTakeBackupCommand(vm.getInstanceName(), backupPath);
+        AblestackNetBackupTakeBackupCommand command = new AblestackNetBackupTakeBackupCommand(vm.getInstanceName(), backupPath);
         command.setQuiesce(quiesceVM);
         command.setVolumePools(volumePoolsAndPaths.first());
         command.setVolumePaths(volumePoolsAndPaths.second());
