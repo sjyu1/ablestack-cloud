@@ -262,7 +262,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
     private static final String DETAIL_NETBACKUP_BACKUP_ID = "netbackup.backup.id";
-    private static final String DETAIL_NETBACKUP_JOB_ID = "netbackup.job.id";
     private static final String DETAIL_NETBACKUP_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_NETBACKUP_MAX_CHAIN = "netbackup.max.chain";
     private List<BackupProvider> backupProviders;
@@ -1134,13 +1133,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     final BackupOffering offering = backupOfferingDao.findById(candidate.getBackupOfferingId());
                     return offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider());
                 })
-                .filter(candidate -> StringUtils.isBlank(cmd.getJobId()) ||
-                        StringUtils.equals(candidate.getDetail(DETAIL_NETBACKUP_JOB_ID), cmd.getJobId()))
+                .filter(candidate -> StringUtils.equals(candidate.getExternalId(), cmd.getExternalId()))
                 .max(Comparator.comparing(BackupVO::getDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(BackupVO::getId))
                 .orElseThrow(() -> new CloudRuntimeException(String.format(
-                        "Unable to find NetBackup backup row for VM [%s] and jobId [%s].",
-                        vm.getInstanceName(), cmd.getJobId())));
+                        "Unable to find NetBackup backup row for VM [%s] and external ID [%s].",
+                        vm.getInstanceName(), cmd.getExternalId())));
 
         backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID);
         backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId(), false);
@@ -1169,7 +1167,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     vmId, ApiCommandResourceType.VirtualMachine.toString(),
                     true, 0);
 
-            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getJobId(), cmd.getPolicyId(), cmd.getMaxBackups());
+            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getPolicyId(), cmd.getMaxBackups());
             if (!result.first()) {
                 throw new CloudRuntimeException("Failed to create VM backup for NetBackup");
             }

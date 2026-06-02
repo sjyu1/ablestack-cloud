@@ -81,13 +81,6 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
             since = "4.21.0")
     private Boolean quiesceVM;
 
-    @Parameter(name = ApiConstants.JOB_ID,
-            type = CommandType.STRING,
-            required = false,
-            description = "the job ID for the NetBackup",
-            since = "4.21.0")
-    private String jobId;
-
     @Parameter(name = ApiConstants.POLICY_ID,
             type = CommandType.STRING,
             required = false,
@@ -120,10 +113,6 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
 
     public Boolean getQuiesceVM() {
         return quiesceVM;
-    }
-
-    public String getJobId() {
-        return jobId;
     }
 
     public String getPolicyId() {

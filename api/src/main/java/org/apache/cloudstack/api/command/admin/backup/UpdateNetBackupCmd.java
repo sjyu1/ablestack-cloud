@@ -56,11 +56,11 @@ public class UpdateNetBackupCmd extends BaseCmd {
             description = "NetBackup backup ID")
     private String backupId;
 
-    @Parameter(name = ApiConstants.JOB_ID,
+    @Parameter(name = ApiConstants.EXTERNAL_ID,
             type = CommandType.STRING,
-            required = false,
-            description = "NetBackup async job ID used to correlate the CloudStack backup row")
-    private String jobId;
+            required = true,
+            description = "Mold backup path used to correlate the mold backup row")
+    private String externalId;
 
     @Parameter(name = ApiConstants.POLICY_ID,
             type = CommandType.STRING,
@@ -82,8 +82,8 @@ public class UpdateNetBackupCmd extends BaseCmd {
         return backupId;
     }
 
-    public String getJobId() {
-        return jobId;
+    public String getExternalId() {
+        return externalId;
     }
 
     public String getPolicyId() {

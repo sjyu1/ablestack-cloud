@@ -102,7 +102,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_BACKUP_ENGINE = "netbackup.backup.engine";
     private static final String DETAIL_RBD_DISK_PATHS = "netbackup.rbd.disk.paths";
     private static final String DETAIL_POLICY_NAME = "netbackup.policy.name";
-    private static final String DETAIL_JOB_ID = "netbackup.job.id";
     private static final String DETAIL_MAX_CHAIN = "netbackup.max.chain";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final long STALE_BACKUP_THRESHOLD_MS = 24L * 60L * 60L * 1000L;
@@ -177,18 +176,18 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final BackupVO latestBackup = getLatestBackedUpBackup(vm);
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, backupScheduleId);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, host, vmVolumes, volumePoolsAndPaths, latestBackup,
-                incrementalBackup, null, null, null);
+                incrementalBackup, null, null);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             cleanupFailedBackupForFullRetry(result.backup);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
             result = executeBackup(vm, quiesceVM, host, vmVolumes, volumePoolsAndPaths, null, false,
-                    null, null, null);
+                    null, null);
         }
         return new Pair<>(result.success, result.backup);
     }
 
     @Override
-    public Pair<Boolean, Backup> takeNetBackup(final VirtualMachine vm, final String jobId, final String policyName, final String maxChain) {
+    public Pair<Boolean, Backup> takeNetBackup(final VirtualMachine vm, final String policyName, final String maxChain) {
         final Host host = getVMHypervisorHostForBackup(vm);
         validateNoKvmFileBasedVmSnapshots(vm);
 
@@ -200,27 +199,26 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final BackupVO latestBackup = getLatestBackedUpBackup(vm);
         final boolean incrementalBackup = shouldUseIncrementalBackupForNetBackup(vm, latestBackup, maxChain);
         BackupExecutionResult result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, latestBackup,
-                incrementalBackup, jobId, policyName, maxChain);
+                incrementalBackup, policyName, maxChain);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             cleanupFailedBackupForFullRetry(result.backup);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
             result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, null, false,
-                    jobId, policyName, maxChain);
+                    policyName, maxChain);
         }
         return new Pair<>(result.success, result.backup);
     }
 
     private BackupExecutionResult executeBackup(final VirtualMachine vm, final Boolean quiesceVM, final Host vmHost,
             final List<VolumeVO> vmVolumes, final Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths,
-            final Backup latestBackup, final boolean incrementalBackup, final String jobId,
-            final String policyName, final String maxChain) {
+            final Backup latestBackup, final boolean incrementalBackup, final String policyName, final String maxChain) {
         final String backupPath = buildBackupPath(vm);
         final String checkpointName = backupPath.substring(backupPath.lastIndexOf("/") + 1);
         final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
         final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
         final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup,
-                incrementalBackup, jobId, policyName, maxChain);
+                incrementalBackup, policyName, maxChain);
 
         final BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         AblestackNetBackupTakeBackupCommand command = new AblestackNetBackupTakeBackupCommand(vm.getInstanceName(), backupPath);
@@ -231,7 +229,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         command.setCheckpointName(checkpointName);
         command.setBackupFiles(backupFiles);
         command.setPolicyId(backupDetails.get(DETAIL_POLICY_NAME));
-        command.setJobId(backupDetails.get(DETAIL_JOB_ID));
         command.setMaxBackups(backupDetails.get(DETAIL_MAX_CHAIN));
         if (incrementalBackup && latestBackup != null) {
             command.setParentBackupPath(getBackupDetail(latestBackup, DETAIL_PARENT_BACKUP_PATH,
@@ -427,8 +424,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     private Map<String, String> getBackupDetails(final VirtualMachine vm, final String backupPath, final String checkpointName, final String backupEngine,
-            final Backup latestBackup, final boolean incrementalBackup, final String jobId,
-            final String policyName, final String maxChain) {
+            final Backup latestBackup, final boolean incrementalBackup, final String policyName, final String maxChain) {
         final Map<String, String> details = new HashMap<>();
         final Map<String, String> backupDetailsFromVm = backupManager.getBackupDetailsFromVM(vm);
         if (backupDetailsFromVm != null) {
@@ -436,9 +432,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
         if (StringUtils.isNotBlank(policyName)) {
             details.put(DETAIL_POLICY_NAME, policyName);
-        }
-        if (StringUtils.isNotBlank(jobId)) {
-            details.put(DETAIL_JOB_ID, jobId);
         }
         if (StringUtils.isNotBlank(maxChain)) {
             details.put(DETAIL_MAX_CHAIN, maxChain);

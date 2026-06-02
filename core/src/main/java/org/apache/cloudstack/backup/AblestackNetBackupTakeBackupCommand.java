@@ -41,7 +41,6 @@ public class AblestackNetBackupTakeBackupCommand extends Command {
     private Map<String, String> parentCheckpointXmlChain;
     private List<String> backupFiles;
     private String policyId;
-    private String jobId;
     private String maxBackups;
 
     public AblestackNetBackupTakeBackupCommand(final String vmName, final String backupPath) {
@@ -160,14 +159,6 @@ public class AblestackNetBackupTakeBackupCommand extends Command {
 
     public void setPolicyId(final String policyId) {
         this.policyId = policyId;
-    }
-
-    public String getJobId() {
-        return jobId;
-    }
-
-    public void setJobId(final String jobId) {
-        this.jobId = jobId;
     }
 
     public String getMaxBackups() {

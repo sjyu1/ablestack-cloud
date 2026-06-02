@@ -350,10 +350,10 @@ path = sys.argv[1]
 with open(path, "r", encoding="utf-8") as fh:
     payload = json.load(fh)
 for item in payload.get("vm_results", []):
-    if item.get("status") == "SUCCESS" and item.get("vm_id"):
+    if item.get("status") == "SUCCESS" and item.get("vm_id") and item.get("backup_path"):
         vm_id = item.get("vm_id", "")
-        job_id = item.get("jobid", "")
-        print(f"{vm_id}\t{job_id}")
+        backup_path = item.get("backup_path", "")
+        print(f"{vm_id}\t{backup_path}")
 PY
 }
 
@@ -838,10 +838,6 @@ invoke_mold_create_backup() {
     "maxbackups" "${MAX_INCREMENTAL_CHAIN}"
   )
 
-  if [[ -n "${NETBACKUP_JOB_ID}" ]]; then
-    api_args+=("jobid" "${NETBACKUP_JOB_ID}")
-  fi
-
   log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
 
   initial_response="$(invoke_mold_api \
@@ -891,9 +887,6 @@ run_stage_vm_backup() {
     "policyid" "${POLICY_NAME}"
     "maxbackups" "${MAX_INCREMENTAL_CHAIN}"
   )
-  if [[ -n "${NETBACKUP_JOB_ID}" ]]; then
-    api_args+=("jobid" "${NETBACKUP_JOB_ID}")
-  fi
 
   log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
   if ! initial_response="$(invoke_mold_api \
