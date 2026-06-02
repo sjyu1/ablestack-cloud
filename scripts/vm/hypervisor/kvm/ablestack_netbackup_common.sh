@@ -433,9 +433,39 @@ vm_is_selected() {
   if match_csv_glob "${vm_name}" "${VM_EXCLUDE}"; then
     return 1
   fi
+  if [[ "${VM_INCLUDE}" == "*" ]] && vm_is_excluded_from_wildcard_selection "${vm_name}"; then
+    return 1
+  fi
   if match_csv_glob "${vm_name}" "${VM_INCLUDE}"; then
     return 0
   fi
+  return 1
+}
+
+vm_is_excluded_from_wildcard_selection() {
+  local vm_name="$1"
+  local vm_name_lower
+  vm_name_lower="$(printf '%s' "${vm_name}" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ "${vm_name}" =~ ^v-[0-9]+-VM$ ]]; then
+    return 0
+  fi
+  if [[ "${vm_name}" =~ ^r-[0-9]+-VM$ ]]; then
+    return 0
+  fi
+  if [[ "${vm_name}" =~ ^s-[0-9]+-VM$ ]]; then
+    return 0
+  fi
+  if [[ "${vm_name_lower}" == *ccvm* ]]; then
+    return 0
+  fi
+  if [[ "${vm_name_lower}" == *scvm* ]]; then
+    return 0
+  fi
+  if [[ "${vm_name_lower}" == *ablestack-template* ]]; then
+    return 0
+  fi
+
   return 1
 }
 
@@ -450,7 +480,7 @@ list_target_vms() {
     if vm_is_selected "${vm_name}"; then
       builtin echo "${vm_name}"
     else
-      log -ne "Skipping VM ${vm_name}: not selected by VM_INCLUDE/VM_EXCLUDE"
+      log -ne "Skipping VM ${vm_name}: not selected by VM_INCLUDE/VM_EXCLUDE or excluded from wildcard selection"
     fi
   done < <(list_running_vms)
 }
