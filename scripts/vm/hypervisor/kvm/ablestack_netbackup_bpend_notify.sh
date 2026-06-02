@@ -74,14 +74,18 @@ update_netbackup_backup_ids() {
       response="$(invoke_mold_api "POST" "${MOLD_CREATE_BACKUP_API_URL}" "updateNetBackup" \
         "vmId" "${vm_id}" \
         "backupId" "${BACKUP_ID}" \
-        "jobId" "${job_id}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id} jobId=${job_id}"
+        "jobId" "${job_id}" \
+        "policyName" "${POLICY_NAME}" \
+        "maxChain" "${MAX_INCREMENTAL_CHAIN}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id} jobId=${job_id}"
     else
       response="$(invoke_mold_api "POST" "${MOLD_CREATE_BACKUP_API_URL}" "updateNetBackup" \
         "vmId" "${vm_id}" \
-        "backupId" "${BACKUP_ID}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id}"
+        "backupId" "${BACKUP_ID}" \
+        "policyName" "${POLICY_NAME}" \
+        "maxChain" "${MAX_INCREMENTAL_CHAIN}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id}"
     fi
     updated=$((updated + 1))
-    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} jobId=${job_id}"
+    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} jobId=${job_id} policyName=${POLICY_NAME} maxChain=${MAX_INCREMENTAL_CHAIN}"
   done < <(list_runtime_success_vm_refs)
 
   builtin echo "${updated}"

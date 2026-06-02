@@ -263,6 +263,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
     private static final String DETAIL_NETBACKUP_BACKUP_ID = "netbackup.backup.id";
     private static final String DETAIL_NETBACKUP_JOB_ID = "netbackup.job.id";
+    private static final String DETAIL_NETBACKUP_POLICY_NAME = "netbackup.policy.name";
+    private static final String DETAIL_NETBACKUP_MAX_CHAIN = "netbackup.max.chain";
     private List<BackupProvider> backupProviders;
     private final List<PostRestoreMaintenanceTask> postRestoreMaintenanceTasks = Collections.synchronizedList(new ArrayList<>());
 
@@ -1142,6 +1144,14 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID);
         backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId(), false);
+        if (StringUtils.isNotBlank(cmd.getPolicyName())) {
+            backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME);
+            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME, cmd.getPolicyName(), false);
+        }
+        if (StringUtils.isNotBlank(cmd.getMaxChain())) {
+            backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN);
+            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN, cmd.getMaxChain(), false);
+        }
         backupDao.loadDetails(backup);
         return true;
     }

@@ -61,6 +61,18 @@ public class UpdateNetBackupCmd extends BaseCmd {
             description = "NetBackup async job ID used to correlate the CloudStack backup row")
     private String jobId;
 
+    @Parameter(name = "policyName",
+            type = CommandType.STRING,
+            required = false,
+            description = "NetBackup policy name")
+    private String policyName;
+
+    @Parameter(name = "maxChain",
+            type = CommandType.STRING,
+            required = false,
+            description = "NetBackup max chain length")
+    private String maxChain;
+
     public Long getVmId() {
         return vmId;
     }
@@ -71,6 +83,14 @@ public class UpdateNetBackupCmd extends BaseCmd {
 
     public String getJobId() {
         return jobId;
+    }
+
+    public String getPolicyName() {
+        return policyName;
+    }
+
+    public String getMaxChain() {
+        return maxChain;
     }
 
     @Override

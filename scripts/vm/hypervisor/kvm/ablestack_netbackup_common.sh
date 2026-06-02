@@ -69,6 +69,10 @@ RUNTIME_FILE=""
 LAST_MOLD_JOB_ID=""
 LAST_MOLD_FINAL_RESPONSE=""
 
+if [[ "${NETBACKUP_JOB_ID}" == "0" ]]; then
+  NETBACKUP_JOB_ID=""
+fi
+
 log() {
   local ts
   ts="$(date '+%Y-%m-%d %H-%M-%S>')"
@@ -307,6 +311,14 @@ for item in payload.get("vm_results", []):
 PY
 }
 
+runtime_has_successful_vm_results() {
+  local success_count=0
+  [[ -n "${RUNTIME_FILE}" && -f "${RUNTIME_FILE}" ]] || return 1
+  success_count="$(read_runtime_count "success_count" 2>/dev/null || echo 0)"
+  [[ "${success_count}" =~ ^[0-9]+$ ]] || success_count=0
+  (( success_count > 0 ))
+}
+
 discover_vm_backup_path() {
   local vm_name="$1"
   local vm_root="${BACKUP_STAGING_ROOT}/${vm_name}"
@@ -513,6 +525,11 @@ netbackup_job_success_confirmed() {
     job_status=$(bpdbjobs -most_columns -jobid "${NETBACKUP_JOB_ID}" 2>/dev/null | awk -F, 'NR==1 {print $4}')
     [[ "${job_status}" == "0" ]] && return 0
     return 1
+  fi
+
+  if runtime_has_successful_vm_results; then
+    log -ne "NetBackup client status is 0 and runtime JSON contains successful VM backup results. Proceeding with metadata update and cleanup."
+    return 0
   fi
 
   if [[ "${NETBACKUP_REQUIRE_JOB_SUCCESS}" == "true" ]]; then
@@ -770,7 +787,7 @@ invoke_mold_create_backup() {
   local final_response=""
   local job_id=""
   local -a api_args=(
-    "vmId" "${vm_id}"
+    "virtualmachineid" "${vm_id}"
     "policyName" "${POLICY_NAME}"
     "maxChain" "${MAX_INCREMENTAL_CHAIN}"
   )
@@ -824,7 +841,7 @@ run_stage_vm_backup() {
   fi
 
   api_args=(
-    "vmId" "${vm_id}"
+    "virtualmachineid" "${vm_id}"
     "policyName" "${POLICY_NAME}"
     "maxChain" "${MAX_INCREMENTAL_CHAIN}"
   )
