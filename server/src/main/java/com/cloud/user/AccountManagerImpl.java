@@ -309,8 +309,6 @@ public class AccountManagerImpl extends ManagerBase implements AccountManager, M
     @Inject
     private UserDataDao userDataDao;
     @Inject
-    private NetworkPermissionDao networkPermissionDao;
-    @Inject
     private SslCertDao sslCertDao;
 
     private List<QuerySelector> _querySelectors;

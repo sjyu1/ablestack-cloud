@@ -199,9 +199,6 @@ public class AccountManagetImplTestBase {
     UserDataDao userDataDao;
     @Mock
     SslCertDao sslCertDao;
-    @Mock
-    NetworkPermissionDao networkPermissionDaoMock;
-
     @Spy
     @InjectMocks
     AccountManagerImpl accountManagerImpl;
