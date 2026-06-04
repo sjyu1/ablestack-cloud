@@ -2338,18 +2338,6 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
         return lb;
     }
 
-    private void validateInputsForExternalNetworkProvider(LoadBalancerVO lb, String algorithm, String protocol) {
-        Network network = _networkDao.findById(lb.getNetworkId());
-        if (_networkOfferingServiceDao.canProviderSupportServiceInNetworkOffering(network.getNetworkOfferingId(), Service.Lb, Provider.Netris)) {
-            if (Objects.nonNull(algorithm)) {
-                throw new InvalidParameterValueException(String.format("Algorithm: %s specified for Netris Provider is not supported.", algorithm));
-            }
-            if (Objects.nonNull(protocol) && "tcp-proxy".equalsIgnoreCase(protocol)) {
-                throw new InvalidParameterValueException("TCP Proxy protocol is not supported for Netris Provider.");
-            }
-        }
-    }
-
     private void removeCertMapIfExists(LoadBalancerVO lb) {
         LoadBalancerCertMapVO loadBalancerCertMapVO = _lbCertMapDao.findByLbRuleId(lb.getId());
         if (loadBalancerCertMapVO != null) {
