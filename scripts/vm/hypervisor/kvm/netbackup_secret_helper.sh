@@ -19,17 +19,18 @@
 
 set -euo pipefail
 
-SECRET_CIPHER="${SECRET_CIPHER:-aes-256-cbc}"
 SECRET_KEY_FILE="${SECRET_KEY_FILE:-/root/.ssh/ablestack.key}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_HELPER="${SCRIPT_DIR}/netbackup_secret_helper.py"
 
 usage() {
   cat <<EOF
 Usage:
+  $(basename "$0") encrypt <secret_file>
   $(basename "$0") decrypt <secret_file>
 
 Environment:
   SECRET_KEY_FILE               Key file used to decrypt the secret file
-  SECRET_CIPHER                 OpenSSL cipher, default: aes-256-cbc
 EOF
 }
 
@@ -56,20 +57,20 @@ validate_secret_key_file() {
   [[ "${mode}" == "600" ]] || fail "Secret key file must have permission 600: ${SECRET_KEY_FILE} (current: ${mode})"
 }
 
-decrypt_secret() {
-  local secret_file="$1"
-  [[ -f "${secret_file}" ]] || fail "Secret file not found: ${secret_file}"
-  validate_secret_key_file
-
-  openssl enc -"${SECRET_CIPHER}" -d -pbkdf2 -pass file:"${SECRET_KEY_FILE}" -in "${secret_file}"
-}
-
 ACTION="${1:-}"
 
+[[ -f "${PYTHON_HELPER}" ]] || fail "Python helper not found: ${PYTHON_HELPER}"
+
 case "${ACTION}" in
+  encrypt)
+    shift
+    validate_secret_key_file
+    exec python3 "${PYTHON_HELPER}" encrypt "${1:-}"
+    ;;
   decrypt)
     shift
-    decrypt_secret "${1:-}"
+    validate_secret_key_file
+    exec python3 "${PYTHON_HELPER}" decrypt "${1:-}"
     ;;
   -h|--help|help)
     usage

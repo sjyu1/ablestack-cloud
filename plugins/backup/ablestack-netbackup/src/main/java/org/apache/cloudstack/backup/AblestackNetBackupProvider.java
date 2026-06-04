@@ -43,12 +43,15 @@ import com.cloud.utils.Ternary;
 import com.cloud.utils.component.AdapterBase;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.ssh.SshHelper;
+import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine;
+import com.cloud.vm.dao.VMInstanceDao;
 import com.cloud.vm.snapshot.VMSnapshot;
 import com.cloud.vm.snapshot.VMSnapshotDetailsVO;
 import com.cloud.vm.snapshot.VMSnapshotVO;
 import com.cloud.vm.snapshot.dao.VMSnapshotDao;
 import com.cloud.vm.snapshot.dao.VMSnapshotDetailsDao;
+import org.apache.cloudstack.backup.netbackup.AblestackNetBackupClient;
 import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupDetailsDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDao;
@@ -65,6 +68,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import javax.inject.Inject;
+import java.net.URISyntaxException;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -74,9 +80,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
@@ -101,10 +109,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_PARENT_CHECKPOINT_PATH = "netbackup.parent.checkpoint.path";
     private static final String DETAIL_BACKUP_ENGINE = "netbackup.backup.engine";
     private static final String DETAIL_RBD_DISK_PATHS = "netbackup.rbd.disk.paths";
+    private static final String DETAIL_BACKUP_ID = "netbackup.backup.id";
     private static final String DETAIL_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_MAX_CHAIN = "netbackup.max.chain";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final long STALE_BACKUP_THRESHOLD_MS = 24L * 60L * 60L * 1000L;
+    private static final long NETBACKUP_SYNC_DELETE_GRACE_MS = 10L * 60L * 1000L;
     private static final String NETBACKUP_OFFERING_NAME = "netbackup";
     private static final String NETBACKUP_OFFERING_EXTERNAL_ID = "netbackup";
 
@@ -153,6 +163,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private BackupManager backupManager;
     @Inject
     private ResourceManager resourceManager;
+    @Inject
+    private VMInstanceDao vmInstanceDao;
     @Inject
     private DiskOfferingDao diskOfferingDao;
     @Inject
@@ -597,6 +609,23 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return host;
     }
 
+    private Host resolveRestoreHost(final VirtualMachine vm, final String hostIp) {
+        if (StringUtils.isNotBlank(hostIp)) {
+            Host host = hostDao.findByIp(hostIp);
+            if (host == null) {
+                host = hostDao.findByName(hostIp);
+            }
+            if (host == null) {
+                throw new CloudRuntimeException(String.format("Unable to find restore host [%s] for NetBackup restore", hostIp));
+            }
+            if (!Status.Up.equals(host.getStatus()) || !Hypervisor.HypervisorType.KVM.equals(host.getHypervisorType())) {
+                throw new CloudRuntimeException(String.format("Restore host [%s] is not an available KVM host for NetBackup restore", host.getName()));
+            }
+            return host;
+        }
+        return getVMHypervisorHostForBackup(vm);
+    }
+
     private Long getClusterIdFromRootVolume(final VirtualMachine vm) {
         final VolumeVO rootVolume = volumeDao.getInstanceRootVolume(vm.getId());
         if (rootVolume != null) {
@@ -707,28 +736,188 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean deleteBackup(final Backup backup, final boolean forced) {
-        throw new UnsupportedOperationException("NetBackup delete is not implemented yet");
+        final AblestackNetBackupClient.ExpireImageResult result =
+                getClient(backup.getZoneId()).expireBackupImage(backup.getExternalId(), 1);
+        if (!result.isCompleted()) {
+            final String ticketMessage = StringUtils.isNotBlank(result.getMpaTicket())
+                    ? String.format("NetBackup image expiration requires MPA approval. Ticket: %s", result.getMpaTicket())
+                    : "NetBackup image expiration requires MPA approval.";
+            throw new CloudRuntimeException(ticketMessage);
+        }
+        return true;
     }
 
     @Override
     public Pair<Boolean, String> restoreBackupToVM(final VirtualMachine vm, final Backup backup, final String hostIp, final String dataStoreUuid) {
-        return new Pair<>(false, "NetBackup restore is not implemented yet");
+        return restoreVirtualMachine(vm, backup, hostIp);
     }
 
     @Override
     public Pair<Boolean, String> restoreBackupToVM(final Long backupId, final String vmName) {
-        return new Pair<>(false, "NetBackup restore is not implemented yet");
+        final Backup backup = backupDao.findByIdIncludingRemoved(backupId);
+        if (backup == null) {
+            return new Pair<>(false, String.format("Backup [%s] was not found for NetBackup restore", backupId));
+        }
+
+        final VMInstanceVO vm = vmInstanceDao.findVMByInstanceName(vmName);
+        if (vm == null) {
+            return new Pair<>(false, String.format("VM [%s] was not found for NetBackup restore", vmName));
+        }
+
+        return restoreVirtualMachine(vm, backup, null);
     }
 
     @Override
     public boolean restoreVMFromBackup(final VirtualMachine vm, final Backup backup) {
-        return false;
+        return restoreVirtualMachine(vm, backup, null).first();
+    }
+
+    private Pair<Boolean, String> restoreVirtualMachine(final VirtualMachine vm, final Backup backup, final String restoreHostIp) {
+        validateNoKvmFileBasedVmSnapshots(vm);
+        loadBackupDetailsIfNeeded(backup);
+        validateRestoreChainIntegrity(backup);
+        final Host host = resolveRestoreHost(vm, restoreHostIp);
+        final List<Backup> restoreChain = getRestoreChainForBackup(backup);
+        getClient(vm.getDataCenterId()).restoreBackupChain(host.getName(), host.getName(), restoreChain);
+
+        final List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
+        if (backupVolumes == null || backupVolumes.isEmpty()) {
+            throw new CloudRuntimeException(String.format("Backup [%s] does not contain backed up volume information.", backup.getUuid()));
+        }
+
+        final List<String> backedVolumesUUIDs = backupVolumes.stream()
+                .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                .map(Backup.VolumeInfo::getUuid)
+                .collect(Collectors.toList());
+
+        final List<VolumeVO> restoreVolumes = volumeDao.findByInstance(vm.getId()).stream()
+                .sorted(Comparator.comparingLong(VolumeVO::getDeviceId))
+                .collect(Collectors.toList());
+        if (restoreVolumes.size() != backupVolumes.size()) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to restore VM [%s] from NetBackup [%s] because the backup has [%s] disks but the VM has [%s] disks.",
+                    vm.getInstanceName(), backup.getUuid(), backupVolumes.size(), restoreVolumes.size()));
+        }
+
+        final AblestackNetBackupRestoreBackupCommand restoreCommand = new AblestackNetBackupRestoreBackupCommand();
+        restoreCommand.setBackupPath(backup.getExternalId());
+        restoreCommand.setVmName(vm.getName());
+        restoreCommand.setBackupVolumesUUIDs(backedVolumesUUIDs);
+        restoreCommand.setBackupFiles(getBackupFiles(backupVolumes, backup));
+        restoreCommand.setBackupFileChains(getBackupFileChains(backupVolumes, backup));
+        restoreCommand.setVolumeChainStates(getVolumeChainStates(backupVolumes, backup));
+        final Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(restoreVolumes);
+        restoreCommand.setRestoreVolumePools(volumePoolsAndPaths.first());
+        restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
+        restoreCommand.setVmExists(vm.getRemoved() == null);
+        restoreCommand.setVmState(vm.getState());
+        restoreCommand.setRestorePlan(createRestorePlan(false));
+        restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
+
+        final BackupAnswer answer;
+        try {
+            answer = (BackupAnswer) agentManager.send(host.getId(), restoreCommand);
+        } catch (final AgentUnavailableException e) {
+            throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup restore", e);
+        } catch (final OperationTimedoutException e) {
+            throw new CloudRuntimeException("Operation to restore NetBackup backup timed out, please try again", e);
+        }
+        return new Pair<>(answer != null && answer.getResult(), answer != null ? answer.getDetails() : null);
     }
 
     @Override
     public Pair<Boolean, String> restoreBackedUpVolume(final Backup backup, final Backup.VolumeInfo backupVolumeInfo, final String hostIp,
             final String dataStoreUuid, final Pair<String, VirtualMachine.State> vmNameAndState) {
-        return new Pair<>(false, "NetBackup volume restore is not implemented yet");
+        loadBackupDetailsIfNeeded(backup);
+        validateRestoreChainIntegrity(backup);
+
+        final StoragePoolVO pool = primaryDataStoreDao.findByUuid(dataStoreUuid);
+        if (pool == null) {
+            throw new CloudRuntimeException(String.format("Unable to find datastore [%s] for NetBackup volume restore", dataStoreUuid));
+        }
+
+        HostVO restoreHost = hostDao.findByIp(hostIp);
+        if (restoreHost == null) {
+            restoreHost = hostDao.findByName(hostIp);
+        }
+        if (restoreHost == null) {
+            throw new CloudRuntimeException(String.format("Unable to find host [%s] for NetBackup volume restore", hostIp));
+        }
+
+        final Backup.VolumeInfo matchingVolume = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), backupVolumeInfo.getUuid());
+        if (matchingVolume == null) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to find volume [%s] in backed up volumes for backup [%s]", backupVolumeInfo.getUuid(), backup.getUuid()));
+        }
+
+        final DiskOffering diskOffering = diskOfferingDao.findByUuid(backupVolumeInfo.getDiskOfferingId());
+        if (diskOffering == null) {
+            throw new CloudRuntimeException(String.format("Unable to find disk offering [%s] for restored volume",
+                    backupVolumeInfo.getDiskOfferingId()));
+        }
+
+        final List<Backup> restoreChain = getRestoreChainForBackup(backup);
+        getClient(backup.getZoneId()).restoreBackupChain(restoreHost.getName(), restoreHost.getName(), restoreChain);
+
+        final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
+                backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
+        final String volumeUuid = UUID.randomUUID().toString();
+        restoredVolume.setName("RestoredVol-" + backupVolumeInfo.getUuid());
+        restoredVolume.setProvisioningType(diskOffering.getProvisioningType());
+        restoredVolume.setUpdated(new Date());
+        restoredVolume.setUuid(volumeUuid);
+        restoredVolume.setRemoved(null);
+        restoredVolume.setDisplayVolume(true);
+        restoredVolume.setPoolId(pool.getId());
+        restoredVolume.setPoolType(pool.getPoolType());
+        restoredVolume.setPath(restoredVolume.getUuid());
+        restoredVolume.setState(Volume.State.Copying);
+        restoredVolume.setSize(backupVolumeInfo.getSize());
+        restoredVolume.setDiskOfferingId(diskOffering.getId());
+        restoredVolume.setFormat(pool.getPoolType() != Storage.StoragePoolType.RBD ? Storage.ImageFormat.QCOW2 : Storage.ImageFormat.RAW);
+
+        final AblestackNetBackupRestoreBackupCommand restoreCommand = new AblestackNetBackupRestoreBackupCommand();
+        restoreCommand.setBackupPath(backup.getExternalId());
+        restoreCommand.setVmName(vmNameAndState.first());
+        restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(matchingVolume) : matchingVolume.getPath()));
+        if (!isLegacyBackup(backup)) {
+            restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(matchingVolume, backup)));
+        }
+        restoreCommand.setVolumeChainStates(getVolumeChainStates(Collections.singletonList(matchingVolume), backup));
+        final String restoreVolumePath = String.format("%s/%s", getVolumePathPrefix(pool), volumeUuid);
+        restoreCommand.setRestoreVolumePaths(Collections.singletonList(restoreVolumePath));
+        final DataStore dataStore = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
+        if (dataStore == null) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to get primary datastore TO for pool [%s] while restoring volume [%s]", pool.getUuid(), backupVolumeInfo.getUuid()));
+        }
+        restoreCommand.setRestoreVolumePools(Collections.singletonList((PrimaryDataStoreTO) dataStore.getTO()));
+        restoreCommand.setDiskType(matchingVolume.getType().name().toLowerCase(Locale.ROOT));
+        restoreCommand.setVmExists(null);
+        restoreCommand.setVmState(vmNameAndState.second());
+        restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
+        restoreCommand.setRestorePlan(createRestorePlan(false));
+        restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
+
+        final BackupAnswer answer;
+        try {
+            answer = (BackupAnswer) agentManager.send(restoreHost.getId(), restoreCommand);
+        } catch (AgentUnavailableException e) {
+            throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup restore");
+        } catch (OperationTimedoutException e) {
+            throw new CloudRuntimeException("Operation to restore backed up volume timed out, please try again");
+        }
+
+        if (answer != null && answer.getResult()) {
+            try {
+                volumeDao.persist(restoredVolume);
+            } catch (Exception e) {
+                throw new CloudRuntimeException("Unable to create restored volume due to: " + e);
+            }
+            return new Pair<>(true, restoredVolume.getUuid());
+        }
+
+        return new Pair<>(false, answer != null ? answer.getDetails() : "NetBackup restore agent returned no response");
     }
 
     @Override
@@ -737,17 +926,41 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public List<Backup.RestorePoint> listRestorePoints(final VirtualMachine vm) {
-        return Collections.emptyList();
+        final List<Backup.RestorePoint> restorePoints = new ArrayList<>();
+        for (final Backup backup : backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
+            if (!Backup.Status.BackedUp.equals(backup.getStatus())
+                    || backup.getDate() == null
+                    || StringUtils.isBlank(backup.getExternalId())) {
+                continue;
+            }
+            final BackupOfferingVO backupOffering = backupOfferingDao.findById(backup.getBackupOfferingId());
+            if (backupOffering == null || !StringUtils.equalsIgnoreCase(getName(), backupOffering.getProvider())) {
+                continue;
+            }
+            restorePoints.add(new Backup.RestorePoint(
+                    backup.getExternalId(),
+                    backup.getDate(),
+                    backup.getType(),
+                    backup.getSize(),
+                    backup.getProtectedSize()));
+        }
+        restorePoints.sort(Comparator.comparing(Backup.RestorePoint::getCreated).reversed());
+        return restorePoints;
     }
 
     @Override
     public Backup createNewBackupEntryForRestorePoint(final Backup.RestorePoint restorePoint, final VirtualMachine vm) {
-        return null;
+        throw new CloudRuntimeException("NetBackup provider does not import out-of-band restore points.");
     }
 
     @Override
     public boolean supportsInstanceFromBackup() {
-        return false;
+        return true;
+    }
+
+    @Override
+    public boolean supportsRestorePlan() {
+        return true;
     }
 
     @Override
@@ -807,17 +1020,196 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return BackupService.class.getSimpleName();
     }
 
+    private List<String> getBackupFiles(final List<Backup.VolumeInfo> backedVolumes, final Backup backup) {
+        final List<String> backupFiles = new ArrayList<>();
+        final List<Backup.VolumeInfo> sortedVolumes = new ArrayList<>(backedVolumes);
+        sortedVolumes.sort(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId));
+        for (final Backup.VolumeInfo backedVolume : sortedVolumes) {
+            if (isLegacyBackup(backup)) {
+                backupFiles.add(getLegacyBackupFileName(backedVolume));
+            } else {
+                backupFiles.add(backedVolume.getPath());
+            }
+        }
+        return backupFiles;
+    }
+
+    private BackupRestorePlan createRestorePlan(final boolean attachRequired) {
+        return AblestackBackupFrameworkUtils.createRestorePlan(attachRequired, true);
+    }
+
+    private List<String> getBackupFileChains(final List<Backup.VolumeInfo> backupVolumes, final Backup backup) {
+        return backupVolumes.stream()
+                .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                .map(volume -> getBackupFileChain(volume, backup))
+                .collect(Collectors.toList());
+    }
+
+    private String getBackupFileChain(final Backup.VolumeInfo backupVolume, final Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        final List<String> chain = getBackupChain(backupVolume, backup);
+        return String.join(";", chain);
+    }
+
+    private List<BackupVolumeChainState> getVolumeChainStates(final List<Backup.VolumeInfo> backupVolumes, final Backup backup) {
+        final String backupEngine = getBackupDetail(backup, DETAIL_BACKUP_ENGINE);
+        final List<BackupVolumeChainState> volumeChainStates = backupVolumes.stream()
+                .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                .map(volume -> new BackupVolumeChainState(volume.getUuid(), backupEngine,
+                        AblestackBackupFrameworkUtils.sanitizeChainFiles(getBackupChain(volume, backup))))
+                .collect(Collectors.toList());
+        AblestackBackupFrameworkUtils.validateVolumeChainStates(volumeChainStates);
+        return volumeChainStates;
+    }
+
+    private List<String> getBackupChain(final Backup.VolumeInfo backupVolume, final Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        final List<Backup> chain = getBackupChain(backup);
+        final List<String> files = new ArrayList<>();
+        for (final Backup chainBackup : chain) {
+            final Backup.VolumeInfo volumeInfo = getBackedUpVolumeInfo(chainBackup.getBackedUpVolumes(), backupVolume.getUuid());
+            if (volumeInfo != null) {
+                final String filePath = BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(chainBackup, DETAIL_BACKUP_ENGINE))
+                        ? String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath())
+                        : String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath());
+                files.add(filePath);
+            }
+        }
+        return files;
+    }
+
+    private List<Backup> getBackupChain(final Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        final List<Backup> backups = backupDao.listByVmIdAndOffering(backup.getZoneId(), backup.getVmId(), backup.getBackupOfferingId());
+        final Map<String, Backup> backupsByUuid = new HashMap<>();
+        for (final Backup candidate : backups) {
+            if (candidate instanceof BackupVO) {
+                backupDao.loadDetails((BackupVO) candidate);
+            }
+            backupsByUuid.put(candidate.getUuid(), candidate);
+        }
+
+        final List<Backup> chain = new ArrayList<>();
+        Backup current = backup;
+        while (current != null) {
+            chain.add(current);
+            final String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            current = parentBackupUuid != null ? backupsByUuid.get(parentBackupUuid) : null;
+        }
+        Collections.reverse(chain);
+        return chain;
+    }
+
+    private List<Backup> getRestoreChainForBackup(final Backup backup) {
+        if (isNetBackupIncrementalBackup(backup)) {
+            return getBackupChain(backup);
+        }
+        return Collections.singletonList(backup);
+    }
+
+    private void validateRestoreChainIntegrity(final Backup backup) {
+        if (backup == null) {
+            return;
+        }
+        loadBackupDetailsIfNeeded(backup);
+        if (isLegacyBackup(backup)) {
+            return;
+        }
+
+        final Set<String> visitedBackupUuids = new HashSet<>();
+        Backup current = backup;
+        while (current != null) {
+            final String currentBackupUuid = current.getUuid();
+            if (StringUtils.isNotBlank(currentBackupUuid) && !visitedBackupUuids.add(currentBackupUuid)) {
+                throw new CloudRuntimeException(String.format(
+                        "Unable to restore backup [%s] because the incremental backup chain contains a cycle at [%s].",
+                        backup.getUuid(), currentBackupUuid));
+            }
+
+            final String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
+            if (StringUtils.isBlank(parentBackupUuid)) {
+                return;
+            }
+
+            final Backup parentBackup = backupDao.findByUuid(parentBackupUuid);
+            if (parentBackup == null) {
+                throw new CloudRuntimeException(String.format(
+                        "Unable to restore backup [%s] because parent backup [%s] is missing from the incremental chain.",
+                        backup.getUuid(), parentBackupUuid));
+            }
+            loadBackupDetailsIfNeeded(parentBackup);
+            current = parentBackup;
+        }
+    }
+
+    private boolean isLegacyBackup(final Backup backup) {
+        return getBackupDetail(backup, DETAIL_BACKUP_ENGINE) == null;
+    }
+
+    private String getLegacyBackupFileName(final Backup.VolumeInfo volumeInfo) {
+        final String diskPrefix = Volume.Type.ROOT.equals(volumeInfo.getType()) ? "root" : "datadisk";
+        return String.format("%s.%s.qcow2", diskPrefix, volumeInfo.getUuid());
+    }
+
+    private Backup.VolumeInfo getBackedUpVolumeInfo(final List<Backup.VolumeInfo> backedUpVolumes, final String volumeUuid) {
+        return backedUpVolumes.stream()
+                .filter(v -> v.getUuid().equals(volumeUuid))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private AblestackNetBackupClient getClient(final Long zoneId) {
+        try {
+            return new AblestackNetBackupClient(NetBackupUrl.valueIn(zoneId), NetBackupApiKey.valueIn(zoneId),
+                    NetBackupApiRequestTimeout.valueIn(zoneId));
+        } catch (URISyntaxException e) {
+            throw new CloudRuntimeException("Failed to parse NetBackup API URL: " + e.getMessage());
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            LOG.error("Failed to build NetBackup API client due to: ", e);
+        }
+        throw new CloudRuntimeException("Failed to build NetBackup API client");
+    }
+
     @Override
     public void syncBackups(final VirtualMachine vm) {
+        AblestackNetBackupClient client = null;
         for (final Backup backup : backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
-            if (!Backup.Status.BackingUp.equals(backup.getStatus()) || backup.getDate() == null) {
+            if (Backup.Status.BackingUp.equals(backup.getStatus())) {
+                if (backup.getDate() == null || backup.getDate().getTime() > System.currentTimeMillis() - STALE_BACKUP_THRESHOLD_MS) {
+                    continue;
+                }
+                LOG.warn("Removing stale NetBackup backup [{}] for VM [{}] stuck in BackingUp for over one day.",
+                        backup.getUuid(), vm.getInstanceName());
+                removeBackupWithDetails(backup.getId());
                 continue;
             }
-            if (backup.getDate().getTime() > System.currentTimeMillis() - STALE_BACKUP_THRESHOLD_MS) {
+
+            if (!Backup.Status.BackedUp.equals(backup.getStatus()) || backup.getDate() == null) {
                 continue;
             }
-            LOG.warn("Removing stale NetBackup backup [{}] for VM [{}] stuck in BackingUp for over one day.",
-                    backup.getUuid(), vm.getInstanceName());
+            if (backup.getDate().getTime() > System.currentTimeMillis() - NETBACKUP_SYNC_DELETE_GRACE_MS) {
+                continue;
+            }
+            final BackupOfferingVO backupOffering = backupOfferingDao.findById(backup.getBackupOfferingId());
+            if (backupOffering == null || !StringUtils.equalsIgnoreCase(getName(), backupOffering.getProvider())) {
+                continue;
+            }
+
+            loadBackupDetailsIfNeeded(backup);
+            final String backupId = getBackupDetail(backup, DETAIL_BACKUP_ID);
+            if (StringUtils.isBlank(backupId)) {
+                continue;
+            }
+
+            if (client == null) {
+                client = getClient(backup.getZoneId());
+            }
+            if (client.backupImageExists(backupId)) {
+                continue;
+            }
+
+            LOG.warn("Removing NetBackup backup [{}] for VM [{}] because catalog image [{}] no longer exists in NetBackup.",
+                    backup.getUuid(), vm.getInstanceName(), backupId);
             removeBackupWithDetails(backup.getId());
         }
     }

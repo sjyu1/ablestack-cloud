@@ -1,0 +1,464 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership. The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+package org.apache.cloudstack.backup.netbackup;
+
+import com.cloud.utils.exception.CloudRuntimeException;
+import com.cloud.utils.nio.TrustAllManager;
+import org.apache.cloudstack.backup.Backup;
+import org.apache.cloudstack.utils.security.SSLUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.util.EntityUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.X509TrustManager;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.TimeZone;
+import java.util.UUID;
+
+public class AblestackNetBackupClient {
+    private static final Logger LOG = LogManager.getLogger(AblestackNetBackupClient.class);
+
+    private static final String NETBACKUP_RECOVER_PATH = "/recovery/workloads/physical/scenarios/granular-files-folders/recover";
+    private static final String NETBACKUP_EXPIRE_IMAGES_PATH = "/catalog/expire-images";
+    private static final String NETBACKUP_CATALOG_IMAGES_PATH = "/catalog/images";
+    private static final String NETBACKUP_JOBS_PATH = "/admin/jobs/";
+    private static final String NETBACKUP_PART_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=5.0";
+    private static final String NETBACKUP_EXPIRE_PART_CONTENT_TYPE = "application/vnd.netbackup+json;version=6.0";
+    private static final String NETBACKUP_JSON_V12_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
+    private static final String NETBACKUP_POLICY_TYPE_STANDARD = "STANDARD";
+    private static final int NETBACKUP_JOB_POLL_INTERVAL_MS = 5000;
+
+    private final URI apiUri;
+    private final String apiKey;
+    private final HttpClient httpClient;
+    private final int timeoutSeconds;
+
+    public static final class ExpireImageResult {
+        private final boolean completed;
+        private final String mpaTicket;
+
+        public ExpireImageResult(final boolean completed, final String mpaTicket) {
+            this.completed = completed;
+            this.mpaTicket = mpaTicket;
+        }
+
+        public boolean isCompleted() {
+            return completed;
+        }
+
+        public String getMpaTicket() {
+            return mpaTicket;
+        }
+    }
+
+    public AblestackNetBackupClient(final String url, final String apiKey, final int timeout)
+            throws URISyntaxException, NoSuchAlgorithmException, KeyManagementException {
+        this.apiUri = new URI(url);
+        this.apiKey = apiKey;
+        this.timeoutSeconds = timeout;
+
+        final RequestConfig config = RequestConfig.custom()
+                .setConnectTimeout(timeout * 1000)
+                .setConnectionRequestTimeout(timeout * 1000)
+                .setSocketTimeout(timeout * 1000)
+                .build();
+
+        final SSLContext sslcontext = SSLUtils.getSSLContext();
+        sslcontext.init(null, new X509TrustManager[]{new TrustAllManager()}, new SecureRandom());
+        final SSLConnectionSocketFactory factory = new SSLConnectionSocketFactory(sslcontext, NoopHostnameVerifier.INSTANCE);
+        this.httpClient = HttpClientBuilder.create()
+                .setDefaultRequestConfig(config)
+                .setSSLSocketFactory(factory)
+                .build();
+    }
+
+    public void restoreBackupChain(final String recoveryClient, final String destinationClient, final List<Backup> restoreChain) {
+        if (restoreChain == null || restoreChain.isEmpty()) {
+            throw new CloudRuntimeException("NetBackup restore chain backups cannot be empty");
+        }
+        if (StringUtils.isBlank(recoveryClient) || StringUtils.isBlank(destinationClient)) {
+            throw new CloudRuntimeException("NetBackup recovery client and destination client cannot be empty");
+        }
+
+        final Backup fullBackup = restoreChain.get(0);
+        final Backup targetBackup = restoreChain.get(restoreChain.size() - 1);
+        final String boundary = "----AbleStackNetBackup" + UUID.randomUUID().toString().replace("-", "");
+        final String body = buildMultipartBody(boundary, recoveryClient, destinationClient, fullBackup, targetBackup, restoreChain);
+
+        final HttpPost request = new HttpPost(resolvePath(NETBACKUP_RECOVER_PATH));
+        request.setHeader(HttpHeaders.ACCEPT, "application/json");
+        request.setHeader(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
+        request.setHeader("X-API-Key", apiKey);
+        request.setEntity(new StringEntity(body, ContentType.create("multipart/form-data", "UTF-8")));
+
+        try {
+            final HttpResponse response = httpClient.execute(request);
+            final int statusCode = response.getStatusLine().getStatusCode();
+            final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
+            if (statusCode != HttpStatus.SC_OK && statusCode != HttpStatus.SC_ACCEPTED) {
+                LOG.error("NetBackup restore request failed. statusCode={}, response={}", statusCode, responseBody);
+                throw new CloudRuntimeException(String.format(
+                        "NetBackup restore REST API failed with status [%s]: %s", statusCode, responseBody));
+            }
+
+            final String recoveryJobId = extractRecoveryJobId(responseBody);
+            if (StringUtils.isBlank(recoveryJobId)) {
+                throw new CloudRuntimeException("NetBackup restore REST API did not return a recovery job ID");
+            }
+
+            waitForRecoveryJob(recoveryJobId);
+            LOG.info("NetBackup restore request completed for destination client [{}] using target backup path [{}].",
+                    destinationClient, targetBackup.getExternalId());
+        } catch (IOException e) {
+            throw new CloudRuntimeException("Failed to request NetBackup restore API: " + e.getMessage(), e);
+        }
+    }
+
+    public ExpireImageResult expireBackupImage(final String backupId, final int copyNumber) {
+        if (StringUtils.isBlank(backupId)) {
+            throw new CloudRuntimeException("NetBackup backup ID cannot be empty when expiring images");
+        }
+
+        final String boundary = "----AbleStackNetBackup" + UUID.randomUUID().toString().replace("-", "");
+        final JSONArray selections = new JSONArray()
+                .put(new JSONObject()
+                        .put("backupId", backupId)
+                        .put("copyNumber", copyNumber));
+        final StringBuilder builder = new StringBuilder();
+        appendFormPart(builder, boundary, "selectionsFile", selections.toString(), NETBACKUP_EXPIRE_PART_CONTENT_TYPE);
+        builder.append("--").append(boundary).append("--").append("\r\n");
+
+        final HttpPost request = new HttpPost(resolvePath(NETBACKUP_EXPIRE_IMAGES_PATH));
+        request.setHeader(HttpHeaders.ACCEPT, "application/json");
+        request.setHeader(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
+        request.setHeader("X-NetBackup-Log-All-Files", "false");
+        request.setHeader("X-API-Key", apiKey);
+        request.setEntity(new StringEntity(builder.toString(), ContentType.create("multipart/form-data", "UTF-8")));
+
+        try {
+            final HttpResponse response = httpClient.execute(request);
+            final int statusCode = response.getStatusLine().getStatusCode();
+            final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
+            if (statusCode == HttpStatus.SC_NO_CONTENT) {
+                LOG.info("NetBackup expire image request completed for backup ID [{}], copy number [{}].", backupId, copyNumber);
+                return new ExpireImageResult(true, null);
+            }
+            if (statusCode == HttpStatus.SC_ACCEPTED) {
+                final String ticketHeader = response.getFirstHeader("X-NetBackup-MPA-Ticket") != null
+                        ? response.getFirstHeader("X-NetBackup-MPA-Ticket").getValue()
+                        : null;
+                LOG.info("NetBackup expire image request for backup ID [{}], copy number [{}] is awaiting MPA approval. Ticket: [{}].",
+                        backupId, copyNumber, ticketHeader);
+                return new ExpireImageResult(false, ticketHeader);
+            }
+            if (statusCode != HttpStatus.SC_OK) {
+                LOG.error("NetBackup expire image request failed. statusCode={}, response={}", statusCode, responseBody);
+                throw new CloudRuntimeException(String.format(
+                        "NetBackup expire image REST API failed with status [%s]: %s", statusCode, responseBody));
+            }
+            LOG.info("NetBackup expire image request completed for backup ID [{}], copy number [{}].", backupId, copyNumber);
+            return new ExpireImageResult(true, null);
+        } catch (IOException e) {
+            throw new CloudRuntimeException("Failed to request NetBackup expire image API: " + e.getMessage(), e);
+        }
+    }
+
+    public boolean backupImageExists(final String backupId) {
+        if (StringUtils.isBlank(backupId)) {
+            return false;
+        }
+
+        final String filter = String.format("backupId eq '%s'", backupId.replace("'", "''"));
+        final String encodedFilter = URLEncoder.encode(filter, StandardCharsets.UTF_8);
+        final HttpGet request = new HttpGet(resolvePath(String.format("%s?filter=%s&page[limit]=1&page[offset]=0",
+                NETBACKUP_CATALOG_IMAGES_PATH, encodedFilter)));
+        request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
+        request.setHeader("X-API-Key", apiKey);
+
+        try {
+            final HttpResponse response = httpClient.execute(request);
+            final int statusCode = response.getStatusLine().getStatusCode();
+            final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
+            if (statusCode == HttpStatus.SC_NOT_FOUND) {
+                return false;
+            }
+            if (statusCode != HttpStatus.SC_OK) {
+                throw new CloudRuntimeException(String.format(
+                        "Failed to query NetBackup catalog image [%s]. status [%s], response [%s]",
+                        backupId, statusCode, responseBody));
+            }
+            if (StringUtils.isBlank(responseBody)) {
+                return false;
+            }
+            final JSONObject responseJson = new JSONObject(responseBody);
+            final JSONArray data = responseJson.optJSONArray("data");
+            if (data == null || data.length() == 0) {
+                return false;
+            }
+            for (int i = 0; i < data.length(); i++) {
+                final JSONObject image = data.optJSONObject(i);
+                if (image == null) {
+                    continue;
+                }
+                final String imageBackupId = extractString(image, "attributes.backupId");
+                if (StringUtils.equals(backupId, imageBackupId)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException e) {
+            throw new CloudRuntimeException("Failed to query NetBackup catalog image API: " + e.getMessage(), e);
+        }
+    }
+
+    private String buildMultipartBody(final String boundary, final String recoveryClient, final String destinationClient,
+            final Backup fullBackup, final Backup targetBackup, final List<Backup> restoreChain) {
+        final JSONObject recoveryPoint = new JSONObject();
+        recoveryPoint.put("client", recoveryClient);
+        recoveryPoint.put("policyType", NETBACKUP_POLICY_TYPE_STANDARD);
+        recoveryPoint.put("startDate", formatUtcDate(fullBackup.getDate()));
+        recoveryPoint.put("endDate", formatUtcDate(targetBackup.getDate()));
+
+        final JSONObject recoveryOptions = new JSONObject();
+        recoveryOptions.put("server", apiUri.getHost());
+        recoveryOptions.put("destinationClient", destinationClient);
+        recoveryOptions.put("overwriteExistingFiles", false);
+        recoveryOptions.put("restrictMountPoints", false);
+        recoveryOptions.put("renameHardLinks", false);
+        recoveryOptions.put("renameSoftLinks", false);
+        recoveryOptions.put("accessControlAttributes", false);
+        recoveryOptions.put("jobPriorityOverride", 90000);
+
+        final JSONObject requestPayload = new JSONObject();
+        requestPayload.put("data", new JSONObject()
+                .put("type", "physicalFilesFoldersRecoveryRequest")
+                .put("attributes", new JSONObject()
+                        .put("recoveryPoint", recoveryPoint)
+                        .put("recoveryOptions", recoveryOptions)));
+
+        final JSONArray selections = new JSONArray();
+        for (final Backup restoreBackup : restoreChain) {
+            selections.put(new JSONObject()
+                    .put("path", ensureTrailingSlash(restoreBackup.getExternalId()))
+                    .put("backupTime", formatUtcDate(restoreBackup.getDate())));
+        }
+
+        final StringBuilder builder = new StringBuilder();
+        appendFormPart(builder, boundary, "recoveryRequest", requestPayload.toString(), NETBACKUP_PART_CONTENT_TYPE);
+        appendFormPart(builder, boundary, "selectionsFile", selections.toString(), NETBACKUP_PART_CONTENT_TYPE);
+        builder.append("--").append(boundary).append("--").append("\r\n");
+        return builder.toString();
+    }
+
+    private void appendFormPart(final StringBuilder builder, final String boundary, final String name, final String content,
+            final String partContentType) {
+        builder.append("--").append(boundary).append("\r\n");
+        builder.append("Content-Disposition: form-data; name=\"").append(name).append("\"; filename=\"blob\"").append("\r\n");
+        builder.append("Content-Type: ").append(partContentType).append("\r\n");
+        builder.append("\r\n");
+        builder.append(content).append("\r\n");
+    }
+
+    private String ensureTrailingSlash(final String path) {
+        if (StringUtils.isBlank(path)) {
+            return path;
+        }
+        return path.endsWith("/") ? path : path + "/";
+    }
+
+    private String formatUtcDate(final Date date) {
+        if (date == null) {
+            throw new CloudRuntimeException("NetBackup restore requires backup timestamps to be present");
+        }
+        final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
+        sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+        return sdf.format(date);
+    }
+
+    private String extractRecoveryJobId(final String responseBody) {
+        if (StringUtils.isBlank(responseBody)) {
+            return null;
+        }
+        final JSONObject response = new JSONObject(responseBody);
+        return extractString(response, "relationships.recoveryJob.data.id");
+    }
+
+    private void waitForRecoveryJob(final String recoveryJobId) {
+        final long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
+        while (System.currentTimeMillis() < deadline) {
+            final JSONObject response = getRecoveryJob(recoveryJobId);
+            final String jobState = normalizeJobState(extractJobState(response));
+            final Integer jobStatusCode = extractJobStatusCode(response);
+            if (isJobSuccess(jobState, jobStatusCode)) {
+                final String restoreBackupIds = extractString(response, "data.attributes.restoreBackupIDs");
+                if (StringUtils.isNotBlank(restoreBackupIds)) {
+                    LOG.info("NetBackup recovery job [{}] completed successfully with restored backup IDs [{}].",
+                            recoveryJobId, restoreBackupIds.replaceAll("\\s+", ", ").trim());
+                }
+                return;
+            }
+            if (isJobFailure(jobState, jobStatusCode)) {
+                throw new CloudRuntimeException(String.format(
+                        "NetBackup recovery job [%s] failed with state [%s] and status code [%s]: %s",
+                        recoveryJobId, jobState, jobStatusCode, response));
+            }
+            sleepBeforePolling(recoveryJobId);
+        }
+        throw new CloudRuntimeException(String.format(
+                "Timed out after [%s] seconds while waiting for NetBackup recovery job [%s].",
+                timeoutSeconds, recoveryJobId));
+    }
+
+    private JSONObject getRecoveryJob(final String recoveryJobId) {
+        final HttpGet request = new HttpGet(resolvePath(NETBACKUP_JOBS_PATH + recoveryJobId));
+        request.setHeader(HttpHeaders.ACCEPT, "application/json");
+        request.setHeader("X-API-Key", apiKey);
+        try {
+            final HttpResponse response = httpClient.execute(request);
+            final int statusCode = response.getStatusLine().getStatusCode();
+            final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
+            if (statusCode != HttpStatus.SC_OK) {
+                throw new CloudRuntimeException(String.format(
+                        "Failed to query NetBackup recovery job [%s]. status [%s], response [%s]",
+                        recoveryJobId, statusCode, responseBody));
+            }
+            return StringUtils.isBlank(responseBody) ? new JSONObject() : new JSONObject(responseBody);
+        } catch (IOException e) {
+            throw new CloudRuntimeException("Failed to query NetBackup recovery job: " + e.getMessage(), e);
+        }
+    }
+
+    private String extractJobState(final JSONObject response) {
+        final String[] candidates = {
+                "data.attributes.state",
+                "data.attributes.jobStatus",
+                "data.attributes.jobState",
+                "state",
+                "jobStatus",
+                "jobState",
+                "data.attributes.status",
+                "status"
+        };
+        for (final String candidate : candidates) {
+            final String value = extractString(response, candidate);
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Integer extractJobStatusCode(final JSONObject response) {
+        final String statusValue = extractString(response, "data.attributes.status");
+        if (StringUtils.isBlank(statusValue)) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(statusValue);
+        } catch (NumberFormatException e) {
+            LOG.debug("Unable to parse NetBackup recovery job status code [{}].", statusValue, e);
+            return null;
+        }
+    }
+
+    private String extractString(final JSONObject jsonObject, final String dottedPath) {
+        Object current = jsonObject;
+        for (final String token : dottedPath.split("\\.")) {
+            if (!(current instanceof JSONObject)) {
+                return null;
+            }
+            final JSONObject currentObject = (JSONObject) current;
+            if (!currentObject.has(token) || currentObject.isNull(token)) {
+                return null;
+            }
+            current = currentObject.get(token);
+        }
+        return current == null ? null : String.valueOf(current);
+    }
+
+    private String normalizeJobState(final String jobState) {
+        if (StringUtils.isBlank(jobState)) {
+            return null;
+        }
+        return jobState.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
+    }
+
+    private boolean isJobSuccess(final String jobState, final Integer jobStatusCode) {
+        if (jobStatusCode != null && jobStatusCode == 0 && "DONE".equals(jobState)) {
+            return true;
+        }
+        return ("COMPLETED".equals(jobState)
+                || "SUCCEEDED".equals(jobState)
+                || "SUCCESS".equals(jobState)
+                || "DONE".equals(jobState))
+                && (jobStatusCode == null || jobStatusCode == 0);
+    }
+
+    private boolean isJobFailure(final String jobState, final Integer jobStatusCode) {
+        if ("DONE".equals(jobState) && jobStatusCode != null && jobStatusCode != 0) {
+            return true;
+        }
+        return "FAILED".equals(jobState)
+                || "FAILURE".equals(jobState)
+                || "ERROR".equals(jobState)
+                || "CANCELLED".equals(jobState)
+                || "ABORTED".equals(jobState);
+    }
+
+    private void sleepBeforePolling(final String recoveryJobId) {
+        try {
+            Thread.sleep(NETBACKUP_JOB_POLL_INTERVAL_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CloudRuntimeException(String.format(
+                    "Interrupted while polling NetBackup recovery job [%s].", recoveryJobId), e);
+        }
+    }
+
+    private URI resolvePath(final String path) {
+        final String base = StringUtils.removeEnd(apiUri.toString(), "/");
+        final String normalizedPath = path.startsWith("/") ? path : "/" + path;
+        return URI.create(base + normalizedPath);
+    }
+}

@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -17,14 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set -euo pipefail
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$pythonHelper = Join-Path $scriptDir "netbackup_restore_notify.py"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_HELPER="${SCRIPT_DIR}/netbackup_restore_notify.py"
+if (-not (Test-Path $pythonHelper)) {
+    Write-Error "netbackup_restore_notify.py not found: $pythonHelper"
+    exit 1
+}
 
-if [[ ! -f "${PYTHON_HELPER}" ]]; then
-  printf '%s\n' "netbackup_restore_notify.py not found: ${PYTHON_HELPER}" >&2
-  exit 1
-fi
-
-exec python3 "${PYTHON_HELPER}" "$@"
+$pythonExe = if ($env:PYTHON_EXE) { $env:PYTHON_EXE } else { "python" }
+& $pythonExe $pythonHelper @args
+exit $LASTEXITCODE
