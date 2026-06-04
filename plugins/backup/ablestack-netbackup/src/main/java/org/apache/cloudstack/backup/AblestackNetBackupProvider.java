@@ -63,6 +63,7 @@ import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -778,7 +779,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         validateRestoreChainIntegrity(backup);
         final Host host = resolveRestoreHost(vm, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
-        getClient(vm.getDataCenterId()).restoreBackupChain(host.getName(), host.getName(), restoreChain);
+        prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
 
         final List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
         if (backupVolumes == null || backupVolumes.isEmpty()) {
@@ -857,7 +858,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
 
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
-        getClient(backup.getZoneId()).restoreBackupChain(restoreHost.getName(), restoreHost.getName(), restoreChain);
+        prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreChain);
 
         final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
                 backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
@@ -1105,6 +1106,44 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             return getBackupChain(backup);
         }
         return Collections.singletonList(backup);
+    }
+
+    private void prepareRestoreSourcesOnStageHosts(final Long zoneId, final String destinationHostName, final List<Backup> restoreChain) {
+        if (CollectionUtils.isEmpty(restoreChain)) {
+            return;
+        }
+        final AblestackNetBackupClient client = getClient(zoneId);
+        for (final Map.Entry<String, List<Backup>> entry : groupRestoreChainByStageHost(destinationHostName, restoreChain).entrySet()) {
+            final String sourceHost = entry.getKey();
+            final List<Backup> sourceHostChain = entry.getValue();
+            if (CollectionUtils.isEmpty(sourceHostChain)) {
+                continue;
+            }
+            LOG.info("Preparing NetBackup restore sources from stage/source host [{}] to destination host [{}] for backup paths {}",
+                    sourceHost, destinationHostName,
+                    sourceHostChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
+            client.restoreBackupChain(sourceHost, destinationHostName, sourceHostChain);
+        }
+    }
+
+    private LinkedHashMap<String, List<Backup>> groupRestoreChainByStageHost(final String destinationHostName, final List<Backup> restoreChain) {
+        final LinkedHashMap<String, List<Backup>> grouped = new LinkedHashMap<>();
+        for (final Backup chainBackup : restoreChain) {
+            loadBackupDetailsIfNeeded(chainBackup);
+            final String sourceHost = getRestoreSourceHost(chainBackup, destinationHostName);
+            grouped.computeIfAbsent(sourceHost, key -> new ArrayList<>()).add(chainBackup);
+        }
+        return grouped;
+    }
+
+    private String getRestoreSourceHost(final Backup backup, final String defaultHostName) {
+        final String sourceHost = getBackupDetail(backup, DETAIL_POLICY_NAME);
+        if (StringUtils.isBlank(sourceHost)) {
+            LOG.warn("NetBackup source/stage host detail [{}] is missing for backup [{}]. Falling back to destination host [{}].",
+                    DETAIL_POLICY_NAME, backup != null ? backup.getUuid() : null, defaultHostName);
+            return defaultHostName;
+        }
+        return sourceHost;
     }
 
     private void validateRestoreChainIntegrity(final Backup backup) {
