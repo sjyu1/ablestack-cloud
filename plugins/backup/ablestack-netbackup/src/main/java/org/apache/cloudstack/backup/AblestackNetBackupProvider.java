@@ -1101,7 +1101,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     private List<Backup> getRestoreChainForBackup(final Backup backup) {
-        if (isNetBackupIncrementalBackup(backup)) {
+        if (backup != null && StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup.getType())) {
             return getBackupChain(backup);
         }
         return Collections.singletonList(backup);
