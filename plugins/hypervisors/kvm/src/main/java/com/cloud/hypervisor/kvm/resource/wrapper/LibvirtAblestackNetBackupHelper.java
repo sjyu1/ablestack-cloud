@@ -48,6 +48,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -96,11 +97,16 @@ class LibvirtAblestackNetBackupHelper {
         }
 
         List<String[]> commands = new ArrayList<>();
-        ensureParentCheckpointMaterialized(command);
-        String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
-        LOGGER.debug("Executing NetBackup script command=[{}]", String.join(" ", scriptCommand));
-        commands.add(scriptCommand);
-        return Script.executePipedCommands(commands, resource.getCmdsTimeout());
+        Path parentCheckpointWorkspace = null;
+        try {
+            parentCheckpointWorkspace = ensureParentCheckpointMaterialized(command);
+            String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
+            LOGGER.debug("Executing NetBackup script command=[{}]", String.join(" ", scriptCommand));
+            commands.add(scriptCommand);
+            return Script.executePipedCommands(commands, resource.getCmdsTimeout());
+        } finally {
+            cleanupParentCheckpointWorkspace(parentCheckpointWorkspace);
+        }
     }
 
     List<String> resolveDiskPaths(List<PrimaryDataStoreTO> volumePools, List<String> volumePaths) {
@@ -161,6 +167,7 @@ class LibvirtAblestackNetBackupHelper {
     private Pair<Integer, String> executeStoppedVmBackup(AblestackNetBackupTakeBackupCommand command, List<String> diskPaths) {
         String dummyVmName = String.format("DUMMY-VM-%s", command.getCheckpointName().replace('.', '-'));
         Path dest = Path.of(command.getBackupPath());
+        Path parentCheckpointWorkspace = null;
         Connect conn = null;
         try {
             LOGGER.info("Starting stopped VM NetBackup backup for vm=[{}], dummyVm=[{}], backupType=[{}]",
@@ -175,7 +182,7 @@ class LibvirtAblestackNetBackupHelper {
             String dummyVmXml = buildDummyVmXml(dummyVmName, diskPaths);
             resource.startVM(conn, dummyVmName, dummyVmXml, Domain.CreateFlags.PAUSED);
 
-            ensureParentCheckpointMaterialized(command);
+            parentCheckpointWorkspace = ensureParentCheckpointMaterialized(command);
             if (isIncremental(command) && command.getParentCheckpointPath() != null && !command.getParentCheckpointPath().isEmpty()) {
                 redefineCheckpointIfNeeded(dummyVmName, Path.of(command.getParentCheckpointPath()));
             }
@@ -214,40 +221,62 @@ class LibvirtAblestackNetBackupHelper {
                     command.getVmName(), dummyVmName, e.getMessage(), e);
             return new Pair<>(1, e.getMessage());
         } finally {
+            cleanupParentCheckpointWorkspace(parentCheckpointWorkspace);
             cleanupDummyVm(dummyVmName);
         }
     }
 
-    private void ensureParentCheckpointMaterialized(AblestackNetBackupTakeBackupCommand command) {
+    private Path ensureParentCheckpointMaterialized(AblestackNetBackupTakeBackupCommand command) {
         if (!isIncremental(command)) {
-            return;
+            return null;
         }
         try {
+            Path workspace = Path.of(command.getBackupPath()).resolve("checkpoints").resolve("parent-chain");
+            Files.createDirectories(workspace);
             if (command.getParentCheckpointXmlChain() != null) {
                 for (var entry : command.getParentCheckpointXmlChain().entrySet()) {
-                    materializeCheckpointXml(entry.getKey(), entry.getValue());
+                    materializeCheckpointXml(workspace, entry.getKey(), entry.getValue());
                 }
             }
-            materializeCheckpointXml(command.getParentCheckpointPath(), command.getParentCheckpointXml());
+            Path parentCheckpointPath = materializeCheckpointXml(workspace, command.getParentCheckpointPath(), command.getParentCheckpointXml());
+            if (parentCheckpointPath != null) {
+                command.setParentCheckpointPath(parentCheckpointPath.toString());
+            }
+            return workspace;
         } catch (IOException e) {
             throw new IllegalStateException("Failed to materialize parent checkpoint XML chain for VM " + command.getVmName(), e);
         }
     }
 
-    private void materializeCheckpointXml(String checkpointPathValue, String checkpointXml) throws IOException {
+    private Path materializeCheckpointXml(Path workspace, String checkpointPathValue, String checkpointXml) throws IOException {
         if (StringUtils.isBlank(checkpointPathValue) || StringUtils.isBlank(checkpointXml)) {
-            return;
+            return null;
         }
-        Path checkpointPath = Path.of(checkpointPathValue);
+        Path sourceCheckpointPath = Path.of(checkpointPathValue);
+        Path checkpointPath = workspace.resolve(sourceCheckpointPath.getFileName().toString());
         if (Files.exists(checkpointPath)) {
-            return;
-        }
-        Path parentDir = checkpointPath.getParent();
-        if (parentDir != null) {
-            Files.createDirectories(parentDir);
+            return checkpointPath;
         }
         Files.writeString(checkpointPath, checkpointXml, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        LOGGER.debug("Materialized parent checkpoint XML at [{}]", checkpointPath);
+        LOGGER.debug("Materialized parent checkpoint XML at [{}] from source [{}]", checkpointPath, checkpointPathValue);
+        return checkpointPath;
+    }
+
+    private void cleanupParentCheckpointWorkspace(Path workspace) {
+        if (workspace == null || !Files.exists(workspace)) {
+            return;
+        }
+        try (var walk = Files.walk(workspace)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    LOGGER.warn("Failed to delete temporary parent checkpoint materialization path [{}]", path, e);
+                }
+            });
+        } catch (IOException e) {
+            LOGGER.warn("Failed to clean temporary parent checkpoint workspace [{}]", workspace, e);
+        }
     }
 
     private String buildDummyVmXml(String vmName, List<String> diskPaths) {
