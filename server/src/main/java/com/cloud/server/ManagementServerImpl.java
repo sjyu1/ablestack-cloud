@@ -502,6 +502,7 @@ import org.apache.cloudstack.api.command.user.network.DeleteNetworkACLCmd;
 import org.apache.cloudstack.api.command.user.network.DeleteNetworkACLListCmd;
 import org.apache.cloudstack.api.command.user.network.DeleteNetworkCmd;
 import org.apache.cloudstack.api.command.user.network.ImportNetworkACLCmd;
+import org.apache.cloudstack.api.command.user.network.ListAvailableGuestIpsCmd;
 import org.apache.cloudstack.api.command.user.network.ListNetworkACLListsCmd;
 import org.apache.cloudstack.api.command.user.network.ListNetworkACLsCmd;
 import org.apache.cloudstack.api.command.user.network.ListNetworkOfferingsCmd;
@@ -6774,6 +6775,7 @@ public class ManagementServerImpl extends MutualExclusiveIdsManagerBase implemen
         cmdList.add(ListNetworkPermissionsCmd.class);
         cmdList.add(ListNetworkProtocolsCmd.class);
         cmdList.add(ListNetworksCmd.class);
+        cmdList.add(ListAvailableGuestIpsCmd.class);
         cmdList.add(RestartNetworkCmd.class);
         cmdList.add(UpdateNetworkCmd.class);
         cmdList.add(CreateNetworkPermissionsCmd.class);
