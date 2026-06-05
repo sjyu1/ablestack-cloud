@@ -491,54 +491,71 @@ vm_is_selected() {
   if match_csv_glob "${vm_name}" "${VM_EXCLUDE}"; then
     return 1
   fi
-  if [[ "${VM_INCLUDE}" == "*" ]] && vm_is_excluded_from_wildcard_selection "${vm_name}"; then
-    return 1
-  fi
   if match_csv_glob "${vm_name}" "${VM_INCLUDE}"; then
     return 0
   fi
   return 1
 }
 
-vm_is_excluded_from_wildcard_selection() {
-  local vm_name="$1"
-  local vm_name_lower
-  vm_name_lower="$(printf '%s' "${vm_name}" | tr '[:upper:]' '[:lower:]')"
+list_mold_virtual_machine_names() {
+  [[ -f "${MOLD_VM_CACHE_FILE}" ]] || fail "Mold VM cache file not found: ${MOLD_VM_CACHE_FILE}"
 
-  if [[ "${vm_name}" =~ ^v-[0-9]+-VM$ ]]; then
-    return 0
-  fi
-  if [[ "${vm_name}" =~ ^r-[0-9]+-VM$ ]]; then
-    return 0
-  fi
-  if [[ "${vm_name}" =~ ^s-[0-9]+-VM$ ]]; then
-    return 0
-  fi
-  if [[ "${vm_name_lower}" == *ccvm* ]]; then
-    return 0
-  fi
-  if [[ "${vm_name_lower}" == *scvm* ]]; then
-    return 0
-  fi
-  if [[ "${vm_name_lower}" == *ablestack-template* ]]; then
-    return 0
-  fi
+  python3 - "$MOLD_VM_CACHE_FILE" <<'PY'
+import json
+import sys
 
-  return 1
+cache_path = sys.argv[1]
+
+with open(cache_path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+names = []
+seen = set()
+
+def walk(node):
+    if isinstance(node, dict):
+        name = node.get("instancename")
+        if isinstance(name, str) and name and name not in seen:
+            names.append(name)
+            seen.add(name)
+        for value in node.values():
+            walk(value)
+    elif isinstance(node, list):
+        for item in node:
+            walk(item)
+
+walk(data)
+
+for name in names:
+    print(name)
+PY
 }
 
 list_running_vms() {
   virsh -c "${LIBVIRT_URI}" list --name --state-running | sed '/^$/d'
 }
 
+vm_exists_in_mold_cache() {
+  local vm_name="$1"
+  local vm_id=""
+
+  vm_id="$(lookup_mold_vm_id "${vm_name}" 2>/dev/null || true)"
+  [[ -n "${vm_id}" ]]
+}
+
 list_target_vms() {
   local vm_name
   while IFS= read -r vm_name; do
     [[ -z "${vm_name}" ]] && continue
-    if vm_is_selected "${vm_name}"; then
+    if ! vm_is_selected "${vm_name}"; then
+      log -ne "Skipping VM ${vm_name}: not selected by VM_INCLUDE/VM_EXCLUDE"
+      continue
+    fi
+
+    if vm_exists_in_mold_cache "${vm_name}"; then
       builtin echo "${vm_name}"
     else
-      log -ne "Skipping VM ${vm_name}: not selected by VM_INCLUDE/VM_EXCLUDE or excluded from wildcard selection"
+      log -ne "Skipping VM ${vm_name}: not found in Mold listVirtualMachines response"
     fi
   done < <(list_running_vms)
 }
