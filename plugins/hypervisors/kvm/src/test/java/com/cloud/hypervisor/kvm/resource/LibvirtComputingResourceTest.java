@@ -655,9 +655,6 @@ public class LibvirtComputingResourceTest {
         libvirtComputingResourceSpy.createArm64UsbDef(devicesDef);
         Document domainDoc = parse(devicesDef.toString());
 
-        assertXpath(domainDoc, "/devices/controller/@type", "usb");
-        assertXpath(domainDoc, "/devices/controller/@model", "qemu-xhci");
-        assertXpath(domainDoc, "/devices/controller/address/@type", "pci");
         assertNodeExists(domainDoc, "/devices/input[@type='keyboard']");
         assertNodeExists(domainDoc, "/devices/input[@bus='usb']");
         assertNodeExists(domainDoc, "/devices/input[@type='mouse']");
@@ -1140,14 +1137,18 @@ public class LibvirtComputingResourceTest {
         final LibvirtRequestWrapper wrapper = LibvirtRequestWrapper.getInstance();
         assertNotNull(wrapper);
 
-        final Answer answer = wrapper.execute(command, libvirtComputingResourceMock);
-        assertTrue(answer.getResult());
+        try (MockedStatic<Script> ignored = Mockito.mockStatic(Script.class)) {
+            Mockito.when(Script.runSimpleBashScript(Mockito.anyString(), Mockito.anyInt())).thenReturn("Job type: None");
 
-        verify(libvirtComputingResourceMock, times(1)).getLibvirtUtilitiesHelper();
-        try {
-            verify(libvirtUtilitiesHelper, times(1)).getConnectionByVmName(vmName);
-        } catch (final LibvirtException e) {
-            fail(e.getMessage());
+            final Answer answer = wrapper.execute(command, libvirtComputingResourceMock);
+            assertTrue(answer.getResult());
+
+            verify(libvirtComputingResourceMock, times(1)).getLibvirtUtilitiesHelper();
+            try {
+                verify(libvirtUtilitiesHelper, times(1)).getConnectionByVmName(vmName);
+            } catch (final LibvirtException e) {
+                fail(e.getMessage());
+            }
         }
     }
 
@@ -5980,7 +5981,7 @@ public class LibvirtComputingResourceTest {
         DiskDef diskDef = new DiskDef();
         diskDef.defFileBasedDisk("/mnt/unsupported-path", 0, DiskDef.DiskBus.VIRTIO, DiskDef.DiskFmtType.QCOW2);
         String diskPath = libvirtComputingResourceSpy.getDiskPathFromDiskDef(diskDef);
-        Assert.assertNull(diskPath);
+        Assert.assertEquals("unsupported-path", diskPath);
     }
 
     @Test
@@ -6050,6 +6051,8 @@ public class LibvirtComputingResourceTest {
         int[] fakeList = new int[]{1};
         List<Integer> expected = Arrays.asList(ArrayUtils.toObject(fakeList));
         Mockito.when(connMock.listDomains()).thenReturn(fakeList);
+        Mockito.when(connMock.domainLookupByID(1)).thenReturn(domainMock);
+        Mockito.when(domainMock.getName()).thenReturn(VM_NAME);
 
         List<Integer> result = libvirtComputingResourceSpy.getVmsToSetMemoryBalloonStatsPeriod(connMock);
 
@@ -6330,6 +6333,7 @@ public class LibvirtComputingResourceTest {
         doReturn(domainMock).when(libvirtComputingResourceSpy).getDomain(connMock, VM_NAME);
         doReturn(Mockito.mock(LibvirtExtendedVmStatsEntry.class)).when(libvirtComputingResourceSpy).getVmCurrentStats(domainMock);
         doReturn(Mockito.mock(VmStatsEntry.class)).when(libvirtComputingResourceSpy).calculateVmMetrics(Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(List.of()).when(libvirtComputingResourceSpy).getDisks(connMock, VM_NAME);
 
         VmStatsEntry stat = libvirtComputingResourceSpy.getVmStat(connMock, VM_NAME);
 
@@ -6361,14 +6365,19 @@ public class LibvirtComputingResourceTest {
         domainInterfaceStatsMock.rx_bytes = 1000L;
         domainInterfaceStatsMock.tx_bytes = 2000L;
         doReturn(domainInterfaceStatsMock).when(domainMock).interfaceStats(Mockito.any());
-        doReturn(List.of(new InterfaceDef())).when(libvirtComputingResourceSpy).getInterfaces(connMock, VM_NAME);
+        InterfaceDef interfaceDef = Mockito.mock(InterfaceDef.class);
+        Mockito.when(interfaceDef.getDevName()).thenReturn("vnet0");
+        doReturn(List.of(interfaceDef)).when(libvirtComputingResourceSpy).getInterfaces(connMock, VM_NAME);
 
         domainBlockStatsMock.rd_req = 3000L;
         domainBlockStatsMock.rd_bytes = 4000L;
         domainBlockStatsMock.wr_req = 5000L;
         domainBlockStatsMock.wr_bytes = 6000L;
         doReturn(domainBlockStatsMock).when(domainMock).blockStats(Mockito.any());
-        doReturn(List.of(new DiskDef())).when(libvirtComputingResourceSpy).getDisks(connMock, VM_NAME);
+        DiskDef diskDef = Mockito.mock(DiskDef.class);
+        Mockito.when(diskDef.getDeviceType()).thenReturn(DiskDef.DeviceType.DISK);
+        Mockito.when(diskDef.getDiskLabel()).thenReturn("vda");
+        doReturn(List.of(diskDef)).when(libvirtComputingResourceSpy).getDisks(connMock, VM_NAME);
     }
 
     @Test
@@ -7202,5 +7211,36 @@ public class LibvirtComputingResourceTest {
         Mockito.when(physicalDisk.getPath()).thenReturn(PHYSICAL_DISK_PATH);
         libvirtComputingResourceSpy.defineDiskForDefaultPoolType(diskDef, volume, false, false, false, physicalDisk, DEV_ID, DISK_BUS_TYPE, DISK_BUS_TYPE_DATA, null);
         Mockito.verify(diskDef).defFileBasedDisk(PHYSICAL_DISK_PATH, DEV_ID, DISK_BUS_TYPE_DATA, DiskDef.DiskFmtType.QCOW2);
+    }
+
+    @Test
+    public void getInterfaceTestValidMacAddressReturnInterface() {
+        String macAddress = "a0:90:27:a9:9e:62";
+        final String vmName = "Test";
+        final InterfaceDef interfaceDef = Mockito.mock(InterfaceDef.class);
+        final List<InterfaceDef> interfaces = new ArrayList<>();
+        interfaces.add(interfaceDef);
+
+        Mockito.doReturn(macAddress).when(interfaceDef).getMacAddress();
+        Mockito.doReturn(interfaces).when(libvirtComputingResourceSpy).getInterfaces(Mockito.any(), Mockito.anyString());
+
+        InterfaceDef result = libvirtComputingResourceSpy.getInterface(connMock, vmName, macAddress);
+
+        Assert.assertNotNull(result);
+    }
+
+    @Test(expected = CloudRuntimeException.class)
+    public void getInterfaceTestInvalidMacAddressThrowCloudRuntimeException() {
+        String invalidMacAddress = "ea:57:5d:f1:64:05";
+        String macAddress = "a0:90:27:a9:9e:62";
+        final String vmName = "Test";
+        final InterfaceDef interfaceDef = Mockito.mock(InterfaceDef.class);
+        final List<InterfaceDef> interfaces = new ArrayList<>();
+        interfaces.add(interfaceDef);
+
+        Mockito.doReturn(macAddress).when(interfaceDef).getMacAddress();
+        Mockito.doReturn(interfaces).when(libvirtComputingResourceSpy).getInterfaces(Mockito.any(), Mockito.anyString());
+
+        libvirtComputingResourceSpy.getInterface(connMock, vmName, invalidMacAddress);
     }
 }

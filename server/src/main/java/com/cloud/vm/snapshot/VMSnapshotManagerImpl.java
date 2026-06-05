@@ -29,6 +29,8 @@ import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
 import org.apache.cloudstack.annotation.AnnotationService;
+import org.apache.cloudstack.backup.Backup;
+import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.annotation.dao.AnnotationDao;
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.command.user.vmsnapshot.ListVMSnapshotCmd;
@@ -179,6 +181,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     PrimaryDataStoreDao _storagePoolDao;
     @Inject
     private AnnotationDao annotationDao;
+    @Inject
+    private BackupDao backupDao;
 
     VmWorkJobHandlerProxy _jobHandlerProxy = new VmWorkJobHandlerProxy(this);
 
@@ -448,6 +452,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             throw new CloudRuntimeException("There are other active Instance Snapshot tasks on the Instance, please try again later");
         }
 
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "create");
+
         VMSnapshot.Type vmSnapshotType = VMSnapshot.Type.Disk;
         if (snapshotMemory && userVmVo.getState() == VirtualMachine.State.Running)
             vmSnapshotType = VMSnapshot.Type.DiskAndMemory;
@@ -647,6 +653,20 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         return activeVMSnapshots.size() > 0;
     }
 
+    private void validateNoBackupActivityOrHistoryForVMSnapshot(Long vmId, String operation) {
+        boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) || Backup.Status.Restoring.equals(backup.getStatus()));
+        if (hasBackupInProgress) {
+            throw new InvalidParameterValueException(String.format("Instance Snapshot %s failed because a backup or restore is currently in progress for the Instance.", operation));
+        }
+
+        boolean hasExistingBackup = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
+        if (hasExistingBackup) {
+            throw new InvalidParameterValueException(String.format("Instance Snapshot %s failed because the Instance has backups.", operation));
+        }
+    }
+
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_SNAPSHOT_DELETE, eventDescription = "Delete Instance Snapshots", async = true)
     public boolean deleteVMSnapshot(Long vmSnapshotId) {
@@ -672,6 +692,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             else
                 throw new InvalidParameterValueException("There are other active Instance Snapshot tasks on the Instance, please try again later");
         }
+
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmSnapshot.getVmId(), "delete");
 
         // serialize VM operation
         AsyncJobExecutionContext jobContext = AsyncJobExecutionContext.getCurrentExecutionContext();
@@ -738,6 +760,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
                 throw new InvalidParameterValueException("There are other active Instance Snapshot tasks on the Instance, please try again later");
         }
 
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmSnapshot.getVmId(), "delete");
+
         annotationDao.removeByEntityType(AnnotationService.EntityType.VM_SNAPSHOT.name(), vmSnapshot.getUuid());
         if (vmSnapshot.getState() == VMSnapshot.State.Allocated) {
             return _vmSnapshotDao.remove(vmSnapshot.getId());
@@ -783,11 +807,17 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
                     "Instance Snapshot reverting failed because the Instance is not in Running or Stopped state.");
         }
 
-        if (userVm.getState() == VirtualMachine.State.Running && vmSnapshotVo.getType() == VMSnapshot.Type.Disk || userVm.getState() == VirtualMachine.State.Stopped
-                && vmSnapshotVo.getType() == VMSnapshot.Type.DiskAndMemory) {
+        if (userVm.getState() == VirtualMachine.State.Running && vmSnapshotVo.getType() == VMSnapshot.Type.Disk) {
             throw new InvalidParameterValueException(
-                    "Reverting to the Instance Snapshot is not allowed for running Instances as this would result in a Instance state change. For running Instances only Snapshots with memory can be reverted. In order to revert to a Snapshot without memory you need to first stop the Instance."
-                            + " Snapshot");
+                    "Reverting to the Instance Snapshot is not allowed for running Instances as this would result in an Instance state change. " +
+                            "For running Instances only Snapshots with memory can be reverted. " +
+                            "In order to revert to a Snapshot without memory you need to first stop the Instance.");
+        }
+
+        if (userVm.getState() == VirtualMachine.State.Stopped && vmSnapshotVo.getType() == VMSnapshot.Type.DiskAndMemory) {
+            throw new InvalidParameterValueException(
+                    "Reverting to the Instance Snapshot is not allowed for stopped Instances when the Snapshot contains memory as this would result in an Instance state change. " +
+                            "In order to revert to a Snapshot with memory you need to first start the Instance.");
         }
 
         // if snapshot is not created, error out
@@ -840,25 +870,47 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     }
 
     /**
-     * If snapshot was taken with a different service offering than actual used in vm, should change it back to it
-     * @param userVm vm to change service offering (if necessary)
-     * @param vmSnapshotVo vm snapshot
+     * Check if service offering change is needed for user vm when reverting to vm snapshot.
+     * Service offering change is needed when snapshot was taken with a different service offering than actual used in vm.
+     * Service offering change is also needed when service offering is dynamic and the amount of cpu, memory or cpu speed
+     * has been changed since snapshot was taken.
+     * @param userVm user vm being reverted
+     * @param vmSnapshotVo snapshot selected for the revert
+     * @return true if service offering change is needed; false otherwise
      */
-    protected void updateUserVmServiceOffering(UserVm userVm, VMSnapshotVO vmSnapshotVo) {
+    protected boolean userVmServiceOfferingNeedsChange(UserVm userVm, VMSnapshotVO vmSnapshotVo) {
         if (vmSnapshotVo.getServiceOfferingId() != userVm.getServiceOfferingId()) {
-            changeUserVmServiceOffering(userVm, vmSnapshotVo);
+            return true;
         }
+
+        ServiceOfferingVO currentServiceOffering = _serviceOfferingDao.findByIdIncludingRemoved(userVm.getId(), userVm.getServiceOfferingId());
+        if (currentServiceOffering.isDynamic()) {
+            Map<String, String> vmDetails = getVmMapDetails(vmSnapshotVo);
+            ServiceOfferingVO newServiceOffering = _serviceOfferingDao.getComputeOffering(currentServiceOffering, vmDetails);
+
+            int newCpu = newServiceOffering.getCpu();
+            int newMemory = newServiceOffering.getRamSize();
+            int newSpeed = newServiceOffering.getSpeed();
+            int currentCpu = currentServiceOffering.getCpu();
+            int currentMemory = currentServiceOffering.getRamSize();
+            int currentSpeed = currentServiceOffering.getSpeed();
+
+            if (newCpu != currentCpu || newMemory != currentMemory || newSpeed != currentSpeed) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
-     * Get user vm details as a map
-     * @param userVm user vm
+     * Get vm snapshot details as a map
+     * @param vmSnapshotVo snapshot to get the details from
      * @return map
      */
-    protected Map<String, String> getVmMapDetails(UserVm userVm) {
-        List<VMInstanceDetailVO> userVmDetails = _vmInstanceDetailsDao.listDetails(userVm.getId());
+    protected Map<String, String> getVmMapDetails(VMSnapshotVO vmSnapshotVo) {
+        List<VMSnapshotDetailsVO> vmSnapshotDetails = _vmSnapshotDetailsDao.listDetails(vmSnapshotVo.getId());
         Map<String, String> details = new HashMap<String, String>();
-        for (VMInstanceDetailVO detail : userVmDetails) {
+        for (VMSnapshotDetailsVO detail : vmSnapshotDetails) {
             details.put(detail.getName(), detail.getValue());
         }
         return details;
@@ -870,7 +922,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
      * @param vmSnapshotVo vm snapshot
      */
     protected void changeUserVmServiceOffering(UserVm userVm, VMSnapshotVO vmSnapshotVo) {
-        Map<String, String> vmDetails = getVmMapDetails(userVm);
+        Map<String, String> vmDetails = getVmMapDetails(vmSnapshotVo);
         boolean result = upgradeUserVmServiceOffering(userVm, vmSnapshotVo.getServiceOfferingId(), vmDetails);
         if (! result){
             throw new CloudRuntimeException("Instance Snapshot reverting failed because the Instance service offering couldn't be changed to the one used when Snapshot was taken");
@@ -918,6 +970,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         if (hasActiveVMSnapshotTasks(vmId)) {
             throw new InvalidParameterValueException("There is other active Instance Snapshot tasks on the Instance, please try again later");
         }
+
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "revert");
 
         Account caller = getCaller();
         _accountMgr.checkAccess(caller, null, true, vmSnapshotVo);
@@ -967,8 +1021,10 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             Transaction.execute(new TransactionCallbackWithExceptionNoReturn<CloudRuntimeException>() {
                 @Override
                 public void doInTransactionWithoutResult(TransactionStatus status) throws CloudRuntimeException {
+                    if (userVmServiceOfferingNeedsChange(userVm, vmSnapshotVo)) {
+                        changeUserVmServiceOffering(userVm, vmSnapshotVo);
+                    }
                     revertCustomServiceOfferingDetailsFromVmSnapshot(userVm, vmSnapshotVo);
-                    updateUserVmServiceOffering(userVm, vmSnapshotVo);
                 }
             });
             return userVm;
@@ -1050,6 +1106,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
 
     @Override
     public boolean deleteAllVMSnapshots(long vmId, VMSnapshot.Type type) {
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "delete");
         // serialize VM operation
         AsyncJobExecutionContext jobContext = AsyncJobExecutionContext.getCurrentExecutionContext();
         if (jobContext.isJobDispatchedBy(VmWorkConstants.VM_WORK_JOB_DISPATCHER)) {
@@ -1094,6 +1151,7 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     }
 
     private boolean orchestrateDeleteAllVMSnapshots(long vmId, VMSnapshot.Type type) {
+        validateNoBackupActivityOrHistoryForVMSnapshot(vmId, "delete");
         boolean result = true;
         List<VMSnapshotVO> listVmSnapshots = _vmSnapshotDao.findByVm(vmId);
         if (listVmSnapshots == null || listVmSnapshots.isEmpty()) {

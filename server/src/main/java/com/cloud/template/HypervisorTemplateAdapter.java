@@ -55,6 +55,7 @@ import org.apache.cloudstack.framework.messagebus.MessageBus;
 import org.apache.cloudstack.framework.messagebus.PublishScope;
 import org.apache.cloudstack.secstorage.heuristics.HeuristicType;
 import org.apache.cloudstack.storage.command.TemplateOrVolumePostUploadCommand;
+import org.apache.cloudstack.storage.datastore.db.ImageStoreVO;
 import org.apache.cloudstack.storage.datastore.db.TemplateDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.TemplateDataStoreVO;
 import org.apache.cloudstack.storage.image.datastore.ImageStoreEntity;
@@ -324,6 +325,15 @@ public class HypervisorTemplateAdapter extends TemplateAdapterBase {
         return null;
     }
 
+    protected boolean isWritableImageStore(DataStore imageStore, Long zoneId) {
+        ImageStoreVO imageStoreVO = _imgStoreDao.findById(imageStore.getId());
+        if (imageStoreVO == null) {
+            logger.warn("Unable to find image store [{}] in zone [{}] while validating heuristic rule selection.", imageStore, zoneId);
+            return false;
+        }
+        return !imageStoreVO.isReadonly();
+    }
+
     protected void standardImageStoreAllocation(List<DataStore> imageStores, VMTemplateVO template) {
         Set<Long> zoneSet = new HashSet<Long>();
         Collections.shuffle(imageStores);
@@ -413,13 +423,12 @@ public class HypervisorTemplateAdapter extends TemplateAdapterBase {
         CreateTemplateContext<TemplateApiResult> context) {
         TemplateApiResult result = callback.getResult();
         TemplateInfo template = context.template;
-        if (result.isSuccess()) {
-            VMTemplateVO tmplt = _tmpltDao.findById(template.getId());
+        VMTemplateVO tmplt = _tmpltDao.findById(template.getId());
+        if (result.isSuccess() && tmplt != null) {
             // need to grant permission for public templates
             if (tmplt.isPublicTemplate()) {
                 _messageBus.publish(_name, TemplateManager.MESSAGE_REGISTER_PUBLIC_TEMPLATE_EVENT, PublishScope.LOCAL, tmplt.getId());
             }
-            long accountId = tmplt.getAccountId();
             if (template.getSize() != null) {
                 // publish usage event
                 String etype = EventTypes.EVENT_TEMPLATE_CREATE;
@@ -448,8 +457,12 @@ public class HypervisorTemplateAdapter extends TemplateAdapterBase {
                     UsageEventUtils.publishUsageEvent(etype, template.getAccountId(), -1, template.getId(), template.getName(), null, null, physicalSize,
                         template.getSize(), VirtualMachineTemplate.class.getName(), template.getUuid());
                 }
-                _resourceLimitMgr.incrementResourceCount(accountId, ResourceType.secondary_storage, template.getSize());
             }
+        }
+        if (tmplt != null) {
+            long accountId = tmplt.getAccountId();
+            Account account = _accountDao.findById(accountId);
+            _resourceLimitMgr.recalculateResourceCount(accountId, account.getDomainId(), ResourceType.secondary_storage.getOrdinal());
         }
 
         return null;

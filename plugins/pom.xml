@@ -63,7 +63,8 @@
         <module>backup/dummy</module>
         <module>backup/networker</module>
         <module>backup/nas</module>
-        <module>backup/commvault</module>
+        <module>backup/ablestack-nas</module>
+        <module>backup/ablestack-commvault</module>
         <module>backup/bx</module>
 
         <module>ca/root-ca</module>
@@ -135,6 +136,7 @@
         <module>storage/volume/default</module>
         <module>storage/volume/nexenta</module>
         <module>storage/volume/sample</module>
+        <module>storage/volume/ontap</module>
         <module>storage/volume/solidfire</module>
         <module>storage/volume/scaleio</module>
         <module>storage/volume/linstor</module>

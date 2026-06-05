@@ -475,9 +475,10 @@
                     </div>
                     <div v-show="!(vm.templateid && templateNics && templateNics.length > 0)" >
                       <network-selection
+                        :key="`network-selection-${zoneId}-${tabKey}-${form.templateid || 'no-template'}-${form.isoid || 'no-iso'}-${(form.networkids || []).join(',')}`"
                         :items="options.networks"
                         :row-count="rowCount.networks"
-                        :value="networkOfferingIds"
+                        :value="form.networkids || []"
                         :loading="loading.networks"
                         :zoneId="zoneId"
                         :preFillContent="dataPreFill"
@@ -486,7 +487,9 @@
                       ></network-selection>
                       <network-configuration
                         v-if="networks.length > 0"
+                        :key="`network-config-${zoneId}-${tabKey}-${defaultnetworkid}-${(form.networkids || []).join(',')}`"
                         :items="networks"
+                        :value="defaultnetworkid"
                         :preFillContent="dataPreFill"
                         @update-network-config="($event) => updateNetworkConfig($event)"
                         @handler-error="($event) => hasError = $event"
@@ -945,6 +948,7 @@ export default {
       ],
       initDataConfig: {},
       defaultnetworkid: '',
+      hasInitializedDefaultNetworkSelection: false,
       networkConfig: [],
       dataNetworkCreated: [],
       dataPreFill: {},
@@ -1453,8 +1457,15 @@ export default {
   created () {
     this.initForm()
     this.dataPreFill = this.preFillContent && Object.keys(this.preFillContent).length > 0 ? this.preFillContent : {}
+    if (Array.isArray(this.dataPreFill.networkids) && this.dataPreFill.networkids.length > 0) {
+      this.form.networkids = [...this.dataPreFill.networkids]
+      if (!this.form.defaultnetworkid) {
+        this.defaultnetworkid = this.dataPreFill.networkids[0]
+        this.form.defaultnetworkid = this.dataPreFill.networkids[0]
+      }
+    }
     this.showOverrideDiskOfferingOption = this.dataPreFill.overridediskoffering
-
+    this.selectedArchitecture = this.dataPreFill.backupArch ? this.dataPreFill.backupArch : this.architectureTypes.opts[0].id
     if (this.dataPreFill.isIso) {
       this.tabKey = 'isoid'
     } else {
@@ -1543,46 +1554,6 @@ export default {
     fillValue (field) {
       this.form[field] = this.dataPreFill[field]
     },
-    fetchZoneByQuery () {
-      return new Promise(resolve => {
-        let zones = []
-        let apiName = ''
-        const params = {}
-        if (this.templateId) {
-          apiName = 'listTemplates'
-          params.listall = true
-          params.templatefilter = this.isNormalAndDomainUser ? 'executable' : 'all'
-          params.id = this.templateId
-        } else if (this.isoId) {
-          apiName = 'listIsos'
-          params.listall = true
-          params.isofilter = this.isNormalAndDomainUser ? 'executable' : 'all'
-          params.id = this.isoId
-        } else if (this.networkId) {
-          params.listall = true
-          params.id = this.networkId
-          apiName = 'listNetworks'
-        }
-        if (!apiName) return resolve(zones)
-
-        getAPI(apiName, params).then(json => {
-          let objectName
-          const responseName = [apiName.toLowerCase(), 'response'].join('')
-          for (const key in json[responseName]) {
-            if (key === 'count') {
-              continue
-            }
-            objectName = key
-            break
-          }
-          const data = json?.[responseName]?.[objectName] || []
-          zones = data.map(item => item.zoneid)
-          return resolve(zones)
-        }).catch(() => {
-          return resolve(zones)
-        })
-      })
-    },
     async fetchData () {
       this.fetchZones(null, null)
       _.each(this.params, (param, name) => {
@@ -1660,6 +1631,12 @@ export default {
       const param = this.params.networks
       this.fetchOptions(param, 'networks')
     },
+    resetDefaultNetworkSelectionState () {
+      this.defaultnetworkid = ''
+      this.hasInitializedDefaultNetworkSelection = false
+      this.networkConfig = []
+      this.form.defaultnetworkid = undefined
+    },
     resetData () {
       this.vm = {
         name: null,
@@ -1681,11 +1658,13 @@ export default {
         disksize: null
       }
       this.zoneSelected = false
+      this.hasInitializedDefaultNetworkSelection = false
       this.formRef.value.resetFields()
       this.fetchData()
     },
     updateFieldValue (name, value) {
       if (name === 'templateid') {
+        this.resetDefaultNetworkSelectionState()
         this.tabKey = 'templateid'
         this.form.templateid = value
         this.form.isoid = null
@@ -1721,8 +1700,10 @@ export default {
           if (template.details['vmware-to-kvm-mac-addresses']) {
             this.dataPreFill.macAddressArray = JSON.parse(template.details['vmware-to-kvm-mac-addresses'])
           }
+          this.selectedArchitecture = template?.arch || 'x86_64'
         }
       } else if (name === 'isoid') {
+        this.resetDefaultNetworkSelectionState()
         this.templateConfigurations = []
         this.selectedTemplateConfiguration = {}
         this.templateNics = []
@@ -1776,10 +1757,36 @@ export default {
     },
     updateNetworks (ids) {
       this.form.networkids = ids
+      this.networks = this.getSelectedNetworksWithExistingConfig(
+        _.filter(this.options.networks, (option) => _.includes(ids, option.id))
+      )
+      if (!this.hasInitializedDefaultNetworkSelection && ids && ids.length > 0 && !this.defaultnetworkid) {
+        this.hasInitializedDefaultNetworkSelection = true
+        this.updateDefaultNetworks(ids[0])
+        return
+      }
+      if (!ids || ids.length === 0 || !ids.includes(this.defaultnetworkid)) {
+        this.updateDefaultNetworks('')
+      }
     },
     updateDefaultNetworks (id) {
       this.defaultnetworkid = id
       this.form.defaultnetworkid = id
+
+      if (!id) {
+        return
+      }
+
+      const existingIds = Array.isArray(this.form.networkids) ? [...this.form.networkids] : []
+
+      if (!existingIds.includes(id)) {
+        existingIds.unshift(id)
+        this.form.networkids = existingIds
+      }
+
+      this.networks = this.getSelectedNetworksWithExistingConfig(
+        _.filter(this.options.networks, option => _.includes(this.form.networkids, option.id))
+      )
     },
     updateNetworkConfig (networks) {
       this.networkConfig = networks
@@ -2289,8 +2296,16 @@ export default {
     },
     onTabChange (key, type) {
       this[type] = key
+      this.resetDefaultNetworkSelectionState()
+
       if (key === 'isoid') {
         this.fetchAllIsos()
+      } else if (key === 'templateid') {
+        this.fetchAllTemplates()
+      }
+
+      if (this.form.networkids && this.form.networkids.length > 0) {
+        this.updateNetworks(this.form.networkids)
       }
     },
     fetchIsos (isoFilter, params) {
@@ -2347,9 +2362,6 @@ export default {
       this.clusterId = null
       this.zone = _.find(this.options.zones, (option) => option.id === value)
       this.isZoneSelectedMultiArch = this.zone.ismultiarch
-      if (this.isZoneSelectedMultiArch) {
-        this.selectedArchitecture = this.architectureTypes.opts[0].id
-      }
       this.zoneSelected = true
       this.form.startvm = true
       this.selectedZone = this.zoneId

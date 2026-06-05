@@ -84,44 +84,44 @@
       <div v-else-if="vcenterSelectedOption === 'new'">
         <a-form-item ref="vcenter" name="vcenter">
           <template #label>
-            <tooltip-label :title="$t('label.vcenter')" :tooltip="apiParams.vcenter.description"/>
+            <tooltip-label :title="$t('label.vcenter')" :tooltip="getApiParamDescription('vcenter', 'label.vcenter')"/>
           </template>
           <a-input
             v-model:value="vcenter"
-            :placeholder="apiParams.vcenter.description"
+            :placeholder="getApiParamDescription('vcenter', 'label.vcenter')"
             @blur="onSelectExternalVmwareDatacenter"
             @pressEnter="onSelectExternalVmwareDatacenter"
           />
         </a-form-item>
         <a-form-item ref="datacenter" name="datacenter">
           <template #label>
-            <tooltip-label :title="$t('label.vcenter.datacenter')" :tooltip="apiParams.datacentername.description"/>
+            <tooltip-label :title="$t('label.vcenter.datacenter')" :tooltip="getApiParamDescription('datacentername', 'label.vcenter.datacenter')"/>
           </template>
           <a-input
             v-model:value="datacenter"
-            :placeholder="apiParams.datacentername.description"
+            :placeholder="getApiParamDescription('datacentername', 'label.vcenter.datacenter')"
             @blur="onSelectExternalVmwareDatacenter"
             @pressEnter="onSelectExternalVmwareDatacenter"
           />
         </a-form-item>
         <a-form-item ref="username" name="username">
           <template #label>
-            <tooltip-label :title="$t('label.vcenter.username')" :tooltip="apiParams.username.description"/>
+            <tooltip-label :title="$t('label.vcenter.username')" :tooltip="getApiParamDescription('username', 'label.vcenter.username')"/>
           </template>
           <a-input
             v-model:value="username"
-            :placeholder="apiParams.username.description"
+            :placeholder="getApiParamDescription('username', 'label.vcenter.username')"
             @blur="onSelectExternalVmwareDatacenter"
             @pressEnter="onSelectExternalVmwareDatacenter"
           />
         </a-form-item>
         <a-form-item ref="password" name="password">
           <template #label>
-            <tooltip-label :title="$t('label.vcenter.password')" :tooltip="apiParams.password.description"/>
+            <tooltip-label :title="$t('label.vcenter.password')" :tooltip="getApiParamDescription('password', 'label.vcenter.password')"/>
           </template>
           <a-input-password
             v-model:value="password"
-            :placeholder="apiParams.password.description"
+            :placeholder="getApiParamDescription('password', 'label.vcenter.password')"
             @blur="onSelectExternalVmwareDatacenter"
             @pressEnter="onSelectExternalVmwareDatacenter"
           />
@@ -132,7 +132,7 @@
       <div class="card-footer">
         <a-button
           v-if="vcenterSelectedOption == 'existing' || vcenterSelectedOption == 'new'"
-          :disabled="(vcenterSelectedOption === 'new' && (vcenter === '' || datacentername === '' || username === '' || password === '')) ||
+          :disabled="(vcenterSelectedOption === 'new' && (vcenter === '' || datacenter === '' || username === '' || password === '')) ||
             (vcenterSelectedOption === 'existing' && selectedExistingVcenterId === '')"
           :loading="loading"
           type="primary"
@@ -154,12 +154,28 @@ export default {
     TooltipLabel,
     Status
   },
+  props: {
+    zoneid: {
+      type: String,
+      required: false
+    },
+    clusterid: {
+      type: String,
+      required: false
+    },
+    useAblestackV2KInventory: {
+      type: Boolean,
+      required: false,
+      default: false
+    }
+  },
   data () {
     return {
       vcenter: '',
       datacenter: '',
       username: '',
       password: '',
+      apiParams: {},
       loading: false,
       zones: {},
       vcenterSelectedOption: '',
@@ -190,6 +206,9 @@ export default {
     }
   },
   computed: {
+    supportsVmwareDatacenterImport () {
+      return 'listVmwareDcVms' in this.$store.getters.apis && 'listVmwareDcs' in this.$store.getters.apis
+    },
     vmwareDcVmsSelection () {
       return {
         type: 'radio',
@@ -198,14 +217,19 @@ export default {
       }
     }
   },
-  beforeCreate () {
-    this.apiParams = this.$getApiParams('listVmwareDcVms')
-  },
   created () {
+    this.apiParams = this.$getApiParams('listVmwareDcVms') || {}
     this.initForm()
     this.fetchZones()
+    if (this.useAblestackV2KInventory && !this.supportsVmwareDatacenterImport) {
+      this.vcenterSelectedOption = 'new'
+      this.$emit('onVcenterTypeChanged', this.vcenterSelectedOption)
+    }
   },
   methods: {
+    getApiParamDescription (paramName, fallbackTranslationKey) {
+      return this.apiParams?.[paramName]?.description || this.$t(fallbackTranslationKey)
+    },
     initForm () {
       this.formRef = ref()
       this.form = reactive({
@@ -222,6 +246,7 @@ export default {
       if (this.vcenterSelectedOption === 'new') {
         params.datacentername = this.datacenter
         params.vcenter = this.vcenter
+        params.host = this.vcenter
         params.username = this.username
         params.password = this.password
       } else {
@@ -229,10 +254,20 @@ export default {
       }
       params.page = 1
       params.pagesize = 10
-      getAPI('listVmwareDcVms', params).then(json => {
+      let apiName = 'listVmwareDcVms'
+      let responseKey = 'listvmwaredcvmsresponse'
+      if (this.useAblestackV2KInventory) {
+        apiName = 'listVmsForImport'
+        responseKey = 'listvmsforimportresponse'
+        params.zoneid = this.zoneid
+        params.clusterid = this.clusterid
+        params.hypervisor = 'VMware'
+        params.sourceprovider = 'vmware'
+      }
+      getAPI(apiName, params).then(json => {
         const obj = {
           params: params,
-          response: json.listvmwaredcvmsresponse
+          response: json[responseKey]
         }
         this.$emit('listedVmwareUnmanagedInstances', obj)
       }).catch(error => {
@@ -256,6 +291,10 @@ export default {
       this.listZoneVmwareDcs()
     },
     listZoneVmwareDcs () {
+      if (!this.supportsVmwareDatacenterImport) {
+        this.existingvcenter = []
+        return
+      }
       this.loading = true
       getAPI('listVmwareDcs', { zoneid: this.sourcezoneid }).then(response => {
         if (response.listvmwaredcsresponse.VMwareDC && response.listvmwaredcsresponse.VMwareDC.length > 0) {
@@ -268,7 +307,7 @@ export default {
       })
     },
     onSelectExternalVmwareDatacenter (value) {
-      if (this.vcenterSelectedOption === 'new' && !(this.vcenter === '' || this.datacentername === '' || this.username === '' || this.password === '')) {
+      if (this.vcenterSelectedOption === 'new' && !(this.vcenter === '' || this.datacenter === '' || this.username === '' || this.password === '')) {
         this.listVmwareDatacenterVms()
       }
     },
