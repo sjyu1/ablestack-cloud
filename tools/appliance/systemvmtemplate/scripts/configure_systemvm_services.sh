@@ -136,6 +136,7 @@ function configure_services() {
   systemctl disable sshd
   systemctl disable nfs-common
   systemctl disable nfs-server
+  systemctl disable nfs-ganesha || true
   systemctl disable portmap
   systemctl disable smbd
   systemctl disable nmbd

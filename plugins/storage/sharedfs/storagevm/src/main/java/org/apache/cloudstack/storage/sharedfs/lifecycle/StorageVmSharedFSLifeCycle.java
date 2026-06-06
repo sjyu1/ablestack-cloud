@@ -235,7 +235,7 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
     }
 
     @Override
-    public Pair<Long, Long> deploySharedFS(SharedFS sharedFS, Long networkId, Long diskOfferingId, Long size, Long minIops, Long maxIops) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException, OperationTimedoutException {
+    public Pair<Long, Long> deploySharedFS(SharedFS sharedFS, Long networkId, Long diskOfferingId, Long storageId, Long size, Long minIops, Long maxIops) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException, OperationTimedoutException {
         Account owner = accountMgr.getActiveAccountById(sharedFS.getAccountId());
         UserVm vm = deploySharedFSVM(sharedFS.getDataCenterId(), owner, List.of(networkId), sharedFS.getName(), sharedFS.getServiceOfferingId(), diskOfferingId, sharedFS.getFsType(), size, minIops, maxIops);
 
@@ -249,6 +249,14 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
             if (vol.getVolumeType() == Volume.Type.DATADISK) {
                 dataVol = vol;
             }
+        }
+        if (dataVol == null) {
+            throw new CloudRuntimeException("SharedFS VM was deployed without an initial data volume");
+        }
+        if (storageId != null && dataVol.getPoolId() != null && !storageId.equals(dataVol.getPoolId())) {
+            expungeVm(vm.getId());
+            throw new CloudRuntimeException(String.format("Initial SharedFS backing volume was allocated on storage pool %s instead of selected storage pool %s",
+                    dataVol.getPoolId(), storageId));
         }
         return new Pair<>(dataVol.getId(), vm.getId());
     }

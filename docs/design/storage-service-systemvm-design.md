@@ -1454,14 +1454,16 @@ Dialog usability rules:
 - When creating a new initial backing data disk, the create dialog must require
   an explicit primary storage selection and send it as `storageid` together
   with disk offering and size. Existing-volume flows do not require `storageid`
-  because the selected volume already determines its storage location. The
-  current programmatic SharedFS VM deployment path uses
-  `createAdvancedVirtualMachine`, which does not expose a primary-storage pool
-  placement argument; therefore full placement enforcement requires a follow-up
-  backend refactor of that deployment path or a split create-volume/attach
-  workflow. Until that refactor, `storageid` is the UI/API contract for operator
-  intent and compatibility, while normal ABLESTACK allocation errors still
-  remain possible.
+  because the selected volume already determines its storage location. The UI
+  must order the fields as disk offering first and primary storage second. When
+  the selected disk offering has storage tags, the primary storage list must
+  include only pools that satisfy all offering tags; when the offering has no
+  tags, all usable pools in the zone may be shown. The backend must repeat the
+  same validation before deployment. The lifecycle implementation must enforce
+  the selected pool for the initial backing volume, either by passing the pool
+  into the deployment path or by creating/attaching the initial backing volume
+  through an explicit volume workflow. A mismatched or unavailable pool must
+  fail before partially configured Storage Service resources are exposed.
 - SMB local account application inside the Storage Service System VM must be
   idempotent. For a local user ACL:
   - if the Linux user already exists, update/enable the Samba password only;
@@ -1731,9 +1733,13 @@ keeping common service state in the first details tab.
     coerce the export to `ALL`.
     Because the Linux kernel NFS server does not provide a first-class
     per-export/per-listen-IP visibility model in the current SystemVM design,
-    endpoint binding is treated as Storage Service metadata and desired-state
-    intent in this phase. Strong per-endpoint export isolation, if required,
-    must be handled later through a dedicated firewall/netns/nfsd policy design.
+    Storage Service managed NFS must move to NFS-Ganesha for endpoint-aware
+    serving. Endpoint binding is no longer only metadata. The SystemVM desired
+    state renderer must generate endpoint-specific Ganesha configuration where
+    each endpoint is `listen IP + TCP port` and each endpoint contains only the
+    exports bound to that endpoint. Kernel `exportfs` may remain available for
+    platform compatibility, but Storage Service NFS must not render active
+    exports into `/etc/exports.d`.
     Endpoint selection lists must be built from the merged endpoint model:
     ABLESTACK VM NIC IPs, secondary IPs, SystemVM runtime monitor IPs, protocol
     listen IPs, and export-level explicit `listenIps`, de-duplicated by IP.
@@ -1744,6 +1750,20 @@ keeping common service state in the first details tab.
     endpoint IPs for each export. Generic connection examples must remain
     export-name based, for example `<endpoint-ip>:/<export-name>`, instead of
     exposing the internal backing path.
+    NFS-Ganesha rendering rules are:
+    - the client-visible pseudo path is always `/<export-name>`;
+    - the internal operator-facing alias remains `/export/<export-name>`;
+    - the real data path remains under
+      `/srv/ablestack-storage/volumes/<volume-uuid>/export/<export-name>`;
+    - the SystemVM must not export `/export/<export-name>` to clients;
+    - a non-default endpoint port must be shown in the UI connection help as
+      `mount -t nfs -o vers=4,port=<port> <endpoint-ip>:/<export-name> ...`;
+    - endpoint create/update/delete regenerates Ganesha configuration,
+      reloads or restarts the affected endpoint service, and opens the
+      configured TCP port in the SystemVM firewall;
+    - legacy Storage Service `/etc/exports.d/ablestack-*.exports` files must be
+      emptied or removed during apply so stale kernel exports cannot leak
+      `/export/*` paths.
   - After a protocol action modal closes, the UI must keep the current protocol
     tab and update only the affected protocol data, runtime summary, sessions,
     ACLs, and backing-volume rows. It must not navigate back to the Details tab

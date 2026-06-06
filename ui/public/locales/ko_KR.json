@@ -6129,6 +6129,7 @@
   "message.storage.service.setup.verify.nfs.runtime.missing": "선택한 NFS 내보내기와 ACL은 생성되었지만 Storage Service VM에 활성화되지 않았습니다.",
   "message.storage.service.primary.storage.help": "초기 백킹 데이터 디스크를 생성할 ABLESTACK 기본 스토리지를 선택합니다.",
   "message.storage.service.primary.storage.select": "기본 스토리지 선택",
+  "message.storage.service.primary.storage.tag.filtered": "선택한 디스크 오퍼링 태그({tags})와 일치하는 기본 스토리지만 표시됩니다.",
   "message.storage.service.setup.verify.smb.missing": "SMB를 선택했지만 SMB 공유가 생성되지 않았습니다.",
   "message.storage.service.setup.verify.smb.acl.missing": "SMB 로컬 사용자를 요청했지만 SMB 접근 허용 항목이 생성되지 않았습니다.",
   "message.storage.service.setup.verify.iscsi.missing": "iSCSI를 선택했지만 iSCSI 대상이 생성되지 않았습니다.",

@@ -100,6 +100,8 @@ import org.apache.cloudstack.storage.dataservice.dao.StorageAccessRuleDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageFileShareDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageServiceInstanceDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageServiceProtocolDao;
+import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
+import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
 import org.apache.cloudstack.storage.sharedfs.dao.SharedFSDao;
 import org.apache.cloudstack.storage.sharedfs.SharedFS.Event;
@@ -146,6 +148,9 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
 
     @Inject
     VolumeDao volumeDao;
+
+    @Inject
+    PrimaryDataStoreDao storagePoolDao;
 
     @Inject
     NetworkDao networkDao;
@@ -279,6 +284,23 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
     }
 
+    private void validateInitialBackingStorage(Long diskOfferingId, Long storageId, DataCenter zone) {
+        if (storageId == null) {
+            throw new InvalidParameterValueException("Primary storage is required for the initial Shared FileSystem backing volume");
+        }
+        final DiskOfferingVO diskOffering = diskOfferingDao.findById(diskOfferingId);
+        final StoragePoolVO storagePool = storagePoolDao.findById(storageId);
+        if (storagePool == null) {
+            throw new InvalidParameterValueException("Unable to find primary storage with id " + storageId);
+        }
+        if (storagePool.getDataCenterId() != zone.getId()) {
+            throw new InvalidParameterValueException("Selected primary storage does not belong to zone " + zone.getUuid());
+        }
+        if (!volumeApiService.doesStoragePoolSupportDiskOffering(storagePool, diskOffering)) {
+            throw new InvalidParameterValueException("Selected primary storage does not satisfy the disk offering storage tags");
+        }
+    }
+
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_SHAREDFS_CREATE, eventDescription = "Allocating Shared FileSystem", create = true)
     public SharedFS allocSharedFS(CreateSharedFSCmd cmd) {
@@ -294,6 +316,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         Long minIops = cmd.getMinIops();
         Long maxIops = cmd.getMaxIops();
         validateDiskOffering(diskOfferingId, size, minIops, maxIops, zone);
+        validateInitialBackingStorage(diskOfferingId, cmd.getStorageId(), zone);
 
         SharedFSProvider provider = getSharedFSProvider(cmd.getSharedFSProviderName());
         SharedFSLifeCycle lifeCycle = provider.getSharedFSLifeCycle();
@@ -345,7 +368,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         SharedFSLifeCycle lifeCycle = provider.getSharedFSLifeCycle();
         Pair<Long, Long> result = null;
         try {
-            result = lifeCycle.deploySharedFS(sharedFS, cmd.getNetworkId(), diskOfferingId, size, minIops, maxIops);
+            result = lifeCycle.deploySharedFS(sharedFS, cmd.getNetworkId(), diskOfferingId, cmd.getStorageId(), size, minIops, maxIops);
         } catch (Exception ex) {
             stateTransitTo(sharedFS, Event.OperationFailed);
             throw ex;

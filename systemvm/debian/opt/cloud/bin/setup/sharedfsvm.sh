@@ -50,6 +50,8 @@ setup_sharedfsvm() {
 
     rm -f /etc/logrotate.d/cloud
     mkdir -p /etc/ablestack-storage
+    mkdir -p /etc/ganesha/ablestack-storage
+    mkdir -p /run/ablestack-storage/ganesha
     touch /var/log/ablestack-storagectl.log
     if [ ! -s /usr/local/bin/ablestack-storagectl ]; then
       log_it "Missing or empty /usr/local/bin/ablestack-storagectl"

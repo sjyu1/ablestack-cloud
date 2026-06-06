@@ -6129,6 +6129,7 @@
   "message.storage.service.setup.verify.nfs.runtime.missing": "The selected NFS export and ACL were created, but they are not active in the Storage Service VM.",
   "message.storage.service.primary.storage.help": "Select the ABLESTACK primary storage to use for the initial backing data disk.",
   "message.storage.service.primary.storage.select": "Select primary storage",
+  "message.storage.service.primary.storage.tag.filtered": "Only primary storage matching the selected disk offering tags ({tags}) is shown.",
   "message.storage.service.setup.verify.smb.missing": "SMB was selected, but no SMB share was created.",
   "message.storage.service.setup.verify.smb.acl.missing": "A local SMB user was requested, but no SMB access rule was created.",
   "message.storage.service.setup.verify.iscsi.missing": "iSCSI was selected, but no iSCSI target was created.",

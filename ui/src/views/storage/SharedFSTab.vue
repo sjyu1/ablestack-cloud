@@ -958,7 +958,7 @@ wrapClassName="storage-service-action-modal"
                 <template #label>
                   <tooltip-label :title="$t('label.diskoffering')" :tooltip="$t('message.storage.service.new.volume.diskoffering.help')" />
                 </template>
-                <a-select v-model:value="forms.nfsExport.diskofferingid" :loading="diskOfferingLoading" show-search optionFilterProp="label">
+                <a-select v-model:value="forms.nfsExport.diskofferingid" :loading="diskOfferingLoading" show-search optionFilterProp="label" @change="reconcileNfsNewVolumeStorage">
                   <a-select-option v-for="offering in diskOfferings" :key="offering.id" :value="offering.id" :label="offering.displaytext || offering.name">
                     {{ offering.displaytext || offering.name }}
                   </a-select-option>
@@ -969,10 +969,13 @@ wrapClassName="storage-service-action-modal"
                   <tooltip-label :title="$t('label.primary.storage')" :tooltip="$t('message.storage.service.new.volume.storage.help')" />
                 </template>
                 <a-select v-model:value="forms.nfsExport.storageid" :loading="storagePoolLoading" show-search optionFilterProp="label">
-                  <a-select-option v-for="pool in storagePools" :key="pool.id" :value="pool.id" :label="storagePoolLabel(pool)">
+                  <a-select-option v-for="pool in filteredNfsNewVolumeStoragePools" :key="pool.id" :value="pool.id" :label="storagePoolLabel(pool)">
                     {{ storagePoolLabel(pool) }}
                   </a-select-option>
                 </a-select>
+                <div v-if="selectedNfsDiskOfferingTags.length" class="storage-field-hint">
+                  {{ $t('message.storage.service.primary.storage.tag.filtered', { tags: selectedNfsDiskOfferingTags.join(', ') }) }}
+                </div>
               </a-form-item>
               <a-form-item required>
                 <template #label>
@@ -1788,6 +1791,22 @@ export default {
         return null
       }
       return this.currentBackingVolumes.find(volume => String(volume.id) === selected || String(volume.uuid) === selected) || null
+    },
+    selectedNfsDiskOffering () {
+      return this.diskOfferings.find(offering => offering.id === this.forms.nfsExport.diskofferingid)
+    },
+    selectedNfsDiskOfferingTags () {
+      return this.extractStorageTags(this.selectedNfsDiskOffering)
+    },
+    filteredNfsNewVolumeStoragePools () {
+      const requiredTags = this.selectedNfsDiskOfferingTags.map(tag => tag.toLowerCase())
+      if (!requiredTags.length) {
+        return this.storagePools
+      }
+      return this.storagePools.filter(pool => {
+        const poolTags = this.extractStorageTags(pool).map(tag => tag.toLowerCase())
+        return requiredTags.every(tag => poolTags.includes(tag))
+      })
     },
     serviceNics () {
       return [
@@ -2779,6 +2798,7 @@ export default {
       }
       getAPI('listDiskOfferings', params).then(json => {
         this.diskOfferings = json.listdiskofferingsresponse.diskoffering || []
+        this.reconcileNfsNewVolumeStorage()
       }).finally(() => {
         this.diskOfferingLoading = false
       })
@@ -2799,6 +2819,7 @@ export default {
         if (!this.forms.nfsExport.storageid) {
           this.forms.nfsExport.storageid = this.defaultNewVolumeStorageId()
         }
+        this.reconcileNfsNewVolumeStorage()
       }).finally(() => {
         this.storagePoolLoading = false
       })
@@ -3527,7 +3548,32 @@ export default {
       const name = pool.name || pool.displaytext || pool.id
       const scope = pool.scope || ''
       const type = pool.type || pool.storagetype || ''
-      return [name, type, scope].filter(Boolean).join(' / ')
+      const tags = this.extractStorageTags(pool)
+      return [name, type, scope, tags.length ? tags.join(',') : ''].filter(Boolean).join(' / ')
+    },
+    extractStorageTags (item) {
+      if (!item) {
+        return []
+      }
+      const raw = item.tags ?? item.storageTags ?? item.storagetags ?? item.storagepooltags ?? item.storagePoolTags
+      if (Array.isArray(raw)) {
+        return raw.map(value => String(value).trim()).filter(Boolean)
+      }
+      if (raw && typeof raw === 'object') {
+        return Object.values(raw).map(value => String(value).trim()).filter(Boolean)
+      }
+      return String(raw || '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean)
+    },
+    reconcileNfsNewVolumeStorage () {
+      if (this.forms.nfsExport.volumemode !== 'NEW') {
+        return
+      }
+      if (!this.filteredNfsNewVolumeStoragePools.some(pool => pool.id === this.forms.nfsExport.storageid)) {
+        this.forms.nfsExport.storageid = this.filteredNfsNewVolumeStoragePools[0]?.id || ''
+      }
     },
     defaultCurrentBackingVolumeId () {
       if (this.currentBackingVolumes.length === 1) {
@@ -3541,10 +3587,10 @@ export default {
     },
     defaultNewVolumeStorageId () {
       const preferred = this.volume.storageid || this.resource.storageid || this.storageService.backingVolumes?.[0]?.storageid
-      if (preferred && this.storagePools.some(pool => pool.id === preferred)) {
+      if (preferred && this.filteredNfsNewVolumeStoragePools.some(pool => pool.id === preferred)) {
         return preferred
       }
-      return this.storagePools[0]?.id || preferred || ''
+      return this.filteredNfsNewVolumeStoragePools[0]?.id || preferred || ''
     },
     formatProtocolEndpoints (port, preferredIp = null) {
       const ips = preferredIp ? [preferredIp] : this.serviceEndpoints

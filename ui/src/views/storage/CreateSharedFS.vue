@@ -313,26 +313,6 @@
             </a-col>
             <a-col :xs="24" :lg="12">
               <template v-if="!form.useexistingvolume">
-                <a-form-item name="storageid" required>
-                  <template #label>
-                    <tooltip-label :title="$t('label.storage.service.primary.storage')" :tooltip="$t('message.storage.service.primary.storage.help')"/>
-                  </template>
-                  <a-select
-                    v-model:value="form.storageid"
-                    :loading="storagePoolLoading"
-                    :placeholder="$t('message.storage.service.primary.storage.select')"
-                    showSearch
-                    optionFilterProp="label"
-                    :filterOption="filterOption" >
-                    <a-select-option
-                      v-for="pool in storagePools"
-                      :value="pool.id"
-                      :key="pool.id"
-                      :label="formatStoragePoolOption(pool)">
-                      {{ formatStoragePoolOption(pool) }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
                 <a-form-item ref="diskofferingid" name="diskofferingid" required>
                   <template #label>
                     <tooltip-label :title="$t('label.diskofferingid')" :tooltip="apiParams.diskofferingid.description || $t('label.diskofferingid')"/>
@@ -353,6 +333,29 @@
                       {{ diskoffering.displaytext || diskoffering.name }}
                     </a-select-option>
                   </a-select>
+                </a-form-item>
+                <a-form-item name="storageid" required>
+                  <template #label>
+                    <tooltip-label :title="$t('label.storage.service.primary.storage')" :tooltip="$t('message.storage.service.primary.storage.help')"/>
+                  </template>
+                  <a-select
+                    v-model:value="form.storageid"
+                    :loading="storagePoolLoading"
+                    :placeholder="$t('message.storage.service.primary.storage.select')"
+                    showSearch
+                    optionFilterProp="label"
+                    :filterOption="filterOption" >
+                    <a-select-option
+                      v-for="pool in filteredStoragePools"
+                      :value="pool.id"
+                      :key="pool.id"
+                      :label="formatStoragePoolOption(pool)">
+                      {{ formatStoragePoolOption(pool) }}
+                    </a-select-option>
+                  </a-select>
+                  <div v-if="selectedDiskOfferingTags.length" class="field-hint">
+                    {{ $t('message.storage.service.primary.storage.tag.filtered', { tags: selectedDiskOfferingTags.join(', ') }) }}
+                  </div>
                 </a-form-item>
                 <a-form-item v-if="customDiskOffering" ref="size" name="size" required>
                   <template #label>
@@ -1016,8 +1019,24 @@ export default {
     selectedExistingVolumeLabel () {
       return this.selectedExistingVolume ? this.formatVolumeOption(this.selectedExistingVolume) : '-'
     },
+    selectedDiskOffering () {
+      return this.diskofferings.find(offering => offering.id === this.form.diskofferingid)
+    },
+    selectedDiskOfferingTags () {
+      return this.extractStorageTags(this.selectedDiskOffering)
+    },
+    filteredStoragePools () {
+      const requiredTags = this.selectedDiskOfferingTags.map(tag => tag.toLowerCase())
+      if (!requiredTags.length) {
+        return this.storagePools
+      }
+      return this.storagePools.filter(pool => {
+        const poolTags = this.extractStorageTags(pool).map(tag => tag.toLowerCase())
+        return requiredTags.every(tag => poolTags.includes(tag))
+      })
+    },
     selectedStoragePool () {
-      return this.storagePools.find(pool => pool.id === this.form.storageid)
+      return this.filteredStoragePools.find(pool => pool.id === this.form.storageid)
     },
     selectedStoragePoolLabel () {
       return this.selectedStoragePool ? this.formatStoragePoolOption(this.selectedStoragePool) : '-'
@@ -1420,6 +1439,7 @@ export default {
         this.form.diskofferingid = this.diskofferings[0].id || ''
         this.customDiskOffering = this.diskofferings[0].iscustomized || false
         this.isCustomizedDiskIOps = this.diskofferings[0]?.iscustomizediops || false
+        this.reconcileSelectedStoragePool()
       }).finally(() => {
         this.diskofferingLoading = false
       })
@@ -1441,7 +1461,7 @@ export default {
           const state = String(pool.state || pool.status || '').toLowerCase()
           return !state || ['up', 'enabled', 'available'].includes(state)
         })
-        this.form.storageid = this.storagePools[0]?.id || ''
+        this.reconcileSelectedStoragePool()
       }).finally(() => {
         this.storagePoolLoading = false
       })
@@ -1518,7 +1538,30 @@ export default {
       const type = pool.type || pool.storagetype || '-'
       const scope = pool.scope || '-'
       const state = pool.state || pool.status || '-'
-      return `${name} / ${type} / ${scope} / ${state}`
+      const tags = this.extractStorageTags(pool)
+      const tagLabel = tags.length ? ` / ${tags.join(',')}` : ''
+      return `${name} / ${type} / ${scope} / ${state}${tagLabel}`
+    },
+    extractStorageTags (item) {
+      if (!item) {
+        return []
+      }
+      const raw = item.tags ?? item.storageTags ?? item.storagetags ?? item.storagepooltags ?? item.storagePoolTags
+      if (Array.isArray(raw)) {
+        return raw.map(value => String(value).trim()).filter(Boolean)
+      }
+      if (raw && typeof raw === 'object') {
+        return Object.values(raw).map(value => String(value).trim()).filter(Boolean)
+      }
+      return String(raw || '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean)
+    },
+    reconcileSelectedStoragePool () {
+      if (!this.form.useexistingvolume && !this.filteredStoragePools.some(pool => pool.id === this.form.storageid)) {
+        this.form.storageid = this.filteredStoragePools[0]?.id || ''
+      }
     },
     formatBytes (bytes) {
       const value = Number(bytes)
@@ -1558,6 +1601,7 @@ export default {
       const diskoffering = this.diskofferings.filter(x => x.id === id)
       this.customDiskOffering = diskoffering[0]?.iscustomized || false
       this.isCustomizedDiskIOps = diskoffering[0]?.iscustomizediops || false
+      this.reconcileSelectedStoragePool()
     },
     handleSubmit (e) {
       if (e && e.preventDefault) {
@@ -1586,7 +1630,7 @@ export default {
         } else {
           data.account = this.owner.account
         }
-        if (!values.useexistingvolume && values.storageid) {
+        if (values.storageid) {
           data.storageid = values.storageid
         }
         const missingApis = this.missingStorageServiceSetupApis()

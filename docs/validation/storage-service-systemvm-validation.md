@@ -904,6 +904,26 @@ Result:
 | TC03D-20260601-02 | NVMe-oF final fresh-template regression | Latest cross-zone SYSTEM template, NVMe-oF no-auth, one subsystem, one namespace, one Host NQN ACL from local WSL initiator, DH-HMAC-CHAP capability gating | `tc03d-final2-20260601` / `734792f2-1df0-48cf-a114-0b5b31db6460` / VM `990244a3-ab95-4fe6-86f5-d9255a08c88c` (`i-2-455-VM`) | `ab4023e2-62bd-4978-a881-50c1e8a2eca5` | Pass | API/runtime Pass; operator UI visual review optional | Pass | Fresh SharedFS creation initially exposed a precondition issue: the latest `202606010104` artifact had also been registered as a zone-scoped `USER` template and was therefore not selected by `findSystemVMReadyTemplate`; SharedFS creation selected older SYSTEM template `sstest0`. The wrong-template test VM was destroyed, the same artifact was re-registered as cross-zone SYSTEM template `SystemVM Template Storage Service (KVM) 202606010104 SYSTEM` / `5d581192-0452-4adf-815a-0ac8b6aff984`, and the final retest VM used that template. SharedFS reached `Ready`; VM is `Running` on `ablecube22-2`; service IP from QGA is `10.10.254.18`; data volume is `sharedfs-DATA-455` / `d6b8751c-7784-448d-934d-2a7fb4e210be`; subsystem `b1bd071d-9ee3-4afc-b4e0-770f702fb7e4` / `nqn.2026-06.local.storage:tc03d-final2`, namespace `1`, and Host ACL `0a04f141-89f7-43a1-bdd6-5c11e1ff6eff` are all `Ready`. Health and inventory report `status=ok`, TCP 4420 listening, kernel `6.1.0-49-amd64`, `dhChapSupported=false`, `dhChapCtrlSupported=false`, and reason `missing nvmet host dhchap_key/dhchap_ctrl_key`. WSL `nvme discover`, `nvme connect`, `/dev/nvme0n1` attach, 50 GiB size check, and direct read all passed; session inventory showed 17 `NVME_OF` `ESTAB` sessions with `connectedAt` and subsystem NQN while connected, and returned to 0 after disconnect. | TC-03D no-auth/Host NQN ACL path is accepted on the latest template. DH-HMAC-CHAP is accepted only as an environment-unsupported capability-gated path for the current SystemVM kernel. Also note the API-key test harness must sign Cloud API values by URL-encoding first and then lowercasing; lowercasing before URL-encoding causes false 401 errors for values containing `:` such as NQNs. |
 |  | All services mixed | NFS, SMB local, iSCSI no-auth, NVMe-oF kernel no-auth |  |  | Not Run | Not Run | Not Run |  |  |
 
+### TC-04 Ganesha NFS Endpoint Criteria
+
+The TC-04 NFS lifecycle tests now use the NFS-Ganesha based serving model.
+
+- Authoritative client mount validation uses NFSv4 and the client-visible
+  export name: `mount -t nfs -o vers=4 <endpoint-ip>:/<export-name>
+  <mount-point>`.
+- If an endpoint uses a non-default port, include `port=<port>` in mount
+  options.
+- `/export/<export-name>` is an internal SystemVM alias and must not be treated
+  as the client mount root.
+- An export bound to selected endpoints must be reachable only through those
+  endpoints.
+- `showmount -e` is a compatibility observation only and is not the pass/fail
+  source for Ganesha/NFSv4 pseudo paths.
+- SharedFS creation and NFS export new-volume creation must show disk offering
+  first and primary storage second. Primary storage choices must be filtered by
+  disk offering storage tags, and the selected pool must be reflected in the
+  created backing volume or the operation must fail.
+
 ### TC-04 UI NFS Service Management Lifecycle
 
 Goal: verify NFS export, ACL, access, and lifecycle operations are controlled
