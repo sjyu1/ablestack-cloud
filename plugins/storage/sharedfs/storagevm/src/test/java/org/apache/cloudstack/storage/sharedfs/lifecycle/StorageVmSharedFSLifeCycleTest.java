@@ -142,6 +142,7 @@ public class StorageVmSharedFSLifeCycleTest {
     private static final long s_volumeId = 6L;
     private static final long s_vmId = 7L;
     private static final long s_networkId = 8L;
+    private static final long s_storageId = 9L;
     private static final long s_size = 10L;
     private static final long s_minIops = 1000L;
     private static final long s_maxIops = 2000L;
@@ -285,11 +286,17 @@ public class StorageVmSharedFSLifeCycleTest {
                 anyMap(), isNull(), isNull(), isNull(), isNull(),
                 anyBoolean(), anyString(), isNull())).thenReturn(vm);
 
-        VolumeVO volume = mock(VolumeVO.class);
-        when(volume.getId()).thenReturn(s_volumeId);
-        when(volumeDao.findByInstanceAndType(s_vmId, Volume.Type.DATADISK)).thenReturn(List.of(volume));
+        VolumeVO rootVol = mock(VolumeVO.class);
+        when(rootVol.getVolumeType()).thenReturn(Volume.Type.ROOT);
+        when(rootVol.getName()).thenReturn("ROOT-1");
+        VolumeVO dataVol = mock(VolumeVO.class);
+        when(dataVol.getId()).thenReturn(s_volumeId);
+        when(dataVol.getName()).thenReturn("DATA-1");
+        when(dataVol.getVolumeType()).thenReturn(Volume.Type.DATADISK);
+        when(dataVol.getPoolId()).thenReturn(s_storageId);
+        when(volumeDao.findByInstance(s_vmId)).thenReturn(List.of(rootVol, dataVol));
 
-         Pair<Long, Long> result = lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_size, s_minIops, s_maxIops);
+         Pair<Long, Long> result = lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_storageId, s_size, s_minIops, s_maxIops);
          Assert.assertEquals(Optional.ofNullable(result.first()), Optional.ofNullable(s_volumeId));
          Assert.assertEquals(Optional.ofNullable(result.second()), Optional.ofNullable(s_vmId));
     }
@@ -306,7 +313,7 @@ public class StorageVmSharedFSLifeCycleTest {
         when(accountMgr.getActiveAccountById(s_ownerId)).thenReturn(null);
         DataCenterVO zone = mock(DataCenterVO.class);
         when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
-        lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_size, s_minIops, s_maxIops);
+        lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_storageId, s_size, s_minIops, s_maxIops);
     }
 
     @Test(expected = CloudRuntimeException.class)
@@ -324,7 +331,7 @@ public class StorageVmSharedFSLifeCycleTest {
         when(resourceMgr.getSupportedHypervisorTypes(s_zoneId, false, null)).thenReturn(List.of(Hypervisor.HypervisorType.KVM));
 
         when(templateDao.findSystemVMReadyTemplate(s_zoneId, Hypervisor.HypervisorType.KVM)).thenReturn(null);
-        lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_size, s_minIops, s_maxIops);
+        lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_storageId, s_size, s_minIops, s_maxIops);
     }
 
     @Test

@@ -63,7 +63,7 @@ function install_packages() {
     sysstat \
     apache2 ssl-cert \
     dnsmasq dnsmasq-utils \
-    nfs-common nfs-kernel-server xfsprogs quota acl parted lvm2 \
+    nfs-common nfs-kernel-server nfs-ganesha nfs-ganesha-vfs xfsprogs quota acl parted lvm2 \
     samba samba-common smbclient cifs-utils winbind libnss-winbind libpam-winbind \
     krb5-user realmd sssd sssd-tools libnss-sss libpam-sss adcli \
     targetcli-fb nvme-cli \

@@ -89,6 +89,8 @@ import com.cloud.utils.fsm.NoTransitionException;
 import com.cloud.utils.fsm.StateMachine2;
 import com.cloud.vm.NicVO;
 import com.cloud.vm.dao.NicDao;
+import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
+import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 
 @RunWith(MockitoJUnitRunner.class)
 public class SharedFSServiceImplTest {
@@ -110,6 +112,9 @@ public class SharedFSServiceImplTest {
 
     @Mock
     VolumeDao volumeDao;
+
+    @Mock
+    PrimaryDataStoreDao storagePoolDao;
 
     @Mock
     NicDao nicDao;
@@ -145,6 +150,7 @@ public class SharedFSServiceImplTest {
     private static final long s_vmId = 7L;
     private static final long s_networkId = 8L;
     private static final long s_sharedFSId = 9L;
+    private static final long s_storageId = 11L;
     private static final long s_size = 10L;
     private static final long s_minIops = 1000L;
     private static final long s_maxIops = 2000L;
@@ -190,6 +196,7 @@ public class SharedFSServiceImplTest {
         when(cmd.getEntityOwnerId()).thenReturn(s_ownerId);
         when(cmd.getZoneId()).thenReturn(s_zoneId);
         when(cmd.getDiskOfferingId()).thenReturn(s_diskOfferingId);
+        when(cmd.getStorageId()).thenReturn(s_storageId);
         when(cmd.getSize()).thenReturn(s_size);
         when(cmd.getMinIops()).thenReturn(s_minIops);
         when(cmd.getMaxIops()).thenReturn(s_maxIops);
@@ -214,7 +221,7 @@ public class SharedFSServiceImplTest {
         when(sharedFSDao.findById(0L)).thenReturn(sharedFS);
 
         Pair<Long, Long> result = new Pair<>(s_volumeId, s_vmId);
-        when(lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_size, s_minIops, s_maxIops)).thenReturn(result);
+        when(lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_storageId, s_size, s_minIops, s_maxIops)).thenReturn(result);
         when(sharedFSDao.update(sharedFS.getId(), sharedFS)).thenReturn(true);
 
         Assert.assertEquals(sharedFSServiceImpl.deploySharedFS(cmd), sharedFS);
@@ -230,7 +237,7 @@ public class SharedFSServiceImplTest {
         SharedFSVO sharedFS = getMockSharedFS();
         when(sharedFSDao.findById(0L)).thenReturn(sharedFS);
 
-        when(lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_size, s_minIops, s_maxIops)).thenThrow(new CloudRuntimeException(""));
+        when(lifeCycle.deploySharedFS(sharedFS, s_networkId, s_diskOfferingId, s_storageId, s_size, s_minIops, s_maxIops)).thenThrow(new CloudRuntimeException(""));
 
         Assert.assertThrows(CloudRuntimeException.class, () -> sharedFSServiceImpl.deploySharedFS(cmd));
         verify(_stateMachine, times(1)).transitTo(sharedFS, SharedFS.Event.OperationFailed, null, sharedFSDao);
@@ -252,6 +259,10 @@ public class SharedFSServiceImplTest {
         when(diskOfferingDao.findById(s_diskOfferingId)).thenReturn(diskOfferingVO);
         when(diskOfferingVO.isCustomized()).thenReturn(true);
         when(diskOfferingVO.isCustomizedIops()).thenReturn(true);
+        StoragePoolVO storagePool = mock(StoragePoolVO.class);
+        when(storagePoolDao.findById(s_storageId)).thenReturn(storagePool);
+        when(storagePool.getDataCenterId()).thenReturn(s_zoneId);
+        when(volumeApiService.doesStoragePoolSupportDiskOffering(storagePool, diskOfferingVO)).thenReturn(true);
 
         SharedFSVO sharedFS = getMockSharedFS();
         ReflectionTestUtils.setField(sharedFS, "id", s_sharedFSId);
