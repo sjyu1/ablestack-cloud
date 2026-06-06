@@ -52,6 +52,9 @@ public class CreateStorageIscsiTargetCmd extends BaseAsyncCmd implements UserCmd
     @Parameter(name = "lun", type = CommandType.STRING, description = "LUN ID")
     private String lun;
 
+    @Parameter(name = "lunsizebytes", type = CommandType.LONG, description = "LUN size in bytes")
+    private Long lunSizeBytes;
+
     @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, required = true, description = "backing volume ID")
     private Long volumeId;
 
@@ -68,6 +71,10 @@ public class CreateStorageIscsiTargetCmd extends BaseAsyncCmd implements UserCmd
 
     public String getLun() {
         return lun;
+    }
+
+    public Long getLunSizeBytes() {
+        return lunSizeBytes;
     }
 
     public Long getVolumeId() {

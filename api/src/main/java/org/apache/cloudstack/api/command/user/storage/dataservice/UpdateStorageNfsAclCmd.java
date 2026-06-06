@@ -53,6 +53,15 @@ public class UpdateStorageNfsAclCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = "rootsquash", type = CommandType.BOOLEAN, description = "enable root squash for this ACL")
     private Boolean rootSquash;
 
+    @Parameter(name = "allsquash", type = CommandType.BOOLEAN, description = "map all client users to the anonymous NFS user for this ACL")
+    private Boolean allSquash;
+
+    @Parameter(name = "anonuid", type = CommandType.INTEGER, description = "anonymous UID used by root/all squash for this ACL")
+    private Integer anonUid;
+
+    @Parameter(name = "anongid", type = CommandType.INTEGER, description = "anonymous GID used by root/all squash for this ACL")
+    private Integer anonGid;
+
     @Parameter(name = "sync", type = CommandType.BOOLEAN, description = "use sync export option for this ACL")
     private Boolean sync;
 
@@ -73,6 +82,18 @@ public class UpdateStorageNfsAclCmd extends BaseAsyncCmd implements UserCmd {
 
     public Boolean getRootSquash() {
         return rootSquash;
+    }
+
+    public Boolean getAllSquash() {
+        return allSquash;
+    }
+
+    public Integer getAnonUid() {
+        return anonUid;
+    }
+
+    public Integer getAnonGid() {
+        return anonGid;
     }
 
     public Boolean getSync() {

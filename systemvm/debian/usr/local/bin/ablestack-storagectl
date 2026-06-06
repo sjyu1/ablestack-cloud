@@ -20,6 +20,7 @@
 set -euo pipefail
 
 LOG_FILE="/var/log/ablestack-storagectl.log"
+MONITOR_CACHE_DIR="${ABLESTACK_STORAGE_MONITOR_CACHE_DIR:-/run/ablestack-storage/monitor}"
 
 json_escape() {
   local value="${1:-}"
@@ -44,7 +45,84 @@ log_command() {
   printf '%s command=%s payload=%s\n' "$(date -Is)" "${1:-}" "${2:-}" >> "$LOG_FILE"
 }
 
+open_tcp_firewall_port() {
+  local port="$1"
+  if [[ -z "$port" ]]; then
+    return
+  fi
+  if command -v firewall-cmd >/dev/null 2>&1; then
+    firewall-cmd --add-port="${port}/tcp" >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 || true
+  fi
+  if command -v iptables >/dev/null 2>&1; then
+    iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || \
+      iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
+  fi
+}
+
+emit_cached_runtime() {
+  local scope="$1"
+  local payload_file="${2:-}"
+  if [[ "${ABLESTACK_STORAGECTL_CACHE:-1}" == "0" ]]; then
+    return 1
+  fi
+  python3 - "$MONITOR_CACHE_DIR" "$scope" "$payload_file" <<'PY'
+import json
+import os
+import sys
+import time
+
+cache_dir, scope = sys.argv[1], sys.argv[2]
+payload_file = sys.argv[3] if len(sys.argv) > 3 else ""
+path = os.path.join(cache_dir, scope + ".json")
+
+def load_payload(path):
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return {}
+
+def matches(session, payload):
+    protocol = str(payload.get("protocol") or "").upper()
+    client = str(payload.get("client") or "").strip()
+    state = str(payload.get("state") or "").upper()
+    resource_id = str(payload.get("resourceId") or "").strip()
+    if protocol and str(session.get("protocol") or "").upper() != protocol:
+        return False
+    if client and client not in str(session.get("peer") or "") and client not in str(session.get("client") or ""):
+        return False
+    if state and str(session.get("state") or "").upper() != state:
+        return False
+    if resource_id and resource_id not in (str(session.get("resourceId") or ""), str(session.get("resourceName") or "")):
+        return False
+    return True
+
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        cached = json.load(handle)
+except Exception:
+    sys.exit(1)
+
+generated = float(cached.get("generatedEpoch") or 0)
+stale_after = int(cached.get("staleAfterSeconds") or 15)
+if generated <= 0 or time.time() - generated > stale_after:
+    sys.exit(1)
+
+cached["cached"] = True
+if scope == "sessions":
+    payload = load_payload(payload_file)
+    sessions = [session for session in cached.get("sessions", []) if matches(session, payload)]
+    cached["sessions"] = sessions
+    cached["count"] = len(sessions)
+print(json.dumps(cached, sort_keys=True))
+PY
+}
+
 runtime_health() {
+  emit_cached_runtime "health" && return 0
   python3 - <<'PY'
 import json
 import os
@@ -65,8 +143,126 @@ def service_state(name):
     result = run(["systemctl", "is-active", name])
     return result.stdout.strip() or "unknown"
 
+def first_service_state(*names):
+    for name in names:
+        state = service_state(name)
+        if state not in ("unknown", "inactive", "failed"):
+            return state
+    return service_state(names[0]) if names else "unknown"
+
 def command_present(name):
     return shutil.which(name) is not None
+
+def port_listening(port):
+    if not shutil.which("ss"):
+        return False
+    result = run(["ss", "-H", "-lnt"])
+    suffix = ":" + str(port)
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[3].endswith(suffix):
+            return True
+    return False
+
+def collect_network_addresses():
+    if not shutil.which("ip"):
+        return []
+    addresses = []
+    seen = set()
+    result = run(["ip", "-j", "-4", "addr", "show", "scope", "global"])
+    if result.returncode == 0:
+        try:
+            for link in json.loads(result.stdout or "[]"):
+                ifname = link.get("ifname")
+                for item in link.get("addr_info", []) or []:
+                    ipaddress = item.get("local")
+                    prefix = item.get("prefixlen")
+                    if not ipaddress or ipaddress in seen:
+                        continue
+                    seen.add(ipaddress)
+                    flags = item.get("flags") or []
+                    secondary = bool(item.get("secondary")) or "secondary" in flags
+                    dynamic = bool(item.get("dynamic")) or "dynamic" in flags
+                    entry = {
+                        "interface": ifname,
+                        "ipaddress": ipaddress,
+                        "secondary": secondary,
+                        "primary": not secondary,
+                        "role": "secondary" if secondary else "primary",
+                    }
+                    if dynamic:
+                        entry["dynamic"] = True
+                    if prefix is not None:
+                        entry["prefixlen"] = prefix
+                        entry["cidr"] = f"{ipaddress}/{prefix}"
+                    addresses.append(entry)
+            return addresses
+        except Exception:
+            pass
+    result = run(["ip", "-o", "-4", "addr", "show", "scope", "global"])
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        ifname = parts[1]
+        cidr = parts[3]
+        ipaddress = cidr.split("/", 1)[0]
+        if not ipaddress or ipaddress in seen:
+            continue
+        seen.add(ipaddress)
+        secondary = " secondary " in f" {line} "
+        entry = {
+            "interface": ifname,
+            "ipaddress": ipaddress,
+            "cidr": cidr,
+            "secondary": secondary,
+            "primary": not secondary,
+            "role": "secondary" if secondary else "primary",
+        }
+        if " dynamic " in f" {line} ":
+            entry["dynamic"] = True
+        if "/" in cidr:
+            try:
+                entry["prefixlen"] = int(cidr.split("/", 1)[1])
+            except Exception:
+                pass
+        addresses.append(entry)
+    return addresses
+
+def nvmeof_capabilities():
+    base = "/sys/kernel/config/nvmet"
+    host_root = os.path.join(base, "hosts")
+    sample_host = "nqn.2014-08.org.nvmexpress:uuid:00000000-0000-0000-0000-000000000000"
+    host_dir = os.path.join(host_root, sample_host)
+    existed = os.path.exists(host_dir)
+    result = {
+        "kernel": run(["uname", "-r"]).stdout.strip(),
+        "kernelTargetSupported": os.path.isdir(base),
+        "configfsHostSupported": os.path.isdir(host_root),
+        "dhChapSupported": False,
+        "dhChapCtrlSupported": False,
+    }
+    if not result["kernelTargetSupported"]:
+        result["reason"] = "missing nvmet configfs root"
+        return result
+    if not result["configfsHostSupported"]:
+        result["reason"] = "missing nvmet hosts configfs root"
+        return result
+    try:
+        os.makedirs(host_dir, exist_ok=True)
+        result["dhChapSupported"] = os.path.exists(os.path.join(host_dir, "dhchap_key"))
+        result["dhChapCtrlSupported"] = os.path.exists(os.path.join(host_dir, "dhchap_ctrl_key"))
+        if not result["dhChapSupported"] or not result["dhChapCtrlSupported"]:
+            result["reason"] = "missing nvmet host dhchap_key/dhchap_ctrl_key"
+    except Exception as exc:
+        result["reason"] = str(exc)
+    finally:
+        if not existed:
+            try:
+                os.rmdir(host_dir)
+            except Exception:
+                pass
+    return result
 
 def load_state(name):
     path = os.path.join("/etc/ablestack-storage", name)
@@ -80,7 +276,7 @@ services = {
     "smbd": service_state("smbd"),
     "nmbd": service_state("nmbd"),
     "winbind": service_state("winbind"),
-    "iscsiTarget": service_state("target"),
+    "iscsiTarget": first_service_state("target", "rtslib-fb-targetctl"),
 }
 commands = {
     "exportfs": command_present("exportfs"),
@@ -96,8 +292,16 @@ desired_state = {
     "iscsiTargets": load_state("iscsi-targets.json"),
     "nvmeofSubsystems": load_state("nvmeof-subsystems.json"),
 }
+listen_ports = {
+    "nfs": port_listening(2049),
+    "smb": port_listening(445) or port_listening(139),
+    "iscsi": port_listening(3260),
+    "nvmeof": port_listening(4420),
+}
 status = "ok"
 if services["qemuGuestAgent"] not in ("active", "unknown"):
+    status = "degraded"
+if desired_state["iscsiTargets"] and not listen_ports["iscsi"]:
     status = "degraded"
 
 print(json.dumps({
@@ -105,18 +309,26 @@ print(json.dumps({
     "status": status,
     "hostname": socket.gethostname(),
     "uptimeSeconds": int(time.time() - os.stat("/proc/1").st_ctime) if os.path.exists("/proc/1") else None,
+    "network": {"addresses": collect_network_addresses()},
     "services": services,
     "commands": commands,
     "desiredState": desired_state,
+    "listenPorts": listen_ports,
+    "capabilities": {
+        "nvmeof": nvmeof_capabilities(),
+    },
 }, sort_keys=True))
 PY
 }
 
 runtime_inventory() {
+  emit_cached_runtime "inventory" && return 0
   python3 - <<'PY'
 import glob
 import json
 import os
+import shutil
+import subprocess
 
 def load_json(path, default):
     try:
@@ -125,11 +337,158 @@ def load_json(path, default):
     except Exception:
         return default
 
+SENSITIVE_KEYS = {
+    "secrets",
+    "secret",
+    "password",
+    "passwords",
+    "key",
+    "keys",
+    "dhChapKey",
+    "dhChapCtrlKey",
+    "chapSecret",
+    "mutualChapSecret",
+}
+
+def redact_sensitive(value):
+    if isinstance(value, list):
+        return [redact_sensitive(item) for item in value]
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            lower_key = str(key).lower()
+            if key in SENSITIVE_KEYS or "secret" in lower_key or "password" in lower_key or lower_key.endswith("key"):
+                continue
+            redacted[key] = redact_sensitive(item)
+        return redacted
+    return value
+
+def run(args):
+    try:
+        return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
+    except Exception as exc:
+        return type("Result", (), {"returncode": 1, "stdout": "", "stderr": str(exc)})()
+
+def port_listening(port):
+    if not shutil.which("ss"):
+        return False
+    result = run(["ss", "-H", "-lnt"])
+    suffix = ":" + str(port)
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[3].endswith(suffix):
+            return True
+    return False
+
+def collect_network_addresses():
+    if not shutil.which("ip"):
+        return []
+    addresses = []
+    seen = set()
+    result = run(["ip", "-j", "-4", "addr", "show", "scope", "global"])
+    if result.returncode == 0:
+        try:
+            for link in json.loads(result.stdout or "[]"):
+                ifname = link.get("ifname")
+                for item in link.get("addr_info", []) or []:
+                    ipaddress = item.get("local")
+                    prefix = item.get("prefixlen")
+                    if not ipaddress or ipaddress in seen:
+                        continue
+                    seen.add(ipaddress)
+                    flags = item.get("flags") or []
+                    secondary = bool(item.get("secondary")) or "secondary" in flags
+                    dynamic = bool(item.get("dynamic")) or "dynamic" in flags
+                    entry = {
+                        "interface": ifname,
+                        "ipaddress": ipaddress,
+                        "secondary": secondary,
+                        "primary": not secondary,
+                        "role": "secondary" if secondary else "primary",
+                    }
+                    if dynamic:
+                        entry["dynamic"] = True
+                    if prefix is not None:
+                        entry["prefixlen"] = prefix
+                        entry["cidr"] = f"{ipaddress}/{prefix}"
+                    addresses.append(entry)
+            return addresses
+        except Exception:
+            pass
+    result = run(["ip", "-o", "-4", "addr", "show", "scope", "global"])
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        ifname = parts[1]
+        cidr = parts[3]
+        ipaddress = cidr.split("/", 1)[0]
+        if not ipaddress or ipaddress in seen:
+            continue
+        seen.add(ipaddress)
+        secondary = " secondary " in f" {line} "
+        entry = {
+            "interface": ifname,
+            "ipaddress": ipaddress,
+            "cidr": cidr,
+            "secondary": secondary,
+            "primary": not secondary,
+            "role": "secondary" if secondary else "primary",
+        }
+        if " dynamic " in f" {line} ":
+            entry["dynamic"] = True
+        if "/" in cidr:
+            try:
+                entry["prefixlen"] = int(cidr.split("/", 1)[1])
+            except Exception:
+                pass
+        addresses.append(entry)
+    return addresses
+
+def normalize_export_entry(entry):
+    # exportfs escapes '=' in rendered option values. Keep runtime inventory JSON parse-safe.
+    return str(entry or "").replace("\\=", "=")
+
+def nvmeof_capabilities():
+    base = "/sys/kernel/config/nvmet"
+    host_root = os.path.join(base, "hosts")
+    sample_host = "nqn.2014-08.org.nvmexpress:uuid:00000000-0000-0000-0000-000000000000"
+    host_dir = os.path.join(host_root, sample_host)
+    existed = os.path.exists(host_dir)
+    result = {
+        "kernel": run(["uname", "-r"]).stdout.strip(),
+        "kernelTargetSupported": os.path.isdir(base),
+        "configfsHostSupported": os.path.isdir(host_root),
+        "dhChapSupported": False,
+        "dhChapCtrlSupported": False,
+    }
+    if not result["kernelTargetSupported"]:
+        result["reason"] = "missing nvmet configfs root"
+        return result
+    if not result["configfsHostSupported"]:
+        result["reason"] = "missing nvmet hosts configfs root"
+        return result
+    try:
+        os.makedirs(host_dir, exist_ok=True)
+        result["dhChapSupported"] = os.path.exists(os.path.join(host_dir, "dhchap_key"))
+        result["dhChapCtrlSupported"] = os.path.exists(os.path.join(host_dir, "dhchap_ctrl_key"))
+        if not result["dhChapSupported"] or not result["dhChapCtrlSupported"]:
+            result["reason"] = "missing nvmet host dhchap_key/dhchap_ctrl_key"
+    except Exception as exc:
+        result["reason"] = str(exc)
+    finally:
+        if not existed:
+            try:
+                os.rmdir(host_dir)
+            except Exception:
+                pass
+    return result
+
 exports = []
 for path in sorted(glob.glob("/etc/exports.d/ablestack-*.exports")):
     try:
         with open(path, "r", encoding="utf-8") as fp:
-            lines = [line.strip() for line in fp.readlines() if line.strip()]
+            lines = [normalize_export_entry(line.strip()) for line in fp.readlines() if line.strip()]
     except Exception:
         lines = []
     exports.append({"file": os.path.basename(path), "entries": lines})
@@ -152,27 +511,147 @@ try:
 except Exception:
     pass
 
+def targetcli_iscsi_runtime():
+    if not shutil.which("targetcli"):
+        return []
+    result = run(["targetcli", "ls", "/iscsi"])
+    if result.returncode != 0:
+        return []
+    runtime = []
+    current_target = None
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if line.startswith("o- iqn."):
+            current_target = {"targetName": line.split()[1], "acls": []}
+            runtime.append(current_target)
+        elif current_target and "lun" in line and " [" in line and "(" in line and ")" in line:
+            try:
+                current_target["backingPath"] = line.split("(", 1)[1].split(")", 1)[0]
+                current_target["backstoreType"] = line.split("[", 1)[1].split("/", 1)[0]
+                path = current_target["backingPath"]
+                if os.path.exists(path):
+                    current_target["effectiveSizeBytes"] = os.path.getsize(path)
+            except Exception:
+                pass
+        elif current_target and line.startswith("o- iqn.") is False and "acls" not in line and ("iqn." in line or "nqn." in line):
+            parts = line.split()
+            if len(parts) >= 2:
+                current_target.setdefault("acls", []).append(parts[1])
+    return runtime
+
+def enrich_iscsi_targets(desired):
+    if not isinstance(desired, dict):
+        return desired
+    runtime_by_name = {item.get("targetName"): item for item in targetcli_iscsi_runtime()}
+    enriched = json.loads(json.dumps(desired))
+    for target in enriched.get("targets", []):
+        config = target.get("config") or {}
+        runtime = runtime_by_name.get(target.get("targetName")) or {}
+        if runtime:
+            target["runtime"] = runtime
+            for key in ("backingPath", "backstoreType", "effectiveSizeBytes"):
+                if runtime.get(key) is not None:
+                    target[key] = runtime.get(key)
+        if config.get("lunSizeBytes") is not None:
+            target["lunSizeBytes"] = config.get("lunSizeBytes")
+        if target.get("effectiveSizeBytes") is None:
+            target["effectiveSizeBytes"] = target.get("lunSizeBytes") or target.get("volumeSizeBytes")
+    return enriched
+
+iscsi_targets = enrich_iscsi_targets(load_json("/etc/ablestack-storage/iscsi-targets.json", {}))
+
 print(json.dumps({
     "success": True,
     "status": "ok",
+    "network": {"addresses": collect_network_addresses()},
     "nfsExports": exports,
     "nfsQuotas": load_json("/etc/ablestack-storage/nfs-quotas.json", {}),
     "smbShares": smb_shares,
     "smbQuotas": load_json("/etc/ablestack-storage/smb-quotas.json", {}),
     "smbDomain": load_json("/etc/ablestack-storage/smb-domain.json", {}),
-    "iscsiTargets": load_json("/etc/ablestack-storage/iscsi-targets.json", {}),
-    "nvmeofSubsystems": load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {}),
+    "iscsiTargets": iscsi_targets,
+    "iscsiRuntime": {"listening": port_listening(3260), "port": 3260},
+    "nvmeofSubsystems": redact_sensitive(load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})),
+    "nvmeofRuntime": {"listening": port_listening(4420), "port": 4420, "capabilities": nvmeof_capabilities()},
+    "capabilities": {
+        "nvmeof": nvmeof_capabilities(),
+    },
 }, sort_keys=True))
 PY
 }
 
 runtime_sessions() {
-  python3 - <<'PY'
+  local payload_file="${1:-}"
+  emit_cached_runtime "sessions" "$payload_file" && return 0
+  python3 - "$payload_file" <<'PY'
+import hashlib
 import json
+import os
 import shutil
 import subprocess
+import sys
+import tempfile
+import time
 
-def ss_sessions():
+def load_payload(path):
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return {}
+
+def endpoint_host(value):
+    if not value:
+        return ""
+    if value.startswith("[") and "]:" in value:
+        return value[1:value.index("]:")]
+    return value.rsplit(":", 1)[0]
+
+def load_json(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return default
+
+def store_json(path, value):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, sort_keys=True)
+        handle.write("\n")
+    os.replace(tmp, path)
+
+def active_nvme_subsystems():
+    state = load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})
+    subsystems = []
+    for subsystem in state.get("subsystems", []) if isinstance(state, dict) else []:
+        name = subsystem.get("targetName") or subsystem.get("subsystemNqn")
+        if name and subsystem.get("state", "Ready") not in ("Disabled", "Destroyed", "Error"):
+            subsystems.append({
+                "id": str(subsystem.get("id") or ""),
+                "uuid": str(subsystem.get("uuid") or ""),
+                "name": str(name),
+                "endpoint": f"{state.get('listenIp') or subsystem.get('listenIp') or ''}:{state.get('port') or subsystem.get('port') or 4420}".strip(":"),
+            })
+    return subsystems
+
+def nvme_subsystem_hint(filters):
+    subsystems = active_nvme_subsystems()
+    resource_id = str(filters.get("resourceId") or filters.get("resourceName") or "").strip()
+    if resource_id:
+        resource_id_lower = resource_id.lower()
+        for subsystem in subsystems:
+            candidates = (subsystem.get("id"), subsystem.get("uuid"), subsystem.get("name"))
+            if any(resource_id_lower == str(candidate or "").lower() for candidate in candidates):
+                return subsystem
+    if len(subsystems) == 1:
+        return subsystems[0]
+    return {}
+
+def ss_sessions(filters):
     if not shutil.which("ss"):
         return []
     result = subprocess.run(["ss", "-H", "-tn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -193,11 +672,99 @@ def ss_sessions():
         elif local.endswith(":4420"):
             protocol = "NVME_OF"
         if protocol:
-            sessions.append({"protocol": protocol, "state": parts[0], "local": local, "peer": peer})
+            session_id = hashlib.sha256(f"{protocol}|{parts[0]}|{local}|{peer}".encode("utf-8")).hexdigest()[:20]
+            session = {"sessionId": session_id, "protocol": protocol, "state": parts[0], "local": local, "peer": peer, "client": endpoint_host(peer)}
+            if protocol == "NVME_OF":
+                hint = nvme_subsystem_hint(filters)
+                if hint:
+                    session["resourceId"] = hint.get("uuid") or hint.get("id")
+                    session["resourceName"] = hint.get("name")
+                    session["subsystemNqn"] = hint.get("name")
+            sessions.append(session)
     return sessions
 
-sessions = ss_sessions()
+payload = load_payload(sys.argv[1] if len(sys.argv) > 1 else "")
+protocol_filter = str(payload.get("protocol", "")).upper()
+client_filter = str(payload.get("client", "")).strip()
+state_filter = str(payload.get("state", "")).upper()
+sessions = []
+now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+session_state_path = "/run/ablestack-storage/monitor/session-state.json"
+session_state = load_json(session_state_path, {})
+next_state = {}
+for session in ss_sessions(payload):
+    if protocol_filter and session.get("protocol") != protocol_filter:
+        continue
+    if client_filter and client_filter not in session.get("peer", "") and client_filter not in session.get("client", ""):
+        continue
+    if state_filter and session.get("state", "").upper() != state_filter:
+        continue
+    saved = session_state.get(session["sessionId"], {}) if isinstance(session_state, dict) else {}
+    session["connectedAt"] = saved.get("connectedAt") or now
+    session["lastSeen"] = now
+    next_state[session["sessionId"]] = {
+        "connectedAt": session["connectedAt"],
+        "lastSeen": now,
+        "protocol": session.get("protocol"),
+        "peer": session.get("peer"),
+        "local": session.get("local"),
+        "resourceId": session.get("resourceId"),
+        "resourceName": session.get("resourceName"),
+        "subsystemNqn": session.get("subsystemNqn"),
+    }
+    sessions.append(session)
+store_json(session_state_path, next_state)
 print(json.dumps({"success": True, "status": "ok", "sessions": sessions, "count": len(sessions)}, sort_keys=True))
+PY
+}
+
+session_disconnect() {
+  local payload_file="$1"
+  python3 - "$payload_file" <<'PY'
+import json
+import re
+import shutil
+import subprocess
+import sys
+
+PORTS = {"NFS": "2049", "SMB": "445", "ISCSI": "3260", "NVME_OF": "4420"}
+
+def load_payload(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+def endpoint_host(value):
+    if not value:
+        return ""
+    if value.startswith("[") and "]:" in value:
+        return value[1:value.index("]:")]
+    return value.rsplit(":", 1)[0]
+
+payload = load_payload(sys.argv[1])
+protocol = str(payload.get("protocol", "")).upper()
+peer = payload.get("peer", "")
+local = payload.get("local", "")
+client = endpoint_host(peer)
+port = PORTS.get(protocol)
+if not protocol or not port or not client:
+    print(json.dumps({"success": False, "status": "INVALID_REQUEST", "details": "protocol and peer endpoint are required"}))
+    sys.exit(1)
+if not shutil.which("ss"):
+    print(json.dumps({"success": False, "status": "UNSUPPORTED", "details": "ss command is not available"}))
+    sys.exit(1)
+
+commands = [
+    ["ss", "-K", "dst", client, "dport", "=", f":{port}"],
+    ["ss", "-K", "src", client, "sport", "=", f":{port}"],
+]
+results = []
+success = False
+for command in commands:
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    results.append({"command": " ".join(command), "exitCode": result.returncode, "stdout": result.stdout.strip(), "stderr": result.stderr.strip()})
+    if result.returncode == 0:
+        success = True
+print(json.dumps({"success": success, "status": "ok" if success else "best_effort", "protocol": protocol, "peer": peer, "local": local, "commands": results}, sort_keys=True))
 PY
 }
 
@@ -207,8 +774,10 @@ volume_attach_inspect() {
   python3 - "$payload_file" <<'PY'
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -218,73 +787,357 @@ def run(args):
     return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
 
 def lsblk():
-    result = run(["lsblk", "-J", "-o", "NAME,PATH,TYPE,FSTYPE,UUID,SERIAL,SIZE,MOUNTPOINT"])
+    result = run(["lsblk", "-b", "-J", "-o", "NAME,PATH,TYPE,FSTYPE,UUID,SERIAL,SIZE,MOUNTPOINT"])
     if result.returncode != 0:
         raise SystemExit(result.stderr.strip() or "lsblk failed")
     return json.loads(result.stdout).get("blockdevices", [])
 
-def walk(devices):
+def walk(devices, parent_disk_path=None, parent_path=None):
     for dev in devices:
+        dev["_parentDiskPath"] = dev.get("path") if dev.get("type") == "disk" else parent_disk_path
+        dev["_parentPath"] = parent_path
         yield dev
         for child in dev.get("children") or []:
-            yield from walk([child])
+            yield from walk([child], dev.get("_parentDiskPath"), dev.get("path"))
+
+def compact(value):
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+def token_matches(value, tokens):
+    candidate = compact(value)
+    if not candidate:
+        return False
+    for token in tokens:
+        if len(token) >= 8 and (token in candidate or candidate in token):
+            return True
+    return False
+
+def parse_size(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+def size_matches(dev, expected_size):
+    if expected_size <= 0:
+        return False
+    actual_size = parse_size(dev.get("size"))
+    if actual_size <= 0:
+        return False
+    tolerance = max(1024 * 1024, expected_size // 100)
+    return abs(actual_size - expected_size) <= tolerance
+
+devices = list(walk(lsblk()))
+device_by_path = {dev.get("path"): dev for dev in devices if dev.get("path")}
+import_mode = str(payload.get("importMode") or "MOUNT_EXISTING").upper()
+format_modes = {"FORMAT_EMPTY", "FORMAT_IF_EMPTY"}
+expected_size = parse_size(payload.get("volumeSizeBytes"))
+identity_tokens = [compact(v) for v in (payload.get("volumeUuid"), payload.get("volumeName")) if compact(v)]
+root_disk_paths = {
+    dev.get("_parentDiskPath")
+    for dev in devices
+    if dev.get("_parentDiskPath") and (dev.get("mountpoint") in ("/", "/boot", "/boot/efi") or dev.get("fstype") == "swap")
+}
+
+def is_root_disk_tree(dev):
+    return dev.get("_parentDiskPath") in root_disk_paths
+
+def has_child_filesystem_or_mount(dev):
+    path = dev.get("path")
+    if not path:
+        return False
+    for child in devices:
+        if child.get("_parentDiskPath") == path and child.get("path") != path and (child.get("fstype") or child.get("mountpoint")):
+            return True
+    return False
+
+def device_matches_identity(dev):
+    if not identity_tokens:
+        return False
+    return any(token_matches(dev.get(key), identity_tokens) for key in ("name", "path", "serial", "uuid"))
+
+def safe_candidate(dev, allow_mounted_match=False):
+    if not dev or not dev.get("path"):
+        return False
+    if dev.get("type") not in ("disk", "part"):
+        return False
+    if is_root_disk_tree(dev):
+        return False
+    if dev.get("mountpoint") and not (allow_mounted_match and device_matches_identity(dev)):
+        return False
+    if import_mode in format_modes:
+        return dev.get("type") == "disk" and not dev.get("fstype") and not dev.get("mountpoint") and not has_child_filesystem_or_mount(dev)
+    return True
+
+def select_single(candidates, reason):
+    unique = []
+    seen = set()
+    for dev in candidates:
+        path = dev.get("path")
+        if path and path not in seen:
+            unique.append(dev)
+            seen.add(path)
+    if len(unique) == 1:
+        return unique[0].get("path")
+    if len(unique) > 1:
+        paths = ", ".join(dev.get("path") for dev in unique)
+        raise SystemExit(f"Ambiguous Storage Service volume device candidates for {reason}: {paths}")
+    return None
 
 def find_by_id(volume_uuid, volume_name):
-    tokens = [str(v).lower() for v in (volume_uuid, volume_name) if v]
     by_id = "/dev/disk/by-id"
-    if not tokens or not os.path.isdir(by_id):
+    if not identity_tokens or not os.path.isdir(by_id):
         return None
     for name in sorted(os.listdir(by_id)):
-        lower = name.lower()
-        if any(token in lower for token in tokens):
-            return os.path.realpath(os.path.join(by_id, name))
+        if token_matches(name, identity_tokens):
+            path = os.path.realpath(os.path.join(by_id, name))
+            dev = device_by_path.get(path)
+            if safe_candidate(dev, allow_mounted_match=True):
+                return path
     return None
 
 def find_device():
     config = payload.get("config") or {}
     if config.get("devicePath") and os.path.exists(config["devicePath"]):
+        dev = device_by_path.get(os.path.realpath(config["devicePath"])) or device_by_path.get(config["devicePath"])
+        if not safe_candidate(dev, allow_mounted_match=True):
+            raise SystemExit(f"Configured devicePath is not safe for Storage Service volume attach: {config['devicePath']}")
         return config["devicePath"]
     matched = find_by_id(payload.get("volumeUuid"), payload.get("volumeName"))
     if matched:
         return matched
-    tokens = [str(v).replace("-", "").lower() for v in (payload.get("volumeUuid"), payload.get("volumeName")) if v]
-    candidates = list(walk(lsblk()))
-    for dev in candidates:
-        text = " ".join(str(dev.get(key) or "") for key in ("name", "path", "serial", "uuid")).replace("-", "").lower()
-        if tokens and any(token in text for token in tokens):
-            return dev.get("path")
-    unmounted = [dev for dev in candidates if dev.get("path") and dev.get("type") in ("disk", "part") and not dev.get("mountpoint")]
-    with_fs = [dev for dev in unmounted if dev.get("fstype")]
-    if len(with_fs) == 1:
-        return with_fs[0].get("path")
-    raise SystemExit("Unable to identify the attached Storage Service volume device")
+    identity_matches = [dev for dev in devices if safe_candidate(dev, allow_mounted_match=True) and device_matches_identity(dev)]
+    exact_size_identity_matches = [dev for dev in identity_matches if size_matches(dev, expected_size)]
+    selected = select_single(exact_size_identity_matches, "volume UUID and size")
+    if selected:
+        return selected
+    selected = select_single(identity_matches, "volume UUID")
+    if selected:
+        return selected
+
+    fallback_candidates = [dev for dev in devices if safe_candidate(dev)]
+    exact_size_fallback = [dev for dev in fallback_candidates if size_matches(dev, expected_size)]
+    selected = select_single(exact_size_fallback, "volume size")
+    if selected:
+        return selected
+    if import_mode in format_modes:
+        selected = select_single(fallback_candidates, "blank format target")
+        if selected:
+            return selected
+    raise SystemExit("Unable to identify a safe attached Storage Service volume device")
 
 device = find_device()
-devices = list(walk(lsblk()))
 device_info = next((dev for dev in devices if dev.get("path") == device), {})
-filesystem = payload.get("filesystem") or device_info.get("fstype")
-mount_path = payload.get("path") or f"/srv/ablestack-storage/{str(payload.get('protocol') or 'file').lower()}/{payload.get('shareUuid')}"
-import_mode = str(payload.get("importMode") or "MOUNT_EXISTING").upper()
+config = payload.get("config") or {}
+existing_filesystem = device_info.get("fstype")
+requested_filesystem = str(payload.get("filesystem") or existing_filesystem or "xfs").lower()
+filesystem = existing_filesystem or requested_filesystem
+supported_filesystems = {"xfs", "ext4"}
+mount_path = config.get("volumeMountPath") or payload.get("mountPath") or f"/srv/ablestack-storage/volumes/{payload.get('volumeUuid') or payload.get('shareUuid')}"
+relative_share_path = str(config.get("relativeSharePath") or payload.get("path") or "").strip().strip("/")
+create_directory = bool(config.get("createDirectory", True))
+share_uuid = str(payload.get("shareUuid") or payload.get("shareId") or payload.get("volumeUuid") or "unknown")
+managed_marker = f"ablestack-storage:{share_uuid}:backing"
+
+def fstab_escape(value):
+    return str(value).replace("\\", "\\\\").replace(" ", "\\040").replace("\t", "\\011")
+
+def update_fstab(marker, entry=None):
+    fstab_path = "/etc/fstab"
+    lines = []
+    if os.path.exists(fstab_path):
+        with open(fstab_path, "r", encoding="utf-8") as fstab_fp:
+            for line in fstab_fp:
+                if marker not in line:
+                    lines.append(line)
+    if entry:
+        lines.append(entry.rstrip("\n") + "\n")
+    directory = os.path.dirname(fstab_path)
+    fd, tmp_path = tempfile.mkstemp(prefix=".fstab.", dir=directory, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_fp:
+            tmp_fp.writelines(lines)
+        os.replace(tmp_path, fstab_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+def daemon_reload():
+    if shutil.which("systemctl"):
+        subprocess.run(["systemctl", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=20)
+
+def blkid_value(path, field):
+    result = run(["blkid", "-s", field, "-o", "value", path])
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip().splitlines()[0]
+    return ""
+
+def persist_backing_mount(device, target_path, fs):
+    fs_uuid = blkid_value(device, "UUID")
+    if not fs_uuid:
+        raise SystemExit(f"Unable to resolve filesystem UUID for Storage Service backing volume {device}")
+    fstype = fs or blkid_value(device, "TYPE") or "auto"
+    options = "defaults,nofail,x-systemd.device-timeout=30"
+    entry = f"UUID={fstab_escape(fs_uuid)} {fstab_escape(target_path)} {fstab_escape(fstype)} {options} 0 2 # {managed_marker}"
+    update_fstab(managed_marker, entry)
+    daemon_reload()
+    return fs_uuid
+
+def format_empty_device():
+    fs = str(requested_filesystem or "xfs").lower()
+    allowed = {"xfs", "ext4"}
+    if fs not in allowed:
+        raise SystemExit(f"Unsupported filesystem for empty backing volume format: {fs}")
+    tool = f"mkfs.{fs}"
+    if not shutil.which(tool):
+        raise SystemExit(f"Missing filesystem formatter: {tool}")
+    result = run([tool, "-f", device] if fs == "xfs" else [tool, "-F", device])
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or f"failed to format {device} as {fs}")
+    return fs
 
 if import_mode != "INSPECT_ONLY":
-    if not filesystem:
+    if existing_filesystem and import_mode == "FORMAT_EMPTY":
+        raise SystemExit(f"Refusing to format {device}: filesystem {existing_filesystem} already exists")
+    if existing_filesystem and existing_filesystem not in supported_filesystems:
+        raise SystemExit(f"Unsupported filesystem for existing Storage Service backing volume: {existing_filesystem}. Supported filesystems: xfs, ext4")
+    if not existing_filesystem and import_mode in format_modes:
+        filesystem = format_empty_device()
+    elif not filesystem:
         raise SystemExit(f"No filesystem was detected on {device}; format workflows are not part of existing-volume import")
+    if filesystem and filesystem not in supported_filesystems:
+        raise SystemExit(f"Unsupported filesystem for Storage Service backing volume: {filesystem}. Supported filesystems: xfs, ext4")
     os.makedirs(mount_path, exist_ok=True)
+    target = run(["findmnt", "-n", "-o", "SOURCE", "--mountpoint", mount_path])
+    if target.returncode == 0 and target.stdout.strip():
+        mounted_source = target.stdout.strip().splitlines()[0]
+        if os.path.realpath(mounted_source) != os.path.realpath(device):
+            raise SystemExit(f"Mount path {mount_path} is already used by another device: {mounted_source}")
+    desired_mount_path = mount_path
     current = run(["findmnt", "-n", "-o", "TARGET", "--source", device])
-    if current.returncode == 0 and current.stdout.strip():
-        mount_path = current.stdout.strip().splitlines()[0]
+    current_targets = [line.strip() for line in current.stdout.splitlines() if line.strip()] if current.returncode == 0 else []
+    if desired_mount_path in current_targets:
+        mount_path = desired_mount_path
     else:
         mount_result = run(["mount", device, mount_path])
         if mount_result.returncode != 0:
             raise SystemExit(mount_result.stderr.strip() or f"failed to mount {device}")
+        mount_path = desired_mount_path
+    fs_uuid = persist_backing_mount(device, mount_path, filesystem)
+else:
+    if existing_filesystem and existing_filesystem not in supported_filesystems:
+        raise SystemExit(f"Unsupported filesystem for existing Storage Service backing volume: {existing_filesystem}. Supported filesystems: xfs, ext4")
+    fs_uuid = blkid_value(device, "UUID")
+
+def resolve_backing_path(volume_mount_path, relative_path, create_missing):
+    if not relative_path:
+        return volume_mount_path
+    cleaned = relative_path.strip().strip("/")
+    if not cleaned or cleaned == "." or cleaned.startswith("..") or "/../" in f"/{cleaned}/":
+        raise SystemExit(f"Invalid backing volume relative share path: {relative_path}")
+    if cleaned == "export":
+        raise SystemExit("The legacy /export root cannot be used as a share backing directory")
+    if cleaned.startswith("export/") and cleaned.count("/") != 1:
+        raise SystemExit(f"Storage Service share path must be a direct child of /export: /{cleaned}")
+    root = os.path.realpath(volume_mount_path)
+    target = os.path.realpath(os.path.join(volume_mount_path, cleaned))
+    if target != root and not target.startswith(root + os.sep):
+        raise SystemExit(f"Backing volume relative share path escapes the mounted volume: {relative_path}")
+    if os.path.exists(target) and not os.path.isdir(target):
+        raise SystemExit(f"Backing volume relative share path exists and is not a directory: {relative_path}")
+    if not os.path.exists(target):
+        if not create_missing:
+            raise SystemExit(f"Backing volume relative share path does not exist: {relative_path}")
+        os.makedirs(target, exist_ok=True)
+    return target
+
+backing_path = resolve_backing_path(mount_path, relative_share_path, create_directory)
 
 print(json.dumps({
     "success": True,
     "status": "ok",
     "devicePath": device,
     "filesystem": filesystem,
+    "filesystemSupported": filesystem in supported_filesystems,
+    "fsUuid": fs_uuid,
     "mountPath": mount_path,
+    "volumeMountPath": mount_path,
+    "relativeSharePath": relative_share_path,
+    "backingPath": backing_path,
+    "persistentMount": import_mode != "INSPECT_ONLY",
     "importMode": import_mode,
+}, sort_keys=True))
+PY
+}
+
+volume_detach_prepare() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+volume_uuid = str(payload.get("volumeUuid") or "").strip()
+mount_path = str(payload.get("mountPath") or "").strip()
+
+def run(args):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+
+def is_mountpoint(path):
+    return bool(path) and run(["findmnt", "-n", "--mountpoint", path]).returncode == 0
+
+def update_fstab(markers):
+    fstab_path = "/etc/fstab"
+    lines = []
+    if os.path.exists(fstab_path):
+        with open(fstab_path, "r", encoding="utf-8") as fstab_fp:
+            for line in fstab_fp:
+                if any(marker and marker in line for marker in markers):
+                    continue
+                lines.append(line)
+    directory = os.path.dirname(fstab_path)
+    fd, tmp_path = tempfile.mkstemp(prefix=".fstab.", dir=directory, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_fp:
+            tmp_fp.writelines(lines)
+        os.replace(tmp_path, fstab_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+def daemon_reload():
+    if os.path.exists("/bin/systemctl") or os.path.exists("/usr/bin/systemctl"):
+        subprocess.run(["systemctl", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=20)
+
+if mount_path:
+    current = run(["findmnt", "-R", "-n", "-o", "TARGET", "--target", mount_path])
+    targets = sorted([line.strip() for line in current.stdout.splitlines() if line.strip()], key=len, reverse=True) if current.returncode == 0 else []
+    for target in targets:
+        unmount = run(["umount", target])
+        if unmount.returncode != 0:
+            raise SystemExit(unmount.stderr.strip() or f"failed to unmount {target}")
+
+markers = []
+if volume_uuid:
+    markers.append(volume_uuid)
+if mount_path:
+    markers.append(mount_path)
+update_fstab(markers)
+daemon_reload()
+print(json.dumps({
+    "success": True,
+    "status": "ok",
+    "volumeUuid": volume_uuid,
+    "mountPath": mount_path,
+    "detachedInGuest": True,
+    "dataDeleted": False
 }, sort_keys=True))
 PY
 }
@@ -409,7 +1262,9 @@ apply_nfs_exports() {
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -417,12 +1272,71 @@ with open(payload_path, "r", encoding="utf-8") as payload_fp:
 
 exports_dir = "/etc/exports.d"
 quota_dir = "/etc/ablestack-storage"
+alias_state_path = os.path.join(quota_dir, "nfs-export-aliases.json")
 os.makedirs(exports_dir, exist_ok=True)
 os.makedirs(quota_dir, exist_ok=True)
+
+def remove_legacy_root_export():
+    exports_path = "/etc/exports"
+    if not os.path.exists(exports_path):
+        return
+    kept = []
+    changed = False
+    with open(exports_path, "r", encoding="utf-8") as exports_fp:
+        for line in exports_fp:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and stripped.split()[0].rstrip("/") == "/export":
+                changed = True
+                continue
+            kept.append(line)
+    if changed:
+        with open(exports_path, "w", encoding="utf-8") as exports_fp:
+            exports_fp.writelines(kept)
 
 def truth(config, key, default):
     value = config.get(key, default) if isinstance(config, dict) else default
     return bool(value)
+
+def int_config(config, key):
+    if not isinstance(config, dict) or config.get(key) in (None, ""):
+        return None
+    try:
+        value = int(config.get(key))
+    except Exception as exc:
+        raise ValueError(f"invalid integer NFS option {key}: {config.get(key)}") from exc
+    if value < 0 or value > 65535:
+        raise ValueError(f"NFS option {key} must be between 0 and 65535")
+    return value
+
+def mode_config(config):
+    if not isinstance(config, dict) or not config.get("mode"):
+        return None
+    value = str(config.get("mode")).strip()
+    if not re.match(r"^0?[0-7]{3,4}$", value):
+        raise ValueError(f"invalid NFS directory mode: {value}")
+    return int(value, 8)
+
+def effective_nfs_export_config(config):
+    result = dict(config or {})
+    read_only = truth(result, "readOnly", False)
+    root_squash = truth(result, "rootSquash", True)
+    if read_only or not root_squash:
+        return result
+    if result.get("anonUid") in (None, ""):
+        result["anonUid"] = 65534
+    if result.get("anonGid") in (None, ""):
+        result["anonGid"] = 65534
+    if result.get("ownerUid") in (None, ""):
+        result["ownerUid"] = result.get("anonUid")
+    if result.get("ownerGid") in (None, ""):
+        result["ownerGid"] = result.get("anonGid")
+    if result.get("mode") in (None, ""):
+        result["mode"] = "0775"
+    if result.get("recursivePermission") in (None, ""):
+        result["recursivePermission"] = False
+    if result.get("posixPolicy") in (None, ""):
+        result["posixPolicy"] = "ANONYMOUS_WRITE"
+    return result
 
 def safe_uuid(value):
     value = str(value or "")
@@ -430,9 +1344,222 @@ def safe_uuid(value):
         raise ValueError(f"invalid export uuid: {value}")
     return value
 
+def safe_export_root_name(value, path):
+    value = str(value or "").strip().strip("/")
+    if not value and path:
+        value = os.path.basename(str(path).rstrip("/"))
+    if not value or value in (".", ".."):
+        raise ValueError("NFS export name is required")
+    value = re.sub(r"[^A-Za-z0-9_.-]+", "-", value)
+    value = value.strip(".-")
+    if not value:
+        raise ValueError("NFS export name is invalid")
+    return value
+
+def nfs_export_principal(value):
+    value = str(value or "").strip()
+    if value in ("0.0.0.0/0", "::/0"):
+        return "*"
+    if any(ch.isspace() for ch in value):
+        raise ValueError(f"invalid NFS export principal: {value}")
+    return value
+
+def run(command):
+    return subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+def fstab_escape(value):
+    return str(value).replace("\\", "\\\\").replace(" ", "\\040").replace("\t", "\\011")
+
+def update_fstab(marker, entry=None):
+    fstab_path = "/etc/fstab"
+    lines = []
+    if os.path.exists(fstab_path):
+        with open(fstab_path, "r", encoding="utf-8") as fstab_fp:
+            for line in fstab_fp:
+                if marker not in line:
+                    lines.append(line)
+    if entry:
+        lines.append(entry.rstrip("\n") + "\n")
+    fd, tmp_path = tempfile.mkstemp(prefix=".fstab.", dir=os.path.dirname(fstab_path), text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_fp:
+            tmp_fp.writelines(lines)
+        os.replace(tmp_path, fstab_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+def daemon_reload():
+    if os.path.exists("/run/systemd/system"):
+        subprocess.run(["systemctl", "daemon-reload"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+
+def ipv4_to_int(value):
+    parts = [int(part) for part in str(value).split(".")]
+    if len(parts) != 4 or any(part < 0 or part > 255 for part in parts):
+        raise ValueError(f"invalid IPv4 address: {value}")
+    result = 0
+    for part in parts:
+        result = (result << 8) + part
+    return result
+
+def same_ipv4_cidr(left, right, prefix):
+    mask = 0 if int(prefix) == 0 else (0xffffffff << (32 - int(prefix))) & 0xffffffff
+    return (ipv4_to_int(left) & mask) == (ipv4_to_int(right) & mask)
+
+def ensure_listen_ip():
+    listen_ip = str(payload.get("listenIp") or "").strip()
+    if not listen_ip or listen_ip in ("0.0.0.0", "::"):
+        return
+    ip_state = run(["ip", "-o", "-4", "addr", "show"])
+    if ip_state.returncode != 0:
+        raise RuntimeError(f"failed to inspect IPv4 addresses: {ip_state.stderr.strip()}")
+    candidates = []
+    for line in ip_state.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[2] != "inet":
+            continue
+        iface = parts[1]
+        address, prefix = parts[3].split("/", 1)
+        if address == listen_ip:
+            return
+        try:
+            if same_ipv4_cidr(listen_ip, address, int(prefix)):
+                candidates.append((iface, prefix))
+        except Exception:
+            continue
+    if not candidates:
+        raise ValueError(f"listen IP {listen_ip} is not in the same CIDR as any Storage Service NIC")
+    iface, prefix = candidates[0]
+    add_ip = run(["ip", "addr", "add", f"{listen_ip}/{prefix}", "dev", iface])
+    if add_ip.returncode != 0 and "File exists" not in add_ip.stderr:
+        raise RuntimeError(f"failed to add listen IP {listen_ip}/{prefix} to {iface}: {add_ip.stderr.strip()}")
+
+def remove_listen_ip():
+    listen_ip = str(payload.get("removeListenIp") or "").strip()
+    if not listen_ip or listen_ip in ("0.0.0.0", "::"):
+        return
+    ip_state = run(["ip", "-o", "-4", "addr", "show"])
+    if ip_state.returncode != 0:
+        raise RuntimeError(f"failed to inspect IPv4 addresses before endpoint removal: {ip_state.stderr.strip()}")
+    for line in ip_state.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[2] != "inet":
+            continue
+        iface = parts[1]
+        address, prefix = parts[3].split("/", 1)
+        if address != listen_ip:
+            continue
+        delete_ip = run(["ip", "addr", "del", f"{listen_ip}/{prefix}", "dev", iface])
+        if delete_ip.returncode != 0 and "Cannot assign requested address" not in delete_ip.stderr:
+            raise RuntimeError(f"failed to remove listen IP {listen_ip}/{prefix} from {iface}: {delete_ip.stderr.strip()}")
+        return
+
+def is_mountpoint(path):
+    return run(["findmnt", "-n", "--mountpoint", path]).returncode == 0
+
+def is_path_on_mount(path, mount_path):
+    if not path or not mount_path:
+        return False
+    path_real = os.path.realpath(path)
+    mount_real = os.path.realpath(mount_path)
+    return path_real == mount_real or path_real.startswith(mount_real.rstrip("/") + "/")
+
+def ensure_export_alias(export):
+    export_config = effective_nfs_export_config(export.get("config") or {})
+    backing_path = str(export_config.get("backingPath") or "").strip().rstrip("/")
+    volume_mount_path = str(export_config.get("volumeMountPath") or "").strip().rstrip("/")
+    uuid = safe_uuid(export.get("uuid"))
+    exposed_path = str(export.get("path") or "").strip().rstrip("/")
+    root_name = safe_export_root_name(export.get("exportPath") or export.get("name"), exposed_path)
+    expected_path = f"/export/{root_name}"
+    if exposed_path != expected_path:
+        raise ValueError(f"NFS export path must be {expected_path}")
+    if not backing_path:
+        raise ValueError(f"NFS export {uuid} is missing config.backingPath; refusing to export a root filesystem directory")
+    if not volume_mount_path:
+        raise ValueError(f"NFS export {uuid} is missing config.volumeMountPath; refusing to export a root filesystem directory")
+    if backing_path in ("/", "/export") or backing_path.startswith("/export/"):
+        raise ValueError(f"NFS export {uuid} backingPath must be a managed data-volume path, not {backing_path}")
+    if not volume_mount_path.startswith("/srv/ablestack-storage/volumes/"):
+        raise ValueError(f"NFS export {uuid} volumeMountPath is outside the managed Storage Service volume area: {volume_mount_path}")
+    if not is_mountpoint(volume_mount_path):
+        raise RuntimeError(f"NFS export {uuid} backing volume is not mounted at {volume_mount_path}")
+    if not is_path_on_mount(backing_path, volume_mount_path):
+        raise ValueError(f"NFS export {uuid} backingPath {backing_path} is not under mounted volume {volume_mount_path}")
+    create_directory = truth(export_config, "createDirectory", True)
+    if not os.path.exists(backing_path):
+        if not create_directory:
+            raise RuntimeError(f"NFS export {uuid} backing directory does not exist: {backing_path}")
+        os.makedirs(backing_path, exist_ok=True)
+    if not os.path.isdir(backing_path):
+        raise ValueError(f"NFS export {uuid} backingPath is not a directory: {backing_path}")
+    if os.path.exists(exposed_path) and not os.path.isdir(exposed_path):
+        raise ValueError(f"NFS export alias path exists and is not a directory: {exposed_path}")
+    os.makedirs(exposed_path, exist_ok=True)
+    if not is_mountpoint(exposed_path) and os.listdir(exposed_path):
+        raise RuntimeError(f"refusing to hide non-empty root filesystem NFS export alias: {exposed_path}")
+    if is_mountpoint(exposed_path):
+        try:
+            same_target = os.path.samefile(exposed_path, backing_path)
+        except Exception:
+            same_target = False
+        if not same_target:
+            unmount = run(["umount", exposed_path])
+            if unmount.returncode != 0:
+                raise RuntimeError(f"failed to unmount stale NFS export alias {exposed_path}: {unmount.stderr.strip()}")
+    if not is_mountpoint(exposed_path):
+        mount = run(["mount", "--bind", backing_path, exposed_path])
+        if mount.returncode != 0:
+            raise RuntimeError(f"failed to bind NFS export alias {exposed_path} to {backing_path}: {mount.stderr.strip()}")
+    if not is_mountpoint(exposed_path):
+        raise RuntimeError(f"NFS export alias {exposed_path} is not a bind mount after mount operation")
+    marker = f"ablestack-storage:{uuid}:alias"
+    options = f"bind,nofail,x-systemd.requires-mounts-for={fstab_escape(backing_path)}"
+    entry = f"{fstab_escape(backing_path)} {fstab_escape(exposed_path)} none {options} 0 0 # {marker}"
+    update_fstab(marker, entry)
+    daemon_reload()
+    return exposed_path
+
+def apply_posix_permissions(backing_path, export_config):
+    owner_uid = int_config(export_config, "ownerUid")
+    owner_gid = int_config(export_config, "ownerGid")
+    mode = mode_config(export_config)
+    recursive = truth(export_config, "recursivePermission", False)
+    if owner_uid is None and owner_gid is None and mode is None:
+        return
+    uid = owner_uid if owner_uid is not None else -1
+    gid = owner_gid if owner_gid is not None else -1
+    paths = [backing_path]
+    if recursive:
+        for root, dirs, files in os.walk(backing_path):
+            paths.append(root)
+            paths.extend(os.path.join(root, name) for name in dirs)
+            paths.extend(os.path.join(root, name) for name in files)
+    seen = set()
+    for item in paths:
+        if item in seen or not os.path.exists(item):
+            continue
+        seen.add(item)
+        if owner_uid is not None or owner_gid is not None:
+            os.chown(item, uid, gid)
+        if mode is not None:
+            os.chmod(item, mode)
+
+def load_alias_state():
+    try:
+        with open(alias_state_path, "r", encoding="utf-8") as state_fp:
+            return json.load(state_fp)
+    except Exception:
+        return {}
+
 quota_state = {}
+alias_state = load_alias_state()
+next_alias_state = {}
 managed_files = set()
 enabled = bool(payload.get("enabled", True))
+remove_legacy_root_export()
+remove_listen_ip()
+ensure_listen_ip()
 
 for export in payload.get("exports", []):
     uuid = safe_uuid(export.get("uuid"))
@@ -442,8 +1569,16 @@ for export in payload.get("exports", []):
     state = export.get("state", "Ready")
     lines = []
     if enabled and path and state not in ("Disabled", "Destroyed", "Error"):
-        os.makedirs(path, exist_ok=True)
-        export_config = export.get("config") or {}
+        export_config = effective_nfs_export_config(export.get("config") or {})
+        backing_path = str(export_config.get("backingPath") or "").strip().rstrip("/")
+        exposed_path = ensure_export_alias(export)
+        next_alias_state[uuid] = {
+            "aliasPath": exposed_path,
+            "backingPath": backing_path,
+            "name": export.get("name"),
+        }
+        apply_posix_permissions(backing_path, export_config)
+        rendered_acl_keys = set()
         for acl in export.get("acls", []):
             acl_state = acl.get("state", "Ready")
             if acl_state in ("Disabled", "Destroyed", "Error"):
@@ -451,17 +1586,35 @@ for export in payload.get("exports", []):
             principal = acl.get("principal")
             if not principal:
                 continue
+            rendered_principal = nfs_export_principal(principal)
             permission = acl.get("permission", "READ_ONLY")
             acl_config = acl.get("config") or {}
             read_write = "rw" if permission == "READ_WRITE" and not truth(export_config, "readOnly", False) else "ro"
-            root_squash = "root_squash" if truth(acl_config, "rootSquash", truth(export_config, "rootSquash", True)) else "no_root_squash"
+            all_squash = truth(acl_config, "allSquash", truth(export_config, "allSquash", False))
+            root_squash = "all_squash" if all_squash else ("root_squash" if truth(acl_config, "rootSquash", truth(export_config, "rootSquash", True)) else "no_root_squash")
             sync = "sync" if truth(acl_config, "sync", truth(export_config, "sync", True)) else "async"
             secure = "secure" if truth(acl_config, "secure", truth(export_config, "secure", True)) else "insecure"
-            options = ",".join([read_write, sync, root_squash, secure, "no_subtree_check"])
-            lines.append(f"{path} {principal}({options})")
+            options = [read_write, sync, root_squash, secure, "no_subtree_check"]
+            anon_uid = int_config(acl_config, "anonUid")
+            anon_gid = int_config(acl_config, "anonGid")
+            if anon_uid is None:
+                anon_uid = int_config(export_config, "anonUid")
+            if anon_gid is None:
+                anon_gid = int_config(export_config, "anonGid")
+            if anon_uid is not None:
+                options.append(f"anonuid={anon_uid}")
+            if anon_gid is not None:
+                options.append(f"anongid={anon_gid}")
+            options = ",".join(options)
+            rendered_key = f"{exposed_path} {rendered_principal}"
+            if rendered_key in rendered_acl_keys:
+                continue
+            rendered_acl_keys.add(rendered_key)
+            lines.append(f"{exposed_path} {rendered_principal}({options})")
         if export.get("quotaBytes") is not None:
             quota_state[uuid] = {
                 "path": path,
+                "exportPath": exposed_path,
                 "quotaBytes": export.get("quotaBytes"),
                 "filesystem": export.get("filesystem"),
             }
@@ -479,13 +1632,37 @@ for name in os.listdir(exports_dir):
 with open(os.path.join(quota_dir, "nfs-quotas.json"), "w", encoding="utf-8") as quota_fp:
     json.dump(quota_state, quota_fp, sort_keys=True, indent=2)
 
+for uuid, old_alias in alias_state.items():
+    if uuid in next_alias_state:
+        continue
+    alias_path = old_alias.get("aliasPath") if isinstance(old_alias, dict) else None
+    if alias_path and alias_path not in ("/", "/export") and alias_path.startswith("/") and is_mountpoint(alias_path):
+        run(["umount", alias_path])
+    update_fstab(f"ablestack-storage:{uuid}:alias")
+
+with open(alias_state_path, "w", encoding="utf-8") as alias_fp:
+    json.dump(next_alias_state, alias_fp, sort_keys=True, indent=2)
+
 print(json.dumps({"success": True, "exports": len(payload.get("exports", [])), "quotas": len(quota_state)}))
 PY
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable --now nfs-server >/dev/null 2>&1 || systemctl enable --now nfs-kernel-server >/dev/null 2>&1 || true
   fi
+  exportfs -ua >/dev/null 2>&1 || true
   exportfs -ra
+  local nfs_port
+  nfs_port="$(python3 - "$payload_file" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as payload_fp:
+        print(int(json.load(payload_fp).get("port") or 2049))
+except Exception:
+    print(2049)
+PY
+)"
+  open_tcp_firewall_port "$nfs_port"
 }
 
 apply_smb_shares() {
@@ -493,6 +1670,7 @@ apply_smb_shares() {
 
   python3 - "$payload_file" <<'PY'
 import json
+import grp
 import os
 import pwd
 import re
@@ -531,10 +1709,19 @@ def smb_group(value):
 def ensure_local_smb_user(user, password):
     if not user or not password:
         return
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", user):
+        raise ValueError(f"Invalid local SMB user name: {user}")
     try:
         pwd.getpwnam(user)
     except KeyError:
-        subprocess.run(["useradd", "-M", "-s", "/usr/sbin/nologin", user], check=True)
+        command = ["useradd", "-M", "-s", "/usr/sbin/nologin"]
+        try:
+            grp.getgrnam(user)
+            command.extend(["-g", user])
+        except KeyError:
+            pass
+        command.append(user)
+        subprocess.run(command, check=True)
     subprocess.run(["smbpasswd", "-s", "-a", user], input=f"{password}\n{password}\n", text=True, check=True)
     subprocess.run(["smbpasswd", "-e", user], check=True)
 
@@ -746,11 +1933,19 @@ PY
 apply_iscsi_targets() {
   local payload_file="$1"
 
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now target >/dev/null 2>&1 || systemctl enable --now rtslib-fb-targetctl >/dev/null 2>&1 || true
+  fi
+
   python3 - "$payload_file" <<'PY'
+import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
+import time
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -761,44 +1956,197 @@ os.makedirs(state_dir, exist_ok=True)
 with open(os.path.join(state_dir, "iscsi-targets.json"), "w", encoding="utf-8") as state_fp:
     json.dump(payload, state_fp, sort_keys=True, indent=2)
 
+def run(args, timeout=20):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+
 def run_targetcli(*args):
-    return subprocess.run(["targetcli", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return run(["targetcli", *args])
 
 def ok_or_exists(result):
     text = f"{result.stdout}\n{result.stderr}".lower()
     return result.returncode == 0 or "exists" in text or "already" in text
 
+def require_targetcli(*args):
+    result = run_targetcli(*args)
+    if not ok_or_exists(result):
+        raise SystemExit((result.stderr or result.stdout or f"targetcli failed: {' '.join(args)}").strip())
+    return result
+
+def command_exists(name):
+    return shutil.which(name) is not None
+
+def service_action(action):
+    if not command_exists("systemctl"):
+        return
+    for name in ("target", "rtslib-fb-targetctl"):
+        result = run(["systemctl", action, name], timeout=30)
+        if result.returncode == 0:
+            return
+
+def best_effort_firewall(port):
+    if command_exists("firewall-cmd"):
+        run(["firewall-cmd", "--add-port", f"{port}/tcp"], timeout=15)
+        run(["firewall-cmd", "--permanent", "--add-port", f"{port}/tcp"], timeout=15)
+    if command_exists("iptables"):
+        check = run(["iptables", "-C", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "ACCEPT"], timeout=10)
+        if check.returncode != 0:
+            run(["iptables", "-I", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "ACCEPT"], timeout=10)
+
+def lsblk_devices():
+    result = run(["lsblk", "-b", "-J", "-o", "NAME,PATH,TYPE,FSTYPE,UUID,SERIAL,SIZE,MOUNTPOINT"], timeout=20)
+    if result.returncode != 0:
+        return []
+    try:
+        return json.loads(result.stdout).get("blockdevices", [])
+    except Exception:
+        return []
+
+def walk_devices(devices):
+    for dev in devices:
+        yield dev
+        for child in dev.get("children") or []:
+            yield from walk_devices([child])
+
+def mounted(dev):
+    if dev.get("mountpoint"):
+        return True
+    return any(mounted(child) for child in dev.get("children") or [])
+
+def normalize_token(value):
+    return str(value or "").replace("-", "").replace("_", "").lower()
+
+def matchable_tokens(target):
+    candidates = [
+        target.get("volumeUuid"),
+        target.get("volumeName"),
+    ]
+    config = target.get("config") or {}
+    candidates.extend([
+        config.get("volumeUuid"),
+        config.get("volumeName"),
+        config.get("volumeSerial"),
+    ])
+    tokens = []
+    for candidate in candidates:
+        token = normalize_token(candidate)
+        if len(token) >= 8 and not token.isdigit():
+            tokens.append(token)
+    return tokens
+
+def match_by_id(tokens):
+    tokens = [normalize_token(token) for token in tokens if token]
+    if not tokens:
+        return None
+    for path in glob.glob("/dev/disk/by-id/*"):
+        text = normalize_token(os.path.basename(path))
+        if any(token_matches_text(token, text) for token in tokens):
+            return os.path.realpath(path)
+    return None
+
+def token_matches_text(token, text):
+    if not token or not text:
+        return False
+    return token in text or text in token or (len(token) >= 16 and token[:16] in text)
+
+def find_backing_path(target):
+    config = target.get("config") or {}
+    configured = config.get("backingPath")
+    if configured and os.path.exists(configured):
+        return configured
+    tokens = matchable_tokens(target)
+    matched = match_by_id(tokens)
+    if matched:
+        return matched
+    devices = lsblk_devices()
+    for dev in walk_devices(devices):
+        fields = [normalize_token(dev.get(key)) for key in ("name", "path", "serial", "uuid")]
+        if any(token_matches_text(token, field) for token in tokens for field in fields):
+            return dev.get("path")
+    raise SystemExit(f"unable to resolve backing block device for iSCSI target {target.get('targetName') or target.get('uuid')}; volumeUuid or volumeName did not match any guest disk")
+
+def mountpoint_for_device(path):
+    result = run(["findmnt", "-n", "-o", "TARGET", "--source", path], timeout=8)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip().splitlines()[0]
+    return ""
+
+def device_size_bytes(path):
+    result = run(["lsblk", "-b", "-dn", "-o", "SIZE", path], timeout=8)
+    if result.returncode == 0 and result.stdout.strip().isdigit():
+        return int(result.stdout.strip())
+    if os.path.exists(path):
+        return os.path.getsize(path)
+    raise SystemExit(f"unable to determine backing size for {path}")
+
+def target_size_bytes(target, backing_path):
+    config = target.get("config") or {}
+    value = config.get("lunSizeBytes") or target.get("lunSizeBytes") or target.get("effectiveSizeBytes") or target.get("volumeSizeBytes")
+    if value:
+        return int(value)
+    return device_size_bytes(backing_path)
+
+def resolve_backstore(target, backstore_name):
+    config = target.get("config") or {}
+    path = find_backing_path(target)
+    explicit = bool(config.get("backingPath"))
+    mountpoint = mountpoint_for_device(path)
+    if explicit and not mountpoint:
+        require_targetcli("/backstores/block", "create", backstore_name, path)
+        return f"/backstores/block/{backstore_name}", path, "block"
+
+    if not mountpoint:
+        raise SystemExit(f"backing device {path} is not mounted; refusing to create iSCSI LUN under root filesystem")
+    file_root = mountpoint
+    lun_dir = os.path.join(file_root, ".ablestack-storage", "iscsi")
+    os.makedirs(lun_dir, exist_ok=True)
+    lun_file = os.path.join(lun_dir, f"{target.get('uuid')}.img")
+    lun_size = target_size_bytes(target, path)
+    if not os.path.exists(lun_file) or os.path.getsize(lun_file) != lun_size:
+        run(["truncate", "-s", str(lun_size), lun_file], timeout=60)
+    require_targetcli("/backstores/fileio", "create", backstore_name, lun_file, str(lun_size))
+    return f"/backstores/fileio/{backstore_name}", lun_file, "fileio"
+
+def port_listening(port):
+    if not command_exists("ss"):
+        return False
+    result = run(["ss", "-H", "-lnt"], timeout=8)
+    suffix = ":" + str(port)
+    return any(len(line.split()) >= 4 and line.split()[3].endswith(suffix) for line in result.stdout.splitlines())
+
 enabled = bool(payload.get("enabled", True))
 applied = 0
 skipped = 0
-if enabled and subprocess.run(["sh", "-c", "command -v targetcli >/dev/null 2>&1"]).returncode == 0:
+runtime_targets = []
+port = str(payload.get("port") or 3260)
+targets = payload.get("targets", [])
+if enabled and targets and not command_exists("targetcli"):
+    raise SystemExit("targetcli is required to apply iSCSI targets")
+if enabled and command_exists("targetcli"):
     for target in payload.get("targets", []):
         if target.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
             continue
         iqn = target.get("targetName")
         lun = str(target.get("lunOrNamespace") or "0")
-        config = target.get("config") or {}
-        backing_path = config.get("backingPath")
-        if not iqn or not backing_path:
+        if not iqn:
             skipped += 1
             continue
         backstore = f"ablestack-{target.get('uuid')}"
-        if not ok_or_exists(run_targetcli("/backstores/block", "create", backstore, backing_path)):
-            raise SystemExit(f"failed to create iSCSI backstore {backstore}")
-        if not ok_or_exists(run_targetcli("/iscsi", "create", iqn)):
-            raise SystemExit(f"failed to create iSCSI target {iqn}")
+        run_targetcli("/iscsi", "delete", iqn)
+        run_targetcli("/backstores/fileio", "delete", backstore)
+        run_targetcli("/backstores/block", "delete", backstore)
+        backstore_path, backing_path, backstore_type = resolve_backstore(target, backstore)
+        require_targetcli("/iscsi", "create", iqn)
         run_targetcli(f"/iscsi/{iqn}/tpg1/portals", "delete", "0.0.0.0", "3260")
         listen_ip = payload.get("listenIp") or "0.0.0.0"
-        port = str(payload.get("port") or 3260)
-        ok_or_exists(run_targetcli(f"/iscsi/{iqn}/tpg1/portals", "create", listen_ip, port))
-        ok_or_exists(run_targetcli(f"/iscsi/{iqn}/tpg1/luns", "create", f"/backstores/block/{backstore}", lun))
+        require_targetcli(f"/iscsi/{iqn}/tpg1/portals", "create", listen_ip, port)
+        require_targetcli(f"/iscsi/{iqn}/tpg1/luns", "create", backstore_path, lun)
         for acl in target.get("acls", []):
             if acl.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
                 continue
             initiator = acl.get("principal")
             if not initiator:
                 continue
-            ok_or_exists(run_targetcli(f"/iscsi/{iqn}/tpg1/acls", "create", initiator))
+            require_targetcli(f"/iscsi/{iqn}/tpg1/acls", "create", initiator)
             acl_config = acl.get("config") or {}
             secrets = acl.get("secrets") or {}
             if acl_config.get("chapUsername"):
@@ -810,16 +2158,38 @@ if enabled and subprocess.run(["sh", "-c", "command -v targetcli >/dev/null 2>&1
             if secrets.get("mutualChapSecret"):
                 run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"mutual_password={secrets.get('mutualChapSecret')}")
         applied += 1
+        runtime_targets.append({
+            "uuid": target.get("uuid"),
+            "targetName": iqn,
+            "lunOrNamespace": lun,
+            "volumeUuid": target.get("volumeUuid"),
+            "volumeName": target.get("volumeName"),
+            "volumeSizeBytes": target.get("volumeSizeBytes"),
+            "lunSizeBytes": target.get("lunSizeBytes") or (target.get("config") or {}).get("lunSizeBytes"),
+            "effectiveSizeBytes": target_size_bytes(target, backing_path),
+            "backingPath": backing_path,
+            "backstoreType": backstore_type,
+        })
     run_targetcli("saveconfig")
 else:
     skipped = len(payload.get("targets", []))
 
-print(json.dumps({"success": True, "targets": len(payload.get("targets", [])), "applied": applied, "skipped": skipped}))
+if enabled and applied:
+    service_action("restart")
+    best_effort_firewall(port)
+    for _ in range(10):
+        if port_listening(port):
+            break
+        time.sleep(0.5)
+    if not port_listening(port):
+        raise SystemExit(f"iSCSI target service did not listen on TCP port {port}")
+
+print(json.dumps({"success": True, "targets": len(payload.get("targets", [])), "applied": applied, "skipped": skipped, "port": int(port), "listening": port_listening(port), "runtimeTargets": runtime_targets}))
 PY
 
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl enable --now target >/dev/null 2>&1 || true
-    systemctl restart target >/dev/null 2>&1 || true
+    systemctl enable --now target >/dev/null 2>&1 || systemctl enable --now rtslib-fb-targetctl >/dev/null 2>&1 || true
+    systemctl restart target >/dev/null 2>&1 || systemctl restart rtslib-fb-targetctl >/dev/null 2>&1 || true
   fi
 }
 
@@ -831,6 +2201,8 @@ import json
 import os
 import subprocess
 import sys
+import glob
+import time
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -838,15 +2210,208 @@ with open(payload_path, "r", encoding="utf-8") as payload_fp:
 
 state_dir = "/etc/ablestack-storage"
 os.makedirs(state_dir, exist_ok=True)
-with open(os.path.join(state_dir, "nvmeof-subsystems.json"), "w", encoding="utf-8") as state_fp:
-    json.dump(payload, state_fp, sort_keys=True, indent=2)
 
 def write_file(path, value):
     with open(path, "w", encoding="utf-8") as fp:
         fp.write(str(value))
 
+def read_file(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            return fp.read().strip()
+    except OSError:
+        return None
+
+def write_if_changed(path, value):
+    desired = str(value)
+    if read_file(path) != desired:
+        write_file(path, desired)
+
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
+
+def safe_write_if_exists(path, value):
+    if value and os.path.exists(path):
+        write_if_changed(path, value)
+
+SENSITIVE_KEYS = {
+    "secrets",
+    "secret",
+    "password",
+    "passwords",
+    "key",
+    "keys",
+    "dhChapKey",
+    "dhChapCtrlKey",
+    "chapSecret",
+    "mutualChapSecret",
+}
+
+def redact_sensitive(value):
+    if isinstance(value, list):
+        return [redact_sensitive(item) for item in value]
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            lower_key = str(key).lower()
+            if key in SENSITIVE_KEYS or "secret" in lower_key or "password" in lower_key or lower_key.endswith("key"):
+                continue
+            redacted[key] = redact_sensitive(item)
+        return redacted
+    return value
+
+def write_required_configfs(path, value, feature):
+    if not value:
+        raise SystemExit(f"{feature} is enabled but no secret was supplied in the runtime request")
+    if not os.path.exists(path):
+        raise SystemExit(f"{feature} is not supported by this System VM kernel/configfs: missing {path}")
+    write_if_changed(path, value)
+
+def run(args, timeout=20):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+
+def lsblk_devices():
+    result = run(["lsblk", "-b", "-J", "-o", "NAME,PATH,TYPE,FSTYPE,UUID,SERIAL,SIZE,MOUNTPOINT"], timeout=20)
+    if result.returncode != 0:
+        return []
+    try:
+        return json.loads(result.stdout).get("blockdevices", [])
+    except Exception:
+        return []
+
+def walk_devices(devices):
+    for dev in devices:
+        yield dev
+        for child in dev.get("children") or []:
+            yield from walk_devices([child])
+
+def normalize_token(value):
+    return str(value or "").replace("-", "").replace("_", "").lower()
+
+def token_matches_text(token, text):
+    if not token or not text:
+        return False
+    return token in text or text in token or (len(token) >= 16 and token[:16] in text)
+
+def matchable_tokens(target):
+    config = target.get("config") or {}
+    candidates = [
+        target.get("volumeUuid"),
+        target.get("volumeName"),
+        config.get("volumeUuid"),
+        config.get("volumeName"),
+        config.get("volumeSerial"),
+    ]
+    tokens = []
+    for candidate in candidates:
+        token = normalize_token(candidate)
+        if len(token) >= 8 and not token.isdigit():
+            tokens.append(token)
+    return tokens
+
+def match_by_id(tokens):
+    tokens = [normalize_token(token) for token in tokens if token]
+    if not tokens:
+        return None
+    for path in glob.glob("/dev/disk/by-id/*"):
+        text = normalize_token(os.path.basename(path))
+        if any(token_matches_text(token, text) for token in tokens):
+            return os.path.realpath(path)
+    return None
+
+def find_backing_path(target):
+    config = target.get("config") or {}
+    configured = config.get("backingPath") or target.get("backingPath")
+    if configured and os.path.exists(configured):
+        return configured
+    tokens = matchable_tokens(target)
+    matched = match_by_id(tokens)
+    if matched:
+        return matched
+    for dev in walk_devices(lsblk_devices()):
+        fields = [normalize_token(dev.get(key)) for key in ("name", "path", "serial", "uuid")]
+        if any(token_matches_text(token, field) for token in tokens for field in fields):
+            return dev.get("path")
+    raise SystemExit(f"unable to resolve backing block device for NVMe-oF namespace {target.get('targetName') or target.get('uuid')}; volumeUuid or volumeName did not match any guest disk")
+
+def mountpoint_for_device(path):
+    result = run(["findmnt", "-n", "-o", "TARGET", "--source", path], timeout=8)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip().splitlines()[0]
+    return ""
+
+def device_size_bytes(path):
+    result = run(["lsblk", "-b", "-dn", "-o", "SIZE", path], timeout=8)
+    if result.returncode == 0 and result.stdout.strip().isdigit():
+        return int(result.stdout.strip())
+    if os.path.exists(path):
+        return os.path.getsize(path)
+    raise SystemExit(f"unable to determine backing size for {path}")
+
+def namespace_size_bytes(namespace, backing_path):
+    config = namespace.get("config") or {}
+    value = config.get("namespaceSizeBytes") or namespace.get("namespaceSizeBytes") or namespace.get("effectiveSizeBytes") or namespace.get("volumeSizeBytes")
+    if value:
+        return int(value)
+    return device_size_bytes(backing_path)
+
+def loop_for_file(path):
+    result = run(["losetup", "-j", path], timeout=8)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.split(":", 1)[0].strip()
+    result = run(["losetup", "--find", "--show", path], timeout=20)
+    if result.returncode != 0 or not result.stdout.strip():
+        raise SystemExit((result.stderr or result.stdout or f"unable to create loop device for {path}").strip())
+    return result.stdout.strip()
+
+def resolve_namespace_device(namespace):
+    path = find_backing_path(namespace)
+    config = namespace.get("config") or {}
+    explicit = bool(config.get("backingPath") or namespace.get("backingPath"))
+    mountpoint = mountpoint_for_device(path)
+    if explicit and not mountpoint:
+        return path, "block"
+    if not mountpoint:
+        return path, "block"
+    file_root = mountpoint
+    ns_dir = os.path.join(file_root, ".ablestack-storage", "nvmeof")
+    os.makedirs(ns_dir, exist_ok=True)
+    ns_file = os.path.join(ns_dir, f"{namespace.get('uuid')}.img")
+    ns_size = namespace_size_bytes(namespace, path)
+    if not os.path.exists(ns_file) or os.path.getsize(ns_file) != ns_size:
+        run(["truncate", "-s", str(ns_size), ns_file], timeout=60)
+    return loop_for_file(ns_file), "file-loop"
+
+def port_has_subsystem_links(port_dir):
+    subsystem_dir = os.path.join(port_dir, "subsystems")
+    try:
+        return bool(os.listdir(subsystem_dir))
+    except OSError:
+        return False
+
+def configure_port(port_dir):
+    ensure_dir(port_dir)
+    if port_has_subsystem_links(port_dir):
+        return
+    write_if_changed(os.path.join(port_dir, "addr_trtype"), "tcp")
+    write_if_changed(os.path.join(port_dir, "addr_adrfam"), "ipv4")
+    write_if_changed(os.path.join(port_dir, "addr_traddr"), payload.get("listenIp") or "0.0.0.0")
+    write_if_changed(os.path.join(port_dir, "addr_trsvcid"), payload.get("port") or 4420)
+
+def link_once(source, link_path):
+    if os.path.islink(link_path) and os.path.realpath(link_path) == os.path.realpath(source):
+        return
+    if os.path.exists(link_path):
+        raise SystemExit(f"NVMe-oF configfs path already exists and is not the expected symlink: {link_path}")
+    os.symlink(source, link_path)
+
+def unlink_stale_symlinks(parent_dir, desired_names):
+    if not os.path.isdir(parent_dir):
+        return
+    for name in os.listdir(parent_dir):
+        path = os.path.join(parent_dir, name)
+        if name not in desired_names and os.path.islink(path):
+            os.unlink(path)
 
 enabled = bool(payload.get("enabled", True))
 base = "/sys/kernel/config/nvmet"
@@ -859,11 +2424,7 @@ if enabled:
 if enabled and os.path.isdir(base):
     port_id = "1"
     port_dir = os.path.join(base, "ports", port_id)
-    ensure_dir(port_dir)
-    write_file(os.path.join(port_dir, "addr_trtype"), "tcp")
-    write_file(os.path.join(port_dir, "addr_adrfam"), "ipv4")
-    write_file(os.path.join(port_dir, "addr_traddr"), payload.get("listenIp") or "0.0.0.0")
-    write_file(os.path.join(port_dir, "addr_trsvcid"), payload.get("port") or 4420)
+    configure_port(port_dir)
 
     for subsystem in payload.get("subsystems", []):
         if subsystem.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
@@ -879,30 +2440,52 @@ if enabled and os.path.isdir(base):
             skipped += 1
             continue
         ensure_dir(subsystem_dir)
-        write_file(os.path.join(subsystem_dir, "attr_allow_any_host"), "1" if config.get("allowAnyHost") else "0")
+        write_if_changed(os.path.join(subsystem_dir, "attr_allow_any_host"), "1" if config.get("allowAnyHost") else "0")
+        desired_hosts = set()
         for host in subsystem.get("hosts", []):
             host_nqn = host.get("principal")
             if host_nqn:
-                ensure_dir(os.path.join(subsystem_dir, "allowed_hosts", host_nqn))
+                desired_hosts.add(host_nqn)
+                host_dir = os.path.join(base, "hosts", host_nqn)
+                ensure_dir(host_dir)
+                host_config = host.get("config") or {}
+                host_secrets = host.get("secrets") or {}
+                if host_config.get("dhChapEnabled"):
+                    write_required_configfs(os.path.join(host_dir, "dhchap_key"), host_secrets.get("dhChapKey"), "NVMe-oF DH-HMAC-CHAP host authentication")
+                if host_config.get("dhChapCtrlEnabled"):
+                    write_required_configfs(os.path.join(host_dir, "dhchap_ctrl_key"), host_secrets.get("dhChapCtrlKey"), "NVMe-oF DH-HMAC-CHAP controller authentication")
+                allowed_host_path = os.path.join(subsystem_dir, "allowed_hosts", host_nqn)
+                link_once(host_dir, allowed_host_path)
+        unlink_stale_symlinks(os.path.join(subsystem_dir, "allowed_hosts"), desired_hosts)
         for namespace in subsystem.get("namespaces", []):
             if namespace.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
                 continue
             nsid = str(namespace.get("lunOrNamespace") or "1")
-            ns_config = namespace.get("config") or {}
-            backing_path = ns_config.get("backingPath")
-            if not backing_path:
-                skipped += 1
-                continue
+            backing_path, backing_type = resolve_namespace_device(namespace)
             ns_dir = os.path.join(subsystem_dir, "namespaces", nsid)
             ensure_dir(ns_dir)
-            write_file(os.path.join(ns_dir, "device_path"), backing_path)
-            write_file(os.path.join(ns_dir, "enable"), "1")
+            current_device = read_file(os.path.join(ns_dir, "device_path"))
+            enabled_now = read_file(os.path.join(ns_dir, "enable")) == "1"
+            if current_device != backing_path:
+                if enabled_now:
+                    write_if_changed(os.path.join(ns_dir, "enable"), "0")
+                    for _ in range(10):
+                        if read_file(os.path.join(ns_dir, "enable")) != "1":
+                            break
+                        time.sleep(0.1)
+                write_if_changed(os.path.join(ns_dir, "device_path"), backing_path)
+            write_if_changed(os.path.join(ns_dir, "enable"), "1")
+            namespace["runtime"] = {"backingPath": backing_path, "backingType": backing_type}
         link_path = os.path.join(port_dir, "subsystems", nqn)
-        if not os.path.exists(link_path):
-            os.symlink(subsystem_dir, link_path)
+        link_once(subsystem_dir, link_path)
         applied += 1
 else:
     skipped = len(payload.get("subsystems", []))
+
+state_payload = redact_sensitive(dict(payload))
+state_payload["lastApply"] = {"success": True, "applied": applied, "skipped": skipped}
+with open(os.path.join(state_dir, "nvmeof-subsystems.json"), "w", encoding="utf-8") as state_fp:
+    json.dump(state_payload, state_fp, sort_keys=True, indent=2)
 
 print(json.dumps({"success": True, "subsystems": len(payload.get("subsystems", [])), "applied": applied, "skipped": skipped}))
 PY
@@ -932,20 +2515,42 @@ case "$command" in
     runtime_inventory
     ;;
   sessions)
-    log_command "$command" ""
-    runtime_sessions
+    payload="${2:-}"
+    log_command "$command" "$payload"
+    runtime_sessions "$payload"
     ;;
-  volume)
-    if [[ "$subcommand" != "attach" || "$action" != "inspect" ]]; then
-      emit_error "Unsupported volume operation: ${subcommand:-<empty>} ${action:-<empty>}"
+  session)
+    payload="${3:-}"
+    if [[ "$subcommand" != "disconnect" ]]; then
+      emit_error "Unsupported session operation: ${subcommand:-<empty>}"
       exit 2
     fi
     if [[ -z "$payload" || ! -r "$payload" ]]; then
-      emit_error "A readable payload file is required for volume attach inspect."
+      emit_error "A readable payload file is required for session disconnect."
       exit 2
     fi
-    log_command "$command $subcommand $action" "$payload"
-    volume_attach_inspect "$payload"
+    log_command "$command $subcommand" "$payload"
+    session_disconnect "$payload"
+    ;;
+  volume)
+    if [[ "$subcommand" == "attach" && "$action" == "inspect" ]]; then
+      if [[ -z "$payload" || ! -r "$payload" ]]; then
+        emit_error "A readable payload file is required for volume attach inspect."
+        exit 2
+      fi
+      log_command "$command $subcommand $action" "$payload"
+      volume_attach_inspect "$payload"
+    elif [[ "$subcommand" == "detach" && "$action" == "prepare" ]]; then
+      if [[ -z "$payload" || ! -r "$payload" ]]; then
+        emit_error "A readable payload file is required for volume detach prepare."
+        exit 2
+      fi
+      log_command "$command $subcommand $action" "$payload"
+      volume_detach_prepare "$payload"
+    else
+      emit_error "Unsupported volume operation: ${subcommand:-<empty>} ${action:-<empty>}"
+      exit 2
+    fi
     ;;
   filesystem)
     payload="${3:-}"

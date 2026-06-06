@@ -21,39 +21,34 @@ import javax.inject.Inject;
 
 import org.apache.cloudstack.acl.RoleType;
 import org.apache.cloudstack.api.APICommand;
-import org.apache.cloudstack.api.BaseListCmd;
+import org.apache.cloudstack.api.BaseAsyncCmd;
 import org.apache.cloudstack.api.Parameter;
 import org.apache.cloudstack.api.command.user.UserCmd;
-import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
-import org.apache.cloudstack.api.response.StorageServiceRuntimeResponse;
+import org.apache.cloudstack.api.response.SuccessResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "listStorageServiceSessions",
-        responseObject = StorageServiceRuntimeResponse.class,
-        description = "Lists active protocol sessions for Storage Service instances.",
+@APICommand(name = "deleteStorageServiceProtocol",
+        responseObject = SuccessResponse.class,
+        description = "Disables a protocol on a Storage Service instance.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class ListStorageServiceSessionsCmd extends BaseListCmd implements UserCmd {
+public class DeleteStorageServiceProtocolCmd extends BaseAsyncCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, description = "Storage Service instance ID")
+    @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, required = true,
+            description = "Storage Service instance ID")
     private Long instanceId;
 
-    @Parameter(name = "protocol", type = CommandType.STRING, description = "Protocol filter: NFS, SMB, ISCSI, or NVME_OF")
+    @Parameter(name = "protocol", type = CommandType.STRING, required = true, description = "protocol to disable")
     private String protocol;
 
-    @Parameter(name = "resourceid", type = CommandType.STRING, description = "Optional protocol resource identifier filter")
-    private String resourceId;
-
-    @Parameter(name = "client", type = CommandType.STRING, description = "Optional client address filter")
-    private String client;
-
-    @Parameter(name = "state", type = CommandType.STRING, description = "Optional session state filter")
-    private String state;
+    @Parameter(name = "listenip", type = CommandType.STRING,
+            description = "optional listen IP endpoint to remove from the protocol instead of disabling the whole protocol")
+    private String listenIp;
 
     public Long getInstanceId() {
         return instanceId;
@@ -63,22 +58,33 @@ public class ListStorageServiceSessionsCmd extends BaseListCmd implements UserCm
         return protocol;
     }
 
-    public String getResourceId() {
-        return resourceId;
+    public String getListenIp() {
+        return listenIp;
     }
 
-    public String getClient() {
-        return client;
+    @Override
+    public long getEntityOwnerId() {
+        return 0;
     }
 
-    public String getState() {
-        return state;
+    @Override
+    public String getEventType() {
+        return "STORAGE.SERVICE.PROTOCOL.DELETE";
+    }
+
+    @Override
+    public String getEventDescription() {
+        if (listenIp != null) {
+            return "Removing Storage Service protocol endpoint " + listenIp + " for " + protocol + " on instance " + instanceId;
+        }
+        return "Disabling Storage Service protocol " + protocol + " on instance " + instanceId;
     }
 
     @Override
     public void execute() {
-        ListResponse<StorageServiceRuntimeResponse> response = storageService.listStorageServiceSessions(this);
-        response.setResponseName(getCommandName());
+        boolean result = storageService.deleteStorageServiceProtocol(this);
+        SuccessResponse response = new SuccessResponse(getCommandName());
+        response.setSuccess(result);
         setResponseObject(response);
     }
 }

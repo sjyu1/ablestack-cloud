@@ -27,61 +27,60 @@ import org.apache.cloudstack.api.BaseAsyncCmd;
 import org.apache.cloudstack.api.Parameter;
 import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.user.UserCmd;
-import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
-import org.apache.cloudstack.api.response.VolumeResponse;
+import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "updateStorageIscsiTarget",
-        responseObject = StorageBlockTargetResponse.class,
-        description = "Updates an iSCSI target on a Storage Service instance.",
-        requestHasSensitiveInfo = false,
+@APICommand(name = "updateStorageNvmeOfHostAcl",
+        responseObject = StorageAccessRuleResponse.class,
+        description = "Updates an NVMe-oF host ACL and optional DH-HMAC-CHAP authentication.",
+        requestHasSensitiveInfo = true,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class UpdateStorageIscsiTargetCmd extends BaseAsyncCmd implements UserCmd {
+public class UpdateStorageNvmeOfHostAclCmd extends BaseAsyncCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, required = true, description = "iSCSI target ID")
+    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageAccessRuleResponse.class, required = true, description = "NVMe-oF host ACL ID")
     private Long id;
 
-    @Parameter(name = "targetname", type = CommandType.STRING, description = "iSCSI target IQN")
-    private String targetName;
+    @Parameter(name = "hostnqn", type = CommandType.STRING, description = "NVMe host NQN")
+    private String hostNqn;
 
-    @Parameter(name = "lun", type = CommandType.STRING, description = "LUN ID")
-    private String lun;
+    @Parameter(name = "dhchapenabled", type = CommandType.BOOLEAN, description = "enable DH-HMAC-CHAP host authentication")
+    private Boolean dhChapEnabled;
 
-    @Parameter(name = "lunsizebytes", type = CommandType.LONG, description = "LUN size in bytes")
-    private Long lunSizeBytes;
+    @Parameter(name = "dhchapkey", type = CommandType.STRING, description = "DH-HMAC-CHAP host key. Not stored.")
+    private String dhChapKey;
 
-    @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, description = "backing volume ID")
-    private Long volumeId;
+    @Parameter(name = "dhchapctrlenabled", type = CommandType.BOOLEAN, description = "enable DH-HMAC-CHAP controller authentication")
+    private Boolean dhChapCtrlEnabled;
 
-    @Parameter(name = "backingpath", type = CommandType.STRING, description = "optional block device path inside the Storage Service System VM")
-    private String backingPath;
+    @Parameter(name = "dhchapctrlkey", type = CommandType.STRING, description = "DH-HMAC-CHAP controller key. Not stored.")
+    private String dhChapCtrlKey;
 
     public Long getId() {
         return id;
     }
 
-    public String getTargetName() {
-        return targetName;
+    public String getHostNqn() {
+        return hostNqn;
     }
 
-    public String getLun() {
-        return lun;
+    public Boolean getDhChapEnabled() {
+        return dhChapEnabled;
     }
 
-    public Long getLunSizeBytes() {
-        return lunSizeBytes;
+    public String getDhChapKey() {
+        return dhChapKey;
     }
 
-    public Long getVolumeId() {
-        return volumeId;
+    public Boolean getDhChapCtrlEnabled() {
+        return dhChapCtrlEnabled;
     }
 
-    public String getBackingPath() {
-        return backingPath;
+    public String getDhChapCtrlKey() {
+        return dhChapCtrlKey;
     }
 
     @Override
@@ -91,19 +90,19 @@ public class UpdateStorageIscsiTargetCmd extends BaseAsyncCmd implements UserCmd
 
     @Override
     public String getEventType() {
-        return "STORAGE.ISCSI.TARGET.UPDATE";
+        return "STORAGE.NVMEOF.HOSTACL.UPDATE";
     }
 
     @Override
     public String getEventDescription() {
-        return "Updating Storage Service iSCSI target " + id;
+        return "Updating Storage Service NVMe-oF host ACL " + id;
     }
 
     @Override
     public void execute() {
-        StorageBlockTargetResponse response = storageService.updateStorageIscsiTarget(this);
+        StorageAccessRuleResponse response = storageService.updateStorageNvmeOfHostAcl(this);
         if (response == null) {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to update iSCSI target");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to update NVMe-oF host ACL");
         }
         response.setResponseName(getCommandName());
         setResponseObject(response);

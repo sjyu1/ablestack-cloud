@@ -192,8 +192,20 @@ public class StorageVmSharedFSLifeCycleTest {
         when(zone.getId()).thenReturn(s_zoneId);
         ServiceOfferingVO serviceOfferingVO = mock(ServiceOfferingVO.class);
         when(serviceOfferingDao.findById(s_serviceOfferingId)).thenReturn(serviceOfferingVO);
+        when(serviceOfferingVO.getCpu()).thenReturn(1);
         InvalidParameterValueException exception = Assert.assertThrows(InvalidParameterValueException.class, () -> lifeCycle.checkPrerequisites(zone, s_serviceOfferingId));
         Assert.assertEquals(exception.getMessage(), "Service offering's number of cpu should be greater than or equal to " + SHAREDFSVM_MIN_CPU_COUNT.key());
+    }
+
+    @Test
+    public void testCheckPrerequisitesCustomCpuException() {
+        DataCenterVO zone = mock(DataCenterVO.class);
+        ServiceOfferingVO serviceOfferingVO = mock(ServiceOfferingVO.class);
+        when(serviceOfferingDao.findById(s_serviceOfferingId)).thenReturn(serviceOfferingVO);
+        when(serviceOfferingVO.getCpu()).thenReturn(null);
+
+        InvalidParameterValueException exception = Assert.assertThrows(InvalidParameterValueException.class, () -> lifeCycle.checkPrerequisites(zone, s_serviceOfferingId));
+        Assert.assertEquals("Service offering must have a fixed CPU count for SharedFS VM. Custom CPU offerings are not supported.", exception.getMessage());
     }
 
     @Test
@@ -203,8 +215,21 @@ public class StorageVmSharedFSLifeCycleTest {
         ServiceOfferingVO serviceOfferingVO = mock(ServiceOfferingVO.class);
         when(serviceOfferingDao.findById(s_serviceOfferingId)).thenReturn(serviceOfferingVO);
         when(serviceOfferingVO.getCpu()).thenReturn(4);
+        when(serviceOfferingVO.getRamSize()).thenReturn(512);
         InvalidParameterValueException exception = Assert.assertThrows(InvalidParameterValueException.class, () -> lifeCycle.checkPrerequisites(zone, s_serviceOfferingId));
         Assert.assertEquals(exception.getMessage(), "Service offering's ram size should be greater than or equal to " + SHAREDFSVM_MIN_RAM_SIZE.key());
+    }
+
+    @Test
+    public void testCheckPrerequisitesCustomRamException() {
+        DataCenterVO zone = mock(DataCenterVO.class);
+        ServiceOfferingVO serviceOfferingVO = mock(ServiceOfferingVO.class);
+        when(serviceOfferingDao.findById(s_serviceOfferingId)).thenReturn(serviceOfferingVO);
+        when(serviceOfferingVO.getCpu()).thenReturn(4);
+        when(serviceOfferingVO.getRamSize()).thenReturn(null);
+
+        InvalidParameterValueException exception = Assert.assertThrows(InvalidParameterValueException.class, () -> lifeCycle.checkPrerequisites(zone, s_serviceOfferingId));
+        Assert.assertEquals("Service offering must have a fixed RAM size for SharedFS VM. Custom RAM offerings are not supported.", exception.getMessage());
     }
 
     @Test

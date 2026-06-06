@@ -69,6 +69,10 @@ public class StorageServiceRuntimeResponse extends BaseResponse {
     }
 
     public void setResultJson(final String resultJson) {
-        this.resultJson = resultJson;
+        String normalized = resultJson;
+        while (normalized != null && normalized.contains("\\=")) {
+            normalized = normalized.replace("\\=", "=");
+        }
+        this.resultJson = normalized;
     }
 }

@@ -73,7 +73,8 @@ public class StorageServiceInstanceVO implements StorageServiceInstance {
     private State state = State.Allocated;
 
     @Column(name = GenericDao.CREATED_COLUMN)
-    private Date created;
+    @Temporal(value = TemporalType.TIMESTAMP)
+    private Date created = new Date();
 
     @Column(name = "updated")
     @Temporal(value = TemporalType.TIMESTAMP)

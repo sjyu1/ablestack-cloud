@@ -21,63 +21,65 @@ import javax.inject.Inject;
 
 import org.apache.cloudstack.acl.RoleType;
 import org.apache.cloudstack.api.APICommand;
-import org.apache.cloudstack.api.BaseListCmd;
+import org.apache.cloudstack.api.ApiConstants;
+import org.apache.cloudstack.api.ApiErrorCode;
+import org.apache.cloudstack.api.BaseAsyncCmd;
 import org.apache.cloudstack.api.Parameter;
+import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.api.command.user.UserCmd;
-import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageServiceRuntimeResponse;
+import org.apache.cloudstack.api.response.VolumeResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "listStorageServiceSessions",
+@APICommand(name = "detachStorageServiceBackingVolume",
         responseObject = StorageServiceRuntimeResponse.class,
-        description = "Lists active protocol sessions for Storage Service instances.",
+        description = "Detaches an unused backing volume from a Storage Service System VM. The volume and its data are not deleted.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class ListStorageServiceSessionsCmd extends BaseListCmd implements UserCmd {
+public class DetachStorageServiceBackingVolumeCmd extends BaseAsyncCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, description = "Storage Service instance ID")
+    @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, required = true,
+            description = "Storage Service instance ID")
     private Long instanceId;
 
-    @Parameter(name = "protocol", type = CommandType.STRING, description = "Protocol filter: NFS, SMB, ISCSI, or NVME_OF")
-    private String protocol;
-
-    @Parameter(name = "resourceid", type = CommandType.STRING, description = "Optional protocol resource identifier filter")
-    private String resourceId;
-
-    @Parameter(name = "client", type = CommandType.STRING, description = "Optional client address filter")
-    private String client;
-
-    @Parameter(name = "state", type = CommandType.STRING, description = "Optional session state filter")
-    private String state;
+    @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, required = true,
+            description = "backing volume ID to detach")
+    private Long volumeId;
 
     public Long getInstanceId() {
         return instanceId;
     }
 
-    public String getProtocol() {
-        return protocol;
+    public Long getVolumeId() {
+        return volumeId;
     }
 
-    public String getResourceId() {
-        return resourceId;
+    @Override
+    public long getEntityOwnerId() {
+        return 0;
     }
 
-    public String getClient() {
-        return client;
+    @Override
+    public String getEventType() {
+        return "STORAGE.BACKING.VOLUME.DETACH";
     }
 
-    public String getState() {
-        return state;
+    @Override
+    public String getEventDescription() {
+        return "Detaching Storage Service backing volume " + volumeId;
     }
 
     @Override
     public void execute() {
-        ListResponse<StorageServiceRuntimeResponse> response = storageService.listStorageServiceSessions(this);
+        final StorageServiceRuntimeResponse response = storageService.detachStorageServiceBackingVolume(this);
+        if (response == null) {
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to detach Storage Service backing volume");
+        }
         response.setResponseName(getCommandName());
         setResponseObject(response);
     }

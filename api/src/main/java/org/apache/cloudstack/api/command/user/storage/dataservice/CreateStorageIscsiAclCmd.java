@@ -50,11 +50,17 @@ public class CreateStorageIscsiAclCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = "permission", type = CommandType.STRING, description = "READ_ONLY or READ_WRITE")
     private String permission;
 
+    @Parameter(name = "chapenabled", type = CommandType.BOOLEAN, description = "enable one-way CHAP authentication")
+    private Boolean chapEnabled;
+
     @Parameter(name = "chapusername", type = CommandType.STRING, description = "CHAP username")
     private String chapUsername;
 
     @Parameter(name = "chapsecret", type = CommandType.STRING, description = "CHAP secret. Not stored.")
     private String chapSecret;
+
+    @Parameter(name = "mutualchapenabled", type = CommandType.BOOLEAN, description = "enable mutual CHAP authentication")
+    private Boolean mutualChapEnabled;
 
     @Parameter(name = "mutualchapusername", type = CommandType.STRING, description = "mutual CHAP username")
     private String mutualChapUsername;
@@ -74,12 +80,20 @@ public class CreateStorageIscsiAclCmd extends BaseAsyncCmd implements UserCmd {
         return permission;
     }
 
+    public Boolean getChapEnabled() {
+        return chapEnabled;
+    }
+
     public String getChapUsername() {
         return chapUsername;
     }
 
     public String getChapSecret() {
         return chapSecret;
+    }
+
+    public Boolean getMutualChapEnabled() {
+        return mutualChapEnabled;
     }
 
     public String getMutualChapUsername() {

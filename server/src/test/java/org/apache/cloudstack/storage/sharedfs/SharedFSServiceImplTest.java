@@ -69,6 +69,7 @@ import com.cloud.exception.ResourceAllocationException;
 import com.cloud.exception.ResourceUnavailableException;
 import com.cloud.exception.VirtualMachineMigrationException;
 import com.cloud.network.Network;
+import com.cloud.network.NetworkModel;
 import com.cloud.network.dao.NetworkDao;
 import com.cloud.network.dao.NetworkVO;
 import com.cloud.org.Grouping;
@@ -115,6 +116,9 @@ public class SharedFSServiceImplTest {
 
     @Mock
     NetworkDao networkDao;
+
+    @Mock
+    NetworkModel networkModel;
 
     @Mock
     private ConfigurationManager configMgr;
@@ -254,8 +258,10 @@ public class SharedFSServiceImplTest {
 
         when(cmd.getNetworkId()).thenReturn(s_networkId);
         NetworkVO networkVO = mock(NetworkVO.class);
+        when(networkVO.getId()).thenReturn(s_networkId);
         when(networkVO.getGuestType()).thenReturn(Network.GuestType.Isolated);
         when(networkDao.findById(s_networkId)).thenReturn(networkVO);
+        when(networkModel.areServicesSupportedInNetwork(s_networkId, Network.Service.UserData)).thenReturn(true);
 
         sharedFSServiceImpl.allocSharedFS(cmd);
         Assert.assertEquals(Optional.ofNullable(sharedFS.getAccountId()), Optional.ofNullable(s_ownerId));
@@ -313,11 +319,37 @@ public class SharedFSServiceImplTest {
 
         when(cmd.getNetworkId()).thenReturn(s_networkId);
         NetworkVO networkVO = mock(NetworkVO.class);
+        when(networkVO.getId()).thenReturn(s_networkId);
         when(networkVO.getGuestType()).thenReturn(Network.GuestType.Isolated);
         when(networkDao.findById(s_networkId)).thenReturn(networkVO);
+        when(networkModel.areServicesSupportedInNetwork(s_networkId, Network.Service.UserData)).thenReturn(true);
 
         when(cmd.getFsFormat()).thenReturn("ext2");
         Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
+    }
+
+    @Test
+    public void testAllocSharedFSNetworkMustSupportUserData() {
+        CreateSharedFSCmd cmd = getMockCreateSharedFSCmd();
+
+        DataCenterVO zone = mock(DataCenterVO.class);
+        when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
+        when(zone.getAllocationState()).thenReturn(Grouping.AllocationState.Enabled);
+
+        DiskOfferingVO diskOfferingVO = mock(DiskOfferingVO.class);
+        when(diskOfferingDao.findById(s_diskOfferingId)).thenReturn(diskOfferingVO);
+        when(diskOfferingVO.isCustomized()).thenReturn(true);
+        when(diskOfferingVO.isCustomizedIops()).thenReturn(true);
+
+        NetworkVO networkVO = mock(NetworkVO.class);
+        when(networkVO.getId()).thenReturn(s_networkId);
+        when(networkVO.getUuid()).thenReturn("network-without-userdata");
+        when(networkDao.findById(s_networkId)).thenReturn(networkVO);
+        when(networkModel.areServicesSupportedInNetwork(s_networkId, Network.Service.UserData)).thenReturn(false);
+
+        InvalidParameterValueException exception = Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
+        Assert.assertEquals("Network network-without-userdata does not support UserData service. Shared FileSystem Storage VM initialization requires a network offering with UserData or ConfigDrive support.",
+                exception.getMessage());
     }
 
     @Test

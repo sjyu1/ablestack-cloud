@@ -49,6 +49,7 @@ import com.cloud.exception.ResourceAllocationException;
 import com.cloud.exception.ResourceUnavailableException;
 import com.cloud.exception.VirtualMachineMigrationException;
 import com.cloud.network.Network;
+import com.cloud.network.NetworkModel;
 import com.cloud.network.dao.NetworkDao;
 import com.cloud.network.dao.NetworkVO;
 import com.cloud.org.Grouping;
@@ -115,11 +116,8 @@ import com.cloud.utils.component.ManagerBase;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.vm.NicVO;
 import com.cloud.vm.dao.NicDao;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 
 public class SharedFSServiceImpl extends ManagerBase implements SharedFSService, Configurable, PluggableService {
-    private static final Gson GSON = new Gson();
     private static final String SHAREDFS_COMPAT_PROVIDER = "SHAREDFS_COMPATIBILITY";
 
     @Inject
@@ -151,6 +149,9 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
 
     @Inject
     NetworkDao networkDao;
+
+    @Inject
+    NetworkModel networkModel;
 
     @Inject
     NicDao nicDao;
@@ -301,6 +302,10 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         NetworkVO networkVO = networkDao.findById(cmd.getNetworkId());
         if (networkVO == null) {
             throw new InvalidParameterValueException("Unable to find a network with Network ID " + cmd.getNetworkId());
+        }
+        if (!networkModel.areServicesSupportedInNetwork(networkVO.getId(), Network.Service.UserData)) {
+            throw new InvalidParameterValueException(String.format("Network %s does not support UserData service. Shared FileSystem Storage VM initialization requires a network offering with UserData or ConfigDrive support.",
+                    networkVO.getUuid()));
         }
         if (networkVO.getGuestType() == Network.GuestType.Shared) {
             if ((networkVO.getAclType() != ControlledEntity.ACLType.Account) ||
@@ -733,47 +738,21 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
                 storageServiceProtocolDao.update(protocol.getId(), protocol);
             }
 
-            StorageFileShareVO share = storageFileShareDao.findByInstanceIdVolumeIdAndProtocol(instance.getId(), sharedFS.getVolumeId(), StorageServiceInstance.Protocol.NFS);
-            if (share == null) {
-                share = new StorageFileShareVO(instance.getId(), StorageServiceInstance.Protocol.NFS, sharedFS.getName(), SharedFS.SharedFSPath,
-                        sharedFS.getVolumeId(), sharedFS.getFsType().name(), getSharedFSVolumeSize(sharedFS),
-                        toStorageResourceState(sharedFS.getState()), buildSharedFSCompatibilityConfig(sharedFS));
-                share = storageFileShareDao.persist(share);
-            } else {
-                share.setName(sharedFS.getName());
-                share.setPath(SharedFS.SharedFSPath);
-                share.setVolumeId(sharedFS.getVolumeId());
-                share.setFilesystem(sharedFS.getFsType().name());
-                share.setQuotaBytes(getSharedFSVolumeSize(sharedFS));
-                share.setState(toStorageResourceState(sharedFS.getState()));
-                share.setConfigJson(buildSharedFSCompatibilityConfig(sharedFS));
-                storageFileShareDao.update(share.getId(), share);
-            }
-            syncSharedFSDefaultAcl(share, sharedFS);
+            removeLegacySharedFSRootExport(instance);
         } catch (RuntimeException e) {
             logger.warn("Unable to sync SharedFS [{}] to Storage Service compatibility model. Existing SharedFS API behavior is preserved.",
                     sharedFS, e);
         }
     }
 
-    protected void syncSharedFSDefaultAcl(StorageFileShareVO share, SharedFS sharedFS) {
-        StorageAccessRuleVO defaultAcl = null;
-        for (StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
-            if (StorageServiceInstance.PrincipalType.CIDR.equals(rule.getPrincipalType()) && "0.0.0.0/0".equals(rule.getPrincipal())) {
-                defaultAcl = rule;
-                break;
+    protected void removeLegacySharedFSRootExport(StorageServiceInstanceVO instance) {
+        for (StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+            if (SharedFS.SharedFSPath.equals(StringUtils.removeEnd(share.getPath(), "/"))) {
+                for (StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
+                    storageAccessRuleDao.remove(rule.getId());
+                }
+                storageFileShareDao.remove(share.getId());
             }
-        }
-        if (defaultAcl == null) {
-            defaultAcl = new StorageAccessRuleVO(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId(),
-                    StorageServiceInstance.PrincipalType.CIDR, "0.0.0.0/0", StorageServiceInstance.Permission.READ_WRITE,
-                    toStorageResourceState(sharedFS.getState()), buildSharedFSCompatibilityAclConfig());
-            storageAccessRuleDao.persist(defaultAcl);
-        } else {
-            defaultAcl.setPermission(StorageServiceInstance.Permission.READ_WRITE);
-            defaultAcl.setState(toStorageResourceState(sharedFS.getState()));
-            defaultAcl.setConfigJson(buildSharedFSCompatibilityAclConfig());
-            storageAccessRuleDao.update(defaultAcl.getId(), defaultAcl);
         }
     }
 
@@ -853,31 +832,6 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
         VolumeVO volume = volumeDao.findById(sharedFS.getVolumeId());
         return volume == null ? null : volume.getSize();
-    }
-
-    protected String buildSharedFSCompatibilityConfig(SharedFS sharedFS) {
-        JsonObject config = new JsonObject();
-        config.addProperty("compatibilitySource", "sharedfs");
-        config.addProperty("sharedFsId", sharedFS.getId());
-        config.addProperty("sharedFsUuid", sharedFS.getUuid());
-        config.addProperty("sharedFsProvider", sharedFS.getFsProviderName());
-        config.addProperty("readOnly", false);
-        config.addProperty("rootSquash", false);
-        config.addProperty("sync", true);
-        config.addProperty("secure", true);
-        if (StringUtils.isNotBlank(sharedFS.getDescription())) {
-            config.addProperty("description", sharedFS.getDescription());
-        }
-        return GSON.toJson(config);
-    }
-
-    protected String buildSharedFSCompatibilityAclConfig() {
-        JsonObject config = new JsonObject();
-        config.addProperty("compatibilitySource", "sharedfs");
-        config.addProperty("rootSquash", false);
-        config.addProperty("sync", true);
-        config.addProperty("secure", true);
-        return GSON.toJson(config);
     }
 
     @Override
