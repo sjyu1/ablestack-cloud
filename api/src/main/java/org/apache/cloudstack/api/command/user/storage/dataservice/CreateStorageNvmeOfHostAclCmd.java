@@ -32,8 +32,8 @@ import org.apache.cloudstack.storage.dataservice.StorageService;
 
 @APICommand(name = "createStorageNvmeOfHostAcl",
         responseObject = StorageAccessRuleResponse.class,
-        description = "Creates an NVMe-oF host ACL.",
-        requestHasSensitiveInfo = false,
+        description = "Creates an NVMe-oF host ACL and optional DH-HMAC-CHAP authentication.",
+        requestHasSensitiveInfo = true,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
@@ -47,12 +47,40 @@ public class CreateStorageNvmeOfHostAclCmd extends BaseAsyncCmd implements UserC
     @Parameter(name = "hostnqn", type = CommandType.STRING, required = true, description = "NVMe host NQN")
     private String hostNqn;
 
+    @Parameter(name = "dhchapenabled", type = CommandType.BOOLEAN, description = "enable DH-HMAC-CHAP host authentication")
+    private Boolean dhChapEnabled;
+
+    @Parameter(name = "dhchapkey", type = CommandType.STRING, description = "DH-HMAC-CHAP host key. Not stored.")
+    private String dhChapKey;
+
+    @Parameter(name = "dhchapctrlenabled", type = CommandType.BOOLEAN, description = "enable DH-HMAC-CHAP controller authentication")
+    private Boolean dhChapCtrlEnabled;
+
+    @Parameter(name = "dhchapctrlkey", type = CommandType.STRING, description = "DH-HMAC-CHAP controller key. Not stored.")
+    private String dhChapCtrlKey;
+
     public Long getSubsystemId() {
         return subsystemId;
     }
 
     public String getHostNqn() {
         return hostNqn;
+    }
+
+    public Boolean getDhChapEnabled() {
+        return dhChapEnabled;
+    }
+
+    public String getDhChapKey() {
+        return dhChapKey;
+    }
+
+    public Boolean getDhChapCtrlEnabled() {
+        return dhChapCtrlEnabled;
+    }
+
+    public String getDhChapCtrlKey() {
+        return dhChapCtrlKey;
     }
 
     @Override

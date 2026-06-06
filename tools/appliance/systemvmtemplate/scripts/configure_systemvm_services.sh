@@ -67,6 +67,16 @@ function install_cloud_scripts() {
   chmod +x /opt/cloud/bin/* /opt/cloud/bin/setup/* \
     /root/{clearUsageRules.sh,reconfigLB.sh,monitorServices.py} \
     /etc/profile.d/cloud.sh /etc/cron.daily/* /etc/cron.hourly/*
+  if [ ! -s /usr/local/bin/ablestack-storagectl ]; then
+    echo "Missing or empty /usr/local/bin/ablestack-storagectl" >&2
+    exit 1
+  fi
+  chmod +x /usr/local/bin/ablestack-storagectl
+  if [ ! -s /usr/local/bin/ablestack-storage-monitor ]; then
+    echo "Missing or empty /usr/local/bin/ablestack-storage-monitor" >&2
+    exit 1
+  fi
+  chmod +x /usr/local/bin/ablestack-storage-monitor
 
   chmod +x /root/health_checks/*
   chmod -x /etc/systemd/system/* || true
@@ -75,6 +85,11 @@ function install_cloud_scripts() {
   systemctl enable cloud-preinit
   systemctl enable cloud-early-config
   systemctl enable cloud-postinit
+  if [ -f /etc/systemd/system/ablestack-storage-monitor.service ]; then
+    chmod 0644 /etc/systemd/system/ablestack-storage-monitor.service
+    systemctl unmask ablestack-storage-monitor.service || true
+    systemctl enable ablestack-storage-monitor.service
+  fi
 }
 
 function do_signature() {

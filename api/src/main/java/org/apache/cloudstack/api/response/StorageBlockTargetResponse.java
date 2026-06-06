@@ -19,10 +19,13 @@ package org.apache.cloudstack.api.response;
 
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.BaseResponse;
+import org.apache.cloudstack.api.EntityReference;
+import org.apache.cloudstack.storage.dataservice.StorageBlockTarget;
 
 import com.cloud.serializer.Param;
 import com.google.gson.annotations.SerializedName;
 
+@EntityReference(value = StorageBlockTarget.class)
 public class StorageBlockTargetResponse extends BaseResponse {
     @SerializedName(ApiConstants.ID)
     @Param(description = "the ID of the block target")
@@ -47,6 +50,26 @@ public class StorageBlockTargetResponse extends BaseResponse {
     @SerializedName(ApiConstants.VOLUME_ID)
     @Param(description = "backing volume ID")
     private String volumeId;
+
+    @SerializedName("volumename")
+    @Param(description = "backing volume name")
+    private String volumeName;
+
+    @SerializedName("volumesizebytes")
+    @Param(description = "backing volume size in bytes")
+    private Long volumeSizeBytes;
+
+    @SerializedName("lunsizebytes")
+    @Param(description = "configured LUN or namespace size in bytes")
+    private Long lunSizeBytes;
+
+    @SerializedName("effectivesizebytes")
+    @Param(description = "effective LUN or namespace size in bytes")
+    private Long effectiveSizeBytes;
+
+    @SerializedName("backingpath")
+    @Param(description = "configured backing path inside the Storage Service System VM")
+    private String backingPath;
 
     @SerializedName(ApiConstants.STATE)
     @Param(description = "target state")
@@ -78,6 +101,26 @@ public class StorageBlockTargetResponse extends BaseResponse {
 
     public void setVolumeId(final String volumeId) {
         this.volumeId = volumeId;
+    }
+
+    public void setVolumeName(final String volumeName) {
+        this.volumeName = volumeName;
+    }
+
+    public void setVolumeSizeBytes(final Long volumeSizeBytes) {
+        this.volumeSizeBytes = volumeSizeBytes;
+    }
+
+    public void setLunSizeBytes(final Long lunSizeBytes) {
+        this.lunSizeBytes = lunSizeBytes;
+    }
+
+    public void setEffectiveSizeBytes(final Long effectiveSizeBytes) {
+        this.effectiveSizeBytes = effectiveSizeBytes;
+    }
+
+    public void setBackingPath(final String backingPath) {
+        this.backingPath = backingPath;
     }
 
     public void setState(final String state) {

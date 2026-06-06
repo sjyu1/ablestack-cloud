@@ -52,11 +52,22 @@ public class CreateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = ApiConstants.PATH, type = CommandType.STRING, description = "NFS export path inside the Storage Service System VM")
     private String path;
 
+    @Parameter(name = "relativepath", type = CommandType.STRING,
+            description = "relative directory inside the selected backing volume to expose. Used when importing or reusing a backing volume.")
+    private String relativePath;
+
+    @Parameter(name = "createdirectory", type = CommandType.BOOLEAN,
+            description = "create the relative directory inside the backing volume when it does not already exist")
+    private Boolean createDirectory;
+
     @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, description = "backing volume ID")
     private Long volumeId;
 
     @Parameter(name = ApiConstants.FILESYSTEM, type = CommandType.STRING, description = "filesystem type")
     private String filesystem;
+
+    @Parameter(name = "importmode", type = CommandType.STRING, description = "backing volume import mode: MOUNT_EXISTING, FORMAT_EMPTY, or INSPECT_ONLY")
+    private String importMode;
 
     @Parameter(name = "quotabytes", type = CommandType.LONG, description = "export capacity limit in bytes")
     private Long quotaBytes;
@@ -67,11 +78,42 @@ public class CreateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = "rootsquash", type = CommandType.BOOLEAN, description = "enable root squash")
     private Boolean rootSquash;
 
+    @Parameter(name = "allsquash", type = CommandType.BOOLEAN, description = "map all client users to the anonymous NFS user")
+    private Boolean allSquash;
+
+    @Parameter(name = "anonuid", type = CommandType.INTEGER, description = "anonymous UID used by root/all squash")
+    private Integer anonUid;
+
+    @Parameter(name = "anongid", type = CommandType.INTEGER, description = "anonymous GID used by root/all squash")
+    private Integer anonGid;
+
+    @Parameter(name = "owneruid", type = CommandType.INTEGER, description = "POSIX owner UID applied to the export backing directory")
+    private Integer ownerUid;
+
+    @Parameter(name = "ownergid", type = CommandType.INTEGER, description = "POSIX owner GID applied to the export backing directory")
+    private Integer ownerGid;
+
+    @Parameter(name = "mode", type = CommandType.STRING, description = "POSIX mode applied to the export backing directory, for example 0775")
+    private String mode;
+
+    @Parameter(name = "recursivepermission", type = CommandType.BOOLEAN, description = "apply POSIX owner and mode recursively")
+    private Boolean recursivePermission;
+
     @Parameter(name = "sync", type = CommandType.BOOLEAN, description = "use sync export option")
     private Boolean sync;
 
     @Parameter(name = "secure", type = CommandType.BOOLEAN, description = "use secure export option")
     private Boolean secure;
+
+    @Parameter(name = "listenips", type = CommandType.STRING, description = "comma separated listen IPs that should expose this NFS export")
+    private String listenIps;
+
+    @Parameter(name = "endpointmode", type = CommandType.STRING, description = "NFS export endpoint exposure mode: ALL or SELECTED")
+    private String endpointMode;
+
+    @Parameter(name = "cleanupvolumeonfailure", type = CommandType.BOOLEAN,
+            description = "destroy the provided backing volume if this create operation fails. Use only for a volume created specifically for this export.")
+    private Boolean cleanupVolumeOnFailure;
 
     public Long getInstanceId() {
         return instanceId;
@@ -85,12 +127,24 @@ public class CreateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
         return path;
     }
 
+    public String getRelativePath() {
+        return relativePath;
+    }
+
+    public Boolean getCreateDirectory() {
+        return createDirectory;
+    }
+
     public Long getVolumeId() {
         return volumeId;
     }
 
     public String getFilesystem() {
         return filesystem;
+    }
+
+    public String getImportMode() {
+        return importMode;
     }
 
     public Long getQuotaBytes() {
@@ -105,12 +159,52 @@ public class CreateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
         return rootSquash;
     }
 
+    public Boolean getAllSquash() {
+        return allSquash;
+    }
+
+    public Integer getAnonUid() {
+        return anonUid;
+    }
+
+    public Integer getAnonGid() {
+        return anonGid;
+    }
+
+    public Integer getOwnerUid() {
+        return ownerUid;
+    }
+
+    public Integer getOwnerGid() {
+        return ownerGid;
+    }
+
+    public String getMode() {
+        return mode;
+    }
+
+    public Boolean getRecursivePermission() {
+        return recursivePermission;
+    }
+
     public Boolean getSync() {
         return sync;
     }
 
     public Boolean getSecure() {
         return secure;
+    }
+
+    public String getListenIps() {
+        return listenIps;
+    }
+
+    public String getEndpointMode() {
+        return endpointMode;
+    }
+
+    public Boolean getCleanupVolumeOnFailure() {
+        return cleanupVolumeOnFailure;
     }
 
     @Override

@@ -48,6 +48,9 @@ public class CreateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements Use
     @Parameter(name = "namespaceid", type = CommandType.STRING, description = "namespace ID")
     private String namespaceId;
 
+    @Parameter(name = "namespacesizebytes", type = CommandType.LONG, description = "namespace size in bytes")
+    private Long namespaceSizeBytes;
+
     @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, required = true, description = "backing volume ID")
     private Long volumeId;
 
@@ -60,6 +63,10 @@ public class CreateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements Use
 
     public String getNamespaceId() {
         return namespaceId;
+    }
+
+    public Long getNamespaceSizeBytes() {
+        return namespaceSizeBytes;
     }
 
     public Long getVolumeId() {

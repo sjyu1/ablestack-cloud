@@ -37,6 +37,9 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageN
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageSmbShareCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DeleteStorageServiceProtocolCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DetachStorageServiceBackingVolumeCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.DisconnectStorageServiceSessionCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.EnableStorageServiceProtocolCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.JoinStorageServiceToAdDomainCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.LeaveStorageServiceFromAdDomainCmd;
@@ -59,6 +62,7 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageI
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsExportCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfHostAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbShareCmd;
@@ -79,6 +83,8 @@ public interface StorageService {
     ListResponse<StorageServiceInstanceResponse> listStorageServiceInstances(ListStorageServiceInstancesCmd cmd);
 
     StorageServiceProtocolResponse enableStorageServiceProtocol(EnableStorageServiceProtocolCmd cmd);
+
+    boolean deleteStorageServiceProtocol(DeleteStorageServiceProtocolCmd cmd);
 
     StorageNfsExportResponse createStorageNfsExport(CreateStorageNfsExportCmd cmd);
 
@@ -124,7 +130,11 @@ public interface StorageService {
 
     ListResponse<StorageServiceRuntimeResponse> listStorageServiceSessions(ListStorageServiceSessionsCmd cmd);
 
+    StorageServiceRuntimeResponse disconnectStorageServiceSession(DisconnectStorageServiceSessionCmd cmd);
+
     StorageFileShareResponse attachStorageVolumeToFileShare(AttachStorageVolumeToFileShareCmd cmd);
+
+    StorageServiceRuntimeResponse detachStorageServiceBackingVolume(DetachStorageServiceBackingVolumeCmd cmd);
 
     StorageFileShareResponse resizeStorageFileShare(ResizeStorageFileShareCmd cmd);
 
@@ -159,6 +169,8 @@ public interface StorageService {
     boolean deleteStorageNvmeOfNamespace(DeleteStorageNvmeOfNamespaceCmd cmd);
 
     StorageAccessRuleResponse createStorageNvmeOfHostAcl(CreateStorageNvmeOfHostAclCmd cmd);
+
+    StorageAccessRuleResponse updateStorageNvmeOfHostAcl(UpdateStorageNvmeOfHostAclCmd cmd);
 
     boolean deleteStorageNvmeOfHostAcl(DeleteStorageNvmeOfHostAclCmd cmd);
 

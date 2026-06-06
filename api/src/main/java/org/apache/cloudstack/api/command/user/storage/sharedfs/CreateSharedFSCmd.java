@@ -44,6 +44,7 @@ import org.apache.cloudstack.api.response.SharedFSResponse;
 import org.apache.cloudstack.api.response.NetworkResponse;
 import org.apache.cloudstack.api.response.ProjectResponse;
 import org.apache.cloudstack.api.response.ServiceOfferingResponse;
+import org.apache.cloudstack.api.response.StoragePoolResponse;
 import org.apache.cloudstack.api.response.ZoneResponse;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.storage.sharedfs.SharedFS;
@@ -116,6 +117,12 @@ public class CreateSharedFSCmd extends BaseAsyncCreateCmd implements UserCmd {
             description = "the disk offering to use for the underlying storage. This will define the size and other specifications like encryption and qos for the shared filesystem.")
     private Long diskOfferingId;
 
+    @Parameter(name = ApiConstants.STORAGE_ID,
+            type = CommandType.UUID,
+            entityType = StoragePoolResponse.class,
+            description = "the primary storage selected for the initial shared filesystem backing volume.")
+    private Long storageId;
+
     @Parameter(name = ApiConstants.MIN_IOPS,
             type = CommandType.LONG,
             description = "min iops")
@@ -185,6 +192,10 @@ public class CreateSharedFSCmd extends BaseAsyncCreateCmd implements UserCmd {
 
     public Long getDiskOfferingId() {
         return diskOfferingId;
+    }
+
+    public Long getStorageId() {
+        return storageId;
     }
 
     public Long getServiceOfferingId() {

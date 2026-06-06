@@ -129,15 +129,8 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
         }
     }
 
-    private String getStorageVmConfig(final String fileSystem, final String hypervisorType, final String exportPath) {
-        String fsVmConfig = readResourceFile("/conf/fsvm-init.yml");
-        final String filesystem = "{{ fsvm.filesystem }}";
-        final String hypervisor = "{{ fsvm.hypervisor }}";
-        final String exportpath = "{{ fsvm.exportpath }}";
-        fsVmConfig = fsVmConfig.replace(filesystem, fileSystem);
-        fsVmConfig = fsVmConfig.replace(hypervisor, hypervisorType);
-        fsVmConfig = fsVmConfig.replace(exportpath, exportPath);
-        return fsVmConfig;
+    private String getStorageVmConfig() {
+        return readResourceFile("/conf/fsvm-init.yml");
     }
 
     private String getStorageVmName(String fileShareName) {
@@ -189,7 +182,7 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
             }
 
             UserVm vm = null;
-            String fsVmConfig = getStorageVmConfig(fileSystem.toString().toLowerCase(), hypervisor.toString().toLowerCase(), SharedFSPath);
+            String fsVmConfig = getStorageVmConfig();
             String base64UserData = Base64.encodeBase64String(fsVmConfig.getBytes(com.cloud.utils.StringUtils.getPreferredCharset()));
             CallContext vmContext = CallContext.register(CallContext.current(), ApiCommandResourceType.VirtualMachine);
             try {
@@ -220,6 +213,15 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
     @Override
     public void checkPrerequisites(DataCenter zone, Long serviceOfferingId) {
         ServiceOffering serviceOffering = serviceOfferingDao.findById(serviceOfferingId);
+        if (serviceOffering == null) {
+            throw new InvalidParameterValueException("Unable to find service offering with id " + serviceOfferingId);
+        }
+        if (serviceOffering.getCpu() == null) {
+            throw new InvalidParameterValueException("Service offering must have a fixed CPU count for SharedFS VM. Custom CPU offerings are not supported.");
+        }
+        if (serviceOffering.getRamSize() == null) {
+            throw new InvalidParameterValueException("Service offering must have a fixed RAM size for SharedFS VM. Custom RAM offerings are not supported.");
+        }
         if (serviceOffering.getCpu() < SHAREDFSVM_MIN_CPU_COUNT.valueIn(zone.getId())) {
             throw new InvalidParameterValueException("Service offering's number of cpu should be greater than or equal to " + SHAREDFSVM_MIN_CPU_COUNT.key());
         }

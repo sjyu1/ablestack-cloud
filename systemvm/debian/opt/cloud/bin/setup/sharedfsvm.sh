@@ -45,9 +45,24 @@ setup_sharedfsvm() {
     enable_fwding 0
     enable_irqbalance 0
     setup_ntp
-    dhclient -1
+    mkdir -p /var/lib/dhcp
+    dhclient -4 -v -pf /run/dhclient.eth0.pid -lf /var/lib/dhcp/dhclient.eth0.leases eth0 || true
 
     rm -f /etc/logrotate.d/cloud
+    mkdir -p /etc/ablestack-storage
+    touch /var/log/ablestack-storagectl.log
+    if [ ! -s /usr/local/bin/ablestack-storagectl ]; then
+      log_it "Missing or empty /usr/local/bin/ablestack-storagectl"
+      exit 1
+    fi
+    chmod +x /usr/local/bin/ablestack-storagectl
+    if [ -s /usr/local/bin/ablestack-storage-monitor ] && [ -f /etc/systemd/system/ablestack-storage-monitor.service ]; then
+      chmod +x /usr/local/bin/ablestack-storage-monitor
+      chmod 0644 /etc/systemd/system/ablestack-storage-monitor.service
+      systemctl unmask ablestack-storage-monitor.service >/dev/null 2>&1 || true
+      systemctl enable --now ablestack-storage-monitor.service >/dev/null 2>&1 || true
+    fi
+    systemctl enable --now qemu-guest-agent >/dev/null 2>&1 || true
 
     log_it "Starting cloud-init services"
     if [ -f /home/cloud/success ]; then

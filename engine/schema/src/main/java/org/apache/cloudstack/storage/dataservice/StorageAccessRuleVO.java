@@ -17,6 +17,7 @@
 
 package org.apache.cloudstack.storage.dataservice;
 
+import java.util.Date;
 import java.util.UUID;
 
 import javax.persistence.Column;
@@ -26,11 +27,16 @@ import javax.persistence.Enumerated;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
+import javax.persistence.Lob;
 import javax.persistence.Table;
+import javax.persistence.Temporal;
+import javax.persistence.TemporalType;
+
+import com.cloud.utils.db.GenericDao;
 
 @Entity
 @Table(name = "storage_access_rule")
-public class StorageAccessRuleVO {
+public class StorageAccessRuleVO implements StorageAccessRule {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
@@ -64,8 +70,13 @@ public class StorageAccessRuleVO {
     @Enumerated(value = EnumType.STRING)
     private StorageServiceInstance.ResourceState state = StorageServiceInstance.ResourceState.Allocated;
 
-    @Column(name = "config_json")
+    @Lob
+    @Column(name = "config_json", length = 16777215, columnDefinition = "MEDIUMTEXT")
     private String configJson;
+
+    @Column(name = GenericDao.CREATED_COLUMN)
+    @Temporal(value = TemporalType.TIMESTAMP)
+    private Date created = new Date();
 
     public StorageAccessRuleVO() {
     }

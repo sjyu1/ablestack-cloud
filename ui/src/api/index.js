@@ -50,6 +50,14 @@ export function api (command, args = {}, method = 'GET', data = {}) {
   })
 }
 
+export function getAPI (command, args = {}) {
+  return api(command, args)
+}
+
+export function postAPI (command, data = {}) {
+  return api(command, {}, 'POST', data)
+}
+
 export function login (arg) {
   if (!sourceToken.checkExistSource()) {
     sourceToken.init()

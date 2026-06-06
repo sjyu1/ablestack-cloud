@@ -19,10 +19,13 @@ package org.apache.cloudstack.api.response;
 
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.BaseResponse;
+import org.apache.cloudstack.api.EntityReference;
+import org.apache.cloudstack.storage.dataservice.StorageAccessRule;
 
 import com.cloud.serializer.Param;
 import com.google.gson.annotations.SerializedName;
 
+@EntityReference(value = StorageAccessRule.class)
 public class StorageAccessRuleResponse extends BaseResponse {
     @SerializedName(ApiConstants.ID)
     @Param(description = "ID of the access rule")

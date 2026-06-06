@@ -47,14 +47,26 @@ public class CreateStorageNfsAclCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = "principaltype", type = CommandType.STRING, description = "principal type. CIDR or IP_ADDRESS. Defaults to CIDR.")
     private String principalType;
 
-    @Parameter(name = "principal", type = CommandType.STRING, required = true, description = "CIDR or IP address")
+    @Parameter(name = "principal", type = CommandType.STRING, required = true, description = "CIDR or IP address. Multiple values may be comma-separated.")
     private String principal;
+
+    @Parameter(name = "principals", type = CommandType.STRING, description = "comma-separated CIDR or IP address list")
+    private String principals;
 
     @Parameter(name = "permission", type = CommandType.STRING, required = true, description = "READ_ONLY or READ_WRITE")
     private String permission;
 
     @Parameter(name = "rootsquash", type = CommandType.BOOLEAN, description = "enable root squash for this ACL")
     private Boolean rootSquash;
+
+    @Parameter(name = "allsquash", type = CommandType.BOOLEAN, description = "map all client users to the anonymous NFS user for this ACL")
+    private Boolean allSquash;
+
+    @Parameter(name = "anonuid", type = CommandType.INTEGER, description = "anonymous UID used by root/all squash for this ACL")
+    private Integer anonUid;
+
+    @Parameter(name = "anongid", type = CommandType.INTEGER, description = "anonymous GID used by root/all squash for this ACL")
+    private Integer anonGid;
 
     @Parameter(name = "sync", type = CommandType.BOOLEAN, description = "use sync export option for this ACL")
     private Boolean sync;
@@ -74,12 +86,28 @@ public class CreateStorageNfsAclCmd extends BaseAsyncCmd implements UserCmd {
         return principal;
     }
 
+    public String getPrincipals() {
+        return principals;
+    }
+
     public String getPermission() {
         return permission;
     }
 
     public Boolean getRootSquash() {
         return rootSquash;
+    }
+
+    public Boolean getAllSquash() {
+        return allSquash;
+    }
+
+    public Integer getAnonUid() {
+        return anonUid;
+    }
+
+    public Integer getAnonGid() {
+        return anonGid;
     }
 
     public Boolean getSync() {

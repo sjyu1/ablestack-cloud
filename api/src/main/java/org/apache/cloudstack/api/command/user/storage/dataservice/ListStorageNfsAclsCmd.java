@@ -28,6 +28,7 @@ import org.apache.cloudstack.api.command.user.UserCmd;
 import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
+import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
 @APICommand(name = "listStorageNfsAcls",
@@ -47,12 +48,19 @@ public class ListStorageNfsAclsCmd extends BaseListCmd implements UserCmd {
     @Parameter(name = "exportid", type = CommandType.UUID, entityType = StorageNfsExportResponse.class, description = "NFS export ID")
     private Long exportId;
 
+    @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, description = "Storage Service instance ID")
+    private Long instanceId;
+
     public Long getId() {
         return id;
     }
 
     public Long getExportId() {
         return exportId;
+    }
+
+    public Long getInstanceId() {
+        return instanceId;
     }
 
     @Override

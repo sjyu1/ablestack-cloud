@@ -19,10 +19,13 @@ package org.apache.cloudstack.api.response;
 
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.BaseResponse;
+import org.apache.cloudstack.api.EntityReference;
+import org.apache.cloudstack.storage.dataservice.StorageFileShare;
 
 import com.cloud.serializer.Param;
 import com.google.gson.annotations.SerializedName;
 
+@EntityReference(value = StorageFileShare.class)
 public class StorageNfsExportResponse extends BaseResponse {
     @SerializedName(ApiConstants.ID)
     @Param(description = "ID of the NFS export")
@@ -60,6 +63,22 @@ public class StorageNfsExportResponse extends BaseResponse {
     @Param(description = "NFS export configuration")
     private String config;
 
+    @SerializedName("listenips")
+    @Param(description = "comma separated listen IPs that expose this NFS export")
+    private String listenIps;
+
+    @SerializedName("endpointmode")
+    @Param(description = "NFS export endpoint exposure mode: ALL or SELECTED")
+    private String endpointMode;
+
+    @SerializedName("configvalid")
+    @Param(description = "true if the stored NFS export configuration JSON is valid")
+    private Boolean configValid;
+
+    @SerializedName("configerror")
+    @Param(description = "stored NFS export configuration error when configvalid is false")
+    private String configError;
+
     public void setId(String id) {
         this.id = id;
     }
@@ -94,5 +113,21 @@ public class StorageNfsExportResponse extends BaseResponse {
 
     public void setConfig(String config) {
         this.config = config;
+    }
+
+    public void setListenIps(String listenIps) {
+        this.listenIps = listenIps;
+    }
+
+    public void setEndpointMode(String endpointMode) {
+        this.endpointMode = endpointMode;
+    }
+
+    public void setConfigValid(final Boolean configValid) {
+        this.configValid = configValid;
+    }
+
+    public void setConfigError(final String configError) {
+        this.configError = configError;
     }
 }
