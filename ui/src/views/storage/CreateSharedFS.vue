@@ -334,7 +334,7 @@
                     </a-select-option>
                   </a-select>
                 </a-form-item>
-                <a-form-item name="storageid" required>
+                <a-form-item ref="storageid" name="storageid" required>
                   <template #label>
                     <tooltip-label :title="$t('label.storage.service.primary.storage')" :tooltip="$t('message.storage.service.primary.storage.help')"/>
                   </template>
