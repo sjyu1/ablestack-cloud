@@ -2,66 +2,110 @@
   <svg
     class="rack-card-icon"
     width="59"
-    height="59"
-    viewBox="0 0 28 28"
+    height="92"
+    viewBox="0 0 28 48"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden="true"
   >
     <rect
-      x="6"
-      y="4"
-      width="16"
-      height="20"
-      rx="2.5"
+      x="6.2"
+      y="3"
+      width="15.6"
+      height="42"
+      rx="2.4"
       stroke="currentColor"
       stroke-width="0.8"
       stroke-linejoin="round"
     />
     <rect
       x="8.6"
-      y="5.9"
-      width="10.8"
-      height="2.8"
-      rx="1.0"
+      y="6.3"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
       stroke="currentColor"
       stroke-width="0.8"
       stroke-linejoin="round"
     />
-    <circle cx="10.1" cy="7.3" r="0.8" fill="currentColor" />
+    <circle cx="10.1" cy="7.72" r="0.55" fill="currentColor" />
     <rect
       x="8.6"
-      y="10.2"
-      width="10.8"
-      height="2.8"
-      rx="1.0"
+      y="10.85"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
       stroke="currentColor"
       stroke-width="0.8"
       stroke-linejoin="round"
     />
-    <circle cx="10.1" cy="11.6" r="0.8" fill="currentColor" />
+    <circle cx="10.1" cy="12.27" r="0.55" fill="currentColor" />
     <rect
       x="8.6"
-      y="14.5"
-      width="10.8"
-      height="2.8"
-      rx="1.0"
+      y="15.4"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
       stroke="currentColor"
       stroke-width="0.8"
       stroke-linejoin="round"
     />
-    <circle cx="10.1" cy="15.9" r="0.8" fill="currentColor" />
+    <circle cx="10.1" cy="16.82" r="0.55" fill="currentColor" />
     <rect
       x="8.6"
-      y="18.8"
-      width="10.8"
-      height="2.8"
-      rx="1.0"
+      y="19.95"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
       stroke="currentColor"
-      stroke-width="1.125"
+      stroke-width="0.8"
       stroke-linejoin="round"
     />
-    <circle cx="10.1" cy="20.2" r="0.8" fill="currentColor" />
+    <circle cx="10.1" cy="21.37" r="0.55" fill="currentColor" />
+    <rect
+      x="8.6"
+      y="24.5"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
+      stroke="currentColor"
+      stroke-width="0.8"
+      stroke-linejoin="round"
+    />
+    <circle cx="10.1" cy="25.92" r="0.55" fill="currentColor" />
+    <rect
+      x="8.6"
+      y="29.05"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
+      stroke="currentColor"
+      stroke-width="0.8"
+      stroke-linejoin="round"
+    />
+    <circle cx="10.1" cy="30.47" r="0.55" fill="currentColor" />
+    <rect
+      x="8.6"
+      y="33.6"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
+      stroke="currentColor"
+      stroke-width="0.8"
+      stroke-linejoin="round"
+    />
+    <circle cx="10.1" cy="35.02" r="0.55" fill="currentColor" />
+    <rect
+      x="8.6"
+      y="38.15"
+      width="10.7"
+      height="2.85"
+      rx="0.95"
+      stroke="currentColor"
+      stroke-width="0.8"
+      stroke-linejoin="round"
+    />
+    <circle cx="10.1" cy="39.57" r="0.55" fill="currentColor" />
   </svg>
 </template>
 

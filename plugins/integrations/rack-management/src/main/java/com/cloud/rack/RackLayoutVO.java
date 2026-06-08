@@ -41,6 +41,7 @@ public class RackLayoutVO implements InternalIdentity {
         this.zoneId = zoneId;
         this.name = name;
         this.content = content;
+        this.updatedAt = new Date();
     }
 
     @Override

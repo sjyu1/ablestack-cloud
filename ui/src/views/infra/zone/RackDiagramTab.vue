@@ -14,28 +14,57 @@
         <input type="file" ref="fileInput" accept=".json" style="display: none" @change="handleImport" />
       </div>
 
-      <div class="toolbar-right" style="display: flex; align-items: center;">
+      <div class="toolbar-actions">
         <a-space :wrap="false" size="small">
-          <a-button type="primary" class="add-rack-btn" @click="openRackModal('add')">
-            <PlusOutlined /> {{ t('rackDiagram.addRack') }}
-          </a-button>
           <a-button type="primary" @click="saveRackData" :loading="saving" :disabled="!isDirty">
             <SaveOutlined /> {{ t('rackDiagram.save') }}
           </a-button>
-          <a-button @click="exportToJson" :title="t('rackDiagram.backupJson')">
-            <FileTextOutlined /> {{ t('rackDiagram.backup') }}
-          </a-button>
-          <a-button @click="triggerImport" :title="t('rackDiagram.restoreJson')">
-            <UploadOutlined /> {{ t('rackDiagram.restore') }}
-          </a-button>
-          <a-button @click="exportToImage" :title="t('rackDiagram.capturePng')">
-            <CameraOutlined /> {{ t('rackDiagram.capture') }}
-          </a-button>
+          <a-dropdown
+            :trigger="['click']"
+            placement="bottomRight"
+            overlayClassName="autogen-action-dropdown"
+            class="autogen-action-dropdown__trigger rack-toolbar-action-dropdown">
+            <template #overlay>
+              <div class="autogen-action-dropdown__content rack-toolbar-action-dropdown__content">
+                <div class="row-action-button row-action-button--dataview rack-toolbar-action-list">
+                  <a-tooltip arrowPointAtCenter placement="bottomRight" :title="t('rackDiagram.addRack')">
+                    <a-button class="action-button-item action-button-item--dataview" type="text" @click="openRackModal('add')">
+                      <PlusOutlined class="action-button-item__icon" />
+                      <span class="action-button-item__label">{{ t('rackDiagram.addRack') }}</span>
+                    </a-button>
+                  </a-tooltip>
+                  <div class="rack-toolbar-action-divider"></div>
+                  <a-tooltip arrowPointAtCenter placement="bottomRight" :title="t('rackDiagram.backup')">
+                    <a-button class="action-button-item action-button-item--dataview" type="text" @click="exportToJson">
+                      <FileTextOutlined class="action-button-item__icon" />
+                      <span class="action-button-item__label">{{ t('rackDiagram.backup') }}</span>
+                    </a-button>
+                  </a-tooltip>
+                  <a-tooltip arrowPointAtCenter placement="bottomRight" :title="t('rackDiagram.restore')">
+                    <a-button class="action-button-item action-button-item--dataview" type="text" @click="triggerImport">
+                      <UploadOutlined class="action-button-item__icon" />
+                      <span class="action-button-item__label">{{ t('rackDiagram.restore') }}</span>
+                    </a-button>
+                  </a-tooltip>
+                  <a-tooltip arrowPointAtCenter placement="bottomRight" :title="t('rackDiagram.capture')">
+                    <a-button class="action-button-item action-button-item--dataview" type="text" @click="exportToImage">
+                      <CameraOutlined class="action-button-item__icon" />
+                      <span class="action-button-item__label">{{ t('rackDiagram.capture') }}</span>
+                    </a-button>
+                  </a-tooltip>
+                </div>
+              </div>
+            </template>
+            <a-button type="primary" class="autogen-action-dropdown__button">
+              <template #icon><DownOutlined /></template>
+              {{ t('label.actions') }}
+            </a-button>
+          </a-dropdown>
         </a-space>
       </div>
 
-      <div v-if="!showRackList" class="toolbar-right" style="display: flex; align-items: center; margin-left: 12px;">
-        <span class="zoom-label" style="margin-right: 8px;">{{ t('rackDiagram.zoom') }}:</span>
+      <div v-if="!showRackList" class="toolbar-zoom">
+        <span class="zoom-label">{{ t('rackDiagram.zoom') }}:</span>
 
         <a-input-number
           :value="zoomPercentUi"
@@ -47,10 +76,10 @@
           :formatter="value => `${value}%`"
           :parser="value => value.replace('%', '')"
           size="small"
-          style="width: 70px; text-align: center; margin-right: 12px; flex-shrink: 0;"
+          class="zoom-input"
         />
 
-        <div style="width: 120px; flex-shrink: 0; padding-top: 4px;">
+        <div class="zoom-slider-wrap">
           <a-slider
             :value="zoomPercentUi"
             @change="onZoomSliderChange"
@@ -65,7 +94,55 @@
     <a-spin :spinning="loading || saving">
       <div v-if="showRackList" class="rack-list-view">
         <a-empty v-if="!parsedRacks.length" :description="t('rackDiagram.emptyRack')" style="margin-top: 50px;" />
-        <div v-else class="rack-list-grid">
+        <template v-else>
+          <a-card class="rack-list-summary-card" :bordered="false">
+            <div class="rack-list-summary-metrics">
+              <div class="rack-list-summary-title">{{ t('rackDiagram.rackStatus') }}</div>
+              <div class="rack-list-summary-metric">
+                <span class="rack-list-summary-icon rack-list-summary-rack-icon"><RackListCardIcon /></span>
+                <span class="rack-list-summary-text">
+                  <span class="rack-list-summary-label">{{ t('rackDiagram.totalRackCount') }}</span>
+                  <span class="rack-list-summary-value">{{ rackAggregate.totalRacks }}</span>
+                </span>
+              </div>
+              <div class="rack-list-summary-metric">
+                <span class="rack-list-summary-icon"><AppstoreOutlined /></span>
+                <span class="rack-list-summary-text">
+                  <span class="rack-list-summary-label">{{ t('rackDiagram.totalDeviceCount') }}</span>
+                  <span class="rack-list-summary-value">{{ rackAggregate.totalDevices }}</span>
+                </span>
+              </div>
+              <div class="rack-list-summary-metric">
+                <span class="rack-list-summary-icon"><PieChartOutlined /></span>
+                <span class="rack-list-summary-text">
+                  <span class="rack-list-summary-label">{{ t('rackDiagram.averageUsage') }}</span>
+                  <span class="rack-list-summary-value">{{ rackAggregate.averageUsage }}%</span>
+                </span>
+                <a-progress
+                  class="rack-list-summary-progress"
+                  :percent="rackAggregate.averageUsage"
+                  :show-info="false"
+                  size="small"
+                  :stroke-width="6"
+                />
+              </div>
+              <div class="rack-list-summary-metric">
+                <span class="rack-list-summary-icon"><DatabaseOutlined /></span>
+                <span class="rack-list-summary-text">
+                  <span class="rack-list-summary-label">{{ t('rackDiagram.totalUsedU') }}</span>
+                  <span class="rack-list-summary-value">{{ rackAggregate.totalUsedU }}U / {{ rackAggregate.totalHeight }}U</span>
+                </span>
+              </div>
+              <div class="rack-list-summary-metric">
+                <span class="rack-list-summary-icon"><InboxOutlined /></span>
+                <span class="rack-list-summary-text">
+                  <span class="rack-list-summary-label">{{ t('rackDiagram.totalFreeU') }}</span>
+                  <span class="rack-list-summary-value">{{ rackAggregate.totalFreeU }}U</span>
+                </span>
+              </div>
+            </div>
+          </a-card>
+          <div class="rack-list-grid">
           <a-card
             v-for="(rack, idx) in parsedRacks"
             :key="`rack-list-${idx}`"
@@ -96,7 +173,7 @@
                     </a-menu-item>
                     <a-menu-divider />
                     <a-menu-item danger>
-                      <a-popconfirm :title="t('rackDiagram.deleteConfirm')" @confirm="deleteRack(idx)">
+                      <a-popconfirm :title="t('rackDiagram.deleteConfirm')" :ok-text="t('label.ok')" :cancel-text="t('label.cancel')" @confirm="deleteRack(idx)">
                         <span @click.stop><DeleteOutlined /> {{ t('rackDiagram.delete') }}</span>
                       </a-popconfirm>
                     </a-menu-item>
@@ -112,37 +189,54 @@
                 <RackListCardIcon />
               </span>
               <div class="rack-list-card-content">
-                <a-tooltip :title="getOverflowTitle(`list-${idx}`, rack.name)">
-                  <div
-                    class="rack-list-card-title"
-                    :ref="setOverflowTitleRef(`list-${idx}`)"
-                    @mouseenter="updateOverflowTitle(`list-${idx}`)"
-                  >{{ rack.name }}</div>
-                </a-tooltip>
-                <div class="rack-list-card-meta">{{ t('label.created') }} {{ getRackCreatedDate(rack) }}</div>
-                <div class="rack-list-card-meta rack-list-card-meta-location-row">
-                  <a-tooltip :title="`${t('rackDiagram.rackLocation')} ${getRackLocation(rack)}`">
-                    <span class="rack-list-card-location">{{ t('rackDiagram.rackLocation') }} {{ getRackLocation(rack) }}</span>
+                <div class="rack-list-card-title-row">
+                  <a-tooltip :title="getOverflowTitle(`list-${idx}`, rack.name)">
+                    <div
+                      class="rack-list-card-title"
+                      :ref="setOverflowTitleRef(`list-${idx}`)"
+                      @mouseenter="updateOverflowTitle(`list-${idx}`)"
+                    >{{ rack.name }}</div>
                   </a-tooltip>
+                  <span class="rack-list-card-status"><span class="rack-list-card-status-dot"></span>{{ t('state.ok') }}</span>
                 </div>
                 <div class="rack-list-card-usage">{{ t('rackDiagram.usage') }} {{ getRackUsagePercent(rack) }}%</div>
-                <a-progress
-                  class="rack-list-progress"
-                  :percent="getRackUsagePercent(rack)"
-                  :show-info="false"
-                  size="small"
-                  :stroke-width="6"
-                />
-                <div class="rack-list-card-usage-detail">
-                  {{ getRackUsedU(rack) }}U {{ t('rackDiagram.used') }} / {{ rack.totalHeight }}U {{ t('rackDiagram.total') }}
+                <div class="rack-list-card-progress-row">
+                  <a-progress
+                    class="rack-list-progress"
+                    :percent="getRackUsagePercent(rack)"
+                    :show-info="false"
+                    size="small"
+                    :stroke-width="7"
+                  />
+                  <div class="rack-list-card-usage-detail">
+                    {{ getRackUsedU(rack) }}U / {{ rack.totalHeight }}U
+                  </div>
                 </div>
-                <div class="rack-list-card-extra">
-                  {{ t('rackDiagram.free') }} {{ getRackFreeU(rack) }}U · {{ t('rackDiagram.deviceCount') }} {{ getRackDeviceCount(rack) }}{{ t('rackDiagram.countSuffix') }}
+                <div class="rack-list-card-stats">
+                  <div class="rack-list-card-stat">
+                    <span class="rack-list-card-stat-label">{{ t('rackDiagram.freeSpace') }}</span>
+                    <strong>{{ getRackFreeU(rack) }}U</strong>
+                  </div>
+                  <div class="rack-list-card-stat">
+                    <span class="rack-list-card-stat-label">{{ t('rackDiagram.deviceCount') }}</span>
+                    <strong>{{ getRackDeviceCount(rack) }}{{ t('rackDiagram.countSuffix') }}</strong>
+                  </div>
+                </div>
+                <div class="rack-list-card-footer">
+                  <span><CalendarOutlined /> {{ t('label.created') }} {{ getRackCreatedDate(rack) }}</span>
+                  <a-tooltip :title="`${t('rackDiagram.rackLocation')} ${getRackLocation(rack)}`">
+                    <span class="rack-list-card-location"><EnvironmentOutlined /> {{ t('rackDiagram.rackLocation') }} {{ getRackLocation(rack) }}</span>
+                  </a-tooltip>
                 </div>
               </div>
             </div>
           </a-card>
+          <button type="button" class="rack-list-add-card" @click="openRackModal('add')">
+            <span class="rack-list-add-icon"><PlusOutlined /></span>
+            <span>{{ t('rackDiagram.addRack') }}</span>
+          </button>
         </div>
+        </template>
       </div>
       <div v-else class="rack-canvas">
         <div class="rack-detail-layout" ref="rackDetailLayoutRef">
@@ -191,7 +285,7 @@
                           <template #icon><CopyOutlined /></template>
                         </a-button>
                       </a-tooltip>
-                      <a-popconfirm :title="t('rackDiagram.deleteConfirm')" @confirm="deleteRack(rIndex)">
+                      <a-popconfirm :title="t('rackDiagram.deleteConfirm')" :ok-text="t('label.ok')" :cancel-text="t('label.cancel')" @confirm="deleteRack(rIndex)">
                         <a-tooltip :title="t('rackDiagram.delete')">
                           <a-button class="rack-header-action-btn rack-header-action-danger">
                             <template #icon><DeleteOutlined /></template>
@@ -229,6 +323,7 @@
                     v-for="u in rack.totalHeight"
                     :key="u"
                     class="ruler-number"
+                    :class="{ 'ruler-number-selected': isSelectedRulerUnit(rack, rIndex, u) }"
                   >
                     {{ rack.totalHeight - u + 1 }}
                   </div>
@@ -239,6 +334,7 @@
                     v-for="(item, iIndex) in rack.items"
                     :key="iIndex"
                     class="rack-item"
+                    :class="{ 'rack-item-selected': isSelectedItem(rIndex, iIndex), 'rack-item-hoverable': item.type !== 'gap' }"
                     @dragover.prevent
                     :data-item-type="item.type"
                     :style="{
@@ -254,7 +350,7 @@
                     <div
                       v-else
                       class="device-content"
-                      :class="`device-${item.type}`"
+                      :class="[`device-${item.type}`, { 'device-content-selected': isSelectedItem(rIndex, iIndex) }]"
                       draggable="true"
                       @dragstart="onDragStart(rIndex, iIndex)"
                       @click="selectDevice(rIndex, iIndex)"
@@ -299,7 +395,7 @@
                           </a-button>
                         </a-tooltip>
 
-                        <a-tooltip :title="t('rackDiagram.settings')" :mouseEnterDelay="0.1">
+                        <a-tooltip :title="t('rackDiagram.deviceConfig')" :mouseEnterDelay="0.1">
                           <a-button size="small" type="text" @click.stop="openDeviceModal(rIndex, iIndex)">
                             <SettingOutlined />
                           </a-button>
@@ -325,7 +421,7 @@
                           </template>
                         </a-dropdown>
 
-                        <a-popconfirm :title="t('rackDiagram.deleteConfirm')" @confirm="deleteItem(rIndex, iIndex)" placement="topRight">
+                        <a-popconfirm :title="t('rackDiagram.deleteConfirm')" :ok-text="t('label.ok')" :cancel-text="t('label.cancel')" @confirm="deleteItem(rIndex, iIndex)" placement="topRight">
                           <a-tooltip :title="t('rackDiagram.delete')" :mouseEnterDelay="0.1">
                             <a-button size="small" type="text" danger @click.stop>
                               <DeleteOutlined />
@@ -364,36 +460,300 @@
                 <CloseOutlined />
               </a-button>
             </template>
-            <a-descriptions :column="1" size="small" bordered class="device-info-desc">
-              <a-descriptions-item :label="t('rackDiagram.deviceName')">{{ selectedDevice.label || '-' }}</a-descriptions-item>
-              <a-descriptions-item :label="t('rackDiagram.deviceType')">{{ selectedDevice.type || '-' }}</a-descriptions-item>
-              <a-descriptions-item :label="t('rackDiagram.height')">{{ selectedDevice.height }}U</a-descriptions-item>
-              <a-descriptions-item :label="t('rackDiagram.deviceMemo')">
-                <div v-if="selectedDeviceMemoPlain.length || selectedDeviceMemoLinked.length" class="device-memo-wrap">
-                  <div v-if="selectedDeviceMemoPlain.length" class="device-memo-plain">{{ selectedDeviceMemoPlain.join('\n') }}</div>
-                  <div v-if="selectedDeviceMemoLinked.length" class="device-memo-linked">
-                    <div class="device-memo-linked-list">
-                      <div v-for="(line, idx) in selectedDeviceMemoLinked" :key="`memo-linked-${idx}`">{{ line }}</div>
+            <div class="device-summary-header">
+              <div
+                class="device-summary-icon"
+                :style="{ color: getIconColor(getDevicePanelType(sidePanelDevice)) }"
+                v-html="renderBadgeIcon(getDevicePanelType(sidePanelDevice))"
+              ></div>
+              <div class="device-summary-main">
+                <div class="device-summary-title-row">
+                  <span class="device-summary-title">{{ selectedDeviceDraft.label || '-' }}</span>
+                  <span class="device-summary-badge">{{ selectedDeviceDraft.height }}U</span>
+                </div>
+                <div class="device-summary-subtitle">
+                  <span>{{ selectedDeviceTypeLabel }}</span>
+                  <span v-if="selectedDeviceIp">· {{ t('label.ip') }} {{ selectedDeviceIp }}</span>
+                  <span v-if="selectedDeviceStatusLabel">·</span>
+                  <span v-if="selectedDeviceStatusLabel" class="device-status-inline">
+                    <span class="device-status-dot"></span>{{ selectedDeviceStatusLabel }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <a-tabs v-model:activeKey="deviceInfoActiveTab" size="small" class="device-info-tabs">
+              <a-tab-pane key="summary" :tab="t('rackDiagram.tabSummary')">
+                <div class="device-info-section">
+                  <div class="device-info-section-heading">
+                    <div class="device-info-section-title">{{ t('rackDiagram.sectionBasicInfo') }}</div>
+                    <a-button size="small" type="text" class="device-section-edit-btn" @click="activateInlineField('basic')">
+                      <EditOutlined />
+                    </a-button>
+                  </div>
+                  <div class="device-inline-form">
+                    <div class="device-inline-row">
+                      <label>{{ t('rackDiagram.deviceName') }}</label>
+                      <div class="device-readonly-value">
+                        <span v-if="activeInlineField !== 'basic'">{{ selectedDeviceDraft.label || '-' }}</span>
+                        <a-input
+                          v-else
+                          v-model:value="selectedDeviceDraft.label"
+                          size="small"
+                          :maxlength="60"
+                          @pressEnter="finishInlineEdit"
+                        />
+                      </div>
+                    </div>
+                    <div class="device-inline-row">
+                      <label>{{ t('rackDiagram.height') }}</label>
+                      <div class="device-readonly-value">
+                        <span v-if="activeInlineField !== 'basic'">{{ selectedDeviceDraft.height }}U</span>
+                        <a-input-number
+                          v-else
+                          v-model:value="selectedDeviceDraft.height"
+                          :min="1"
+                          :max="sidePanelMaxAllowedHeight"
+                          :precision="0"
+                          size="small"
+                          style="width: 100%"
+                          @pressEnter="finishInlineEdit"
+                        />
+                      </div>
+                    </div>
+                    <div class="device-inline-row">
+                      <label>{{ t('rackDiagram.position') }}</label>
+                      <div class="device-readonly-value">
+                        <span v-if="activeInlineField !== 'basic'">{{ draftPositionLabel }}</span>
+                        <a-input-number
+                          v-else
+                          v-model:value="selectedDeviceDraft.startU"
+                          :min="1"
+                          :max="selectedRackTotalHeight"
+                          :precision="0"
+                          size="small"
+                          style="width: 100%"
+                          @pressEnter="finishInlineEdit"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-                <span v-else>-</span>
-              </a-descriptions-item>
-              <a-descriptions-item :label="t('rackDiagram.sourceRef')">{{ selectedDeviceSourceRefLabel }}</a-descriptions-item>
-              <a-descriptions-item v-if="selectedDeviceHostInfo.length" :label="t('label.host')">
-                <div class="device-host-info-list">
-                  <div v-for="(row, idx) in selectedDeviceHostInfo" :key="`host-info-${idx}`">
-                    <strong>{{ row.label }}</strong>: {{ row.value }}
+                <div class="device-info-section">
+                  <div class="device-info-section-heading">
+                    <div class="device-info-section-title">{{ t('rackDiagram.hardwareInfo') }}</div>
+                    <a-button size="small" type="text" class="device-section-edit-btn" @click="activateInlineField('hardware')">
+                      <EditOutlined />
+                    </a-button>
+                  </div>
+                  <div class="device-inline-form">
+                    <div v-for="field in hardwareInfoFields" :key="field.key" class="device-inline-row">
+                      <label>{{ t(field.labelKey) }}</label>
+                      <div class="device-readonly-value">
+                        <span v-if="activeInlineField !== 'hardware'">{{ selectedDeviceDraft.hardwareInfo[field.key] || '-' }}</span>
+                        <a-auto-complete
+                          v-else-if="field.key === 'vendor'"
+                          v-model:value="selectedDeviceDraft.hardwareInfo.vendor"
+                          :options="hardwareVendorOptions"
+                          :filter-option="filterHardwareVendorOption"
+                          :placeholder="t('rackDiagram.vendorPlaceholder')"
+                          size="small"
+                          style="width: 100%"
+                          @select="markInlineDraftChanged"
+                          @change="markInlineDraftChanged"
+                          @pressEnter="finishInlineEdit"
+                        />
+                        <a-date-picker
+                          v-else-if="field.type === 'date'"
+                          v-model:value="selectedDeviceDraft.hardwareInfo[field.key]"
+                          value-format="YYYY-MM-DD"
+                          size="small"
+                          style="width: 100%"
+                          @change="markInlineDraftChanged"
+                        />
+                        <a-input
+                          v-else
+                          v-model:value="selectedDeviceDraft.hardwareInfo[field.key]"
+                          :maxlength="128"
+                          size="small"
+                          @pressEnter="finishInlineEdit"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </a-descriptions-item>
-            </a-descriptions>
+                <div class="device-info-section">
+                  <div class="device-info-section-heading">
+                    <div class="device-info-section-title">{{ t('rackDiagram.deviceSpecs') }}</div>
+                    <a-button size="small" type="text" class="device-section-edit-btn" @click="activateInlineField('specs')">
+                      <EditOutlined />
+                    </a-button>
+                  </div>
+                  <div class="device-memo-edit-block" @click.stop @mousedown.stop>
+                    <div
+                      class="device-memo-table"
+                      :class="{ 'device-memo-table-read': activeInlineField !== 'specs', 'device-memo-table-edit': activeInlineField === 'specs' }"
+                    >
+                      <div class="device-memo-table-head">
+                        <div>{{ t('rackDiagram.memoKey') }}</div>
+                        <div>{{ t('rackDiagram.memoValue') }}</div>
+                        <div v-if="activeInlineField === 'specs'">{{ t('rackDiagram.quickLinkAction') }}</div>
+                      </div>
+                      <div v-for="(row, idx) in visibleDeviceSpecRows" :key="row.id" class="device-memo-table-row">
+                        <template v-if="activeInlineField === 'specs'">
+                          <a-auto-complete
+                            v-model:value="row.key"
+                            :options="deviceSpecKeyOptions"
+                            :filter-option="filterDeviceSpecKeyOption"
+                            size="small"
+                            :placeholder="t('rackDiagram.deviceSpecKeyPlaceholder')"
+                            style="width: 100%"
+                            @click.stop
+                            @change="markInlineDraftChanged"
+                            @select="markInlineDraftChanged"
+                            @keydown.enter.stop="finishInlineEdit"
+                          />
+                          <a-input v-model:value="row.value" size="small" :placeholder="t('rackDiagram.deviceSpecValuePlaceholder')" @click.stop @pressEnter="finishInlineEdit" />
+                          <a-button size="small" type="text" danger @click.stop="removeInlineSpecRow(idx)">
+                            <DeleteOutlined />
+                          </a-button>
+                        </template>
+                        <template v-else>
+                          <span class="device-memo-cell-text">{{ row.key || '-' }}</span>
+                          <span class="device-memo-cell-text">{{ row.value || '-' }}</span>
+                        </template>
+                      </div>
+                      <div v-if="!visibleDeviceSpecRows.length" class="device-memo-empty">
+                        <a-empty :description="t('label.no.data')" />
+                      </div>
+                    </div>
+                    <a-button v-if="activeInlineField === 'specs'" size="small" class="device-memo-add-btn" @click.stop="addInlineSpecRow">
+                      <PlusOutlined /> {{ t('rackDiagram.addSpecRow') }}
+                    </a-button>
+                  </div>
+                </div>
+                <div class="device-info-section">
+                  <div class="device-info-section-heading">
+                    <div class="device-info-section-title">{{ t('rackDiagram.deviceMemo') }}</div>
+                    <a-button size="small" type="text" class="device-section-edit-btn" @click="activateInlineField('memo')">
+                      <EditOutlined />
+                    </a-button>
+                  </div>
+                  <div
+                    v-if="activeInlineField !== 'memo'"
+                    class="device-free-memo-read"
+                  >
+                    {{ selectedDeviceDraft.memo || '-' }}
+                  </div>
+                  <a-textarea
+                    v-else
+                    v-model:value="selectedDeviceDraft.memo"
+                    :auto-size="{ minRows: 3, maxRows: 8 }"
+                    :placeholder="t('rackDiagram.deviceMemoPlaceholder')"
+                  />
+                </div>
+              </a-tab-pane>
+              <a-tab-pane key="connections" :tab="t('rackDiagram.tabConnections')">
+                <div v-if="selectedDevice.type === 'server'" class="device-info-section">
+                  <div class="device-info-section-heading">
+                    <div class="device-info-section-title">{{ t('rackDiagram.infraAsset') }}</div>
+                  </div>
+                  <div class="device-info-table device-host-compact-table">
+                    <div class="device-info-table-row">
+                      <div>{{ t('rackDiagram.hostLabel') }}</div>
+                      <div class="device-info-copy-value">
+                        <a-tooltip :title="selectedDeviceLinkedAssetName">
+                          <span>{{ selectedDeviceLinkedAssetName || '-' }}</span>
+                        </a-tooltip>
+                        <a-tooltip :title="t('label.copy.clipboard')">
+                          <a-button size="small" type="text" class="device-linked-asset-copy" @click="copyTextToClipboard(selectedDeviceLinkedAssetName)">
+                            <CopyOutlined />
+                          </a-button>
+                        </a-tooltip>
+                      </div>
+                    </div>
+                    <div class="device-info-table-row">
+                      <div>{{ t('label.ip') }}</div>
+                      <div class="device-info-copy-value">
+                        <span>{{ selectedDeviceLinkedAssetIp || '-' }}</span>
+                        <a-tooltip :title="t('label.copy.clipboard')">
+                          <a-button size="small" type="text" class="device-linked-asset-copy" @click="copyTextToClipboard(selectedDeviceLinkedAssetIp)">
+                            <CopyOutlined />
+                          </a-button>
+                        </a-tooltip>
+                      </div>
+                    </div>
+                    <div v-for="(row, idx) in selectedDeviceHostInfoCompact" :key="`host-compact-${idx}`" class="device-info-table-row">
+                      <div>{{ row.label }}</div>
+                      <div>{{ row.value }}</div>
+                    </div>
+                  </div>
+                  <div class="device-infra-asset-actions">
+                    <div class="device-infra-asset-action-help">{{ t('rackDiagram.changeInfraAssetInlineHelp') }}</div>
+                    <a-button size="small" class="device-link-asset-change-btn" @click="openAssetLinkModal">
+                      <LinkOutlined /> {{ t('rackDiagram.changeInfraAsset') }}
+                    </a-button>
+                  </div>
+                </div>
+                <div class="device-info-section">
+                  <div class="device-info-section-title">{{ t('rackDiagram.links') }}</div>
+                  <div class="device-link-list">
+                    <template v-if="isHostLinked(sidePanelDevice)">
+                      <div class="device-link-group-title">{{ t('rackDiagram.hostLinks') }}</div>
+                      <a-button size="small" class="device-link-button" @click="goToLinkedHost(sidePanelDevice)">
+                        <span class="device-link-button-main"><LinkOutlined /> <span>{{ t('rackDiagram.hostDetail') }}</span></span>
+                        <ExportOutlined class="device-link-button-arrow" />
+                      </a-button>
+                      <a-button size="small" class="device-link-button" @click="openLinkedHostVmModal(sidePanelDevice)">
+                        <span class="device-link-button-main"><UnorderedListOutlined /> <span>{{ t('rackDiagram.hostVmList') }}</span></span>
+                        <ExportOutlined class="device-link-button-arrow" />
+                      </a-button>
+                      <a-button size="small" class="device-link-button" @click="openLinkedHostOobm(sidePanelDevice)">
+                        <span class="device-link-button-main"><LaptopOutlined /> <span>{{ t('rackDiagram.hostOobmPortal') }}</span></span>
+                        <ExportOutlined class="device-link-button-arrow" />
+                      </a-button>
+                      <a-button size="small" class="device-link-button" @click="openLinkedHostCube(sidePanelDevice)">
+                        <span class="device-link-button-main"><AppstoreOutlined /> <span>{{ t('rackDiagram.hostCubePortal') }}</span></span>
+                        <ExportOutlined class="device-link-button-arrow" />
+                      </a-button>
+                    </template>
+                    <div v-if="selectedDeviceCustomLinks.length" class="device-link-custom-block">
+                      <div class="device-link-group-title" :class="{ 'device-link-group-title-spaced': isHostLinked(sidePanelDevice) }">
+                        {{ t('rackDiagram.customLinks') }}
+                      </div>
+                      <div class="device-link-list-read">
+                        <a-button
+                          v-for="(link, idx) in selectedDeviceCustomLinks"
+                          :key="`side-link-${idx}`"
+                          size="small"
+                          class="device-link-button"
+                          @click.stop="openQuickLink(link)"
+                        >
+                          <span class="device-link-button-main"><LinkOutlined /> <span>{{ link.label || link.url }}</span></span>
+                          <ExportOutlined class="device-link-button-arrow" />
+                        </a-button>
+                      </div>
+                    </div>
+                    <a-empty
+                      v-else-if="!isHostLinked(sidePanelDevice)"
+                      :description="t('rackDiagram.noQuickLinks')"
+                    />
+                  </div>
+                </div>
+              </a-tab-pane>
+            </a-tabs>
+
             <div class="device-info-actions">
-              <a-button size="small" @click="openDeviceModal(selectedDeviceRackIndex, selectedDeviceItemIndex)">{{ t('rackDiagram.settings') }}</a-button>
-              <a-popconfirm :title="t('rackDiagram.deleteConfirm')" @confirm="deleteItem(selectedDeviceRackIndex, selectedDeviceItemIndex)">
-                <a-button size="small" danger>{{ t('rackDiagram.delete') }}</a-button>
+              <a-button size="small" @click="openSelectedDeviceModal">
+                <SettingOutlined /> {{ t('rackDiagram.deviceConfig') }}
+              </a-button>
+              <a-popconfirm :title="t('rackDiagram.deleteConfirm')" :ok-text="t('label.ok')" :cancel-text="t('label.cancel')" @confirm="deleteItem(selectedDeviceRackIndex, selectedDeviceItemIndex)">
+                <a-button size="small" danger>
+                  <DeleteOutlined /> {{ t('rackDiagram.deviceDelete') }}
+                </a-button>
               </a-popconfirm>
             </div>
+
           </a-card>
           </div>
         </div>
@@ -404,6 +764,8 @@
     <a-modal
       v-model:visible="rackModalVisible"
       :title="rackModalMode === 'add' ? t('rackDiagram.addRack') : t('rackDiagram.editRack')"
+      :ok-text="t('label.ok')"
+      :cancel-text="t('label.cancel')"
       @ok="submitRackModal"
       @cancel="closeRackModal"
       destroyOnClose
@@ -433,6 +795,8 @@
     <a-modal
       v-model:visible="moveModalVisible"
       :title="t('rackDiagram.moveDeviceTitle')"
+      :ok-text="t('label.ok')"
+      :cancel-text="t('label.cancel')"
       @ok="submitMoveDevice"
       destroyOnClose
     >
@@ -459,11 +823,15 @@
     <a-modal
       v-model:visible="deviceModalVisible"
       :title="t('rackDiagram.deviceConfig')"
+      :ok-text="t('label.ok')"
+      :cancel-text="t('label.cancel')"
       @ok="submitDeviceModal"
       @cancel="closeDeviceModal"
+      :width="624"
       destroyOnClose
     >
-      <a-form layout="vertical">
+      <a-form layout="vertical" class="device-config-form">
+        <a-card size="small" class="device-config-section" :title="t('rackDiagram.sectionBasicInfo')">
         <a-form-item :label="t('rackDiagram.deviceType')">
           <a-select v-model:value="deviceForm.type" style="width: 100%" @change="handleTypeChange">
             <a-select-option value="server">{{ t('rackDiagram.deviceTypeServer') }}</a-select-option>
@@ -525,14 +893,126 @@
         </div>
       </a-form-item>
 
-        <a-form-item :label="t('rackDiagram.deviceMemo')">
+        </a-card>
+
+        <a-card size="small" class="device-config-section" :title="t('rackDiagram.hardwareInfo')">
+        <a-form-item :label="t('rackDiagram.hardwareInfo')" class="device-config-section-form-item">
+          <div class="device-hardware-form">
+            <div class="device-hardware-form-row">
+              <label>{{ t('rackDiagram.vendor') }}</label>
+              <a-auto-complete
+                v-model:value="deviceForm.hardwareInfo.vendor"
+                :options="hardwareVendorOptions"
+                :filter-option="filterHardwareVendorOption"
+                :placeholder="t('rackDiagram.vendorPlaceholder')"
+                style="width: 100%"
+              />
+            </div>
+            <div class="device-hardware-form-row">
+              <label>{{ t('rackDiagram.model') }}</label>
+              <a-input
+                v-model:value="deviceForm.hardwareInfo.model"
+                :maxlength="128"
+                :placeholder="t('rackDiagram.modelPlaceholder')"
+              />
+            </div>
+            <div class="device-hardware-form-row">
+              <label>{{ t('rackDiagram.serial') }}</label>
+              <a-input
+                v-model:value="deviceForm.hardwareInfo.serial"
+                :maxlength="128"
+                :placeholder="t('rackDiagram.serialPlaceholder')"
+              />
+            </div>
+            <div class="device-hardware-form-row">
+              <label>{{ t('rackDiagram.assetNo') }}</label>
+              <a-input
+                v-model:value="deviceForm.hardwareInfo.assetNo"
+                :maxlength="128"
+                :placeholder="t('rackDiagram.assetNoPlaceholder')"
+              />
+            </div>
+            <div class="device-hardware-form-row">
+              <label>{{ t('rackDiagram.purchaseDate') }}</label>
+              <a-date-picker
+                v-model:value="deviceForm.hardwareInfo.purchaseDate"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </div>
+            <div class="device-hardware-form-row">
+              <label>{{ t('rackDiagram.maintenanceEndDate') }}</label>
+              <a-date-picker
+                v-model:value="deviceForm.hardwareInfo.maintenanceEndDate"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </div>
+          </div>
+        </a-form-item>
+
+        </a-card>
+
+        <a-card size="small" class="device-config-section" :title="t('rackDiagram.deviceSpecs')">
+        <a-form-item :label="t('rackDiagram.deviceSpecs')" class="device-config-section-form-item">
+          <div class="quick-links-editor">
+            <a-table
+              size="small"
+              :pagination="false"
+              :data-source="deviceSpecRows"
+              :columns="deviceSpecColumns"
+              row-key="id"
+            >
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'key'">
+                  <a-auto-complete
+                    v-model:value="record.key"
+                    :options="deviceSpecKeyOptions"
+                    :filter-option="filterDeviceSpecKeyOption"
+                    :placeholder="t('rackDiagram.deviceSpecKeyPlaceholder')"
+                    style="width: 100%"
+                  />
+                </template>
+                <template v-else-if="column.key === 'value'">
+                  <a-input
+                    v-model:value="record.value"
+                    :placeholder="t('rackDiagram.deviceSpecValuePlaceholder')"
+                  />
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <a-button
+                    size="small"
+                    type="text"
+                    danger
+                    @click="removeDeviceSpecRow(index)"
+                  >
+                    <template #icon><DeleteOutlined /></template>
+                  </a-button>
+                </template>
+              </template>
+            </a-table>
+            <a-button size="small" type="dashed" class="quick-links-add-btn" @click="addDeviceSpecRow">
+              <template #icon><PlusOutlined /></template>
+              {{ t('rackDiagram.addSpecRow') }}
+            </a-button>
+          </div>
+        </a-form-item>
+
+        </a-card>
+
+        <a-card size="small" class="device-config-section" :title="t('rackDiagram.deviceMemo')">
+        <a-form-item :label="t('rackDiagram.deviceMemo')" class="device-config-section-form-item">
           <a-textarea
             v-model:value="deviceForm.memo"
             :rows="3"
             :placeholder="t('rackDiagram.deviceMemoPlaceholder')"
           />
         </a-form-item>
+        </a-card>
+
+        <a-card size="small" class="device-config-section" :title="t('rackDiagram.quickLinks')">
         <a-form-item
+          class="device-config-section-form-item"
           :label="t('rackDiagram.quickLinks')"
           :validateStatus="quickLinksError ? 'error' : ''"
           :help="quickLinksError"
@@ -578,7 +1058,34 @@
             </a-button>
           </div>
         </a-form-item>
+        </a-card>
       </a-form>
+    </a-modal>
+    <a-modal
+      v-model:visible="assetLinkModalVisible"
+      :title="t('rackDiagram.changeInfraAsset')"
+      :ok-text="t('label.ok')"
+      :cancel-text="t('label.cancel')"
+      @ok="submitAssetLinkModal"
+      @cancel="closeAssetLinkModal"
+      destroyOnClose
+    >
+      <a-alert
+        :message="t('rackDiagram.changeInfraAssetHelp')"
+        type="info"
+        show-icon
+        style="margin-bottom: 12px;"
+      />
+      <a-select
+        v-model:value="assetLinkDraft"
+        :loading="inventoryLoading"
+        :options="inventoryOptions"
+        :show-search="true"
+        option-filter-prop="label"
+        :placeholder="t('rackDiagram.selectHost')"
+        allow-clear
+        style="width: 100%"
+      />
     </a-modal>
     <a-modal
       v-model:visible="hostVmModalVisible"
@@ -620,6 +1127,9 @@
               <div class="host-vm-name">{{ vm.displayname || vm.name || vm.id }}</div>
             </a-tooltip>
             <div class="host-vm-meta">{{ vm.state || '-' }} / {{ vm.ostypename || vm.hypervisor || '-' }}</div>
+            <a-tooltip :title="getVmPrimaryIpText(vm)">
+              <div class="host-vm-ip">{{ getVmPrimaryIpText(vm) }}</div>
+            </a-tooltip>
           </div>
         </div>
         </div>
@@ -656,7 +1166,11 @@ import {
   UnorderedListOutlined,
   CalendarOutlined,
   EnvironmentOutlined,
-  CloseOutlined
+  CloseOutlined,
+  PieChartOutlined,
+  DatabaseOutlined,
+  InboxOutlined,
+  DownOutlined
 } from '@ant-design/icons-vue'
 
 // 전역 상태
@@ -664,7 +1178,8 @@ const loading = ref(false)
 const saving = ref(false)
 const zoomLevel = ref(0.65)
 const AUTO_ZOOM_MIN = 0.65
-const AUTO_ZOOM_MAX = 1.0
+const NORMAL_ZOOM_LEVEL = 0.96
+const AUTO_ZOOM_MAX = NORMAL_ZOOM_LEVEL
 const isAutoZoomEnabled = ref(true)
 const rackMainPaneRef = ref(null)
 const rackDetailLayoutRef = ref(null)
@@ -686,13 +1201,13 @@ const RACK_UNIT_HEIGHT = 52
 
 // 슬라이더 및 입력창과 연동할 퍼센트 단위 변수
 const zoomPercent = computed({
-  get: () => Math.round(zoomLevel.value * 100),
+  get: () => Math.round((zoomLevel.value / NORMAL_ZOOM_LEVEL) * 100),
   set: (val) => {
     isAutoZoomEnabled.value = false
     // 최소 40% ~ 최대 150% 범위 제한
     if (val < 40) val = 40
     if (val > 150) val = 150
-    zoomLevel.value = val / 100
+    zoomLevel.value = (val / 100) * NORMAL_ZOOM_LEVEL
   }
 })
 const zoomPercentUi = ref(zoomPercent.value)
@@ -769,33 +1284,385 @@ const selectedDevice = computed(() => {
   return item
 })
 const selectedDeviceHost = ref(null)
-const selectedDeviceMemoPlain = computed(() => {
-  const memo = String(selectedDevice.value?.memo || '')
-  const marker = '[LinkedAsset]'
-  return memo
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith(marker))
+const deviceInfoActiveTab = ref('summary')
+const activeInlineField = ref('')
+const selectedDeviceDraft = reactive({
+  label: '',
+  height: 1,
+  startU: 1,
+  memo: '',
+  sourceRef: null,
+  customType: '',
+  hardwareInfo: {
+    vendor: '',
+    model: '',
+    serial: '',
+    assetNo: '',
+    purchaseDate: '',
+    maintenanceEndDate: ''
+  },
+  specs: [],
+  quickLinks: []
 })
-const selectedDeviceMemoLinked = computed(() => {
-  const memo = String(selectedDevice.value?.memo || '')
-  const marker = '[LinkedAsset]'
-  return memo
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.startsWith(marker))
-    .map(line => line.replace(marker, '').trim())
+const selectedDeviceDraftBaseline = ref('')
+const assetLinkModalVisible = ref(false)
+const assetLinkDraft = ref(undefined)
+const structuredMemoRows = ref([])
+const freeMemoText = ref('')
+const deviceSpecRows = ref([])
+const LINKED_ASSET_MARKER = '[LinkedAsset]'
+const stripLinkedAssetMemo = (memo) => String(memo || '')
+  .split('\n')
+  .filter(line => !line.trim().startsWith(LINKED_ASSET_MARKER))
+  .join('\n')
+  .trim()
+
+const makeMemoRow = (key = '', value = '') => ({
+  id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  key,
+  value
 })
-const selectedDeviceSourceRefLabel = computed(() => {
-  const sourceRef = String(selectedDevice.value?.sourceRef || '')
-  if (!sourceRef) return '-'
-  if (!sourceRef.startsWith('host:')) return sourceRef
-  const hostId = sourceRef.split(':')[1] || ''
-  const host = selectedDeviceHost.value
-  if (host && String(host.id) === hostId) {
-    return host.name || host.hostname || hostId
+
+const createEmptyHardwareInfo = () => ({
+  vendor: '',
+  model: '',
+  serial: '',
+  assetNo: '',
+  purchaseDate: '',
+  maintenanceEndDate: ''
+})
+
+const hardwareInfoFields = [
+  { key: 'vendor', labelKey: 'rackDiagram.vendor' },
+  { key: 'model', labelKey: 'rackDiagram.model' },
+  { key: 'serial', labelKey: 'rackDiagram.serial' },
+  { key: 'assetNo', labelKey: 'rackDiagram.assetNo' },
+  { key: 'purchaseDate', labelKey: 'rackDiagram.purchaseDate', type: 'date' },
+  { key: 'maintenanceEndDate', labelKey: 'rackDiagram.maintenanceEndDate', type: 'date' }
+]
+
+const hardwareVendorOptions = [
+  'Dell Technologies',
+  'Dell EMC',
+  'HPE',
+  'Hewlett Packard Enterprise',
+  'Lenovo',
+  'Cisco',
+  'Supermicro',
+  'IBM',
+  'Oracle',
+  'Huawei',
+  'NetApp',
+  'Hitachi Vantara',
+  'Fujitsu',
+  'Inspur',
+  'NEC',
+  'QNAP',
+  'Synology',
+  'APC',
+  'Eaton',
+  'Vertiv'
+].map(value => ({ value }))
+
+const filterHardwareVendorOption = (input, option) => {
+  return String(option?.value || '').toLowerCase().includes(String(input || '').toLowerCase())
+}
+
+const deviceSpecKeyOptionKeys = [
+  // Compute
+  'rackDiagram.specCpuCores',
+  'rackDiagram.specCpuMhz',
+  'rackDiagram.specCpuGhz',
+  'rackDiagram.specCpuSocketCount',
+  'rackDiagram.specGpuCount',
+  'rackDiagram.specGpuMemoryGib',
+  // Memory
+  'rackDiagram.specMemoryMb',
+  'rackDiagram.specMemoryGb',
+  'rackDiagram.specMemoryGib',
+  'rackDiagram.specMemoryTb',
+  'rackDiagram.specMemoryTib',
+  // Capacity / storage
+  'rackDiagram.specDiskGb',
+  'rackDiagram.specDiskGib',
+  'rackDiagram.specDiskTb',
+  'rackDiagram.specDiskTib',
+  'rackDiagram.specStorageGb',
+  'rackDiagram.specStorageGib',
+  'rackDiagram.specStorageTb',
+  'rackDiagram.specStorageTib',
+  'rackDiagram.specCapacityGb',
+  'rackDiagram.specCapacityGib',
+  'rackDiagram.specCapacityTb',
+  'rackDiagram.specCapacityTib',
+  'rackDiagram.specDriveBayCount',
+  // Network
+  'rackDiagram.specNicCount',
+  'rackDiagram.specNetworkPortCount',
+  'rackDiagram.specPortCount',
+  'rackDiagram.specThroughputMbps',
+  'rackDiagram.specThroughputGbps',
+  'rackDiagram.specThroughputTbps',
+  // Power / UPS
+  'rackDiagram.specPowerW',
+  'rackDiagram.specPowerKw',
+  'rackDiagram.specVoltageV',
+  'rackDiagram.specCurrentA',
+  'rackDiagram.specCapacityVa',
+  'rackDiagram.specCapacityKva',
+  'rackDiagram.specBatteryRuntimeMin',
+  'rackDiagram.specBatteryCapacityWh',
+  // Cooling
+  'rackDiagram.specAirflowCfm',
+  'rackDiagram.specFanRpm',
+  'rackDiagram.specFanCount',
+  // System
+  'rackDiagram.specFirmware',
+  'rackDiagram.specOs',
+  'rackDiagram.specHypervisor'
+]
+
+const deviceSpecKeyOptions = computed(() => deviceSpecKeyOptionKeys.map(key => ({ value: t(key) })))
+
+const filterDeviceSpecKeyOption = (input, option) => {
+  return String(option?.value || '').toLowerCase().includes(String(input || '').toLowerCase())
+}
+
+const normalizeHardwareInfo = (hardwareInfo) => {
+  const source = hardwareInfo && typeof hardwareInfo === 'object' ? hardwareInfo : {}
+  return {
+    vendor: String(source.vendor || '').trim(),
+    model: String(source.model || '').trim(),
+    serial: String(source.serial || '').trim(),
+    assetNo: String(source.assetNo || '').trim(),
+    purchaseDate: String(source.purchaseDate || '').trim(),
+    maintenanceEndDate: String(source.maintenanceEndDate || '').trim()
   }
-  return hostId || sourceRef
+}
+
+const assignHardwareInfo = (target, source) => {
+  const normalized = normalizeHardwareInfo(source)
+  Object.keys(createEmptyHardwareInfo()).forEach(key => {
+    target[key] = normalized[key] || ''
+  })
+}
+
+const validateHardwareInfo = (hardwareInfo) => {
+  const normalized = normalizeHardwareInfo(hardwareInfo)
+  const lengthFields = [
+    { key: 'vendor', labelKey: 'rackDiagram.vendor' },
+    { key: 'model', labelKey: 'rackDiagram.model' },
+    { key: 'serial', labelKey: 'rackDiagram.serial' },
+    { key: 'assetNo', labelKey: 'rackDiagram.assetNo' }
+  ]
+  const invalid = lengthFields.find(field => normalized[field.key].length > 128)
+  if (invalid) {
+    message.warning(t('rackDiagram.msg.hardwareFieldMax', { field: t(invalid.labelKey) }))
+    return null
+  }
+  return normalized
+}
+
+const parseDeviceMemo = (memo) => {
+  const rows = []
+  const freeLines = []
+  stripLinkedAssetMemo(memo)
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .forEach(line => {
+      const eqIndex = line.indexOf('=')
+      const colonIndex = line.indexOf(':')
+      const splitIndex = eqIndex > -1 ? eqIndex : colonIndex
+      if (splitIndex > 0) {
+        rows.push(makeMemoRow(line.slice(0, splitIndex).trim(), line.slice(splitIndex + 1).trim()))
+      } else {
+        freeLines.push(line)
+      }
+    })
+  return { rows, freeText: freeLines.join('\n') }
+}
+
+const normalizeSpecRows = (specs) => {
+  if (!Array.isArray(specs)) return []
+  return specs
+    .map(row => makeMemoRow(String(row?.key || '').trim(), String(row?.value || '').trim()))
+    .filter(row => row.key || row.value)
+}
+
+const getDeviceSpecRows = (device) => {
+  const specs = normalizeSpecRows(device?.specs)
+  if (specs.length) return specs
+  return parseDeviceMemo(device?.memo || '').rows
+}
+
+const getDeviceFreeMemo = (device) => {
+  if (Array.isArray(device?.specs)) return stripLinkedAssetMemo(device?.memo || '')
+  return parseDeviceMemo(device?.memo || '').freeText
+}
+
+const syncSideMemoFields = (device) => {
+  structuredMemoRows.value = getDeviceSpecRows(device)
+  freeMemoText.value = getDeviceFreeMemo(device)
+}
+
+const visibleDeviceSpecRows = computed(() => {
+  if (activeInlineField.value === 'specs') return selectedDeviceDraft.specs
+  return selectedDeviceDraft.specs.filter(row => String(row.key || '').trim() || String(row.value || '').trim())
+})
+
+const cloneQuickLinksForEdit = (links) => {
+  return (Array.isArray(links) ? links : []).map(link => makeQuickLinkRow(link.label || '', link.url || ''))
+}
+
+const getCurrentDeviceStartU = (rack, iIndex) => {
+  if (!rack || iIndex < 0) return 1
+  const item = rack.items?.[iIndex]
+  if (!item) return 1
+  const aboveHeight = rack.items.slice(0, iIndex).reduce((sum, current) => sum + Number(current.height || 0), 0)
+  const topU = Number(rack.totalHeight || 0) - aboveHeight
+  return Math.max(1, topU - Number(item.height || 0) + 1)
+}
+
+const selectedRackTotalHeight = computed(() => {
+  const rack = parsedRacks.value[selectedDeviceRackIndex.value]
+  return Number(rack?.totalHeight || 1)
+})
+
+const sidePanelMaxAllowedHeight = computed(() => {
+  const rack = parsedRacks.value[selectedDeviceRackIndex.value]
+  const item = rack?.items?.[selectedDeviceItemIndex.value]
+  if (!rack || !item) return 1
+  let physicalMax = Number(item.height || 1)
+  const nextItem = rack.items[selectedDeviceItemIndex.value + 1]
+  if (nextItem?.type === 'gap') physicalMax += Number(nextItem.height || 0)
+  return Math.max(1, physicalMax)
+})
+
+const getSideDraftSnapshot = () => ({
+  label: String(selectedDeviceDraft.label || '').trim(),
+  height: Number(selectedDeviceDraft.height || 1),
+  startU: Number(selectedDeviceDraft.startU || 1),
+  memo: stripLinkedAssetMemo(selectedDeviceDraft.memo),
+  sourceRef: selectedDeviceDraft.sourceRef || null,
+  customType: String(selectedDeviceDraft.customType || '').trim(),
+  hardwareInfo: normalizeHardwareInfo(selectedDeviceDraft.hardwareInfo),
+  specs: getCleanSpecRows(selectedDeviceDraft.specs),
+  quickLinks: cloneQuickLinksForEdit(selectedDeviceDraft.quickLinks)
+    .map(link => ({ label: String(link.label || '').trim(), url: String(link.url || '').trim() }))
+    .filter(link => link.label || link.url)
+})
+
+const syncSelectedDeviceDraft = (device, resetActive = true) => {
+  const rack = parsedRacks.value[selectedDeviceRackIndex.value]
+  selectedDeviceDraft.label = device?.label || ''
+  selectedDeviceDraft.height = Number(device?.height || 1)
+  selectedDeviceDraft.startU = getCurrentDeviceStartU(rack, selectedDeviceItemIndex.value)
+  selectedDeviceDraft.memo = getDeviceFreeMemo(device)
+  selectedDeviceDraft.sourceRef = device?.sourceRef || null
+  selectedDeviceDraft.customType = device?.customType || ''
+  assignHardwareInfo(selectedDeviceDraft.hardwareInfo, device?.hardwareInfo)
+  selectedDeviceDraft.specs = getDeviceSpecRows(device).length ? getDeviceSpecRows(device) : []
+  selectedDeviceDraft.quickLinks = cloneQuickLinksForEdit(getQuickLinks(device))
+  selectedDeviceDraftBaseline.value = JSON.stringify(getSideDraftSnapshot())
+  if (resetActive) activeInlineField.value = ''
+}
+
+const sidePanelDevice = computed(() => ({
+  ...(selectedDevice.value || {}),
+  label: selectedDeviceDraft.label,
+  height: selectedDeviceDraft.height,
+  customType: selectedDeviceDraft.customType,
+  sourceRef: selectedDeviceDraft.sourceRef,
+  hardwareInfo: selectedDeviceDraft.hardwareInfo,
+  specs: selectedDeviceDraft.specs,
+  memo: selectedDeviceDraft.memo,
+  quickLinks: selectedDeviceDraft.quickLinks
+}))
+
+const selectedDeviceCustomLinks = computed(() => {
+  if (selectedDeviceRackIndex.value < 0 || selectedDeviceItemIndex.value < 0) return []
+  const rack = parsedRacks.value[selectedDeviceRackIndex.value]
+  const item = rack?.items?.[selectedDeviceItemIndex.value]
+  const merged = [...getQuickLinks(item), ...getQuickLinks({ quickLinks: selectedDeviceDraft.quickLinks })]
+  const seen = new Set()
+  return merged.filter(link => {
+    const key = `${String(link.label || '').trim()}|${String(link.url || '').trim()}`
+    if (!link.url || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+})
+
+const draftPositionLabel = computed(() => {
+  const startU = Number(selectedDeviceDraft.startU || 1)
+  const height = Number(selectedDeviceDraft.height || 1)
+  return height > 1 ? `${startU}-${startU + height - 1}U` : `${startU}U`
+})
+
+const finishInlineEdit = () => {
+  if (!activeInlineField.value) return
+  applyInlineDeviceChangesToRack()
+  activeInlineField.value = ''
+}
+
+const markInlineDraftChanged = () => {
+  // v-model already updates the draft. Keep the editor open until the user leaves the section.
+}
+
+const activateInlineField = (field) => {
+  if (activeInlineField.value === field) {
+    finishInlineEdit()
+    return
+  }
+  if (activeInlineField.value) applyInlineDeviceChangesToRack()
+  activeInlineField.value = field
+  if (field === 'specs' && !selectedDeviceDraft.specs.length) addInlineSpecRow()
+  if (field === 'quickLinks' && !selectedDeviceDraft.quickLinks.length) addInlineQuickLink()
+}
+
+const addInlineSpecRow = () => {
+  selectedDeviceDraft.specs.push(makeMemoRow())
+  applyInlineDeviceChangesToRack()
+}
+
+const removeInlineSpecRow = (idx) => {
+  selectedDeviceDraft.specs.splice(idx, 1)
+  if (!selectedDeviceDraft.specs.length) addInlineSpecRow()
+  applyInlineDeviceChangesToRack()
+}
+
+const addInlineQuickLink = () => {
+  selectedDeviceDraft.quickLinks.push(makeQuickLinkRow())
+  applyInlineDeviceChangesToRack()
+}
+
+const deviceTypeLabelKeys = {
+  server: 'rackDiagram.deviceTypeServer',
+  blade: 'rackDiagram.deviceTypeBlade',
+  switch: 'rackDiagram.deviceTypeSwitch',
+  router: 'rackDiagram.deviceTypeRouter',
+  loadbalancer: 'rackDiagram.deviceTypeLoadBalancer',
+  storage: 'rackDiagram.deviceTypeStorage',
+  nas: 'rackDiagram.deviceTypeNas',
+  firewall: 'rackDiagram.deviceTypeFirewall',
+  monitoring: 'rackDiagram.deviceTypeMonitoring',
+  kvm: 'rackDiagram.deviceTypeKvm',
+  cooling: 'rackDiagram.deviceTypeCooling',
+  patch: 'rackDiagram.deviceTypePatch',
+  pdu: 'rackDiagram.deviceTypePdu',
+  ups: 'rackDiagram.deviceTypeUps',
+  blank: 'rackDiagram.deviceTypeBlank',
+  custom: 'rackDiagram.deviceTypeCustom'
+}
+const selectedDeviceTypeLabel = computed(() => {
+  const type = selectedDevice.value?.type
+  return type ? t(deviceTypeLabelKeys[type] || 'rackDiagram.deviceTypeCustom') : '-'
+})
+const selectedDeviceIp = computed(() => selectedDeviceHost.value?.ipaddress || '')
+const selectedDeviceStatusLabel = computed(() => {
+  const state = selectedDeviceHostInfo.value.find(row => row.label === t('label.state'))?.value
+  return state && state !== '-' ? state : ''
 })
 const selectedDeviceHostInfo = computed(() => {
   const host = selectedDeviceHost.value
@@ -832,6 +1699,86 @@ const selectedDeviceHostInfo = computed(() => {
     { label: t('label.hypervisor'), value: host.hypervisor || '-' }
   ]
 })
+const selectedDeviceHostInfoCompact = computed(() => {
+  const hiddenLabels = new Set([
+    t('label.ip'),
+    t('label.state'),
+    t('label.resourcestate'),
+    t('label.powerstate')
+  ])
+  return selectedDeviceHostInfo.value.filter(row => !hiddenLabels.has(row.label))
+})
+const selectedDeviceLinkedAsset = computed(() => {
+  const sourceRef = selectedDeviceDraft.sourceRef
+  if (!sourceRef) return { name: '-', ip: '', copyText: '' }
+  const selected = inventoryOptions.value.find(o => o.value === sourceRef)
+  if (selected?.meta) {
+    const name = selected.meta.name || selected.label || sourceRef
+    const ip = selected.meta.ip || ''
+    return { name, ip, copyText: ip ? `${name} / ${ip}` : name }
+  }
+  if (String(sourceRef).startsWith('host:')) {
+    const hostId = String(sourceRef).split(':')[1] || ''
+    const host = selectedDeviceHost.value || hostCache.value[hostId]
+    if (host) {
+      const name = host.name || host.hostname || host.id || hostId
+      const ip = host.ipaddress || ''
+      return { name, ip, copyText: ip ? `${name} / ${ip}` : name }
+    }
+  }
+  return { name: sourceRef, ip: '', copyText: sourceRef }
+})
+const selectedDeviceLinkedAssetName = computed(() => selectedDeviceLinkedAsset.value.name)
+const selectedDeviceLinkedAssetIp = computed(() => selectedDeviceLinkedAsset.value.ip)
+
+const copyTextToClipboard = async (text) => {
+  const value = String(text || '').trim()
+  if (!value) return
+  try {
+    await navigator.clipboard.writeText(value)
+    message.success(t('message.success.copy.clipboard'))
+  } catch (e) {
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    message.success(t('message.success.copy.clipboard'))
+  }
+}
+
+const openAssetLinkModal = () => {
+  assetLinkDraft.value = selectedDeviceDraft.sourceRef || undefined
+  if (!inventoryOptions.value.length) buildInventoryOptions()
+  assetLinkModalVisible.value = true
+}
+
+const closeAssetLinkModal = () => {
+  assetLinkModalVisible.value = false
+}
+
+const submitAssetLinkModal = async () => {
+  selectedDeviceDraft.sourceRef = assetLinkDraft.value || null
+  selectedDeviceHost.value = null
+  if (selectedDeviceDraft.sourceRef && String(selectedDeviceDraft.sourceRef).startsWith('host:')) {
+    const hostId = String(selectedDeviceDraft.sourceRef).split(':')[1] || ''
+    if (hostId) {
+      try {
+        selectedDeviceHost.value = await fetchHostById(hostId)
+      } catch (e) {
+        selectedDeviceHost.value = null
+      }
+    }
+  }
+  closeAssetLinkModal()
+}
+
+const openQuickLink = (link) => {
+  if (link?.url) window.open(link.url, '_blank')
+}
 
 const updateSidePanePosition = () => {
   const layout = rackDetailLayoutRef.value
@@ -877,6 +1824,9 @@ watch(zoomPercent, (val) => {
 watch(selectedDevice, async (device) => {
   nextTick(() => updateSidePanePosition())
   selectedDeviceHost.value = null
+  deviceInfoActiveTab.value = 'summary'
+  syncSelectedDeviceDraft(device)
+  syncSideMemoFields(device)
   const sourceRef = String(device?.sourceRef || '')
   if (!sourceRef.startsWith('host:')) return
   const hostId = sourceRef.split(':')[1] || ''
@@ -968,22 +1918,27 @@ const fetchRackData = () => {
 const saveRackData = () => {
   if (!currentZoneId.value) {
     message.error(t('rackDiagram.msg.noZoneToSave'))
-    return
+    return Promise.resolve(false)
+  }
+  if (selectedDevice.value && activeInlineField.value) {
+    applyInlineDeviceChangesToRack()
   }
 
   saving.value = true
   const jsonContent = JSON.stringify(parsedRacks.value)
 
-  api('updateRackLayout', {
+  return api('updateRackLayout', {
     zoneid: currentZoneId.value,
     name: 'default',
     content: jsonContent
   }).then(json => {
     message.success(t('rackDiagram.msg.rackSaved'))
     isDirty.value = false // 저장 성공 시 변경 상태 뱃지 숨김
+    return true
   }).catch(error => {
     console.error('랙 데이터 저장 실패:', error)
     message.error(t('rackDiagram.msg.rackSaveFailed'))
+    return false
   }).finally(() => {
     saving.value = false
   })
@@ -1299,6 +2254,28 @@ const selectDevice = (rIndex, iIndex) => {
 const clearSelectedDevice = () => {
   selectedDeviceRackIndex.value = -1
   selectedDeviceItemIndex.value = -1
+  activeInlineField.value = ''
+  selectedDeviceDraftBaseline.value = ''
+}
+
+const openSelectedDeviceModal = () => {
+  if (selectedDeviceRackIndex.value < 0 || selectedDeviceItemIndex.value < 0) return
+  if (activeInlineField.value) finishInlineEdit()
+  openDeviceModal(selectedDeviceRackIndex.value, selectedDeviceItemIndex.value)
+}
+
+const isSelectedItem = (rIndex, iIndex) => {
+  return selectedDeviceRackIndex.value === rIndex && selectedDeviceItemIndex.value === iIndex
+}
+
+const isSelectedRulerUnit = (rack, rIndex, rulerIndex) => {
+  if (selectedDeviceRackIndex.value !== rIndex || selectedDeviceItemIndex.value < 0) return false
+  const item = rack?.items?.[selectedDeviceItemIndex.value]
+  if (!item || item.type === 'gap') return false
+  const itemTopIndex = rack.items
+    .slice(0, selectedDeviceItemIndex.value)
+    .reduce((sum, current) => sum + Number(current.height || 0), 0) + 1
+  return rulerIndex >= itemTopIndex && rulerIndex < itemTopIndex + Number(item.height || 0)
 }
 
 const getRackUsedU = (rack) => {
@@ -1314,6 +2291,23 @@ const getRackUsagePercent = (rack) => {
   if (!total) return 0
   return Math.round((getRackUsedU(rack) / total) * 100)
 }
+const rackAggregate = computed(() => {
+  const racks = parsedRacks.value || []
+  const totalRacks = racks.length
+  const totalDevices = racks.reduce((sum, rack) => sum + getRackDeviceCount(rack), 0)
+  const totalUsedU = racks.reduce((sum, rack) => sum + getRackUsedU(rack), 0)
+  const totalHeight = racks.reduce((sum, rack) => sum + Number(rack?.totalHeight || 0), 0)
+  const totalFreeU = Math.max(0, totalHeight - totalUsedU)
+  const averageUsage = totalHeight ? Math.round((totalUsedU / totalHeight) * 100) : 0
+  return {
+    totalRacks,
+    totalDevices,
+    totalUsedU,
+    totalHeight,
+    totalFreeU,
+    averageUsage
+  }
+})
 const formatRackDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -1388,7 +2382,8 @@ const deviceForm = reactive({
   height: 1,
   customType: '',
   memo: '',
-  sourceRef: undefined
+  sourceRef: undefined,
+  hardwareInfo: createEmptyHardwareInfo()
 })
 
 const inventoryLoading = ref(false)
@@ -1402,11 +2397,31 @@ const hostVmFallbackList = ref([])
 const dragSource = ref({ rIndex: -1, iIndex: -1 })
 const quickLinksError = ref('')
 const quickLinkRows = ref([])
+const deviceSpecColumns = computed(() => ([
+  { title: t('rackDiagram.memoKey'), key: 'key', dataIndex: 'key', width: '40%' },
+  { title: t('rackDiagram.memoValue'), key: 'value', dataIndex: 'value' },
+  { title: t('rackDiagram.quickLinkAction'), key: 'action', dataIndex: 'action', width: 56 }
+]))
 const quickLinkColumns = computed(() => ([
   { title: t('rackDiagram.quickLinkName'), key: 'label', dataIndex: 'label', width: '35%' },
   { title: t('rackDiagram.quickLinkUrl'), key: 'url', dataIndex: 'url' },
   { title: t('rackDiagram.quickLinkAction'), key: 'action', dataIndex: 'action', width: 56 }
 ]))
+
+const addDeviceSpecRow = () => {
+  deviceSpecRows.value.push(makeMemoRow())
+}
+
+const removeDeviceSpecRow = (index) => {
+  deviceSpecRows.value.splice(index, 1)
+  if (!deviceSpecRows.value.length) deviceSpecRows.value.push(makeMemoRow())
+}
+
+const getCleanSpecRows = (rows) => {
+  return rows
+    .map(row => ({ key: String(row.key || '').trim(), value: String(row.value || '').trim() }))
+    .filter(row => row.key || row.value)
+}
 
 const makeQuickLinkRow = (label = '', url = '') => ({
   key: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -1423,7 +2438,7 @@ const removeQuickLinkRow = (index) => {
   if (!quickLinkRows.value.length) quickLinkRows.value.push(makeQuickLinkRow())
 }
 // 샘플 VM 목록
-const ENABLE_VM_FALLBACK_MOCK = true
+const ENABLE_VM_FALLBACK_MOCK = false
 const HOST_ACTIVE_VM_STATES = new Set(['running', 'starting', 'stopping', 'migrating'])
 
 const buildVmMockList = (hostId, hostName = 'sample') => {
@@ -1453,18 +2468,6 @@ const filteredHostVmList = computed(() => {
   const merged = hostVmList.value.length ? hostVmList.value : hostVmFallbackList.value
   return merged.filter(vm => HOST_ACTIVE_VM_STATES.has(String(vm?.state || '').toLowerCase()))
 })
-
-const mergeAssetMemo = (existingMemo, linesToAdd) => {
-  const memo = existingMemo || ''
-  const marker = '[LinkedAsset]'
-  const cleaned = memo
-    .split('\n')
-    .filter(line => !line.startsWith(marker))
-    .join('\n')
-    .trim()
-  const linked = linesToAdd.map(line => `${marker} ${line}`).join('\n')
-  return [cleaned, linked].filter(Boolean).join('\n')
-}
 
 const buildInventoryOptions = async () => {
   if (!currentZoneId.value) return
@@ -1497,17 +2500,7 @@ const handleSourceChange = (value) => {
   const selected = inventoryOptions.value.find(o => o.value === value)
   if (!selected) return
 
-  if (!deviceForm.label || Object.values(defaultLabelKeys).map(key => t(key)).includes(deviceForm.label)) {
-    deviceForm.label = selected.meta.name
-  }
-
-  const lines = [
-    `Type=${selected.meta.kind}`,
-    `Name=${selected.meta.name}`,
-    `Id=${selected.meta.id}`
-  ]
-  if (selected.meta.ip) lines.push(`IP=${selected.meta.ip}`)
-  deviceForm.memo = mergeAssetMemo(deviceForm.memo, lines)
+  deviceForm.label = selected.meta?.name || selected.label || deviceForm.label
 }
 
 const getLinkedHostId = (item) => {
@@ -1628,6 +2621,94 @@ const placeDeviceAtStartU = (rack, gapIndex, startU, device) => {
   return true
 }
 
+const buildInlineDeviceItem = () => {
+  if (!selectedDevice.value) return null
+  const rawLabel = String(selectedDeviceDraft.label || '').trim()
+  const finalLabel = rawLabel || getDefaultLabel(selectedDevice.value.type) || t('rackDiagram.newDevice')
+  const height = Number(selectedDeviceDraft.height || 0)
+
+  if (selectedDevice.value.type !== 'blank' && !finalLabel) {
+    message.warning(t('rackDiagram.msg.enterDeviceName'))
+    return null
+  }
+  if (finalLabel.length > 60) {
+    message.warning(t('rackDiagram.msg.deviceNameMax'))
+    return null
+  }
+  if (!Number.isInteger(height) || height <= 0) {
+    message.warning(t('rackDiagram.msg.deviceHeightInteger'))
+    return null
+  }
+
+  const cleanHardwareInfo = validateHardwareInfo(selectedDeviceDraft.hardwareInfo)
+  if (!cleanHardwareInfo) return null
+
+  const quickLinkParsed = parseQuickLinksRowsWithValidation(selectedDeviceDraft.quickLinks)
+  if (quickLinkParsed.errors.length > 0) {
+    message.warning(quickLinkParsed.errors[0])
+    activeInlineField.value = 'quickLinks'
+    return null
+  }
+
+  return {
+    ...selectedDevice.value,
+    label: finalLabel,
+    height,
+    customType: String(selectedDeviceDraft.customType || '').trim(),
+    memo: stripLinkedAssetMemo(selectedDeviceDraft.memo),
+    hardwareInfo: cleanHardwareInfo,
+    specs: getCleanSpecRows(selectedDeviceDraft.specs),
+    sourceRef: selectedDevice.value.type === 'server' ? (selectedDeviceDraft.sourceRef || null) : null,
+    quickLinks: quickLinkParsed.links
+  }
+}
+
+const applyInlineDeviceChangesToRack = () => {
+  if (!selectedDevice.value || selectedDeviceRackIndex.value < 0 || selectedDeviceItemIndex.value < 0) return
+  const rack = parsedRacks.value[selectedDeviceRackIndex.value]
+  const oldItem = rack?.items?.[selectedDeviceItemIndex.value]
+  if (!rack || !oldItem || oldItem.type === 'gap') return
+
+  const newItem = buildInlineDeviceItem()
+  if (!newItem) return
+
+  const desiredBottomU = Number(selectedDeviceDraft.startU || 1)
+  const desiredStartIndex = Number(rack.totalHeight || 0) - (desiredBottomU + Number(newItem.height || 0) - 1)
+  if (!Number.isInteger(desiredStartIndex) || desiredStartIndex < 0) {
+    message.warning(t('rackDiagram.msg.notEnoughGapBelow'))
+    return
+  }
+
+  const backupItems = JSON.stringify(rack.items)
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const deviceToPlace = { ...newItem, __inlineToken: token }
+
+  rack.items.splice(selectedDeviceItemIndex.value, 1, { type: 'gap', height: Number(oldItem.height || 0) })
+  compactGaps(rack)
+
+  const best = findBestStartUInRack(rack, Number(deviceToPlace.height || 0), desiredStartIndex)
+  if (!best || best.startU !== desiredStartIndex) {
+    rack.items = JSON.parse(backupItems)
+    message.warning(t('rackDiagram.msg.notEnoughGapBelow'))
+    return
+  }
+
+  const placed = placeDeviceAtStartU(rack, best.index, best.startU, deviceToPlace)
+  if (!placed) {
+    rack.items = JSON.parse(backupItems)
+    message.warning(t('rackDiagram.msg.dropCalcFailed'))
+    return
+  }
+
+  const newIndex = rack.items.findIndex(item => item.__inlineToken === token)
+  if (newIndex > -1) {
+    delete rack.items[newIndex].__inlineToken
+    selectedDeviceItemIndex.value = newIndex
+  }
+  syncSelectedDeviceDraft(rack.items[selectedDeviceItemIndex.value], false)
+  nextTick(() => updateSidePanePosition())
+}
+
 const onDropRackFrame = (targetRIndex, event) => {
   const { rIndex: sourceRIndex, iIndex: sourceIIndex } = dragSource.value
   dragSource.value = { rIndex: -1, iIndex: -1 }
@@ -1727,32 +2808,40 @@ const openLinkedHostVmModal = async (item) => {
     const host = await fetchHostById(hostId)
     hostVmModalTitle.value = `${t('rackDiagram.hostVmList')} - ${host?.name || host?.hostname || hostId}`
     const hostIdStr = String(hostId)
+    const isActiveHostVm = (vm) => {
+      const vmState = String(vm?.state || '').toLowerCase()
+      return HOST_ACTIVE_VM_STATES.has(vmState)
+    }
     const isVmAssignedToHost = (vm) => {
       const vmHostId = String(vm?.hostid || '')
-      const vmState = String(vm?.state || '').toLowerCase()
       // 정책: 현재 host_id가 해당 호스트 + 활성 상태 VM만 표시
-      return vmHostId === hostIdStr && HOST_ACTIVE_VM_STATES.has(vmState)
+      return vmHostId === hostIdStr && isActiveHostVm(vm)
     }
-
-    // 1) hostid 직접 조회
-    const directJson = await api('listVirtualMachines', {
+    const readVmList = (json) => json?.listvirtualmachinesresponse?.virtualmachine || []
+    const hostVmListParams = {
       hostid: hostId,
       listall: true,
-      projectid: '-1',
-      details: 'min',
-      pagesize: 500
-    })
-    let vms = (directJson?.listvirtualmachinesresponse?.virtualmachine || []).filter(isVmAssignedToHost)
+      details: 'group,nics,secgrp,tmpl,servoff,diskoff,iso,volume,affgrp,backoff',
+      isvnf: false,
+      page: 1,
+      pagesize: 500,
+      showIcon: true
+    }
+
+    // 호스트 상세 메뉴의 VM 목록 호출과 동일한 파라미터를 사용한다.
+    const directJson = await api('listVirtualMachines', hostVmListParams)
+    let vms = readVmList(directJson).filter(isActiveHostVm)
 
     // 2) hostid 조회가 비면 전체에서 host 매핑 기준으로 재탐색
     if (!vms.length) {
       const allJson = await api('listVirtualMachines', {
         listall: true,
-        projectid: '-1',
-        details: 'min',
+        details: hostVmListParams.details,
+        isvnf: false,
+        page: 1,
         pagesize: 500
       })
-      const allVms = allJson?.listvirtualmachinesresponse?.virtualmachine || []
+      const allVms = readVmList(allJson)
       vms = allVms.filter(isVmAssignedToHost)
     }
 
@@ -1792,6 +2881,36 @@ const getVmOsLogo = (vm) => {
 
 const isRunningVm = (vm) => {
   return String(vm?.state || '').toLowerCase() === 'running'
+}
+
+const collectVmIpAddresses = (vm) => {
+  const nics = Array.isArray(vm?.nic) ? vm.nic : []
+  const ips = []
+  const pushIp = (ip) => {
+    const value = String(ip || '').trim()
+    if (value && !ips.includes(value)) ips.push(value)
+  }
+
+  const defaultNic = nics.find(nic => nic?.isdefault === true || String(nic?.isdefault).toLowerCase() === 'true')
+  pushIp(defaultNic?.ipaddress)
+
+  const guestNic = nics.find(nic => String(nic?.type || '').toLowerCase() === 'guest' && nic?.ipaddress)
+  pushIp(guestNic?.ipaddress)
+
+  nics.forEach(nic => {
+    pushIp(nic?.ipaddress)
+    const secondaryIps = Array.isArray(nic?.secondaryip) ? nic.secondaryip : []
+    secondaryIps.forEach(ip => pushIp(ip?.ipaddress || ip?.ip))
+  })
+
+  return ips
+}
+
+const getVmPrimaryIpText = (vm) => {
+  const ips = collectVmIpAddresses(vm)
+  if (!ips.length) return '-'
+  const moreCount = ips.length - 1
+  return moreCount > 0 ? `${ips[0]} ${t('rackDiagram.moreIpCount', { count: moreCount })}` : ips[0]
 }
 
 const goToVmDetail = (vm) => {
@@ -1864,10 +2983,12 @@ const openDeviceModal = (rIndex, iIndex) => {
   if (item.type === 'gap') {
     deviceForm.type = 'server'
     deviceForm.label = ''
-    deviceForm.height = 1
+    deviceForm.height = Math.min(2, maxAllowedHeight.value)
     deviceForm.customType = ''
     deviceForm.memo = ''
     deviceForm.sourceRef = undefined
+    assignHardwareInfo(deviceForm.hardwareInfo, null)
+    deviceSpecRows.value = [makeMemoRow()]
     quickLinkRows.value = [makeQuickLinkRow()]
     quickLinksError.value = ''
   } else {
@@ -1876,8 +2997,10 @@ const openDeviceModal = (rIndex, iIndex) => {
     deviceForm.label = item.label || ''
     deviceForm.height = item.height
     deviceForm.customType = item.customType || ''
-    deviceForm.memo = item.memo || ''
+    deviceForm.memo = getDeviceFreeMemo(item)
     deviceForm.sourceRef = item.sourceRef || undefined
+    assignHardwareInfo(deviceForm.hardwareInfo, item.hardwareInfo)
+    deviceSpecRows.value = getDeviceSpecRows(item).length ? getDeviceSpecRows(item) : [makeMemoRow()]
     quickLinkRows.value = getQuickLinks(item).length
       ? getQuickLinks(item).map(link => makeQuickLinkRow(link.label || '', link.url || ''))
       : [makeQuickLinkRow()]
@@ -1897,6 +3020,9 @@ const handleTypeChange = (newType) => {
 
   if (isLabelEmpty || isLabelDefault) {
     deviceForm.label = getDefaultLabel(newType) || ''
+  }
+  if (newType === 'server') {
+    deviceForm.height = Math.min(2, maxAllowedHeight.value)
   }
   if (newType !== 'server') {
     deviceForm.sourceRef = undefined
@@ -1938,19 +3064,24 @@ const submitDeviceModal = () => {
     message.warning(t('rackDiagram.msg.deviceHeightInteger'))
     return
   }
+  const cleanHardwareInfo = validateHardwareInfo(deviceForm.hardwareInfo)
+  if (!cleanHardwareInfo) return
   const quickLinkParsed = parseQuickLinksRowsWithValidation(quickLinkRows.value)
   if (quickLinkParsed.errors.length > 0) {
     quickLinksError.value = quickLinkParsed.errors[0]
     return
   }
   quickLinksError.value = ''
+  const cleanSpecs = getCleanSpecRows(deviceSpecRows.value)
 
   const newItem = {
     type: deviceForm.type,
     label: finalLabel,
     height: deviceForm.height,
     customType: finalCustomType,
-    memo: deviceForm.memo,
+    memo: stripLinkedAssetMemo(deviceForm.memo),
+    hardwareInfo: cleanHardwareInfo,
+    specs: cleanSpecs,
     sourceRef: deviceForm.sourceRef || null,
     quickLinks: quickLinkParsed.links
   }
@@ -1996,6 +3127,9 @@ const submitDeviceModal = () => {
         rack.items.splice(iIndex + 1, 0, { type: 'gap', height: absDiff }) // 없으면 새로 여백 생성
       }
     }
+  }
+  if (selectedDeviceRackIndex.value === rIndex && selectedDeviceItemIndex.value === iIndex && rack.items[iIndex]?.type !== 'gap') {
+    syncSelectedDeviceDraft(rack.items[iIndex])
   }
   closeDeviceModal()
 }
@@ -2592,17 +3726,21 @@ onBeforeUnmount(() => {
   flex-wrap: wrap !important;
   gap: 12px; /* 줄바꿈 되었을 때 위아래 여백 확보 */
 
+  --rack-toolbar-control-height: 22px;
   background: #ffffff;
   padding: 12px 16px;
   border-radius: 8px;
   border: 1px solid #e8e8e8;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
   margin-bottom: 16px;
 }
 
-.toolbar-left, .toolbar-right {
+.toolbar-left,
+.toolbar-actions,
+.toolbar-zoom {
   display: flex;
   align-items: center;
+  min-height: 32px;
 }
 
 .toolbar-detail {
@@ -2611,6 +3749,211 @@ onBeforeUnmount(() => {
 
 .toolbar-detail .toolbar-left {
   min-width: 0;
+}
+
+.toolbar-actions {
+  flex: 0 0 auto;
+}
+
+.toolbar-zoom {
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.toolbar-container :deep(.ant-btn),
+.toolbar-container :deep(.ant-input-number) {
+  height: 32px;
+}
+
+.toolbar-left :deep(.ant-space),
+.toolbar-left :deep(.ant-space-item) {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 20px;
+}
+
+.toolbar-left :deep(.ant-input-search) {
+  width: 100%;
+}
+
+.toolbar-left :deep(.ant-input-search .ant-input) {
+  height: var(--rack-toolbar-control-height);
+  line-height: calc(var(--rack-toolbar-control-height) - 2px);
+  padding-top: 4px;
+  padding-bottom: 4px;
+  box-sizing: border-box;
+}
+
+.toolbar-left :deep(.ant-input-search .ant-input-group-addon) {
+  height: var(--rack-toolbar-control-height);
+  padding: 0;
+  line-height: calc(var(--rack-toolbar-control-height) - 2px);
+  vertical-align: top;
+  box-sizing: border-box;
+}
+
+.toolbar-left :deep(.ant-input-search-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--rack-toolbar-control-height);
+  padding: 0;
+  line-height: calc(var(--rack-toolbar-control-height) - 2px);
+  box-sizing: border-box;
+}
+
+.rack-diagram-root :deep(.ant-input-search > .ant-input-group > .ant-input-group-addon:last-child .ant-input-search-button:not(.ant-btn-primary)) {
+  height: 32px;
+}
+
+.toolbar-container :deep(.ant-input-number-input) {
+  height: var(--rack-toolbar-control-height);
+  padding: 0 8px;
+  line-height: calc(var(--rack-toolbar-control-height) - 2px);
+  box-sizing: border-box;
+}
+
+.rack-diagram-root :deep(.ant-input-number-sm input) {
+  height: var(--rack-toolbar-control-height);
+  padding: 0 8px;
+}
+
+.toolbar-container :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.autogen-action-dropdown__trigger {
+  display: inline-block;
+}
+
+.autogen-action-dropdown__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rack-toolbar-action-dropdown__content {
+  min-width: 156px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #d9d9d9;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+}
+
+.rack-toolbar-action-list {
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  max-width: none;
+}
+
+.rack-toolbar-action-list :deep(.ant-tooltip-disabled-compatible-wrapper) {
+  width: 100%;
+}
+
+.rack-toolbar-action-list :deep(.action-button-item--dataview) {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  margin-left: 0 !important;
+  border: none;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.rack-toolbar-action-list :deep(.action-button-item--dataview:not(.ant-btn-disabled):hover),
+.rack-toolbar-action-list :deep(.action-button-item--dataview:not(.ant-btn-disabled):focus) {
+  background-color: #e6f4ff;
+  border-color: transparent;
+  color: #0958d9;
+}
+
+.rack-toolbar-action-list :deep(.action-button-item__icon) {
+  font-size: 16px;
+}
+
+.rack-toolbar-action-list :deep(.action-button-item__label) {
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+.rack-toolbar-action-list :deep(.action-button-item--dataview:not(.ant-btn-disabled):hover .action-button-item__label),
+.rack-toolbar-action-list :deep(.action-button-item--dataview:not(.ant-btn-disabled):hover .action-button-item__icon),
+.rack-toolbar-action-list :deep(.action-button-item--dataview:not(.ant-btn-disabled):focus .action-button-item__label),
+.rack-toolbar-action-list :deep(.action-button-item--dataview:not(.ant-btn-disabled):focus .action-button-item__icon) {
+  color: #0958d9;
+}
+
+.rack-toolbar-action-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: #f0f0f0;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-dropdown__content) {
+  min-width: 156px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #d9d9d9;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-list) {
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  max-width: none;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-list .ant-tooltip-disabled-compatible-wrapper) {
+  width: 100%;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item--dataview) {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  margin-left: 0 !important;
+  border: none;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item--dataview:not(.ant-btn-disabled):hover),
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item--dataview:not(.ant-btn-disabled):focus) {
+  background-color: #e6f4ff;
+  border-color: transparent;
+  color: #0958d9;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item__icon) {
+  font-size: 16px;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item__label) {
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item--dataview:not(.ant-btn-disabled):hover .action-button-item__label),
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item--dataview:not(.ant-btn-disabled):hover .action-button-item__icon),
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item--dataview:not(.ant-btn-disabled):focus .action-button-item__label),
+:global(.autogen-action-dropdown .rack-toolbar-action-list .action-button-item--dataview:not(.ant-btn-disabled):focus .action-button-item__icon) {
+  color: #0958d9;
+}
+
+:global(.autogen-action-dropdown .rack-toolbar-action-divider) {
+  height: 1px;
+  margin: 6px 0;
+  background: #f0f0f0;
 }
 
 /* 버튼 사이 구분선 스타일 */
@@ -2624,8 +3967,28 @@ onBeforeUnmount(() => {
 .zoom-label {
   font-weight: bold;
   color: #595959;
-  margin-right: 8px;
   font-size: 13px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
+.zoom-input {
+  width: 70px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.zoom-slider-wrap {
+  width: 120px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  height: 32px;
+}
+
+.zoom-slider-wrap :deep(.ant-slider) {
+  width: 100%;
+  margin: 0;
 }
 
 /* 랙 캔버스 배경 */
@@ -2643,21 +4006,133 @@ onBeforeUnmount(() => {
   padding: 8px 4px 12px;
 }
 
+.rack-list-summary-card {
+  margin-bottom: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+}
+
+.rack-list-summary-card :deep(.ant-card-body) {
+  padding: 12px 22px;
+}
+
+.rack-list-summary-title {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  flex: 0 0 auto;
+  padding-right: 30px;
+  margin-right: 16px;
+  border-right: 1px solid #eef2f7;
+}
+
+.rack-list-summary-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  width: 100%;
+}
+
+.rack-list-summary-metric {
+  min-width: 140px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 26px;
+  flex: 1 1 150px;
+}
+
+.rack-list-summary-metric:nth-of-type(4),
+.rack-list-summary-metric:nth-of-type(5) {
+  flex-basis: 180px;
+  min-width: 170px;
+}
+
+.rack-list-summary-metric + .rack-list-summary-metric {
+  border-left: 1px solid #eef2f7;
+}
+
+.rack-list-summary-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.rack-list-summary-value {
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.rack-list-summary-text {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rack-list-summary-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.09);
+}
+
+.rack-list-summary-icon :deep(.anticon) {
+  font-size: 16px;
+}
+
+.rack-list-summary-rack-icon :deep(.rack-card-icon) {
+  width: 18px;
+  height: 22px;
+}
+
+.rack-list-summary-progress {
+  width: 104px;
+  margin-left: 10px;
+  flex: 0 0 104px;
+}
+
+.rack-list-summary-progress :deep(.ant-progress-inner) {
+  background-color: #e5e7eb;
+}
+
 .rack-list-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .rack-list-card {
-  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   position: relative;
-  min-height: 218px;
+  min-height: 250px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
   transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rack-list-card:hover {
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
 }
 
 .rack-list-card :deep(.ant-card-body) {
   height: 100%;
+  padding: 24px 26px;
 }
 
 .rack-list-card-actions {
@@ -2676,10 +4151,26 @@ onBeforeUnmount(() => {
   background: #f1f5f9 !important;
 }
 
+.rack-list-more-btn :deep(.anticon-more svg) {
+  width: 3em;
+  height: 3em;
+}
+
 .rack-list-card-match {
   position: absolute;
   top: 10px;
-  right: 10px;
+  right: 44px;
+  z-index: 1;
+  max-width: calc(100% - 72px);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.rack-list-card-match :deep(.ant-tag) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 0;
 }
 
 .rack-list-card--matched {
@@ -2691,20 +4182,13 @@ onBeforeUnmount(() => {
   opacity: 0.52;
 }
 
-.add-rack-btn {
-  border-radius: 8px !important;
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.22);
-}
-
 .rack-list-card-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: #1f2937;
   line-height: 1.35;
-  min-height: 22px;
-  max-width: 100%;
-  padding-right: 28px;
+  min-height: 24px;
+  max-width: min(100%, 280px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2714,11 +4198,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   gap: 0;
+  height: 100%;
 }
 
 .rack-list-card-rack-icon {
   width: 59px;
-  height: 59px;
+  height: 92px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2738,49 +4223,149 @@ onBeforeUnmount(() => {
   padding-right: 34px;
 }
 
-.rack-list-card-meta {
-  margin-top: 4px;
+.rack-list-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rack-list-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: #334155;
   font-size: 13px;
-  color: #6b7280;
-  display: block;
-  min-width: 0;
+  line-height: 18px;
 }
 
-.rack-list-card-meta-location-row {
-  margin-top: 2px;
-}
-
-.rack-list-card-location {
-  display: inline-block;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.rack-list-card-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
 }
 
 .rack-list-card-usage {
-  margin-top: 12px;
-  font-size: 15px;
-  font-weight: 500;
-  color: #1f2937;
+  margin-top: 24px;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.rack-list-progress {
-  margin-top: 10px;
+.rack-list-card-progress-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 28px;
+  margin-top: 8px;
 }
 
 .rack-list-card-usage-detail {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #4b5563;
+  color: #475569;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.rack-list-card-extra {
-  margin-top: 12px;
+.rack-list-progress {
+  min-width: 0;
+  margin: 0;
+}
+
+.rack-list-card-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.rack-list-card-stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rack-list-card-stat + .rack-list-card-stat {
+  padding-left: 24px;
+  border-left: 1px solid #e5e7eb;
+}
+
+.rack-list-card-stat-label {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rack-list-card-stat strong {
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.rack-list-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
   font-size: 12px;
   color: #64748b;
+  min-width: 0;
+}
+
+.rack-list-card-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.rack-list-card-location {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rack-list-add-card {
+  min-height: 250px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #0f172a;
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.rack-list-add-card:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.04);
+}
+
+.rack-list-add-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.10);
+  font-size: 22px;
 }
 
 .rack-detail-layout {
@@ -2832,11 +4417,426 @@ onBeforeUnmount(() => {
   bottom: 0;
 }
 
+.rack-side-pane-card {
+  border-radius: 8px;
+  border-color: rgba(0,0,0,0.06);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+
 .rack-side-pane-card :deep(.ant-card-head) {
   position: sticky;
   top: 0;
   z-index: 2;
   background: #fff;
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.rack-side-pane-card :deep(.ant-card-body) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 132px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.device-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(22, 119, 255, 0.12);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(22, 119, 255, 0.08), rgba(22, 119, 255, 0.02));
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.device-summary-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.device-summary-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+}
+
+.device-summary-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.device-summary-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.device-summary-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.device-summary-badge {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #f5f5f5;
+  color: #595959;
+  border: 1px solid #d9d9d9;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.device-summary-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: #374151;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.device-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.device-info-section {
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.device-info-tabs :deep(.ant-tabs-nav) {
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.device-info-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.device-info-tabs :deep(.ant-tabs-content-holder) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.device-info-tabs :deep(.ant-tabs-content),
+.device-info-tabs :deep(.ant-tabs-tabpane) {
+  height: 100%;
+  min-height: 0;
+}
+
+.device-info-tabs :deep(.ant-tabs-tabpane) {
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.device-info-tabs :deep(.ant-tabs-tab) {
+  padding: 8px 0;
+}
+
+.device-inline-form {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #edf2f7;
+}
+
+.device-inline-row {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  align-items: center;
+  min-height: 34px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.device-inline-row > label {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f8fafc;
+}
+
+.device-inline-row > div,
+.device-inline-row > .ant-input,
+.device-inline-row > .ant-select {
+  min-width: 0;
+  margin: 6px 8px;
+}
+
+.device-readonly-value {
+  color: #334155;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.device-inline-clickable {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.device-inline-clickable:hover {
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.06);
+}
+
+.device-inline-title-input {
+  max-width: 220px;
+}
+
+.device-info-section-title {
+  margin-bottom: 8px;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.device-info-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.device-info-section-heading .device-info-section-title {
+  margin-bottom: 0;
+}
+
+.device-section-edit-btn {
+  color: #64748b !important;
+}
+
+.device-section-edit-btn:hover {
+  color: #1677ff !important;
+  background: rgba(22, 119, 255, 0.06) !important;
+}
+
+.device-link-section-edit-btn {
+  float: right;
+  margin-top: -4px;
+}
+
+.device-info-table {
+  border-top: 1px solid #edf2f7;
+}
+
+.device-host-compact-table {
+  margin-top: 10px;
+}
+
+.device-info-table-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  border-bottom: 1px solid #edf2f7;
+  min-height: 28px;
+}
+
+.device-info-table-row:last-child {
+  border-bottom: 0;
+}
+
+.device-info-table-row > div {
+  padding: 6px 8px;
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.device-info-table-row > div:first-child {
+  color: #475569;
+  font-weight: 600;
+  background: #f8fafc;
+}
+
+.device-memo-edit-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-memo-subtitle {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.device-memo-free-title {
+  margin-top: 4px;
+}
+
+.device-memo-table {
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.device-memo-table-head,
+.device-memo-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.3fr) 48px;
+  align-items: center;
+}
+
+.device-memo-table-read .device-memo-table-head,
+.device-memo-table-read .device-memo-table-row {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.3fr);
+}
+
+.device-memo-table-head {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.device-memo-table-head > div,
+.device-memo-table-row > * {
+  padding: 6px;
+  border-right: 1px solid rgba(0,0,0,0.06);
+}
+
+.device-memo-table-head > div:last-child,
+.device-memo-table-row > *:last-child {
+  border-right: 0;
+}
+
+.device-memo-table-row {
+  border-top: 1px solid rgba(0,0,0,0.06);
+  min-height: 34px;
+}
+
+.device-memo-table-read .device-memo-table-row:hover {
+  background: #fafcff;
+}
+
+.device-memo-cell-text {
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+  background: transparent;
+}
+
+.device-memo-row-delete {
+  justify-self: center;
+}
+
+.device-memo-empty {
+  padding: 10px 0;
+}
+
+.device-memo-empty :deep(.ant-empty) {
+  margin: 0;
+}
+
+.device-free-memo-read {
+  min-height: 62px;
+  padding: 8px 10px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.device-linked-asset-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.device-linked-asset-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.device-linked-asset-name {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-linked-asset-ip {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.device-linked-asset-copy {
+  flex: 0 0 auto;
+}
+
+.device-info-copy-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.device-info-copy-value > span,
+.device-info-copy-value :deep(.ant-tooltip-open) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-memo-add-btn {
+  align-self: flex-start;
 }
 
 .device-info-row {
@@ -2859,8 +4859,126 @@ onBeforeUnmount(() => {
 
 .device-info-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 12px -12px -12px;
+  padding: 12px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 8px;
+  background: #f8fafc;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.device-info-actions-title {
+  flex: 0 0 100%;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.device-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-link-group-title {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.device-link-group-title-spaced {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+
+.device-link-button {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between !important;
+  width: 100%;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 10px !important;
+  border-color: rgba(0,0,0,0.06) !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #334155 !important;
+  box-shadow: none !important;
+}
+
+.device-link-button:hover,
+.device-link-button:focus {
+  border-color: rgba(22,119,255,0.18) !important;
+  background: rgba(22,119,255,0.06) !important;
+  color: #1677ff !important;
+}
+
+.device-link-button-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.device-link-button-main > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-link-button-arrow {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.device-infra-asset-actions {
   margin-top: 12px;
+  padding: 12px 0 4px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+
+.device-infra-asset-action-help {
+  margin-bottom: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.device-link-asset-change-btn {
+  margin-top: 0;
+}
+
+.device-link-list-read {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.device-inline-link-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-inline-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr) 34px;
+  gap: 6px;
+  align-items: center;
 }
 
 .device-info-close-btn {
@@ -2884,17 +5002,6 @@ onBeforeUnmount(() => {
   color: #334155;
 }
 
-.device-memo-linked {
-  background: transparent;
-  border-radius: 6px;
-  padding: 0;
-}
-
-.device-memo-linked-title {
-  display: none;
-}
-
-.device-memo-linked-list,
 .device-host-info-list {
   display: flex;
   flex-direction: column;
@@ -2902,6 +5009,43 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   word-break: break-word;
   color: #334155;
+}
+
+.device-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.device-config-section {
+  border-radius: 8px;
+  border-color: rgba(0,0,0,0.06);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.device-config-section :deep(.ant-card-head) {
+  min-height: 38px;
+  padding: 0 14px;
+  border-bottom-color: rgba(0,0,0,0.06);
+}
+
+.device-config-section :deep(.ant-card-head-title) {
+  padding: 9px 0;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.device-config-section :deep(.ant-card-body) {
+  padding: 14px;
+}
+
+.device-config-section :deep(.ant-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+.device-config-section-form-item :deep(.ant-form-item-label) {
+  display: none;
 }
 
 .quick-links-editor {
@@ -2912,6 +5056,25 @@ onBeforeUnmount(() => {
 
 .quick-links-add-btn {
   align-self: flex-start;
+}
+
+.device-hardware-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-hardware-form-row {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.device-hardware-form-row > label {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* 랙 컨테이너 (가로 정렬) */
@@ -3035,7 +5198,7 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-wrap: nowrap;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 25px;
   color: #6b7280;
   font-size: 14px;
   font-weight: 500;
@@ -3125,6 +5288,14 @@ onBeforeUnmount(() => {
   border-top: 1px dotted rgba(15, 23, 42, 0.12);
 }
 
+.ruler-number-selected {
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.06);
+  border-left: 1px solid #1677ff;
+  border-top: 1px solid #1677ff;
+  border-bottom: 1px solid #1677ff;
+}
+
 /* 랙 내부 프레임 */
 .rack-frame {
   width: 560px;
@@ -3149,6 +5320,21 @@ onBeforeUnmount(() => {
   border-radius: 0;
   overflow: hidden; /* 자식 요소의 각진 부분 잘라내기 */
   margin-bottom: 0;
+}
+
+.rack-item-hoverable:hover {
+  background: rgba(15, 23, 42, 0.025);
+}
+
+.rack-item-selected,
+.rack-item-selected:hover {
+  border: 1px solid #1677ff;
+  background: rgba(22, 119, 255, 0.06);
+  z-index: 3;
+}
+
+.rack-item-selected::after {
+  content: none;
 }
 
 .rack-item::after {
@@ -3209,6 +5395,15 @@ onBeforeUnmount(() => {
   background: #f8fbff !important;
   border: 0;
   box-shadow: none;
+}
+
+.device-content-selected,
+.device-content-selected:hover {
+  background: rgba(22, 119, 255, 0.06) !important;
+}
+
+.device-content-selected .device-name-tag {
+  color: #1677ff;
 }
 
 .device-content::before {
@@ -3418,14 +5613,14 @@ onBeforeUnmount(() => {
 }
 
 .tag-badge {
-  background: #1f2937;
-  color: #ffffff;
-  padding: 2px 6px;
+  background: #f5f5f5;
+  color: #595959;
+  padding: 1px 5px;
   border-radius: 10px;
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid #d9d9d9;
 }
 
 /* 액션 버튼 (호버 시에만 표시) */
@@ -3533,7 +5728,7 @@ onBeforeUnmount(() => {
   border: 1px solid #d9e2ec;
   border-radius: 10px;
   background: #f9fbff;
-  padding: 10px 12px;
+  padding: 8px 12px;
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -3560,10 +5755,14 @@ onBeforeUnmount(() => {
   color: #9ca3af;
 }
 
+.host-vm-card-inactive .host-vm-ip {
+  color: #9ca3af;
+}
+
 .host-vm-icon {
   font-size: 22px;
   color: #3b82f6;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .host-vm-name {
@@ -3575,9 +5774,23 @@ onBeforeUnmount(() => {
 }
 
 .host-vm-meta {
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 12px;
   color: #6b7280;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.host-vm-ip {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: #4b5563;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* dark mode in this project is attached on body */
@@ -3605,6 +5818,36 @@ onBeforeUnmount(() => {
   border-color: #3a4654;
 }
 
+.rack-diagram-root.is-dark .rack-list-summary-card {
+  background: #1f2732;
+  border-color: #3a4654;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.rack-diagram-root.is-dark .rack-list-summary-title,
+.rack-diagram-root.is-dark .rack-list-summary-label,
+.rack-diagram-root.is-dark .rack-list-summary-value {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.rack-diagram-root.is-dark .rack-list-summary-desc,
+.rack-diagram-root.is-dark .rack-list-summary-label {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.rack-diagram-root.is-dark .rack-list-summary-title {
+  border-right-color: #334155;
+}
+
+.rack-diagram-root.is-dark .rack-list-summary-icon {
+  background: rgba(22, 119, 255, 0.16);
+  color: #8cc8ff;
+}
+
+.rack-diagram-root.is-dark .rack-list-summary-metric + .rack-list-summary-metric {
+  border-left-color: #334155;
+}
+
 .rack-diagram-root.is-dark .rack-list-card--matched {
   border-color: #4c93ff;
   box-shadow: 0 0 0 1px rgba(76, 147, 255, 0.32) inset;
@@ -3627,7 +5870,9 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.9);
 }
 
-.rack-diagram-root.is-dark .rack-list-card-meta,
+.rack-diagram-root.is-dark .rack-list-card-status,
+.rack-diagram-root.is-dark .rack-list-card-stat-label,
+.rack-diagram-root.is-dark .rack-list-card-footer,
 .rack-diagram-root.is-dark .rack-list-card-usage-detail,
 .rack-diagram-root.is-dark .rack-list-card-extra {
   color: rgba(255, 255, 255, 0.65);
@@ -3635,6 +5880,33 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .rack-list-card-usage {
   color: rgba(255, 255, 255, 0.9);
+}
+
+.rack-diagram-root.is-dark .rack-list-card-stat strong {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.rack-diagram-root.is-dark .rack-list-card-stats,
+.rack-diagram-root.is-dark .rack-list-card-footer,
+.rack-diagram-root.is-dark .rack-list-card-stat + .rack-list-card-stat {
+  border-color: #334155;
+}
+
+.rack-diagram-root.is-dark .rack-list-add-card {
+  background: rgba(31, 39, 50, 0.7);
+  border-color: #475569;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.rack-diagram-root.is-dark .rack-list-add-card:hover {
+  background: rgba(22, 119, 255, 0.10);
+  border-color: #4c93ff;
+  color: #8cc8ff;
+}
+
+.rack-diagram-root.is-dark .rack-list-add-icon {
+  background: rgba(22, 119, 255, 0.16);
+  color: #8cc8ff;
 }
 
 .rack-diagram-root.is-dark .device-info-row {
@@ -3647,6 +5919,60 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .rack-side-pane-card :deep(.ant-card-head) {
   background: #1f2732;
+}
+
+.rack-diagram-root.is-dark .rack-side-pane-card {
+  background: #1f2732;
+  border-color: #3a4654;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.rack-diagram-root.is-dark .device-summary-header,
+.rack-diagram-root.is-dark .device-info-section,
+.rack-diagram-root.is-dark .device-info-actions,
+.rack-diagram-root.is-dark .device-memo-table,
+.rack-diagram-root.is-dark .device-free-memo-read,
+.rack-diagram-root.is-dark .device-linked-asset-card {
+  background: #202938;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.rack-diagram-root.is-dark .device-memo-table-head,
+.rack-diagram-root.is-dark .device-inline-row > label,
+.rack-diagram-root.is-dark .device-info-table-row > div:first-child {
+  background: #253144;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.rack-diagram-root.is-dark .device-memo-cell-text,
+.rack-diagram-root.is-dark .device-free-memo-read,
+.rack-diagram-root.is-dark .device-linked-asset-name,
+.rack-diagram-root.is-dark .device-readonly-value,
+.rack-diagram-root.is-dark .device-info-table-row > div {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.rack-diagram-root.is-dark .device-linked-asset-ip {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.rack-diagram-root.is-dark .device-summary-badge,
+.rack-diagram-root.is-dark .tag-badge {
+  background: #2b3544;
+  color: rgba(255, 255, 255, 0.78);
+  border-color: #465366;
+}
+
+.rack-diagram-root.is-dark .device-memo-table-head > div,
+.rack-diagram-root.is-dark .device-memo-table-row > *,
+.rack-diagram-root.is-dark .device-memo-table-row,
+.rack-diagram-root.is-dark .device-inline-form,
+.rack-diagram-root.is-dark .device-inline-row,
+.rack-diagram-root.is-dark .device-info-table,
+.rack-diagram-root.is-dark .device-info-table-row,
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-nav),
+.rack-diagram-root.is-dark .device-link-group-title-spaced {
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .rack-diagram-root.is-dark .device-info-close-btn {
@@ -3664,6 +5990,41 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 980px) {
+  .rack-list-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rack-list-summary-metrics {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 8px;
+  }
+
+  .rack-list-summary-title {
+    flex: 1 0 100%;
+    border-right: 0;
+    padding-right: 0;
+    margin-right: 0;
+  }
+
+  .rack-list-summary-metric {
+    padding: 0 14px 0 0;
+  }
+
+  .rack-list-summary-metric + .rack-list-summary-metric {
+    border-left: 0;
+  }
+
+  .rack-list-card-progress-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .rack-list-card-footer {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
   .rack-side-pane-slot {
     width: 280px;
     flex: 0 0 280px;
@@ -3681,6 +6042,10 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .host-vm-meta {
   color: rgba(255, 255, 255, 0.65);
+}
+
+.rack-diagram-root.is-dark .host-vm-ip {
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .rack-diagram-root.is-dark .toolbar-container :deep(.ant-input),

@@ -150,14 +150,23 @@
     <a-col :xs="24">
       <div class="infra-summary-layout">
         <div class="summary-cards-pane">
-          <a-row :gutter="12">
-            <template v-for="(section, index) in sections" :key="index">
+          <div
+            v-for="group in visibleSummaryGroups"
+            :key="group.key"
+            class="summary-group"
+          >
+            <div class="summary-group-header">
+              <span class="summary-group-title">{{ getSummaryGroupTitle(group) }}</span>
+            </div>
+            <a-row :gutter="12">
               <a-col
+                v-for="section in group.items"
+                :key="section"
                 :xs="12"
                 :sm="8"
                 :md="8"
                 :style="{ marginBottom: '12px' }"
-                v-if="routes[section]">
+              >
                 <chart-card :loading="loading" class="summary-mini-card">
                   <div class="chart-card-inner">
                     <router-link :to="{ name: section.substring(0, section.length - 1) }">
@@ -167,8 +176,8 @@
                   </div>
                 </chart-card>
               </a-col>
-            </template>
-          </a-row>
+            </a-row>
+          </div>
         </div>
         <div class="rack-visualization-pane">
           <a-card :bordered="false" class="rack-visualization-card">
@@ -204,6 +213,13 @@ export default {
       loading: true,
       routes: {},
       sections: ['zones', 'pods', 'clusters', 'hosts', 'storagepools', 'imagestores', 'objectstores', 'systemvms', 'routers', 'cpusockets', 'managementservers', 'alerts', 'ilbvms', 'metrics'],
+      summaryGroups: [
+        { key: 'configuration', titleParts: ['label.infrastructure', 'label.configuration'], items: ['zones', 'pods', 'clusters'] },
+        { key: 'compute', title: 'label.compute', items: ['hosts', 'cpusockets', 'systemvms', 'metrics'] },
+        { key: 'network', title: 'label.network', items: ['routers', 'ilbvms'] },
+        { key: 'storage', title: 'label.storage', items: ['storagepools', 'imagestores', 'objectstores'] },
+        { key: 'incident', title: 'label.alerts', items: ['alerts'] }
+      ],
       sslFormVisible: false,
       stats: {},
       intermediateCertificates: [],
@@ -218,7 +234,23 @@ export default {
     this.initForm()
     this.fetchData()
   },
+  computed: {
+    visibleSummaryGroups () {
+      return this.summaryGroups
+        .map(group => {
+          const items = group.items.filter(section => this.routes[section])
+          return { ...group, items }
+        })
+        .filter(group => group.items.length)
+    }
+  },
   methods: {
+    getSummaryGroupTitle (group) {
+      if (group.titleParts) {
+        return group.titleParts.map(key => this.$t(key)).join(' ')
+      }
+      return this.$t(group.title)
+    },
     initForm () {
       this.formRef = ref()
       this.form = reactive({})
@@ -362,11 +394,6 @@ export default {
     margin-bottom: 12px;
   }
 
-  .chart-card-inner {
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-  }
   .infra-summary-layout {
     display: flex;
     align-items: flex-start;
@@ -381,10 +408,49 @@ export default {
     background: linear-gradient(180deg, #f8f9fb 0%, #f3f5f8 100%);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
   }
+  .summary-group {
+    padding: 10px 10px 0;
+    border: 1px solid rgba(31, 41, 55, 0.08);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.54);
+  }
+  .summary-group + .summary-group {
+    margin-top: 12px;
+  }
+  .summary-group-header {
+    display: flex;
+    align-items: center;
+    margin: -2px 2px 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(31, 41, 55, 0.06);
+    color: #111827;
+    font-weight: 700;
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .summary-group-title {
+    position: relative;
+    padding-left: 9px;
+  }
+  .summary-group-title::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 4px;
+    width: 3px;
+    height: 11px;
+    border-radius: 2px;
+    background: #c7d2df;
+  }
   .rack-visualization-pane {
     width: 66%;
     flex: 0 0 66%;
     min-width: 320px;
+  }
+  .chart-card-inner {
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
   }
   .summary-mini-card :deep(.ant-card-body) {
     padding: 12px 14px 6px !important;
