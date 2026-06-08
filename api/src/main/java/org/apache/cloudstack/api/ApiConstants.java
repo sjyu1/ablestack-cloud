@@ -393,6 +393,7 @@ public class ApiConstants {
     public static final String MAX = "max";
     public static final String MAX_SNAPS = "maxsnaps";
     public static final String MAX_BACKUPS = "maxbackups";
+    public static final String MEMBER_COUNT = "membercount";
     public static final String MAX_CPU_NUMBER = "maxcpunumber";
     public static final String MAX_MEMORY = "maxmemory";
     public static final String MEMORY_OVERCOMMIT_RATIO = "memoryOvercommitRatio";

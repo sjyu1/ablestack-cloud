@@ -55,6 +55,7 @@ import org.apache.cloudstack.backup.netbackup.AblestackNetBackupClient;
 import org.apache.cloudstack.backup.dao.BackupDao;
 import org.apache.cloudstack.backup.dao.BackupDetailsDao;
 import org.apache.cloudstack.backup.dao.BackupOfferingDao;
+import org.apache.cloudstack.backup.BackupDetailVO;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -111,6 +112,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_BACKUP_ENGINE = "netbackup.backup.engine";
     private static final String DETAIL_RBD_DISK_PATHS = "netbackup.rbd.disk.paths";
     private static final String DETAIL_BACKUP_ID = "netbackup.backup.id";
+    private static final String DETAIL_MEMBER_COUNT = "netbackup.backup.member.count";
     private static final String DETAIL_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_MAX_CHAIN = "netbackup.max.chain";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
@@ -737,15 +739,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean deleteBackup(final Backup backup, final boolean forced) {
-        final AblestackNetBackupClient.ExpireImageResult result =
-                getClient(backup.getZoneId()).expireBackupImage(backup.getExternalId(), 1);
-        if (!result.isCompleted()) {
-            final String ticketMessage = StringUtils.isNotBlank(result.getMpaTicket())
-                    ? String.format("NetBackup image expiration requires MPA approval. Ticket: %s", result.getMpaTicket())
-                    : "NetBackup image expiration requires MPA approval.";
-            throw new CloudRuntimeException(ticketMessage);
-        }
-        return true;
+        throw new CloudRuntimeException("NetBackup backups are managed by backup ID groups and cannot be deleted individually from Mold.");
     }
 
     @Override
@@ -1212,7 +1206,11 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Override
     public void syncBackups(final VirtualMachine vm) {
         AblestackNetBackupClient client = null;
+        final Set<Long> removedBackupIds = new HashSet<>();
         for (final Backup backup : backupDao.listByVmId(vm.getDataCenterId(), vm.getId())) {
+            if (removedBackupIds.contains(backup.getId())) {
+                continue;
+            }
             if (Backup.Status.BackingUp.equals(backup.getStatus())) {
                 if (backup.getDate() == null || backup.getDate().getTime() > System.currentTimeMillis() - STALE_BACKUP_THRESHOLD_MS) {
                     continue;
@@ -1247,10 +1245,38 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 continue;
             }
 
-            LOG.warn("Removing NetBackup backup [{}] for VM [{}] because catalog image [{}] no longer exists in NetBackup.",
-                    backup.getUuid(), vm.getInstanceName(), backupId);
-            removeBackupWithDetails(backup.getId());
+            final List<Long> removedIds = removeBackupGroup(backupId);
+            removedBackupIds.addAll(removedIds);
+            LOG.warn("Removed NetBackup backup group identified by backupId [{}] for VM [{}] because the catalog image no longer exists in NetBackup. Removed backup row ids={}",
+                    backupId, vm.getInstanceName(), removedIds);
         }
+    }
+
+    private List<Long> removeBackupGroup(final String backupId) {
+        final Set<Long> backupIdsToRemove = new LinkedHashSet<>();
+        if (StringUtils.isNotBlank(backupId)) {
+            backupDetailsDao.findDetails(DETAIL_BACKUP_ID, backupId, false).stream()
+                    .map(BackupDetailVO::getResourceId)
+                    .forEach(backupIdsToRemove::add);
+        }
+        if (backupIdsToRemove.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        final List<Long> removedIds = new ArrayList<>();
+        for (final Long backupIdToRemove : backupIdsToRemove) {
+            final Backup backup = backupDao.findByIdIncludingRemoved(backupIdToRemove);
+            if (backup == null) {
+                continue;
+            }
+            final BackupOfferingVO backupOffering = backupOfferingDao.findById(backup.getBackupOfferingId());
+            if (backupOffering == null || !StringUtils.equalsIgnoreCase(getName(), backupOffering.getProvider())) {
+                continue;
+            }
+            removeBackupWithDetails(backupIdToRemove);
+            removedIds.add(backupIdToRemove);
+        }
+        return removedIds;
     }
 
     @Override

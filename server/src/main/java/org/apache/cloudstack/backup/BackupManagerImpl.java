@@ -263,6 +263,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
     private static final String DETAIL_NETBACKUP_BACKUP_ID = "netbackup.backup.id";
+    private static final String DETAIL_NETBACKUP_MEMBER_COUNT = "netbackup.backup.member.count";
     private static final String DETAIL_NETBACKUP_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_NETBACKUP_MAX_CHAIN = "netbackup.max.chain";
     private List<BackupProvider> backupProviders;
@@ -1150,6 +1151,10 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         if (StringUtils.isNotBlank(cmd.getMaxBackups())) {
             backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN);
             backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN, cmd.getMaxBackups(), false);
+        }
+        if (cmd.getMemberCount() != null && cmd.getMemberCount() > 0) {
+            backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_MEMBER_COUNT);
+            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_MEMBER_COUNT, String.valueOf(cmd.getMemberCount()), false);
         }
         backupDao.loadDetails(backup);
         return true;
@@ -3094,6 +3099,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         if (offering != null) {
             response.setBackupOfferingId(offering.getUuid());
             response.setBackupOffering(offering.getName());
+            response.setProvider(offering.getProvider());
         } else {
             response.setVmOfferingRemoved(true);
         }

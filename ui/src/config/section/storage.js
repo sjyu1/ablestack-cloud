@@ -561,7 +561,10 @@ export default {
           label: 'label.delete.backup',
           message: 'message.delete.backup',
           dataView: true,
-          show: (record) => { return record.state !== 'Destroyed' },
+          show: (record) => {
+            const provider = (record.provider || '').toLowerCase()
+            return record.state !== 'Destroyed' && provider !== 'netbackup' && provider !== 'ablestack-netbackup'
+          },
           groupAction: true,
           popup: true,
           groupMap: (selection, values) => { return selection.map(x => { return { id: x, forced: values.forced } }) },

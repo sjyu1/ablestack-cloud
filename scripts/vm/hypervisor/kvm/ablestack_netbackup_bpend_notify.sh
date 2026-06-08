@@ -65,8 +65,11 @@ update_netbackup_backup_ids() {
   local vm_id=""
   local backup_path=""
   local response=""
+  local member_count=0
 
   [[ -n "${BACKUP_ID:-}" ]] || fail "NetBackup BACKUP_ID is empty; cannot update backup_details"
+  member_count="$(read_runtime_count "success_count" 2>/dev/null || echo 0)"
+  [[ "${member_count}" =~ ^[0-9]+$ ]] || member_count=0
 
   while IFS=$'\t' read -r vm_id backup_path; do
     [[ -z "${vm_id}" || -z "${backup_path}" ]] && continue
@@ -74,10 +77,11 @@ update_netbackup_backup_ids() {
       "virtualmachineid" "${vm_id}" \
       "backupid" "${BACKUP_ID}" \
       "externalid" "${backup_path}" \
+      "membercount" "${member_count}" \
       "policyid" "${POLICY_NAME}" \
       "maxbackups" "${MAX_INCREMENTAL_CHAIN}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id} backupPath=${backup_path}"
     updated=$((updated + 1))
-    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} backupPath=${backup_path} policyName=${POLICY_NAME} maxChain=${MAX_INCREMENTAL_CHAIN}"
+    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} backupPath=${backup_path} memberCount=${member_count} policyName=${POLICY_NAME} maxChain=${MAX_INCREMENTAL_CHAIN}"
   done < <(list_runtime_success_vm_refs)
 
   builtin echo "${updated}"

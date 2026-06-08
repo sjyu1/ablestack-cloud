@@ -74,6 +74,12 @@ public class UpdateNetBackupCmd extends BaseCmd {
             description = "NetBackup max chain length")
     private String maxBackups;
 
+    @Parameter(name = ApiConstants.MEMBER_COUNT,
+            type = CommandType.INTEGER,
+            required = false,
+            description = "Number of successful VM backup members created in the same NetBackup backup group")
+    private Integer memberCount;
+
     public Long getVmId() {
         return vmId;
     }
@@ -92,6 +98,10 @@ public class UpdateNetBackupCmd extends BaseCmd {
 
     public String getMaxBackups() {
         return maxBackups;
+    }
+
+    public Integer getMemberCount() {
+        return memberCount;
     }
 
     @Override
