@@ -29,6 +29,7 @@ from pathlib import Path
 
 
 SECRET_KEY_FILE = Path(os.environ.get("SECRET_KEY_FILE", "/root/.ssh/ablestack.key"))
+SKIP_SECRET_KEY_PERMISSION_VALIDATION = os.environ.get("SKIP_SECRET_KEY_PERMISSION_VALIDATION", "").lower() in ("1", "true", "yes")
 PBKDF2_ITERATIONS = 200_000
 FORMAT_VERSION = 1
 SALT_SIZE = 16
@@ -43,6 +44,8 @@ def fail(message: str) -> None:
 def validate_secret_key_file(path: Path) -> None:
     if not path.is_file():
         fail(f"Secret key file not found: {path}")
+    if SKIP_SECRET_KEY_PERMISSION_VALIDATION:
+        return
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode != 0o600:
         fail(f"Secret key file must have permission 600: {path} (current: {oct(mode)[2:]})")

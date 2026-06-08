@@ -457,13 +457,16 @@ def write_encrypted_secret_file(path: Path, secret: str, secret_key_file: Path =
     elif not secret_key_file.is_file():
         fail(f"Secret key file not found: {secret_key_file}")
     backup_existing_file(path)
+    helper_env = {**os.environ, "SECRET_KEY_FILE": str(secret_key_file)}
+    if skip_permission_validation:
+        helper_env["SKIP_SECRET_KEY_PERMISSION_VALIDATION"] = "1"
     proc = subprocess.run(
         [sys.executable, str(SCRIPT_DIR / "netbackup_secret_helper.py"), "encrypt", str(path)],
         input=secret.encode(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
-        env={**os.environ, "SECRET_KEY_FILE": str(secret_key_file)},
+        env=helper_env,
     )
     if proc.returncode != 0:
         fail(f"Failed to encrypt ADMIN_SECRETKEY: {proc.stderr.decode(errors='replace')}")
