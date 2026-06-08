@@ -28,6 +28,7 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.entity.ContentType;
@@ -129,7 +130,7 @@ public class AblestackNetBackupClient {
         final HttpPost request = new HttpPost(resolvePath(NETBACKUP_RECOVER_PATH));
         request.setHeader(HttpHeaders.ACCEPT, "application/json");
         request.setHeader(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
-        request.setHeader("X-API-Key", apiKey);
+        applyAuthenticationHeaders(request);
         request.setEntity(new StringEntity(body, ContentType.create("multipart/form-data", "UTF-8")));
 
         try {
@@ -173,7 +174,7 @@ public class AblestackNetBackupClient {
         request.setHeader(HttpHeaders.ACCEPT, "application/json");
         request.setHeader(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
         request.setHeader("X-NetBackup-Log-All-Files", "false");
-        request.setHeader("X-API-Key", apiKey);
+        applyAuthenticationHeaders(request);
         request.setEntity(new StringEntity(builder.toString(), ContentType.create("multipart/form-data", "UTF-8")));
 
         try {
@@ -209,12 +210,11 @@ public class AblestackNetBackupClient {
             return false;
         }
 
-        final String filter = String.format("backupId eq '%s'", backupId.replace("'", "''"));
-        final String encodedFilter = URLEncoder.encode(filter, StandardCharsets.UTF_8);
-        final HttpGet request = new HttpGet(resolvePath(String.format("%s?filter=%s&page[limit]=1&page[offset]=0",
-                NETBACKUP_CATALOG_IMAGES_PATH, encodedFilter)));
+        final String encodedBackupId = URLEncoder.encode(backupId, StandardCharsets.UTF_8);
+        final HttpGet request = new HttpGet(resolvePath(String.format("%s?backupId=%s",
+                NETBACKUP_CATALOG_IMAGES_PATH, encodedBackupId)));
         request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
-        request.setHeader("X-API-Key", apiKey);
+        applyAuthenticationHeaders(request);
 
         try {
             final HttpResponse response = httpClient.execute(request);
@@ -233,20 +233,7 @@ public class AblestackNetBackupClient {
             }
             final JSONObject responseJson = new JSONObject(responseBody);
             final JSONArray data = responseJson.optJSONArray("data");
-            if (data == null || data.length() == 0) {
-                return false;
-            }
-            for (int i = 0; i < data.length(); i++) {
-                final JSONObject image = data.optJSONObject(i);
-                if (image == null) {
-                    continue;
-                }
-                final String imageBackupId = extractString(image, "attributes.backupId");
-                if (StringUtils.equals(backupId, imageBackupId)) {
-                    return true;
-                }
-            }
-            return false;
+            return data != null && data.length() > 0;
         } catch (IOException e) {
             throw new CloudRuntimeException("Failed to query NetBackup catalog image API: " + e.getMessage(), e);
         }
@@ -353,7 +340,7 @@ public class AblestackNetBackupClient {
     private JSONObject getRecoveryJob(final String recoveryJobId) {
         final HttpGet request = new HttpGet(resolvePath(NETBACKUP_JOBS_PATH + recoveryJobId));
         request.setHeader(HttpHeaders.ACCEPT, "application/json");
-        request.setHeader("X-API-Key", apiKey);
+        applyAuthenticationHeaders(request);
         try {
             final HttpResponse response = httpClient.execute(request);
             final int statusCode = response.getStatusLine().getStatusCode();
@@ -367,6 +354,11 @@ public class AblestackNetBackupClient {
         } catch (IOException e) {
             throw new CloudRuntimeException("Failed to query NetBackup recovery job: " + e.getMessage(), e);
         }
+    }
+
+    private void applyAuthenticationHeaders(final HttpRequestBase request) {
+        request.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey);
+        request.setHeader("X-API-Key", apiKey);
     }
 
     private String extractJobState(final JSONObject response) {
