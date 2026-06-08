@@ -59,6 +59,13 @@ public class LibvirtAblestackNetBackupTakeBackupCommandWrapper extends CommandWr
             return answer;
         }
 
-        return new BackupAnswer(command, true, "success");
+        final BackupAnswer answer = new BackupAnswer(command, true, "success");
+        try {
+            answer.setSize(backupHelper.calculateBackupSize(delegate));
+        } catch (RuntimeException e) {
+            logger.warn("Failed to calculate NetBackup backup size for vm=[{}], backupPath=[{}]",
+                    command.getVmName(), command.getBackupPath(), e);
+        }
+        return answer;
     }
 }
