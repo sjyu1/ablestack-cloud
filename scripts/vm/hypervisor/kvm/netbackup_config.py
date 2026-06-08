@@ -447,11 +447,15 @@ def write_restore_config_file(path: Path, args: argparse.Namespace, secret_path:
     path.chmod(0o600)
 
 
-def write_encrypted_secret_file(path: Path, secret: str, secret_key_file: Path = SECRET_KEY_FILE) -> None:
-    if secret_key_file == SECRET_KEY_FILE:
-        validate_secret_key_file()
-    else:
-        validate_custom_secret_key_file(secret_key_file)
+def write_encrypted_secret_file(path: Path, secret: str, secret_key_file: Path = SECRET_KEY_FILE,
+                                skip_permission_validation: bool = False) -> None:
+    if not skip_permission_validation:
+        if secret_key_file == SECRET_KEY_FILE:
+            validate_secret_key_file()
+        else:
+            validate_custom_secret_key_file(secret_key_file)
+    elif not secret_key_file.is_file():
+        fail(f"Secret key file not found: {secret_key_file}")
     backup_existing_file(path)
     proc = subprocess.run(
         [sys.executable, str(SCRIPT_DIR / "netbackup_secret_helper.py"), "encrypt", str(path)],
@@ -586,7 +590,12 @@ def generate_netbackup_server_outputs(args: argparse.Namespace) -> None:
 
     write_netbackup_server_secret_key_file(secret_key_path)
     write_restore_config_file(restore_config_path, args, secret_path, secret_key_path)
-    write_encrypted_secret_file(secret_path, args.admin_secretkey, secret_key_path)
+    write_encrypted_secret_file(
+        secret_path,
+        args.admin_secretkey,
+        secret_key_path,
+        skip_permission_validation=(args.target_os == "windows"),
+    )
     copied_files = copy_restore_notify_files(restore_script_output_dir)
 
     print("\nGenerated NetBackup server files:")
