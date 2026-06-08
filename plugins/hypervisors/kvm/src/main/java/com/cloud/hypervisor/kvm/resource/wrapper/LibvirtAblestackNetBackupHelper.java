@@ -109,6 +109,43 @@ class LibvirtAblestackNetBackupHelper {
         }
     }
 
+    long calculateBackupSize(AblestackNetBackupTakeBackupCommand command) {
+        final Path backupPath = Path.of(command.getBackupPath());
+        final List<String> backupFiles = command.getBackupFiles();
+
+        if (backupFiles != null && !backupFiles.isEmpty()) {
+            long totalSize = 0L;
+            for (final String backupFile : backupFiles) {
+                if (StringUtils.isBlank(backupFile)) {
+                    continue;
+                }
+                final Path backupFilePath = backupPath.resolve(backupFile);
+                try {
+                    if (Files.isRegularFile(backupFilePath)) {
+                        totalSize += Files.size(backupFilePath);
+                    }
+                } catch (IOException e) {
+                    LOGGER.warn("Failed to read NetBackup backup file size for [{}]", backupFilePath, e);
+                }
+            }
+            return totalSize;
+        }
+
+        try (var walk = Files.walk(backupPath)) {
+            return walk.filter(Files::isRegularFile).mapToLong(path -> {
+                try {
+                    return Files.size(path);
+                } catch (IOException e) {
+                    LOGGER.warn("Failed to read NetBackup backup file size for [{}]", path, e);
+                    return 0L;
+                }
+            }).sum();
+        } catch (IOException e) {
+            LOGGER.warn("Failed to calculate NetBackup backup size under [{}]", backupPath, e);
+            return 0L;
+        }
+    }
+
     List<String> resolveDiskPaths(List<PrimaryDataStoreTO> volumePools, List<String> volumePaths) {
         List<String> diskPaths = new ArrayList<>();
         if (volumePaths == null) {
