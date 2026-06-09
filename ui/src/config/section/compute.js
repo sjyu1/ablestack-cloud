@@ -305,7 +305,7 @@ export default {
           api: 'removeVirtualMachineFromBackupOffering',
           icon: 'scissor-outlined',
           label: 'label.backup.offering.remove',
-          message: 'label.backup.offering.remove',
+          message: 'message.backup.offering.remove',
           docHelp: 'adminguide/virtual_machines.html#restoring-vm-backups',
           dataView: true,
           args: ['virtualmachineid', 'forced'],
