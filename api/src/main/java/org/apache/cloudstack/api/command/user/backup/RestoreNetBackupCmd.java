@@ -53,9 +53,15 @@ public class RestoreNetBackupCmd extends BaseAsyncCmd {
 
     @Parameter(name = ApiConstants.EXTERNAL_ID,
             type = CommandType.STRING,
-            required = true,
+            required = false,
             description = "NetBackup backup external ID")
     private String externalId;
+
+    @Parameter(name = ApiConstants.BACKUP_ID,
+            type = CommandType.STRING,
+            required = false,
+            description = "NetBackup backup ID")
+    private String backupId;
 
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
@@ -63,6 +69,10 @@ public class RestoreNetBackupCmd extends BaseAsyncCmd {
 
     public String getExternalId() {
         return externalId;
+    }
+
+    public String getBackupId() {
+        return backupId;
     }
 
     /////////////////////////////////////////////////////
@@ -97,6 +107,9 @@ public class RestoreNetBackupCmd extends BaseAsyncCmd {
 
     @Override
     public String getEventDescription() {
+        if (backupId != null) {
+            return "Restoring Instance from NetBackup backup ID: " + backupId;
+        }
         return "Restoring Instance from NetBackup external ID: " + externalId;
     }
 }

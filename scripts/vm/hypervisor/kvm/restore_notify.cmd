@@ -21,7 +21,6 @@ setlocal ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_HELPER=%SCRIPT_DIR%netbackup_restore_notify.py"
 set "FINAL_RC=0"
-set "STAGING_ROOT=%NETBACKUP_STAGING_ROOT%"
 
 if not exist "%PYTHON_HELPER%" (
   echo netbackup_restore_notify.py not found: %PYTHON_HELPER% 1>&2
@@ -29,7 +28,6 @@ if not exist "%PYTHON_HELPER%" (
 )
 
 if not defined PYTHON_EXE set "PYTHON_EXE=python"
-if not defined STAGING_ROOT set "STAGING_ROOT=/tmp/mold/netbackup"
 
 if "%~3"=="" (
   echo restore_notify.cmd expects parameter triplets: programname pathname operation 1>&2
@@ -40,11 +38,8 @@ if "%~3"=="" (
 if "%~3"=="" goto EndMain
 
 if /I "%~3"=="restore" (
-  echo(%~2 | findstr /B /C:"%STAGING_ROOT%" >nul
-  if not errorlevel 1 (
-    "%PYTHON_EXE%" "%PYTHON_HELPER%" "%~1" "%~2" "%~3"
-    if errorlevel 1 set "FINAL_RC=1"
-  )
+  "%PYTHON_EXE%" "%PYTHON_HELPER%" "%~1" "%~2" "%~3"
+  if errorlevel 1 set "FINAL_RC=1"
 )
 
 shift /1

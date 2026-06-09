@@ -53,6 +53,16 @@ WINDOWS_NETBACKUP_BIN_DEFAULT = r"C:\Program Files\Veritas\NetBackup\bin"
 WINDOWS_NETBACKUP_CONFIG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup"
 WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
 LINUX_NETBACKUP_RESTORE_LOG_DEFAULT = "/var/log/netbackup-mold-restore.log"
+WINDOWS_NETBACKUP_EXECUTABLE_CANDIDATES = ("bpclntcmd.exe", "bplist.exe", "bprd.exe")
+WINDOWS_NETBACKUP_REGISTRY_KEYS = (
+    r"SOFTWARE\Veritas\NetBackup",
+    r"SOFTWARE\WOW6432Node\Veritas\NetBackup",
+)
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 
 def log_step(message: str) -> None:
@@ -110,9 +120,96 @@ def validate_custom_secret_key_file(secret_key_file: Path) -> None:
         fail(f"Secret key file must have permission 600: {secret_key_file} (current: {oct(mode)[2:]})")
 
 
+def is_valid_windows_netbackup_bin_dir(path: Path) -> bool:
+    if not path or not path.is_dir():
+        return False
+    return any((path / executable).is_file() for executable in WINDOWS_NETBACKUP_EXECUTABLE_CANDIDATES)
+
+
+def read_windows_netbackup_install_path_from_registry() -> Optional[Path]:
+    if os.name != "nt" or winreg is None:
+        return None
+
+    registry_views = [0]
+    if hasattr(winreg, "KEY_WOW64_64KEY"):
+        registry_views.append(winreg.KEY_WOW64_64KEY)
+    if hasattr(winreg, "KEY_WOW64_32KEY"):
+        registry_views.append(winreg.KEY_WOW64_32KEY)
+
+    seen = set()
+    for registry_key in WINDOWS_NETBACKUP_REGISTRY_KEYS:
+        for view in registry_views:
+            view_key = (registry_key, view)
+            if view_key in seen:
+                continue
+            seen.add(view_key)
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, registry_key, 0, winreg.KEY_READ | view) as key:
+                    for value_name in ("InstallPath", "install_path", "INSTALLPATH"):
+                        try:
+                            value, _ = winreg.QueryValueEx(key, value_name)
+                            install_path = Path(str(value).strip().strip('"'))
+                            if install_path:
+                                return install_path
+                        except FileNotFoundError:
+                            continue
+            except OSError:
+                continue
+    return None
+
+
+def locate_windows_netbackup_bin_dir_from_path() -> Optional[Path]:
+    if os.name != "nt":
+        return None
+
+    for executable in WINDOWS_NETBACKUP_EXECUTABLE_CANDIDATES:
+        try:
+            result = subprocess.run(
+                ["where", executable],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return None
+
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            candidate = Path(line.strip())
+            if candidate.is_file() and candidate.parent.is_dir():
+                return candidate.parent
+    return None
+
+
+def detect_windows_netbackup_bin_dir() -> Path:
+    if RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE:
+        override = Path(RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE)
+        log_info(f"Using RESTORE_SCRIPT_OUTPUT_DIR override for Windows NetBackup bin: {override}")
+        return override
+
+    install_path = read_windows_netbackup_install_path_from_registry()
+    if install_path:
+        candidate = install_path / "bin"
+        if is_valid_windows_netbackup_bin_dir(candidate):
+            log_info(f"Detected Windows NetBackup bin directory from registry: {candidate}")
+            return candidate
+        log_info(f"Windows NetBackup registry install path found but bin validation failed: {candidate}")
+
+    candidate = locate_windows_netbackup_bin_dir_from_path()
+    if candidate and is_valid_windows_netbackup_bin_dir(candidate):
+        log_info(f"Detected Windows NetBackup bin directory from PATH lookup: {candidate}")
+        return candidate
+
+    fallback = Path(WINDOWS_NETBACKUP_BIN_DEFAULT)
+    log_info(f"Falling back to default Windows NetBackup bin directory: {fallback}")
+    return fallback
+
+
 def resolve_netbackup_server_paths(target_os: str) -> tuple[Path, Path, Path, Path]:
     if target_os == "windows":
-        script_dir = Path(RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE or WINDOWS_NETBACKUP_BIN_DEFAULT)
+        script_dir = detect_windows_netbackup_bin_dir()
         config_dir = Path(RESTORE_CONFIG_OUTPUT_DIR_OVERRIDE or WINDOWS_NETBACKUP_CONFIG_DEFAULT)
     else:
         script_dir = Path(RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE or str(HOOK_OUTPUT_DIR))

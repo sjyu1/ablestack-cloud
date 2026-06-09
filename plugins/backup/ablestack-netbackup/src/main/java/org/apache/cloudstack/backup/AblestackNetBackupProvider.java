@@ -764,16 +764,27 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean restoreVMFromBackup(final VirtualMachine vm, final Backup backup) {
-        return restoreVirtualMachine(vm, backup, null).first();
+        return restoreVirtualMachine(vm, backup, null, false).first();
+    }
+
+    public boolean restoreVMFromPreparedBackup(final VirtualMachine vm, final Backup backup, final String restoreHostIp) {
+        return restoreVirtualMachine(vm, backup, restoreHostIp, true).first();
     }
 
     private Pair<Boolean, String> restoreVirtualMachine(final VirtualMachine vm, final Backup backup, final String restoreHostIp) {
+        return restoreVirtualMachine(vm, backup, restoreHostIp, false);
+    }
+
+    private Pair<Boolean, String> restoreVirtualMachine(final VirtualMachine vm, final Backup backup, final String restoreHostIp,
+            final boolean restoreSourcesAlreadyPrepared) {
         validateNoKvmFileBasedVmSnapshots(vm);
         loadBackupDetailsIfNeeded(backup);
         validateRestoreChainIntegrity(backup);
         final Host host = resolveRestoreHost(vm, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
-        prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
+        if (!restoreSourcesAlreadyPrepared) {
+            prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
+        }
 
         final List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
         if (backupVolumes == null || backupVolumes.isEmpty()) {
