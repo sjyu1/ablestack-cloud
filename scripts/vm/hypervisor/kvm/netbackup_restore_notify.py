@@ -22,6 +22,7 @@ import base64
 import hashlib
 import hmac
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +44,9 @@ MOLD_API_RESPONSE_FORMAT = os.environ.get("MOLD_API_RESPONSE_FORMAT", "json")
 SECRET_KEY_FILE = os.environ.get("SECRET_KEY_FILE", "")
 SCRIPT_DIR = Path(__file__).resolve().parent
 PYTHON_SECRET_HELPER = Path(os.environ.get("PYTHON_SECRET_HELPER", str(SCRIPT_DIR / "netbackup_secret_helper.py")))
+CLEANUP_ON_SUCCESS = os.environ.get("CLEANUP_ON_SUCCESS", "true")
+CLEANUP_ON_FAILURE = os.environ.get("CLEANUP_ON_FAILURE", "false")
+NETBACKUP_STAGING_ROOT = os.environ.get("NETBACKUP_STAGING_ROOT", "")
 
 ADMIN_APIKEY = os.environ.get("ADMIN_APIKEY", "")
 ADMIN_SECRETKEY = os.environ.get("ADMIN_SECRETKEY", "")
@@ -57,6 +61,48 @@ def log_line(message: str) -> None:
 def fail(message: str) -> None:
     log_line(f"RESTORE error: {message}")
     raise SystemExit(1)
+
+
+def parse_bool(value: str) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def is_subpath(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def cleanup_staging_path(external_id: str, reason: str) -> None:
+    target = Path(external_id).expanduser().resolve(strict=False)
+    if not target.exists():
+        log_line(f"RESTORE cleanup-skip reason={reason} externalid={external_id} resolved={target} status=missing")
+        return
+
+    if NETBACKUP_STAGING_ROOT:
+        staging_root = Path(NETBACKUP_STAGING_ROOT).expanduser().resolve(strict=False)
+        if not is_subpath(target, staging_root):
+            log_line(
+                f"RESTORE cleanup-skip reason={reason} externalid={external_id} resolved={target} "
+                f"status=outside-staging-root staging_root={staging_root}"
+            )
+            return
+    elif target.parent == target or len(target.parts) < 4:
+        log_line(
+            f"RESTORE cleanup-skip reason={reason} externalid={external_id} resolved={target} "
+            f"status=unsafe-target"
+        )
+        return
+
+    if target.is_dir():
+        shutil.rmtree(target)
+        log_line(f"RESTORE cleanup-success reason={reason} externalid={external_id} target={target} type=dir")
+        return
+
+    target.unlink()
+    log_line(f"RESTORE cleanup-success reason={reason} externalid={external_id} target={target} type=file")
 
 
 def resolve_secret_file_path() -> Path:
@@ -186,14 +232,26 @@ def main() -> None:
         )
         return
 
-    response = invoke_mold_api(
-        MOLD_RESTORE_API_METHOD,
-        "restoreNetBackup",
-        {"externalid": args.external_id},
-        args.external_id,
-        args.operation,
-    )
-    log_line(f"RESTORE api-call-success command=restoreNetBackup externalid={args.external_id} response={response}")
+    try:
+        response = invoke_mold_api(
+            MOLD_RESTORE_API_METHOD,
+            "restoreNetBackup",
+            {"externalid": args.external_id},
+            args.external_id,
+            args.operation,
+        )
+        log_line(f"RESTORE api-call-success command=restoreNetBackup externalid={args.external_id} response={response}")
+        if parse_bool(CLEANUP_ON_SUCCESS):
+            cleanup_staging_path(args.external_id, "success")
+    except SystemExit:
+        if parse_bool(CLEANUP_ON_FAILURE):
+            cleanup_staging_path(args.external_id, "failure")
+        raise
+    except Exception as exc:
+        log_line(f"RESTORE unexpected-error externalid={args.external_id} error={exc}")
+        if parse_bool(CLEANUP_ON_FAILURE):
+            cleanup_staging_path(args.external_id, "failure")
+        raise
 
 
 if __name__ == "__main__":
