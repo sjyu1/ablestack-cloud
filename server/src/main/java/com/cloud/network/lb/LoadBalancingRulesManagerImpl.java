@@ -49,6 +49,8 @@ import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.lb.ApplicationLoadBalancerRuleVO;
 import org.apache.cloudstack.lb.dao.ApplicationLoadBalancerRuleDao;
 import org.apache.cloudstack.ha.HAConfigManager;
+import org.apache.cloudstack.resourcedetail.FirewallRuleDetailVO;
+import org.apache.cloudstack.resourcedetail.dao.FirewallRuleDetailsDao;
 import org.apache.cloudstack.utils.reflectiontostringbuilderutils.ReflectionToStringBuilderUtils;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -224,6 +226,8 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
     @Inject
     FirewallRulesDao _firewallDao;
     @Inject
+    FirewallRuleDetailsDao _firewallRuleDetailsDao;
+    @Inject
     DomainService _domainMgr;
     @Inject
     ConfigurationManager _configMgr;
@@ -284,6 +288,32 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
     NicSecondaryIpDao _nicSecondaryIpDao;
 
     private static final int DNS_PORT = 53;
+
+    protected boolean isBackendSslEnabled(Long lbRuleId) {
+        if (lbRuleId == null) {
+            return false;
+        }
+        FirewallRuleDetailVO detail = _firewallRuleDetailsDao.findDetail(lbRuleId, ApiConstants.BACKEND_SSL);
+        return detail != null && Boolean.parseBoolean(detail.getValue());
+    }
+
+    protected void setBackendSslDetail(Long lbRuleId, boolean backendSsl) {
+        if (lbRuleId == null) {
+            return;
+        }
+        if (backendSsl) {
+            _firewallRuleDetailsDao.addDetail(lbRuleId, ApiConstants.BACKEND_SSL, Boolean.TRUE.toString(), false);
+        } else {
+            _firewallRuleDetailsDao.removeDetail(lbRuleId, ApiConstants.BACKEND_SSL);
+        }
+    }
+
+    protected void validateBackendSsl(String lbProtocol, Boolean backendSsl) {
+        if (Boolean.TRUE.equals(backendSsl) && !NetUtils.SSL_PROTO.equals(lbProtocol)) {
+            throw new InvalidParameterValueException(String.format("Parameter %s can be true only when protocol is ssl.", ApiConstants.BACKEND_SSL));
+        }
+    }
+
     // Will return a string. For LB Stickiness this will be a json, for
     // autoscale this will be "," separated values
     @Override
@@ -438,7 +468,7 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
          */
         List<LbStickinessPolicy> policyList = getStickinessPolicies(lb.getId());
         Ip sourceIp = getSourceIp(lb);
-        LoadBalancingRule rule = new LoadBalancingRule(lb, null, policyList, null, sourceIp, null, lb.getLbProtocol());
+        LoadBalancingRule rule = new LoadBalancingRule(lb, null, policyList, null, sourceIp, null, lb.getLbProtocol(), isBackendSslEnabled(lb.getId()));
         rule.setAutoScaleVmGroup(lbAutoScaleVmGroup);
 
         if (!isRollBackAllowedForProvider(lb)) {
@@ -631,7 +661,7 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
         policyList.add(new LbStickinessPolicy(cmd.getStickinessMethodName(), lbpolicy.getParams()));
         Ip sourceIp = getSourceIp(loadBalancer);
         LoadBalancingRule lbRule =
-            new LoadBalancingRule(loadBalancer, getExistingDestinations(lbpolicy.getId()), policyList, null, sourceIp, null, loadBalancer.getLbProtocol());
+            new LoadBalancingRule(loadBalancer, getExistingDestinations(lbpolicy.getId()), policyList, null, sourceIp, null, loadBalancer.getLbProtocol(), isBackendSslEnabled(loadBalancer.getId()));
         if (!validateLbRule(lbRule)) {
             throw new InvalidParameterValueException(String.format("Failed to create Stickiness policy: Validation Failed %s", loadBalancer));
         }
@@ -970,7 +1000,7 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
                         List<LbHealthCheckPolicy> hcPolicyList = getHealthCheckPolicies(lb.getId());
                         // Now retrive the status of services from NS even there are no policies. because there is default monitor
                         Ip sourceIp = getSourceIp(lb);
-                        LoadBalancingRule loadBalancing = new LoadBalancingRule(lb, dstList, null, hcPolicyList, sourceIp, null, lb.getLbProtocol());
+                        LoadBalancingRule loadBalancing = new LoadBalancingRule(lb, dstList, null, hcPolicyList, sourceIp, null, lb.getLbProtocol(), isBackendSslEnabled(lb.getId()));
                         lbrules.add(loadBalancing);
                     }
                     if (lbrules.size() > 0) {
@@ -1720,11 +1750,22 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
     public LoadBalancer createPublicLoadBalancerRule(String xId, String name, String description, int srcPortStart, int srcPortEnd, int defPortStart, int defPortEnd,
             Long ipAddrId, String protocol, String algorithm, long networkId, long lbOwnerId, boolean openFirewall, String lbProtocol, Boolean forDisplay, List<String> cidrList) throws NetworkRuleConflictException,
             InsufficientAddressCapacityException {
+        return createPublicLoadBalancerRule(xId, name, description, srcPortStart, srcPortEnd, defPortStart, defPortEnd, ipAddrId, protocol, algorithm, networkId, lbOwnerId,
+                openFirewall, lbProtocol, forDisplay, cidrList, null);
+    }
+
+    @Override
+    @ActionEvent(eventType = EventTypes.EVENT_LOAD_BALANCER_CREATE, eventDescription = "creating load balancer")
+    public LoadBalancer createPublicLoadBalancerRule(String xId, String name, String description, int srcPortStart, int srcPortEnd, int defPortStart, int defPortEnd,
+            Long ipAddrId, String protocol, String algorithm, long networkId, long lbOwnerId, boolean openFirewall, String lbProtocol, Boolean forDisplay, List<String> cidrList,
+            Boolean backendSsl) throws NetworkRuleConflictException, InsufficientAddressCapacityException {
         Account lbOwner = _accountMgr.getAccount(lbOwnerId);
 
         if (srcPortStart != srcPortEnd) {
             throw new InvalidParameterValueException("Port ranges are not supported by the load balancer");
         }
+
+        validateBackendSsl(lbProtocol, backendSsl);
 
         IPAddressVO ipVO = null;
         if (ipAddrId != null) {
@@ -1788,7 +1829,7 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
             }
 
             result = createPublicLoadBalancer(xId, name, description, srcPortStart, defPortStart, ipVO.getId(), protocol, algorithm, openFirewall, CallContext.current(),
-                    lbProtocol, forDisplay, cidrString);
+                    lbProtocol, forDisplay, cidrString, Boolean.TRUE.equals(backendSsl));
         } catch (Exception ex) {
             logger.warn("Failed to create load balancer due to ", ex);
             if (ex instanceof NetworkRuleConflictException) {
@@ -1852,6 +1893,13 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
     public LoadBalancer createPublicLoadBalancer(final String xId, final String name, final String description, final int srcPort, final int destPort, final long sourceIpId,
                                                  final String protocol, final String algorithm, final boolean openFirewall, final CallContext caller, final String lbProtocol,
                                                  final Boolean forDisplay, String cidrList) throws NetworkRuleConflictException {
+        return createPublicLoadBalancer(xId, name, description, srcPort, destPort, sourceIpId, protocol, algorithm, openFirewall, caller, lbProtocol, forDisplay, cidrList, false);
+    }
+
+    @DB
+    public LoadBalancer createPublicLoadBalancer(final String xId, final String name, final String description, final int srcPort, final int destPort, final long sourceIpId,
+                                                 final String protocol, final String algorithm, final boolean openFirewall, final CallContext caller, final String lbProtocol,
+                                                 final Boolean forDisplay, String cidrList, boolean backendSsl) throws NetworkRuleConflictException {
         if (!NetUtils.isValidPort(destPort)) {
             throw new InvalidParameterValueException("privatePort is an invalid value: " + destPort);
         }
@@ -1903,12 +1951,13 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
 
                 // verify rule is supported by Lb provider of the network
                 Ip sourceIp = getSourceIp(newRule);
-                LoadBalancingRule loadBalancing = new LoadBalancingRule(newRule, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), sourceIp, null, lbProtocol);
+                LoadBalancingRule loadBalancing = new LoadBalancingRule(newRule, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), sourceIp, null, lbProtocol, backendSsl);
                 if (!validateLbRule(loadBalancing)) {
                     throw new InvalidParameterValueException("LB service provider cannot support this rule");
                 }
 
                 newRule = _lbDao.persist(newRule);
+                setBackendSslDetail(newRule.getId(), backendSsl);
 
                 //create rule for all CIDRs
                 if (openFirewall) {
@@ -2026,7 +2075,7 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
         List<LbStickinessPolicy> policyList = getStickinessPolicies(lb.getId());
         Ip sourceIp = getSourceIp(lb);
         LbSslCert sslCert = getLbSslCert(lb.getId());
-        LoadBalancingRule loadBalancing = new LoadBalancingRule(lb, null, policyList, null, sourceIp, sslCert, lb.getLbProtocol());
+        LoadBalancingRule loadBalancing = new LoadBalancingRule(lb, null, policyList, null, sourceIp, sslCert, lb.getLbProtocol(), isBackendSslEnabled(lb.getId()));
 
         if (_autoScaleVmGroupDao.isAutoScaleLoadBalancer(lb.getId())) {
             // Get the associated VmGroup
@@ -2248,11 +2297,13 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
         LoadBalancerVO lbBackup = _lbDao.findById(lbRuleId);
         String customId = cmd.getCustomId();
         Boolean forDisplay = cmd.getDisplay();
-        String lbProtocol = cmd.getLbProtocol();
+        String lbProtocol = StringUtils.trim(StringUtils.lowerCase(cmd.getLbProtocol()));
+        Boolean backendSsl = cmd.getBackendSsl();
 
         if (lb == null) {
             throw new InvalidParameterValueException("Unable to find lb rule by id=" + lbRuleId);
         }
+        boolean previousBackendSsl = isBackendSslEnabled(lbRuleId);
 
         // check permissions
         _accountMgr.checkAccess(caller, null, true, lb);
@@ -2281,18 +2332,31 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
             lb.setLbProtocol(lbProtocol);
         }
 
+        String effectiveLbProtocol = StringUtils.isNotBlank(lbProtocol) ? lbProtocol : lb.getLbProtocol();
+        if (!NetUtils.SSL_PROTO.equals(effectiveLbProtocol) && backendSsl == null && previousBackendSsl) {
+            backendSsl = Boolean.FALSE;
+        }
+        validateBackendSsl(effectiveLbProtocol, backendSsl);
+        boolean effectiveBackendSsl = backendSsl != null ? backendSsl : previousBackendSsl;
+
         // Validate rule in LB provider
         LoadBalancingRule rule = getLoadBalancerRuleToApply(lb);
+        rule.setBackendSsl(effectiveBackendSsl);
         if (!validateLbRule(rule)) {
             throw new InvalidParameterValueException(String.format("Modifications in lb rule %s are not supported.", lb));
         }
 
         LoadBalancerVO tmplbVo = _lbDao.findById(lbRuleId);
         boolean success = _lbDao.update(lbRuleId, lb);
+        boolean backendSslChanged = backendSsl != null && effectiveBackendSsl != previousBackendSsl;
+        if (success && backendSsl != null) {
+            setBackendSslDetail(lbRuleId, effectiveBackendSsl);
+        }
 
         // If algorithm or lb protocol is changed, have to reapply the lb config
         boolean needToReApplyRule = (algorithm != null && !algorithm.equals(tmplbVo.getAlgorithm()))
-                || (lbProtocol != null && !lbProtocol.equals(tmplbVo.getLbProtocol()));
+                || (StringUtils.isNotBlank(lbProtocol) && !lbProtocol.equals(tmplbVo.getLbProtocol()))
+                || backendSslChanged;
         if (needToReApplyRule) {
             try {
                 lb.setState(FirewallRule.State.Add);
@@ -2320,6 +2384,7 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
                     if (lbBackup.getLbProtocol() != null) {
                         lb.setLbProtocol(lbBackup.getLbProtocol());
                     }
+                    setBackendSslDetail(lbRuleId, previousBackendSsl);
                     lb.setState(lbBackup.getState());
                     _lbDao.update(lb.getId(), lb);
                     _lbDao.persist(lb);

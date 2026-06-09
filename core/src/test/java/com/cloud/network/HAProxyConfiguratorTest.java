@@ -136,6 +136,20 @@ public class HAProxyConfiguratorTest {
         Assert.assertTrue(result.contains("bind 10.2.0.1:443 ssl crt /etc/cloudstack/ssl/10_2_0_1-443.pem"));
     }
 
+    @Test
+    public void generateConfigurationTestWithBackendSsl() {
+        final List<LbDestination> dests = new ArrayList<>();
+        dests.add(new LbDestination(8443, 8443, "10.1.10.2", false));
+        LoadBalancerTO lb = new LoadBalancerTO("1", "10.2.0.1", 443, "ssl", "roundrobin", false, false, false, dests);
+        lb.setBackendSsl(true);
+        LoadBalancerTO[] lba = new LoadBalancerTO[1];
+        lba[0] = lb;
+        HAProxyConfigurator hpg = new HAProxyConfigurator();
+        LoadBalancerConfigCommand cmd = new LoadBalancerConfigCommand(lba, "10.0.0.1", "10.1.0.1", "10.1.1.1", null, 1L, "12", false);
+        String result = genConfig(hpg, cmd);
+        Assert.assertTrue(result.contains("\tserver 10_2_0_1-443_0 10.1.10.2:8443 ssl verify none check"));
+    }
+
     private String genConfig(HAProxyConfigurator hpg, LoadBalancerConfigCommand cmd) {
         String[] sa = hpg.generateConfiguration(cmd);
         StringBuilder sb = new StringBuilder();

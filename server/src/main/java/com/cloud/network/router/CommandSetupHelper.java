@@ -368,6 +368,7 @@ public class CommandSetupHelper {
             lb.setCidrList(rule.getCidrList());
             lb.setLbProtocol(lb_protocol);
             lb.setLbSslCert(rule.getLbSslCert());
+            lb.setBackendSsl(rule.isBackendSsl());
             lbs[i++] = lb;
         }
         String routerPublicIp = null;

@@ -529,8 +529,13 @@ public class HAProxyConfigurator implements LoadBalancerConfigurator {
                     .append(" ")
                     .append(dest.getDestIp())
                     .append(":")
-                    .append(dest.getDestPort())
-                    .append(" check");
+                    .append(dest.getDestPort());
+
+            if (lbTO.isBackendSsl()) {
+                sb.append(" ssl verify none check");
+            } else {
+                sb.append(" check");
+            }
 
             if (sslOffloading) {
                 sb.append(SSL_CONFIGURATION_INTERMEDIATE);
