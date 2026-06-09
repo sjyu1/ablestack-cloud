@@ -105,6 +105,15 @@ def cleanup_staging_path(external_id: str, reason: str) -> None:
     log_line(f"RESTORE cleanup-success reason={reason} externalid={external_id} target={target} type=file")
 
 
+def is_restore_target_allowed(external_id: str) -> bool:
+    if not NETBACKUP_STAGING_ROOT:
+        return True
+
+    target = Path(external_id).expanduser().resolve(strict=False)
+    staging_root = Path(NETBACKUP_STAGING_ROOT).expanduser().resolve(strict=False)
+    return is_subpath(target, staging_root)
+
+
 def resolve_secret_file_path() -> Path:
     if MOLD_SECRET_FILE:
         return Path(MOLD_SECRET_FILE)
@@ -112,7 +121,7 @@ def resolve_secret_file_path() -> Path:
 
 
 def load_restore_config() -> None:
-    global MOLD_RESTORE_API_URL, ADMIN_APIKEY, MOLD_URL, MOLD_SECRET_FILE, SECRET_KEY_FILE
+    global MOLD_RESTORE_API_URL, ADMIN_APIKEY, MOLD_URL, MOLD_SECRET_FILE, SECRET_KEY_FILE, LOG_FILE, NETBACKUP_STAGING_ROOT
     if MOLD_CONFIG_FILE:
         config_path = Path(MOLD_CONFIG_FILE)
         if not config_path.is_file():
@@ -131,6 +140,10 @@ def load_restore_config() -> None:
                 MOLD_SECRET_FILE = value
             elif key == "SECRET_KEY_FILE" and not SECRET_KEY_FILE:
                 SECRET_KEY_FILE = value
+            elif key == "LOG_FILE" and LOG_FILE == "/var/log/netbackup-mold-restore.log":
+                LOG_FILE = value
+            elif key == "NETBACKUP_STAGING_ROOT" and not NETBACKUP_STAGING_ROOT:
+                NETBACKUP_STAGING_ROOT = value
 
     if not MOLD_RESTORE_API_URL:
         MOLD_RESTORE_API_URL = MOLD_URL
@@ -229,6 +242,20 @@ def main() -> None:
         log_line(
             f"RESTORE validate-only command=restoreNetBackup externalid={args.external_id} "
             f"operation={args.operation} program={args.program_name}"
+        )
+        return
+
+    if args.operation and args.operation.lower() != "restore":
+        log_line(
+            f"RESTORE skip externalid={args.external_id} operation={args.operation} "
+            f"reason=unsupported-operation"
+        )
+        return
+
+    if not is_restore_target_allowed(args.external_id):
+        log_line(
+            f"RESTORE skip externalid={args.external_id} operation={args.operation} "
+            f"reason=outside-staging-root staging_root={NETBACKUP_STAGING_ROOT}"
         )
         return
 

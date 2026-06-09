@@ -43,12 +43,13 @@ NETBACKUP_SERVER_KEY_CONTENT = "QWJsZWNsb3VkMSE="
 SCRIPT_DIR = Path(__file__).resolve().parent
 RESTORE_NOTIFY_SOURCES = [
     SCRIPT_DIR / "restore_notify",
-    SCRIPT_DIR / "restore_notify.bat",
-    SCRIPT_DIR / "restore_notify.ps1",
+    SCRIPT_DIR / "restore_notify.cmd",
     SCRIPT_DIR / "netbackup_restore_notify.py",
 ]
 WINDOWS_NETBACKUP_BIN_DEFAULT = r"C:\Program Files\Veritas\NetBackup\bin"
 WINDOWS_NETBACKUP_CONFIG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup"
+WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
+LINUX_NETBACKUP_RESTORE_LOG_DEFAULT = "/var/log/netbackup-mold-restore.log"
 
 
 def log_step(message: str) -> None:
@@ -435,6 +436,12 @@ def write_config_file(path: Path, args: argparse.Namespace) -> None:
     path.chmod(0o600)
 
 
+def get_restore_log_path(target_os: str) -> str:
+    if target_os == "windows":
+        return WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT
+    return LINUX_NETBACKUP_RESTORE_LOG_DEFAULT
+
+
 def write_restore_config_file(path: Path, args: argparse.Namespace, secret_path: Path, secret_key_file: Path) -> None:
     backup_existing_file(path)
     content = (
@@ -442,6 +449,8 @@ def write_restore_config_file(path: Path, args: argparse.Namespace, secret_path:
         f'ADMIN_APIKEY="{args.admin_apikey}"\n'
         f'MOLD_SECRET_FILE="{secret_path}"\n'
         f'SECRET_KEY_FILE="{secret_key_file}"\n'
+        f'LOG_FILE="{get_restore_log_path(args.target_os)}"\n'
+        f'NETBACKUP_STAGING_ROOT="{BACKUP_STAGING_ROOT}"\n'
     )
     path.write_text(content, encoding="utf-8")
     path.chmod(0o600)
