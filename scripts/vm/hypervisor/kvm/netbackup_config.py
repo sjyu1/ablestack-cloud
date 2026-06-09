@@ -41,8 +41,11 @@ NETBACKUP_OFFERING_DESCRIPTION = "netbackup"
 NETBACKUP_OFFERING_EXTERNAL_ID = "netbackup"
 NETBACKUP_SERVER_KEY_CONTENT = "QWJsZWNsb3VkMSE="
 SCRIPT_DIR = Path(__file__).resolve().parent
-RESTORE_NOTIFY_SOURCES = [
+RESTORE_NOTIFY_LINUX_SOURCES = [
     SCRIPT_DIR / "restore_notify",
+    SCRIPT_DIR / "netbackup_restore_notify.py",
+]
+RESTORE_NOTIFY_WINDOWS_SOURCES = [
     SCRIPT_DIR / "restore_notify.cmd",
     SCRIPT_DIR / "netbackup_restore_notify.py",
 ]
@@ -538,10 +541,16 @@ def restart_netbackup_service() -> None:
     print(f"NetBackup service restart command not found. Please restart manually: {NETBACKUP_SERVICE_NAME}")
 
 
-def copy_restore_notify_files(destination_dir: Path) -> list[Path]:
+def get_restore_notify_sources(target_os: str) -> list[Path]:
+    if target_os == "windows":
+        return RESTORE_NOTIFY_WINDOWS_SOURCES
+    return RESTORE_NOTIFY_LINUX_SOURCES
+
+
+def copy_restore_notify_files(destination_dir: Path, target_os: str) -> list[Path]:
     copied_files: list[Path] = []
     destination_dir.mkdir(parents=True, exist_ok=True)
-    for source in RESTORE_NOTIFY_SOURCES:
+    for source in get_restore_notify_sources(target_os):
         if not source.is_file():
             fail(f"Required restore notify source file not found: {source}")
         target = destination_dir / source.name
@@ -608,7 +617,7 @@ def generate_netbackup_server_outputs(args: argparse.Namespace) -> None:
         secret_key_path,
         skip_permission_validation=(args.target_os == "windows"),
     )
-    copied_files = copy_restore_notify_files(restore_script_output_dir)
+    copied_files = copy_restore_notify_files(restore_script_output_dir, args.target_os)
 
     print("\nGenerated NetBackup server files:")
     print(f"  Target OS  : {args.target_os}")
