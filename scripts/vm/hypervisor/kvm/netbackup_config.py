@@ -44,10 +44,12 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 RESTORE_NOTIFY_LINUX_SOURCES = [
     SCRIPT_DIR / "restore_notify",
     SCRIPT_DIR / "netbackup_restore_notify.py",
+    SCRIPT_DIR / "netbackup_secret_helper.py",
 ]
 RESTORE_NOTIFY_WINDOWS_SOURCES = [
     SCRIPT_DIR / "restore_notify.cmd",
     SCRIPT_DIR / "netbackup_restore_notify.py",
+    SCRIPT_DIR / "netbackup_secret_helper.py",
 ]
 WINDOWS_NETBACKUP_CONFIG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup"
 WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
