@@ -746,6 +746,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="NetBackup configuration helper")
     parser.add_argument("--scope", choices=("host", "netbackup-server"), default="host")
     parser.add_argument("--target-os", choices=("linux", "windows"), default="linux")
+    parser.add_argument(
+        "--restore-script-output-dir",
+        help="Override the NetBackup server script output directory when auto-detection fails",
+    )
     parser.add_argument("--policy-name")
     parser.add_argument("--vm-include")
     parser.add_argument("--vm-exclude", default="")
@@ -779,6 +783,11 @@ def validate_args(args: argparse.Namespace) -> None:
 def main() -> None:
     args = parse_args()
     validate_args(args)
+
+    global RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE
+    if args.restore_script_output_dir:
+        RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE = args.restore_script_output_dir
+
     log_step("NetBackup Configuration")
     log_info(f"Starting NetBackup configuration with scope={args.scope}")
 

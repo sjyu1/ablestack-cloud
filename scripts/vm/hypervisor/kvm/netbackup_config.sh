@@ -16,6 +16,7 @@ ADMIN_APIKEY=""
 ADMIN_SECRETKEY=""
 NETBACKUP_URL=""
 NETBACKUP_APIKEY=""
+RESTORE_SCRIPT_OUTPUT_DIR=""
 
 usage() {
   cat <<EOF
@@ -28,9 +29,12 @@ Scopes:
   host              Configure host-side backup hooks/config/bp.conf and Mold settings
   netbackup-server  Configure restore_notify files and restore.conf/secret.enc only
 
-Target OS:
+  Target OS:
   linux             Use Linux NetBackup server default paths
   windows           Use Windows NetBackup server default paths
+
+Optional overrides:
+  RESTORE_SCRIPT_OUTPUT_DIR  Explicit Windows NetBackup bin directory if auto-detection fails
 EOF
 }
 
@@ -104,6 +108,7 @@ collect_inputs() {
   else
     prompt_value TARGET_OS "TARGET_OS (linux|windows)" "${TARGET_OS}"
     [[ "${TARGET_OS}" == "linux" || "${TARGET_OS}" == "windows" ]] || fail "TARGET_OS must be one of: linux, windows."
+    prompt_value RESTORE_SCRIPT_OUTPUT_DIR "RESTORE_SCRIPT_OUTPUT_DIR (optional)" ""
   fi
 }
 
@@ -142,6 +147,9 @@ main() {
   fi
   if [[ -n "${NETBACKUP_APIKEY}" ]]; then
     cmd+=(--netbackup-apikey "${NETBACKUP_APIKEY}")
+  fi
+  if [[ -n "${RESTORE_SCRIPT_OUTPUT_DIR}" ]]; then
+    cmd+=(--restore-script-output-dir "${RESTORE_SCRIPT_OUTPUT_DIR}")
   fi
 
   "${cmd[@]}"
