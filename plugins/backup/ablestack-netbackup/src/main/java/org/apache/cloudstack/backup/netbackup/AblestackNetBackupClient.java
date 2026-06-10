@@ -233,7 +233,19 @@ public class AblestackNetBackupClient {
             }
             final JSONObject responseJson = new JSONObject(responseBody);
             final JSONArray data = responseJson.optJSONArray("data");
-            return data != null && data.length() > 0;
+            if (data == null || data.length() == 0) {
+                return false;
+            }
+            for (int i = 0; i < data.length(); i++) {
+                final JSONObject image = data.optJSONObject(i);
+                if (image == null) {
+                    continue;
+                }
+                if (StringUtils.equals(backupId, image.optString("id", null))) {
+                    return true;
+                }
+            }
+            return false;
         } catch (IOException e) {
             throw new CloudRuntimeException("Failed to query NetBackup catalog image API: " + e.getMessage(), e);
         }
