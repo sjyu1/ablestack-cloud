@@ -531,6 +531,9 @@ public class HAProxyConfigurator implements LoadBalancerConfigurator {
                     .append(":")
                     .append(dest.getDestPort());
 
+            logger.info("Generating HAProxy server line for load balancer {}: source={}:{}, protocol={}, lbProtocol={}, backendSsl={}, sslOffloading={}, destination={}:{}, revoked={}",
+                    lbTO.getUuid(), lbTO.getSrcIp(), lbTO.getSrcPort(), lbTO.getProtocol(), lbTO.getLbProtocol(), lbTO.isBackendSsl(), sslOffloading,
+                    dest.getDestIp(), dest.getDestPort(), dest.isRevoked());
             if (lbTO.isBackendSsl()) {
                 sb.append(" ssl verify none check");
             } else {

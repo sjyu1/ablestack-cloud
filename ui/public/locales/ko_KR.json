@@ -950,6 +950,7 @@
 "label.enable.webhook": "Webhook \ud65c\uc131\ud654",
 "label.enabled": "\ud65c\uc131\ud654",
 "label.enabled.revocation.check": "\uc778\uc99d\uc11c \ud574\uc9c0 \ud655\uc778 \ud65c\uc131\ud654",
+"label.backend.ssl": "HTTPS \ubc31\uc5d4\ub4dc",
 "label.encrypt": "\uc554\ud638\ud654",
 "label.encryptroot": "\uc554\ud638\ud654 \ub8e8\ud2b8 \ub514\uc2a4\ud06c",
 "label.end": "\uc885\ub8cc",
