@@ -28,6 +28,7 @@ if not exist "%PYTHON_HELPER%" (
 )
 
 if not defined PYTHON_EXE set "PYTHON_EXE=python"
+if not defined MOLD_CONFIG_FILE set "MOLD_CONFIG_FILE=C:\ProgramData\AbleStack\NetBackup\restore.conf"
 
 if "%~3"=="" (
   echo restore_notify.cmd expects parameter triplets: programname pathname operation 1>&2
