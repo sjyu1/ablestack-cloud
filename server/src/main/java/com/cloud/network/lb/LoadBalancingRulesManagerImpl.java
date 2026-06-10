@@ -289,7 +289,8 @@ public class LoadBalancingRulesManagerImpl<Type> extends ManagerBase implements 
 
     private static final int DNS_PORT = 53;
 
-    protected boolean isBackendSslEnabled(Long lbRuleId) {
+    @Override
+    public boolean isBackendSslEnabled(Long lbRuleId) {
         if (lbRuleId == null) {
             return false;
         }
