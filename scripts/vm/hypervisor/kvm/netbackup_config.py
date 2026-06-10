@@ -52,6 +52,10 @@ RESTORE_NOTIFY_WINDOWS_SOURCES = [
 WINDOWS_NETBACKUP_CONFIG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup"
 WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
 LINUX_NETBACKUP_RESTORE_LOG_DEFAULT = "/var/log/netbackup-mold-restore.log"
+WINDOWS_NETBACKUP_BIN_COMMON_CANDIDATES = (
+    Path(r"C:\Program Files\Veritas\NetBackup\bin"),
+    Path(r"C:\Program Files (x86)\Veritas\NetBackup\bin"),
+)
 WINDOWS_NETBACKUP_EXECUTABLE_CANDIDATES = ("bpclntcmd.exe", "bplist.exe", "bprd.exe")
 WINDOWS_NETBACKUP_REGISTRY_KEYS = (
     r"SOFTWARE\Veritas\NetBackup",
@@ -182,6 +186,13 @@ def locate_windows_netbackup_bin_dir_from_path() -> Optional[Path]:
     return None
 
 
+def locate_windows_netbackup_bin_dir_from_common_paths() -> Optional[Path]:
+    for candidate in WINDOWS_NETBACKUP_BIN_COMMON_CANDIDATES:
+        if is_valid_windows_netbackup_bin_dir(candidate):
+            return candidate
+    return None
+
+
 def detect_windows_netbackup_bin_dir() -> Path:
     if RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE:
         override = Path(RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE)
@@ -201,8 +212,13 @@ def detect_windows_netbackup_bin_dir() -> Path:
         log_info(f"Windows NetBackup bin directory source=path path={candidate}")
         return candidate
 
+    candidate = locate_windows_netbackup_bin_dir_from_common_paths()
+    if candidate:
+        log_info(f"Windows NetBackup bin directory source=common path={candidate}")
+        return candidate
+
     fail(
-        "Unable to resolve Windows NetBackup bin directory from env, registry, or PATH. "
+        "Unable to resolve Windows NetBackup bin directory from env, registry, PATH, or common install paths. "
         "Set RESTORE_SCRIPT_OUTPUT_DIR explicitly."
     )
 
