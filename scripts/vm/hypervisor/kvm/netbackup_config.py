@@ -49,7 +49,6 @@ RESTORE_NOTIFY_WINDOWS_SOURCES = [
     SCRIPT_DIR / "restore_notify.cmd",
     SCRIPT_DIR / "netbackup_restore_notify.py",
 ]
-WINDOWS_NETBACKUP_BIN_DEFAULT = r"C:\Program Files\Veritas\NetBackup\bin"
 WINDOWS_NETBACKUP_CONFIG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup"
 WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
 LINUX_NETBACKUP_RESTORE_LOG_DEFAULT = "/var/log/netbackup-mold-restore.log"
@@ -186,25 +185,26 @@ def locate_windows_netbackup_bin_dir_from_path() -> Optional[Path]:
 def detect_windows_netbackup_bin_dir() -> Path:
     if RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE:
         override = Path(RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE)
-        log_info(f"Using RESTORE_SCRIPT_OUTPUT_DIR override for Windows NetBackup bin: {override}")
+        log_info(f"Windows NetBackup bin directory source=env path={override}")
         return override
 
     install_path = read_windows_netbackup_install_path_from_registry()
     if install_path:
         candidate = install_path / "bin"
         if is_valid_windows_netbackup_bin_dir(candidate):
-            log_info(f"Detected Windows NetBackup bin directory from registry: {candidate}")
+            log_info(f"Windows NetBackup bin directory source=registry path={candidate}")
             return candidate
         log_info(f"Windows NetBackup registry install path found but bin validation failed: {candidate}")
 
     candidate = locate_windows_netbackup_bin_dir_from_path()
     if candidate and is_valid_windows_netbackup_bin_dir(candidate):
-        log_info(f"Detected Windows NetBackup bin directory from PATH lookup: {candidate}")
+        log_info(f"Windows NetBackup bin directory source=path path={candidate}")
         return candidate
 
-    fallback = Path(WINDOWS_NETBACKUP_BIN_DEFAULT)
-    log_info(f"Falling back to default Windows NetBackup bin directory: {fallback}")
-    return fallback
+    fail(
+        "Unable to resolve Windows NetBackup bin directory from env, registry, or PATH. "
+        "Set RESTORE_SCRIPT_OUTPUT_DIR explicitly."
+    )
 
 
 def resolve_netbackup_server_paths(target_os: str) -> tuple[Path, Path, Path, Path]:
