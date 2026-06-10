@@ -32,9 +32,10 @@ if not exist "%PYTHON_HELPER%" (
   exit /b 1
 )
 
-if not defined PYTHON_EXE set "PYTHON_EXE=python"
 if not defined MOLD_CONFIG_FILE set "MOLD_CONFIG_FILE=C:\ProgramData\AbleStack\NetBackup\restore.conf"
-call :log "CONFIG helper=%PYTHON_HELPER% mold_config=%MOLD_CONFIG_FILE% python=%PYTHON_EXE%"
+call :resolve_python
+if errorlevel 1 exit /b 1
+call :log "CONFIG helper=%PYTHON_HELPER% mold_config=%MOLD_CONFIG_FILE% python=%PYTHON_EXE% %PYTHON_VERSION_ARG%"
 
 if "%~3"=="" (
   call :log "ERROR invalid-args args=%*"
@@ -48,7 +49,7 @@ if "%~3"=="" goto EndMain
 call :log "TRIPLET program=%~1 path=%~2 operation=%~3"
 if /I "%~3"=="restore" (
   call :log "CALL python-helper program=%~1 path=%~2 operation=%~3"
-  "%PYTHON_EXE%" "%PYTHON_HELPER%" "%~1" "%~2" "%~3" >> "%RESTORE_NOTIFY_LOG%" 2>&1
+  "%PYTHON_EXE%" %PYTHON_VERSION_ARG% "%PYTHON_HELPER%" "%~1" "%~2" "%~3" >> "%RESTORE_NOTIFY_LOG%" 2>&1
   set "PY_RC=%ERRORLEVEL%"
   call :log "PYTHON_EXIT rc=%PY_RC% program=%~1 path=%~2 operation=%~3"
   if not "%PY_RC%"=="0" set "FINAL_RC=1"
@@ -62,6 +63,83 @@ goto MainLoop
 :EndMain
 call :log "END final_rc=%FINAL_RC%"
 exit /b %FINAL_RC%
+
+:resolve_python
+set "PYTHON_VERSION_ARG="
+
+if defined PYTHON_EXE (
+  echo "%PYTHON_EXE%" | findstr /R "[\\:]" >nul
+  if not errorlevel 1 (
+    if exist "%PYTHON_EXE%" (
+      call :log "PYTHON source=env path=%PYTHON_EXE%"
+      exit /b 0
+    )
+    call :log "PYTHON env-path-not-found path=%PYTHON_EXE%"
+  ) else (
+    where "%PYTHON_EXE%" >nul 2>&1
+    if not errorlevel 1 (
+      call :log "PYTHON source=env-command exe=%PYTHON_EXE%"
+      exit /b 0
+    )
+    call :log "PYTHON env-command-not-found exe=%PYTHON_EXE%"
+  )
+)
+
+call :find_python_launcher
+if not errorlevel 1 exit /b 0
+
+call :find_python_command
+if not errorlevel 1 exit /b 0
+
+call :find_python_common_paths
+if not errorlevel 1 exit /b 0
+
+call :log "ERROR python-not-found"
+echo Python executable not found. Set PYTHON_EXE to an absolute path. 1>&2
+exit /b 1
+
+:find_python_launcher
+where py >nul 2>&1
+if errorlevel 1 exit /b 1
+set "PYTHON_EXE=py"
+set "PYTHON_VERSION_ARG=-3"
+call :log "PYTHON source=launcher exe=py version=-3"
+exit /b 0
+
+:find_python_command
+where python >nul 2>&1
+if errorlevel 1 exit /b 1
+set "PYTHON_EXE=python"
+set "PYTHON_VERSION_ARG="
+call :log "PYTHON source=path exe=python"
+exit /b 0
+
+:find_python_common_paths
+for %%P in (
+  "C:\Python313\python.exe"
+  "C:\Python312\python.exe"
+  "C:\Python311\python.exe"
+  "C:\Python310\python.exe"
+  "C:\Python39\python.exe"
+  "C:\Program Files\Python313\python.exe"
+  "C:\Program Files\Python312\python.exe"
+  "C:\Program Files\Python311\python.exe"
+  "C:\Program Files\Python310\python.exe"
+  "C:\Program Files\Python39\python.exe"
+  "C:\Program Files (x86)\Python313\python.exe"
+  "C:\Program Files (x86)\Python312\python.exe"
+  "C:\Program Files (x86)\Python311\python.exe"
+  "C:\Program Files (x86)\Python310\python.exe"
+  "C:\Program Files (x86)\Python39\python.exe"
+) do (
+  if exist "%%~P" (
+    set "PYTHON_EXE=%%~P"
+    set "PYTHON_VERSION_ARG="
+    call :log "PYTHON source=common-path path=%%~P"
+    exit /b 0
+  )
+)
+exit /b 1
 
 :log
 >> "%RESTORE_NOTIFY_LOG%" echo [%DATE% %TIME%] %*
