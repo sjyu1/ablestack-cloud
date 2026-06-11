@@ -286,6 +286,21 @@ export default {
           }
         },
         {
+          api: 'destroyVolume',
+          icon: 'delete-outlined',
+          label: 'label.action.destroy.volume',
+          message: 'message.action.destroy.volume',
+          dataView: true,
+          args: (record, store) => {
+            return (['Admin'].includes(store.userInfo.roletype) || store.features.allowuserexpungerecovervolume)
+              ? ['expunge'] : []
+          },
+          show: (record, store) => {
+            return !['Destroy', 'Destroyed', 'Expunging', 'Expunged', 'Migrating', 'Uploading', 'UploadError', 'Creating', 'Allocated', 'Uploaded'].includes(record.state) &&
+              record.type !== 'ROOT' && !record.virtualmachineid
+          }
+        },
+        {
           api: 'deleteVolume',
           icon: 'delete-outlined',
           label: 'label.action.delete.volume',
@@ -303,21 +318,6 @@ export default {
           groupAction: true,
           popup: true,
           groupMap: (selection) => { return selection.map(x => { return { id: x } }) }
-        },
-        {
-          api: 'destroyVolume',
-          icon: 'delete-outlined',
-          label: 'label.action.destroy.volume',
-          message: 'message.action.destroy.volume',
-          dataView: true,
-          args: (record, store) => {
-            return (['Admin'].includes(store.userInfo.roletype) || store.features.allowuserexpungerecovervolume)
-              ? ['expunge'] : []
-          },
-          show: (record, store) => {
-            return !['Destroy', 'Destroyed', 'Expunging', 'Expunged', 'Migrating', 'Uploading', 'UploadError', 'Creating', 'Allocated', 'Uploaded'].includes(record.state) &&
-              record.type !== 'ROOT' && !record.virtualmachineid
-          }
         }
       ]
     },
@@ -619,8 +619,8 @@ export default {
       title: 'label.buckets',
       icon: 'funnel-plot-outlined',
       permission: ['listBuckets'],
-      columns: ['name', 'state', 'objectstore', 'size', 'account'],
-      details: ['id', 'name', 'state', 'objectstore', 'size', 'url', 'accesskey', 'usersecretkey', 'account', 'domain', 'created', 'quota', 'encryption', 'versioning', 'objectlocking', 'policy'],
+      columns: ['name', 'state', 'objectstore', { field: 'size', customTitle: 'used.capacity' }, { field: 'quota', customTitle: 'total.allocated.capacity' }, 'account'],
+      details: ['id', 'name', 'state', 'objectstore', { field: 'size', customTitle: 'used.capacity' }, 'url', 'accesskey', 'usersecretkey', 'account', 'domain', 'created', { field: 'quota', customTitle: 'total.allocated.capacity' }, 'encryption', 'versioning', 'objectlocking', 'policy'],
       tabs: [
         {
           name: 'details',
