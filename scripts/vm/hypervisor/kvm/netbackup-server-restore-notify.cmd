@@ -33,5 +33,7 @@ if not exist "%PS1_SCRIPT%" (
   exit /b 1
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1_SCRIPT%" %*
-exit /b %ERRORLEVEL%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1_SCRIPT%" %* >> "%LOG_FILE%" 2>&1
+set "PS_EXIT=%ERRORLEVEL%"
+>> "%LOG_FILE%" echo [%DATE% %TIME%] END script=restore_notify.cmd exitcode=%PS_EXIT%
+exit /b %PS_EXIT%
