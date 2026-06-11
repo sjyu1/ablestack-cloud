@@ -208,8 +208,8 @@ function Copy-RestoreNotifyFiles {
         (Join-Path $ScriptDir 'netbackup-server-restore-notify.ps1')
     )
     $targets = @{
-        'netbackup-server-restore-notify.cmd' = 'restore-notify.cmd'
-        'netbackup-server-restore-notify.ps1' = 'restore-notify.ps1'
+        'netbackup-server-restore-notify.cmd' = 'restore_notify.cmd'
+        'netbackup-server-restore-notify.ps1' = 'restore_notify.ps1'
     }
     foreach ($source in $sources) {
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {

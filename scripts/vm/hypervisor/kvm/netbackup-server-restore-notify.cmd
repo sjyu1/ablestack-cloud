@@ -20,13 +20,13 @@ setlocal ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
-set "PS1_SCRIPT=%SCRIPT_DIR%restore-notify.ps1"
+set "PS1_SCRIPT=%SCRIPT_DIR%restore_notify.ps1"
 
 if not exist "C:\ProgramData\AbleStack\NetBackup" mkdir "C:\ProgramData\AbleStack\NetBackup" >nul 2>&1
 
 if not exist "%PS1_SCRIPT%" (
-  >> "%LOG_FILE%" echo [%DATE% %TIME%] ERROR restore-notify.ps1 not found: %PS1_SCRIPT%
-  echo restore-notify.ps1 not found: %PS1_SCRIPT% 1>&2
+  >> "%LOG_FILE%" echo [%DATE% %TIME%] ERROR restore_notify.ps1 not found: %PS1_SCRIPT%
+  echo restore_notify.ps1 not found: %PS1_SCRIPT% 1>&2
   exit /b 1
 )
 
