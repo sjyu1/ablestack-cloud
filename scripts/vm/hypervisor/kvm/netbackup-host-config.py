@@ -22,13 +22,9 @@ from urllib.error import URLError, HTTPError
 HOOK_OUTPUT_DIR = Path(os.environ.get("HOOK_OUTPUT_DIR", "/usr/openv/netbackup/bin"))
 CONFIG_OUTPUT_DIR = Path(os.environ.get("CONFIG_OUTPUT_DIR", "/etc/ablestack/netbackup"))
 SECRET_OUTPUT_DIR = Path(os.environ.get("SECRET_OUTPUT_DIR", "/etc/ablestack/netbackup/secrets"))
-RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE = os.environ.get("RESTORE_SCRIPT_OUTPUT_DIR", "")
-RESTORE_CONFIG_OUTPUT_DIR_OVERRIDE = os.environ.get("RESTORE_CONFIG_OUTPUT_DIR", "")
-RESTORE_SECRET_OUTPUT_DIR_OVERRIDE = os.environ.get("RESTORE_SECRET_OUTPUT_DIR", "")
-NETBACKUP_SERVER_SECRET_KEY_FILE_OVERRIDE = os.environ.get("NETBACKUP_SERVER_SECRET_KEY_FILE", "")
 BACKUP_STAGING_ROOT = Path(os.environ.get("BACKUP_STAGING_ROOT", "/tmp/mold/netbackup"))
-PRE_HELPER_PATH = os.environ.get("PRE_HELPER_PATH", "/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpstart_notify.sh")
-POST_HELPER_PATH = os.environ.get("POST_HELPER_PATH", "/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpend_notify.sh")
+PRE_HELPER_PATH = os.environ.get("PRE_HELPER_PATH", "/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-bpstart-notify.sh")
+POST_HELPER_PATH = os.environ.get("POST_HELPER_PATH", "/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-bpend-notify.sh")
 HOOK_LOG_PATH = os.environ.get("HOOK_LOG_PATH", "/var/log/netbackup-mold-hook.log")
 SECRET_KEY_FILE = Path(os.environ.get("SECRET_KEY_FILE", "/root/.ssh/ablestack.key"))
 NETBACKUP_BP_CONF_PATH = Path(os.environ.get("NETBACKUP_BP_CONF_PATH", "/usr/openv/netbackup/bp.conf"))
@@ -39,35 +35,8 @@ NETBACKUP_PROVIDER_CANONICAL_NAME = "ablestack-netbackup"
 NETBACKUP_OFFERING_NAME = "netbackup"
 NETBACKUP_OFFERING_DESCRIPTION = "netbackup"
 NETBACKUP_OFFERING_EXTERNAL_ID = "netbackup"
-NETBACKUP_SERVER_KEY_CONTENT = "QWJsZWNsb3VkMSE="
 SCRIPT_DIR = Path(__file__).resolve().parent
-RESTORE_NOTIFY_LINUX_SOURCES = [
-    SCRIPT_DIR / "restore_notify",
-    SCRIPT_DIR / "netbackup_restore_notify.py",
-    SCRIPT_DIR / "netbackup_secret_helper.py",
-]
-RESTORE_NOTIFY_WINDOWS_SOURCES = [
-    SCRIPT_DIR / "restore_notify.cmd",
-    SCRIPT_DIR / "netbackup_restore_notify.py",
-    SCRIPT_DIR / "netbackup_secret_helper.py",
-]
-WINDOWS_NETBACKUP_CONFIG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup"
-WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT = r"C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
-LINUX_NETBACKUP_RESTORE_LOG_DEFAULT = "/var/log/netbackup-mold-restore.log"
-WINDOWS_NETBACKUP_BIN_COMMON_CANDIDATES = (
-    Path(r"C:\Program Files\Veritas\NetBackup\bin"),
-    Path(r"C:\Program Files (x86)\Veritas\NetBackup\bin"),
-)
-WINDOWS_NETBACKUP_EXECUTABLE_CANDIDATES = ("bpclntcmd.exe", "bplist.exe", "bprd.exe")
-WINDOWS_NETBACKUP_REGISTRY_KEYS = (
-    r"SOFTWARE\Veritas\NetBackup",
-    r"SOFTWARE\WOW6432Node\Veritas\NetBackup",
-)
-
-try:
-    import winreg
-except ImportError:
-    winreg = None
+POLICY_TEMPLATE_PATH = Path(os.environ.get("POLICY_TEMPLATE_PATH", str(SCRIPT_DIR / "netbackup-host-<policy>.conf")))
 
 
 def log_step(message: str) -> None:
@@ -125,117 +94,8 @@ def validate_custom_secret_key_file(secret_key_file: Path) -> None:
         fail(f"Secret key file must have permission 600: {secret_key_file} (current: {oct(mode)[2:]})")
 
 
-def is_valid_windows_netbackup_bin_dir(path: Path) -> bool:
-    if not path or not path.is_dir():
-        return False
-    return any((path / executable).is_file() for executable in WINDOWS_NETBACKUP_EXECUTABLE_CANDIDATES)
-
-
-def read_windows_netbackup_install_path_from_registry() -> Optional[Path]:
-    if os.name != "nt" or winreg is None:
-        return None
-
-    registry_views = [0]
-    if hasattr(winreg, "KEY_WOW64_64KEY"):
-        registry_views.append(winreg.KEY_WOW64_64KEY)
-    if hasattr(winreg, "KEY_WOW64_32KEY"):
-        registry_views.append(winreg.KEY_WOW64_32KEY)
-
-    seen = set()
-    for registry_key in WINDOWS_NETBACKUP_REGISTRY_KEYS:
-        for view in registry_views:
-            view_key = (registry_key, view)
-            if view_key in seen:
-                continue
-            seen.add(view_key)
-            try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, registry_key, 0, winreg.KEY_READ | view) as key:
-                    for value_name in ("InstallPath", "install_path", "INSTALLPATH"):
-                        try:
-                            value, _ = winreg.QueryValueEx(key, value_name)
-                            install_path = Path(str(value).strip().strip('"'))
-                            if install_path:
-                                return install_path
-                        except FileNotFoundError:
-                            continue
-            except OSError:
-                continue
-    return None
-
-
-def locate_windows_netbackup_bin_dir_from_path() -> Optional[Path]:
-    if os.name != "nt":
-        return None
-
-    for executable in WINDOWS_NETBACKUP_EXECUTABLE_CANDIDATES:
-        try:
-            result = subprocess.run(
-                ["where", executable],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
-        except OSError:
-            return None
-
-        if result.returncode != 0:
-            continue
-        for line in result.stdout.splitlines():
-            candidate = Path(line.strip())
-            if candidate.is_file() and candidate.parent.is_dir():
-                return candidate.parent
-    return None
-
-
-def locate_windows_netbackup_bin_dir_from_common_paths() -> Optional[Path]:
-    for candidate in WINDOWS_NETBACKUP_BIN_COMMON_CANDIDATES:
-        if is_valid_windows_netbackup_bin_dir(candidate):
-            return candidate
-    return None
-
-
-def detect_windows_netbackup_bin_dir() -> Path:
-    if RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE:
-        override = Path(RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE)
-        log_info(f"Windows NetBackup bin directory source=env path={override}")
-        return override
-
-    install_path = read_windows_netbackup_install_path_from_registry()
-    if install_path:
-        candidate = install_path / "bin"
-        if is_valid_windows_netbackup_bin_dir(candidate):
-            log_info(f"Windows NetBackup bin directory source=registry path={candidate}")
-            return candidate
-        log_info(f"Windows NetBackup registry install path found but bin validation failed: {candidate}")
-
-    candidate = locate_windows_netbackup_bin_dir_from_path()
-    if candidate and is_valid_windows_netbackup_bin_dir(candidate):
-        log_info(f"Windows NetBackup bin directory source=path path={candidate}")
-        return candidate
-
-    candidate = locate_windows_netbackup_bin_dir_from_common_paths()
-    if candidate:
-        log_info(f"Windows NetBackup bin directory source=common path={candidate}")
-        return candidate
-
-    fail(
-        "Unable to resolve Windows NetBackup bin directory from env, registry, PATH, or common install paths. "
-        "Set RESTORE_SCRIPT_OUTPUT_DIR explicitly."
-    )
-
-
-def resolve_netbackup_server_paths(target_os: str) -> tuple[Path, Path, Path, Path]:
-    if target_os == "windows":
-        script_dir = detect_windows_netbackup_bin_dir()
-        config_dir = Path(RESTORE_CONFIG_OUTPUT_DIR_OVERRIDE or WINDOWS_NETBACKUP_CONFIG_DEFAULT)
-    else:
-        script_dir = Path(RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE or str(HOOK_OUTPUT_DIR))
-        config_dir = Path(RESTORE_CONFIG_OUTPUT_DIR_OVERRIDE or str(CONFIG_OUTPUT_DIR))
-
-    secret_dir = Path(RESTORE_SECRET_OUTPUT_DIR_OVERRIDE or str(config_dir / "secrets"))
-    secret_key_file = Path(NETBACKUP_SERVER_SECRET_KEY_FILE_OVERRIDE or str(config_dir / "ablestack.key"))
-    return script_dir, config_dir, secret_dir, secret_key_file
+def sanitize_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", value)
 
 
 def url_encode(value: str) -> str:
@@ -473,7 +333,7 @@ def write_hook(path: Path, comment_name: str, helper_path: str, is_post: bool) -
     if is_post:
         content = f"""#!/bin/sh
 
-# Generated by netbackup_config.py: {comment_name}
+# Generated by netbackup-host-config.py: {comment_name}
 
 CLIENT="${{1:-}}"
 POLICY="${{2:-}}"
@@ -507,7 +367,7 @@ exit $RC
     else:
         content = f"""#!/bin/sh
 
-# Generated by netbackup_config.py: {comment_name}
+# Generated by netbackup-host-config.py: {comment_name}
 
 CLIENT="${{1:-}}"
 POLICY="${{2:-}}"
@@ -541,35 +401,44 @@ exit $RC
     path.chmod(0o755)
 
 
+def render_policy_template(template_path: Path, replacements: dict[str, str]) -> str:
+    if not template_path.is_file():
+        fail(f"Policy template file not found: {template_path}")
+
+    lines = template_path.read_text(encoding="utf-8").splitlines()
+    rendered = []
+    seen = set()
+    pattern = re.compile(r"^([A-Z0-9_]+)=(.*)$")
+
+    for line in lines:
+        match = pattern.match(line)
+        if not match:
+            rendered.append(line)
+            continue
+
+        key = match.group(1)
+        if key in replacements:
+            rendered.append(f'{key}="{replacements[key]}"' if key in {"VM_INCLUDE", "VM_EXCLUDE", "MOLD_URL", "ADMIN_APIKEY"} else f"{key}={replacements[key]}")
+            seen.add(key)
+        else:
+            rendered.append(line)
+
+    for key, value in replacements.items():
+        if key not in seen and key not in {"VM_INCLUDE", "VM_EXCLUDE", "MOLD_URL", "ADMIN_APIKEY"}:
+            rendered.append(f"{key}={value}")
+
+    return "\n".join(rendered) + "\n"
+
+
 def write_config_file(path: Path, args: argparse.Namespace) -> None:
     backup_existing_file(path)
-    content = (
-        f'VM_INCLUDE="{args.vm_include}"\n'
-        f'VM_EXCLUDE="{args.vm_exclude}"\n'
-        f'MAX_INCREMENTAL_CHAIN={args.max_incremental_chain}\n'
-        f'MOLD_URL="{args.mold_url}"\n'
-        f'ADMIN_APIKEY="{args.admin_apikey}"\n'
-    )
-    path.write_text(content, encoding="utf-8")
-    path.chmod(0o600)
-
-
-def get_restore_log_path(target_os: str) -> str:
-    if target_os == "windows":
-        return WINDOWS_NETBACKUP_RESTORE_LOG_DEFAULT
-    return LINUX_NETBACKUP_RESTORE_LOG_DEFAULT
-
-
-def write_restore_config_file(path: Path, args: argparse.Namespace, secret_path: Path, secret_key_file: Path) -> None:
-    backup_existing_file(path)
-    content = (
-        f'MOLD_URL="{args.mold_url}"\n'
-        f'ADMIN_APIKEY="{args.admin_apikey}"\n'
-        f'MOLD_SECRET_FILE="{secret_path}"\n'
-        f'SECRET_KEY_FILE="{secret_key_file}"\n'
-        f'LOG_FILE="{get_restore_log_path(args.target_os)}"\n'
-        f'NETBACKUP_STAGING_ROOT="{BACKUP_STAGING_ROOT}"\n'
-    )
+    content = render_policy_template(POLICY_TEMPLATE_PATH, {
+        "VM_INCLUDE": args.vm_include,
+        "VM_EXCLUDE": args.vm_exclude,
+        "MAX_INCREMENTAL_CHAIN": str(args.max_incremental_chain),
+        "MOLD_URL": args.mold_url,
+        "ADMIN_APIKEY": args.admin_apikey,
+    })
     path.write_text(content, encoding="utf-8")
     path.chmod(0o600)
 
@@ -588,7 +457,7 @@ def write_encrypted_secret_file(path: Path, secret: str, secret_key_file: Path =
     if skip_permission_validation:
         helper_env["SKIP_SECRET_KEY_PERMISSION_VALIDATION"] = "1"
     proc = subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "netbackup_secret_helper.py"), "encrypt", str(path)],
+        [sys.executable, str(SCRIPT_DIR / "netbackup-host-secret-helper.py"), "encrypt", str(path)],
         input=secret.encode(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -598,20 +467,6 @@ def write_encrypted_secret_file(path: Path, secret: str, secret_key_file: Path =
     if proc.returncode != 0:
         fail(f"Failed to encrypt ADMIN_SECRETKEY: {proc.stderr.decode(errors='replace')}")
     path.chmod(0o600)
-
-
-def ensure_backup_staging_root() -> None:
-    BACKUP_STAGING_ROOT.mkdir(parents=True, exist_ok=True)
-    os.chown(BACKUP_STAGING_ROOT, 0, 0)
-    BACKUP_STAGING_ROOT.chmod(0o755)
-
-
-def apply_permissions() -> None:
-    if CONFIG_OUTPUT_DIR.is_dir():
-        os.chown(CONFIG_OUTPUT_DIR, 0, 0)
-        CONFIG_OUTPUT_DIR.chmod(0o700)
-        for conf in CONFIG_OUTPUT_DIR.glob("*.conf"):
-            conf.chmod(0o600)
 
 
 def set_bp_conf_value(path: Path, key: str, value: str) -> None:
@@ -656,32 +511,6 @@ def restart_netbackup_service() -> None:
     print(f"NetBackup service restart command not found. Please restart manually: {NETBACKUP_SERVICE_NAME}")
 
 
-def get_restore_notify_sources(target_os: str) -> list[Path]:
-    if target_os == "windows":
-        return RESTORE_NOTIFY_WINDOWS_SOURCES
-    return RESTORE_NOTIFY_LINUX_SOURCES
-
-
-def copy_restore_notify_files(destination_dir: Path, target_os: str) -> list[Path]:
-    copied_files: list[Path] = []
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    for source in get_restore_notify_sources(target_os):
-        if not source.is_file():
-            fail(f"Required restore notify source file not found: {source}")
-        target = destination_dir / source.name
-        backup_existing_file(target)
-        shutil.copy2(str(source), str(target))
-        copied_files.append(target)
-    return copied_files
-
-
-def write_netbackup_server_secret_key_file(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    backup_existing_file(path)
-    path.write_text(NETBACKUP_SERVER_KEY_CONTENT, encoding="ascii")
-    path.chmod(0o600)
-
-
 def generate_host_outputs(zone_id: str, args: argparse.Namespace) -> None:
     log_step("Generate Host Files")
     log_info("Generating host-side NetBackup hook/config files")
@@ -689,13 +518,14 @@ def generate_host_outputs(zone_id: str, args: argparse.Namespace) -> None:
     CONFIG_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     SECRET_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    pre_hook = HOOK_OUTPUT_DIR / f"bpstart_notify.{args.policy_name}"
-    post_hook = HOOK_OUTPUT_DIR / f"bpend_notify.{args.policy_name}"
-    config_path = CONFIG_OUTPUT_DIR / f"{args.policy_name}.conf"
+    policy_safe = sanitize_name(args.policy_name)
+    pre_hook = HOOK_OUTPUT_DIR / f"bpstart_notify.{policy_safe}"
+    post_hook = HOOK_OUTPUT_DIR / f"bpend_notify.{policy_safe}"
+    config_path = CONFIG_OUTPUT_DIR / f"netbackup-host-{policy_safe}.conf"
     secret_path = SECRET_OUTPUT_DIR / "secret.enc"
 
-    write_hook(pre_hook, f"bpstart_notify.{args.policy_name}", PRE_HELPER_PATH, False)
-    write_hook(post_hook, f"bpend_notify.{args.policy_name}", POST_HELPER_PATH, True)
+    write_hook(pre_hook, f"bpstart_notify.{policy_safe}", PRE_HELPER_PATH, False)
+    write_hook(post_hook, f"bpend_notify.{policy_safe}", POST_HELPER_PATH, True)
     write_config_file(config_path, args)
     write_encrypted_secret_file(secret_path, args.admin_secretkey)
     ensure_backup_staging_root()
@@ -714,44 +544,8 @@ def generate_host_outputs(zone_id: str, args: argparse.Namespace) -> None:
     print(f"  Zone ID    : {zone_id}")
 
 
-def generate_netbackup_server_outputs(args: argparse.Namespace) -> None:
-    log_step("Generate NetBackup Server Files")
-    log_info(f"Generating NetBackup-server restore config/notify files for target-os={args.target_os}")
-    restore_script_output_dir, restore_config_output_dir, restore_secret_output_dir, secret_key_path = resolve_netbackup_server_paths(args.target_os)
-    restore_config_output_dir.mkdir(parents=True, exist_ok=True)
-    restore_secret_output_dir.mkdir(parents=True, exist_ok=True)
-
-    restore_config_path = restore_config_output_dir / "restore.conf"
-    secret_path = restore_secret_output_dir / "secret.enc"
-
-    write_netbackup_server_secret_key_file(secret_key_path)
-    write_restore_config_file(restore_config_path, args, secret_path, secret_key_path)
-    write_encrypted_secret_file(
-        secret_path,
-        args.admin_secretkey,
-        secret_key_path,
-        skip_permission_validation=(args.target_os == "windows"),
-    )
-    copied_files = copy_restore_notify_files(restore_script_output_dir, args.target_os)
-
-    print("\nGenerated NetBackup server files:")
-    print(f"  Target OS  : {args.target_os}")
-    print(f"  Restore cfg: {restore_config_path}")
-    print(f"  Secret key : {secret_key_path}")
-    print(f"  Secret(enc): {secret_path}")
-    print(f"  Scripts dir: {restore_script_output_dir}")
-    for copied in copied_files:
-        print(f"  Script     : {copied}")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="NetBackup configuration helper")
-    parser.add_argument("--scope", choices=("host", "netbackup-server"), default="host")
-    parser.add_argument("--target-os", choices=("linux", "windows"), default="linux")
-    parser.add_argument(
-        "--restore-script-output-dir",
-        help="Override the NetBackup server script output directory when auto-detection fails",
-    )
     parser.add_argument("--policy-name")
     parser.add_argument("--vm-include")
     parser.add_argument("--vm-exclude", default="")
@@ -765,46 +559,34 @@ def parse_args() -> argparse.Namespace:
 
 
 def validate_args(args: argparse.Namespace) -> None:
-    if args.scope == "host":
-        if not args.policy_name:
-            fail("--policy-name is required for host scope")
-        if not args.vm_include:
-            fail("--vm-include is required for host scope")
-        if args.max_incremental_chain is None or args.max_incremental_chain <= 0:
-            fail("--max-incremental-chain must be a positive integer for host scope")
-        if not args.netbackup_url:
-            fail("--netbackup-url is required for host scope")
-        if not args.netbackup_apikey:
-            fail("--netbackup-apikey is required for host scope")
-    else:
-        args.vm_include = args.vm_include or "*"
-        args.vm_exclude = args.vm_exclude or ""
-        args.max_incremental_chain = args.max_incremental_chain or 10
+    if not args.policy_name:
+        fail("--policy-name is required")
+    if not args.vm_include:
+        args.vm_include = "*"
+    if args.max_incremental_chain is None:
+        args.max_incremental_chain = 10
+    if args.max_incremental_chain <= 0:
+        fail("--max-incremental-chain must be a positive integer")
+    if not args.netbackup_url:
+        fail("--netbackup-url is required")
+    if not args.netbackup_apikey:
+        fail("--netbackup-apikey is required")
 
 
 def main() -> None:
     args = parse_args()
     validate_args(args)
 
-    global RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE
-    if args.restore_script_output_dir:
-        RESTORE_SCRIPT_OUTPUT_DIR_OVERRIDE = args.restore_script_output_dir
-
     log_step("NetBackup Configuration")
-    log_info(f"Starting NetBackup configuration with scope={args.scope}")
+    log_info("Starting NetBackup host configuration")
 
-    zone_id = None
-    if args.scope == "host":
-        zone_id = resolve_zone_id(args.policy_name, args.mold_url, args.admin_apikey, args.admin_secretkey)
-        ensure_backup_framework_configuration(zone_id, args)
-        ensure_netbackup_offering(zone_id, args)
-        log_ok("Completed Mold API configuration for NetBackup host scope")
-        generate_host_outputs(zone_id, args)
+    zone_id = resolve_zone_id(args.policy_name, args.mold_url, args.admin_apikey, args.admin_secretkey)
+    ensure_backup_framework_configuration(zone_id, args)
+    ensure_netbackup_offering(zone_id, args)
+    log_ok("Completed Mold API configuration for NetBackup host")
+    generate_host_outputs(zone_id, args)
 
-    if args.scope == "netbackup-server":
-        generate_netbackup_server_outputs(args)
-
-    log_ok(f"Completed NetBackup configuration with scope={args.scope}")
+    log_ok("Completed NetBackup host configuration")
 
 
 if __name__ == "__main__":

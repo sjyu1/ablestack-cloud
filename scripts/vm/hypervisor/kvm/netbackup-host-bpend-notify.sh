@@ -21,12 +21,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/ablestack_netbackup_common.sh"
+source "${SCRIPT_DIR}/netbackup-host-common.sh"
 
 usage() {
   cat <<'EOF'
 Usage:
-  ablestack_netbackup_bpend_notify.sh [policy] [schedule] [client] [status]
+  netbackup-host-bpend-notify.sh [policy] [schedule] [client] [status]
 
 Environment overrides:
   STATE_ROOT       Default: /var/lib/ablestack/netbackup

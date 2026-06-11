@@ -21,7 +21,7 @@ set -euo pipefail
 
 SECRET_KEY_FILE="${SECRET_KEY_FILE:-/root/.ssh/ablestack.key}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_HELPER="${SCRIPT_DIR}/netbackup_secret_helper.py"
+PYTHON_HELPER="${SCRIPT_DIR}/netbackup-host-secret-helper.py"
 
 usage() {
   cat <<EOF

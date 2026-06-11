@@ -1,0 +1,259 @@
+#!/bin/bash
+
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_FILE="${LOG_FILE:-/var/log/netbackup-mold-restore.log}"
+CONFIG_FILE="${MOLD_CONFIG_FILE:-/etc/ablestack/netbackup/restore.conf}"
+CONFIG_ROOT="${CONFIG_ROOT:-/etc/ablestack/netbackup}"
+MOLD_RESTORE_API_METHOD="${MOLD_RESTORE_API_METHOD:-POST}"
+MOLD_RESTORE_MODE="${MOLD_RESTORE_MODE:-live}"
+MOLD_API_RESPONSE_FORMAT="${MOLD_API_RESPONSE_FORMAT:-json}"
+MOLD_URL="${MOLD_URL:-}"
+MOLD_RESTORE_API_URL="${MOLD_RESTORE_API_URL:-}"
+ADMIN_APIKEY="${ADMIN_APIKEY:-}"
+ADMIN_SECRETKEY="${ADMIN_SECRETKEY:-}"
+NETBACKUP_STAGING_ROOT="${NETBACKUP_STAGING_ROOT:-}"
+MOLD_SECRET_FILE="${MOLD_SECRET_FILE:-}"
+SECRET_KEY_FILE="${SECRET_KEY_FILE:-}"
+
+ensure_log_dir() {
+  mkdir -p "$(dirname "${LOG_FILE}")"
+}
+
+log_line() {
+  ensure_log_dir
+  printf '[%s] %s\n' "$(date '+%m/%d/%Y %H:%M:%S.%3N')" "$1" >> "${LOG_FILE}"
+}
+
+fail() {
+  log_line "RESTORE error: $*"
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+looks_like_backup_id() {
+  [[ "${1:-}" =~ ^[^/\\]+_[0-9]+$ ]]
+}
+
+trim_quotes() {
+  local value="$1"
+  value="${value#\"}"
+  value="${value%\"}"
+  value="${value#\'}"
+  value="${value%\'}"
+  printf '%s' "${value}"
+}
+
+load_config() {
+  [[ -n "${CONFIG_FILE}" ]] || fail "MOLD_CONFIG_FILE must be configured"
+  [[ -f "${CONFIG_FILE}" ]] || fail "MOLD_CONFIG_FILE not found: ${CONFIG_FILE}"
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -n "${line}" ]] || continue
+    [[ "${line}" == \#* ]] && continue
+    [[ "${line}" == *"="* ]] || continue
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key//[[:space:]]/}"
+    value="$(trim_quotes "${value}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+    case "${key}" in
+      MOLD_URL) [[ -n "${MOLD_URL}" ]] || MOLD_URL="${value}" ;;
+      ADMIN_APIKEY) [[ -n "${ADMIN_APIKEY}" ]] || ADMIN_APIKEY="${value}" ;;
+      LOG_FILE) [[ "${LOG_FILE}" == "/var/log/netbackup-mold-restore.log" ]] && LOG_FILE="${value}" ;;
+      NETBACKUP_STAGING_ROOT) [[ -n "${NETBACKUP_STAGING_ROOT}" ]] || NETBACKUP_STAGING_ROOT="${value}" ;;
+      MOLD_SECRET_FILE) [[ -n "${MOLD_SECRET_FILE}" ]] || MOLD_SECRET_FILE="${value}" ;;
+      SECRET_KEY_FILE) [[ -n "${SECRET_KEY_FILE}" ]] || SECRET_KEY_FILE="${value}" ;;
+    esac
+  done < "${CONFIG_FILE}"
+
+  if [[ -z "${MOLD_RESTORE_API_URL}" ]]; then
+    MOLD_RESTORE_API_URL="${MOLD_URL}"
+  fi
+  [[ -n "${MOLD_RESTORE_API_URL}" ]] || fail "MOLD_RESTORE_API_URL or MOLD_URL must be configured"
+  [[ -n "${ADMIN_APIKEY}" ]] || fail "ADMIN_APIKEY must be configured"
+  [[ "${MOLD_RESTORE_MODE}" == "live" || "${MOLD_RESTORE_MODE}" == "validate-only" ]] || \
+    fail "MOLD_RESTORE_MODE must be either 'live' or 'validate-only'"
+}
+
+load_secret() {
+  [[ -n "${SECRET_KEY_FILE}" ]] || fail "SECRET_KEY_FILE must be configured"
+  [[ -n "${MOLD_SECRET_FILE}" ]] || MOLD_SECRET_FILE="${CONFIG_ROOT}/secrets/secret.enc"
+  [[ -f "${SECRET_KEY_FILE}" ]] || fail "Secret key file not found: ${SECRET_KEY_FILE}"
+  [[ -f "${MOLD_SECRET_FILE}" ]] || fail "Secret file not found: ${MOLD_SECRET_FILE}"
+
+  local iterations salt_b64 iv_b64 ciphertext_b64 mac_b64 salt_hex iv_hex ciphertext_hex mac_hex key_iv_lines key_hex derived_iv_hex mac_key_hex mac_input_hex expected_mac_hex plaintext
+  iterations="$(sed -n 's/.*"iterations"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
+  salt_b64="$(sed -n 's/.*"salt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
+  iv_b64="$(sed -n 's/.*"iv"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
+  ciphertext_b64="$(sed -n 's/.*"ciphertext"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
+  mac_b64="$(sed -n 's/.*"mac"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
+
+  [[ -n "${iterations}" && -n "${salt_b64}" && -n "${iv_b64}" && -n "${ciphertext_b64}" && -n "${mac_b64}" ]] || fail "Invalid secret file format: ${MOLD_SECRET_FILE}"
+
+  salt_hex="$(printf '%s' "${salt_b64}" | base64 -d | xxd -p -c 256)"
+  iv_hex="$(printf '%s' "${iv_b64}" | base64 -d | xxd -p -c 256)"
+  ciphertext_hex="$(printf '%s' "${ciphertext_b64}" | base64 -d | xxd -p -c 256)"
+  mac_hex="$(printf '%s' "${mac_b64}" | base64 -d | xxd -p -c 256)"
+
+  key_iv_lines="$(openssl enc -aes-256-cbc -pbkdf2 -iter "${iterations}" -md sha256 -S "${salt_hex}" -pass file:"${SECRET_KEY_FILE}" -P 2>/dev/null)" || fail "Failed to derive key material"
+  key_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^key=//p' | head -n1 | tr -d '[:space:]')"
+  derived_iv_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^iv *=//p' | head -n1 | tr -d '[:space:]')"
+  [[ "${derived_iv_hex}" == "${iv_hex}" ]] || fail "Derived IV mismatch"
+
+  mac_key_hex="$(
+    {
+      printf '%s%s' "${key_hex}" "${salt_hex}" | xxd -r -p
+    } | openssl dgst -sha256 -binary | xxd -p -c 256
+  )"
+  mac_input_hex="${iv_hex}${ciphertext_hex}"
+  expected_mac_hex="$(
+    {
+      printf '%s' "${mac_input_hex}" | xxd -r -p
+    } | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${mac_key_hex}" -binary | xxd -p -c 256
+  )"
+  [[ "${expected_mac_hex}" == "${mac_hex}" ]] || fail "Encrypted secret MAC validation failed"
+
+  plaintext="$(
+    printf '%s' "${ciphertext_hex}" | xxd -r -p | openssl enc -aes-256-cbc -d -K "${key_hex}" -iv "${iv_hex}" -nosalt 2>/dev/null
+  )" || fail "Failed to decrypt secret file"
+  ADMIN_SECRETKEY="${plaintext%$'\r'}"
+  ADMIN_SECRETKEY="${ADMIN_SECRETKEY%$'\n'}"
+  [[ -n "${ADMIN_SECRETKEY}" ]] || fail "Decrypted MOLD secret is empty."
+}
+
+urlencode_plus() {
+  local value="$1"
+  local encoded="" char i code
+  for ((i = 0; i < ${#value}; i++)); do
+    char="${value:i:1}"
+    case "${char}" in
+      [a-zA-Z0-9.~_-])
+        encoded+="${char}"
+        ;;
+      ' ')
+        encoded+="+"
+        ;;
+      *)
+        printf -v code '%%%02X' "'${char}"
+        encoded+="${code}"
+        ;;
+    esac
+  done
+  printf '%s' "${encoded}"
+}
+
+build_api_params() {
+  local command_name="$1"
+  shift
+  local params="$1"
+  printf 'command=%s&%s&response=%s' "$(urlencode_plus "${command_name}")" "${params}" "$(urlencode_plus "${MOLD_API_RESPONSE_FORMAT}")"
+}
+
+build_signed_url() {
+  local api_params="$1"
+  local sorted_url signature
+  sorted_url="$(
+    {
+      printf 'apikey=%s\n' "$(printf '%s' "${ADMIN_APIKEY}" | tr '[:upper:]' '[:lower:]')"
+      IFS='&' read -r -a tokens <<< "${api_params}"
+      for token in "${tokens[@]}"; do
+        local key value
+        key="${token%%=*}"
+        value="${token#*=}"
+        printf '%s=%s\n' "$(printf '%s' "${key}" | tr '[:upper:]' '[:lower:]')" "$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+      done
+    } | sort | paste -sd '&' -
+  )"
+  signature="$(
+    printf '%s' "${sorted_url}" \
+      | openssl dgst -sha256 -hmac "${ADMIN_SECRETKEY}" -binary \
+      | openssl base64 -A
+  )"
+  printf '%s?%s&apiKey=%s&signature=%s' \
+    "${MOLD_RESTORE_API_URL}" \
+    "${api_params}" \
+    "$(urlencode_plus "${ADMIN_APIKEY}")" \
+    "$(urlencode_plus "${signature}")"
+}
+
+invoke_mold_api() {
+  local method="$1"
+  local command_name="$2"
+  local request_key="$3"
+  local external_id="$4"
+  local api_params signed_url response
+
+  log_line "RESTORE api-call command=${command_name} method=${method} externalid=${external_id} operation=${5:-}"
+  api_params="$(build_api_params "${command_name}" "${request_key}=$(urlencode_plus "${external_id}")")"
+  signed_url="$(build_signed_url "${api_params}")"
+  response="$(curl -sS --fail -X "${method}" \
+    -H 'Accept: application/json' \
+    -H 'Content-type: application/x-www-form-urlencoded' \
+    "${signed_url}" 2>&1)" || fail "Mold API call failed: method=${method} command=${command_name} response=${response}"
+  printf '%s' "${response}"
+}
+
+main() {
+  if [[ $# -lt 2 ]]; then
+    fail "usage: netbackup-server-restore-notify <program_name> <external_id> [operation]"
+  fi
+
+  local program_name="$1"
+  local external_id="$2"
+  local operation="${3:-}"
+  local request_key
+  local response
+
+  log_line "START script=netbackup-server-restore-notify args=$*"
+  load_config
+  load_secret
+  log_line "RESTORE config-loaded program=${program_name} externalid=${external_id} operation=${operation} mold_url=${MOLD_RESTORE_API_URL} log_file=${LOG_FILE}"
+
+  if [[ "${MOLD_RESTORE_MODE}" == "validate-only" ]]; then
+    if looks_like_backup_id "${external_id}"; then
+      request_key="backupid"
+    else
+      request_key="externalid"
+    fi
+    log_line "RESTORE validate-only command=restoreNetBackup ${request_key}=${external_id} operation=${operation} program=${program_name}"
+    return 0
+  fi
+
+  if [[ -n "${operation}" && "${operation,,}" != "restore" ]]; then
+    log_line "RESTORE skip externalid=${external_id} operation=${operation} reason=unsupported-operation"
+    return 0
+  fi
+
+  if looks_like_backup_id "${external_id}"; then
+    request_key="backupid"
+  else
+    request_key="externalid"
+  fi
+
+  response="$(invoke_mold_api "${MOLD_RESTORE_API_METHOD}" "restoreNetBackup" "${request_key}" "${external_id}" "${operation}")"
+  log_line "RESTORE api-call-success command=restoreNetBackup ${request_key}=${external_id} response=${response}"
+}
+
+main "$@"

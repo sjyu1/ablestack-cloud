@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# 파일명 수정 필요: bpstart_notify.<정책명>
+# 파일명 수정 필요: netbackup-host-bpstart-notify.<정책명>
 
 CLIENT="${1:-}"
 POLICY="${2:-}"
@@ -8,7 +8,7 @@ SCHEDULE="${3:-}"
 TYPE="${4:-}"
 
 LOG="/var/log/netbackup-mold-hook.log"
-HELPER="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/ablestack_netbackup_bpstart_notify.sh"
+HELPER="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-bpstart-notify.sh"
 
 log_line() {
   printf '%s %s\n' "$(date '+%F %T')" "$1" >> "$LOG" 2>&1

@@ -23,7 +23,7 @@ STATE_ROOT_DEFAULT="/var/lib/ablestack/netbackup"
 LOG_FILE_DEFAULT="/var/log/cloudstack/agent/agent.log"
 LIBVIRT_URI_DEFAULT="qemu:///system"
 CONFIG_ROOT_DEFAULT="/etc/ablestack/netbackup"
-SECRET_HELPER_DEFAULT="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup_secret_helper.sh"
+SECRET_HELPER_DEFAULT="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-secret-helper.sh"
 SECRET_SUBDIR_DEFAULT="secrets"
 BACKUP_STAGING_ROOT_DEFAULT="/tmp/mold/netbackup"
 
@@ -145,10 +145,7 @@ cleanup_runtime_history() {
 
 sanitize_name() {
   local value="$1"
-  value="${value//\//_}"
-  value="${value// /_}"
-  value="${value//:/_}"
-  value="${value//;/_}"
+  value="${value//[^A-Za-z0-9._-]/_}"
   builtin echo "${value}"
 }
 
@@ -387,25 +384,15 @@ print(candidates[0][1], end="")
 PY
 }
 
-schedule_config_file_path() {
-  builtin echo "${CONFIG_ROOT}/${POLICY_SAFE}.${SCHEDULE_SAFE}.conf"
-}
-
 policy_config_file_path() {
-  builtin echo "${CONFIG_ROOT}/${POLICY_SAFE}.conf"
+  builtin echo "${CONFIG_ROOT}/netbackup-host-${POLICY_SAFE}.conf"
 }
 
 resolve_config_file_path() {
-  local schedule_config_file
   local policy_config_file
 
-  schedule_config_file="$(schedule_config_file_path)"
   policy_config_file="$(policy_config_file_path)"
 
-  if [[ -n "${SCHEDULE_NAME}" && "${SCHEDULE_NAME}" != "manual" && -f "${schedule_config_file}" ]]; then
-    builtin echo "${schedule_config_file}"
-    return 0
-  fi
   builtin echo "${policy_config_file}"
 }
 
@@ -446,7 +433,7 @@ load_policy_schedule_config() {
     source "${config_file}"
     log -ne "Loaded NetBackup config: ${config_file}"
   else
-    log -ne "No NetBackup config found for policy=${POLICY_NAME} schedule=${SCHEDULE_NAME}"
+    log -ne "No NetBackup config found for policy=${POLICY_NAME}"
   fi
 
   VM_INCLUDE="${VM_INCLUDE:-*}"
