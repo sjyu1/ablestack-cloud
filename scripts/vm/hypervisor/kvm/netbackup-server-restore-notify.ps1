@@ -266,6 +266,7 @@ function Build-SignedUrl {
     }
 
     $sortedUrl = ($sortedParams | Sort-Object) -join '&'
+    Write-Log "RESTORE signature-input baseurl=$BaseUrl sortedUrl=$sortedUrl"
     $hmac = New-Object System.Security.Cryptography.HMACSHA256 (,[System.Text.Encoding]::UTF8.GetBytes($script:AdminSecretKey))
     $signature = [Convert]::ToBase64String($hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($sortedUrl)))
     $encodedApiKey = UrlEncodePlus $script:AdminApikey
@@ -285,6 +286,7 @@ function Invoke-MoldApi {
     Write-Log "RESTORE api-call command=$CommandName method=$Method externalid=$ExternalId operation=$Operation"
     $apiParams = Build-ApiParams -CommandName $CommandName -Params $Params
     $signedUrl = Build-SignedUrl -BaseUrl $script:MoldRestoreApiUrl -ApiParams $apiParams
+    Write-Log "RESTORE request-url command=$CommandName method=$Method externalid=$ExternalId operation=$Operation url=$signedUrl"
 
     try {
         $invokeParams = @{
