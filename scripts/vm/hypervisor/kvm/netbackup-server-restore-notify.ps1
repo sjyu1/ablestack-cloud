@@ -28,6 +28,8 @@ $MoldRestoreApiUrl = $env:MOLD_RESTORE_API_URL
 $MoldRestoreApiMethod = if ([string]::IsNullOrWhiteSpace($env:MOLD_RESTORE_API_METHOD)) { 'POST' } else { $env:MOLD_RESTORE_API_METHOD }
 $MoldRestoreMode = if ([string]::IsNullOrWhiteSpace($env:MOLD_RESTORE_MODE)) { 'live' } else { $env:MOLD_RESTORE_MODE }
 $MoldApiResponseFormat = if ([string]::IsNullOrWhiteSpace($env:MOLD_API_RESPONSE_FORMAT)) { 'json' } else { $env:MOLD_API_RESPONSE_FORMAT }
+$MoldAsyncJobPollIntervalSeconds = if ([string]::IsNullOrWhiteSpace($env:MOLD_ASYNC_JOB_POLL_INTERVAL)) { 5 } else { [int]$env:MOLD_ASYNC_JOB_POLL_INTERVAL }
+$MoldAsyncJobTimeoutSeconds = if ([string]::IsNullOrWhiteSpace($env:MOLD_ASYNC_JOB_TIMEOUT)) { 1800 } else { [int]$env:MOLD_ASYNC_JOB_TIMEOUT }
 $MoldUrl = $env:MOLD_URL
 $AdminApikey = $env:ADMIN_APIKEY
 $AdminSecretKey = $env:ADMIN_SECRETKEY
@@ -313,6 +315,137 @@ function Invoke-MoldApi {
     }
 }
 
+function Find-JsonPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)][object]$InputObject,
+        [Parameter(Mandatory = $true)][string]$PropertyName
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    if ($InputObject -is [string]) {
+        return $null
+    }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        foreach ($entry in $InputObject.GetEnumerator()) {
+            if ($entry.Key -and $entry.Key.ToString().Equals($PropertyName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $entry.Value
+            }
+            $nested = Find-JsonPropertyValue -InputObject $entry.Value -PropertyName $PropertyName
+            if ($null -ne $nested) {
+                return $nested
+            }
+        }
+        return $null
+    }
+
+    if ($InputObject -is [System.Collections.IEnumerable]) {
+        foreach ($item in $InputObject) {
+            $nested = Find-JsonPropertyValue -InputObject $item -PropertyName $PropertyName
+            if ($null -ne $nested) {
+                return $nested
+            }
+        }
+        return $null
+    }
+
+    foreach ($property in $InputObject.PSObject.Properties) {
+        if ($property.Name.Equals($PropertyName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $property.Value
+        }
+        $nested = Find-JsonPropertyValue -InputObject $property.Value -PropertyName $PropertyName
+        if ($null -ne $nested) {
+            return $nested
+        }
+    }
+
+    return $null
+}
+
+function Format-LogValue {
+    param([Parameter(Mandatory = $true)][object]$Value)
+
+    if ($null -eq $Value) {
+        return ''
+    }
+    if ($Value -is [string]) {
+        return $Value
+    }
+    return ($Value | ConvertTo-Json -Compress -Depth 20)
+}
+
+function Get-AsyncJobResponse {
+    param([Parameter(Mandatory = $true)][string]$ResponseJson)
+
+    $parsed = $ResponseJson | ConvertFrom-Json -Depth 20
+    $asyncResponse = Find-JsonPropertyValue -InputObject $parsed -PropertyName 'queryasyncjobresultresponse'
+    if ($null -eq $asyncResponse) {
+        return $parsed
+    }
+    return $asyncResponse
+}
+
+function Wait-MoldAsyncJob {
+    param(
+        [Parameter(Mandatory = $true)][string]$JobId,
+        [Parameter(Mandatory = $true)][string]$OperationName,
+        [Parameter(Mandatory = $true)][string]$RequestKey,
+        [Parameter(Mandatory = $true)][string]$RequestValue,
+        [Parameter(Mandatory = $true)][string]$ExternalId,
+        [string]$Operation = ''
+    )
+
+    $deadline = (Get-Date).AddSeconds($MoldAsyncJobTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $response = Invoke-MoldApi -Method $MoldRestoreApiMethod -CommandName 'queryAsyncJobResult' -Params @{
+            jobid = $JobId
+        } -ExternalId $ExternalId -Operation $Operation
+
+        $asyncResponse = Get-AsyncJobResponse -ResponseJson $response
+        $jobStatusValue = Find-JsonPropertyValue -InputObject $asyncResponse -PropertyName 'jobstatus'
+        $jobStatus = if ($null -eq $jobStatusValue -or [string]::IsNullOrWhiteSpace([string]$jobStatusValue)) { 0 } else { [int]$jobStatusValue }
+        Write-Log "RESTORE async-job-poll pid=$PID command=$OperationName jobid=$JobId status=$jobStatus $RequestKey=$RequestValue"
+
+        switch ($jobStatus) {
+            0 {
+                Start-Sleep -Seconds $MoldAsyncJobPollIntervalSeconds
+                continue
+            }
+            1 {
+                $jobResult = Find-JsonPropertyValue -InputObject $asyncResponse -PropertyName 'jobresult'
+                Write-Log "RESTORE async-job-success pid=$PID command=$OperationName jobid=$JobId status=1 result=$(Format-LogValue $jobResult)"
+                return $asyncResponse
+            }
+            2 {
+                $errorText = Find-JsonPropertyValue -InputObject $asyncResponse -PropertyName 'errortext'
+                if ([string]::IsNullOrWhiteSpace([string]$errorText)) {
+                    $jobResult = Find-JsonPropertyValue -InputObject $asyncResponse -PropertyName 'jobresult'
+                    if ($jobResult -is [string]) {
+                        $errorText = $jobResult
+                    } elseif ($null -ne $jobResult) {
+                        $errorText = Format-LogValue $jobResult
+                    }
+                }
+                if ([string]::IsNullOrWhiteSpace([string]$errorText)) {
+                    $errorText = 'unknown error'
+                }
+                Write-Log "RESTORE async-job-failed pid=$PID command=$OperationName jobid=$JobId status=2 error=$errorText"
+                throw "Mold async job failed for $OperationName jobId=$JobId: $errorText"
+            }
+            default {
+                Write-Log "RESTORE async-job-unexpected pid=$PID command=$OperationName jobid=$JobId status=$jobStatus"
+                Start-Sleep -Seconds $MoldAsyncJobPollIntervalSeconds
+            }
+        }
+    }
+
+    Write-Log "RESTORE async-job-timeout pid=$PID command=$OperationName jobid=$JobId timeoutSeconds=$MoldAsyncJobTimeoutSeconds"
+    throw "Timed out waiting for Mold async job $OperationName jobId=$JobId after $MoldAsyncJobTimeoutSeconds seconds"
+}
+
 try {
     $ArgsFromCmd = @($args)
     if ($ArgsFromCmd.Count -lt 2) {
@@ -347,7 +480,16 @@ try {
         $RequestKey = $ExternalId
     } -ExternalId $ExternalId -Operation $Operation
 
-    Write-Log "RESTORE api-call-success pid=$ProcessId command=restoreNetBackup $RequestKey=$ExternalId operation=$Operation response=$response"
+    $jobIdValue = Find-JsonPropertyValue -InputObject ($response | ConvertFrom-Json -Depth 20) -PropertyName 'jobid'
+    if ([string]::IsNullOrWhiteSpace([string]$jobIdValue)) {
+        Write-Log "RESTORE api-call-response pid=$ProcessId command=restoreNetBackup $RequestKey=$ExternalId operation=$Operation response=$response"
+        throw "Mold restoreNetBackup API did not return jobid for externalid=$ExternalId"
+    }
+
+    $jobId = [string]$jobIdValue
+    Write-Log "RESTORE async-job-submitted pid=$ProcessId command=restoreNetBackup jobid=$jobId $RequestKey=$ExternalId operation=$Operation response=$response"
+    $finalResponse = Wait-MoldAsyncJob -JobId $jobId -OperationName 'restoreNetBackup' -RequestKey $RequestKey -RequestValue $ExternalId -ExternalId $ExternalId -Operation $Operation
+    Write-Log "RESTORE async-job-complete pid=$ProcessId command=restoreNetBackup jobid=$jobId $RequestKey=$ExternalId operation=$Operation response=$(Format-LogValue $finalResponse)"
 } catch {
     $message = $_.Exception.Message
     if ($_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($_.ErrorDetails.Message)) {

@@ -26,6 +26,8 @@ CONFIG_ROOT="${CONFIG_ROOT:-/etc/ablestack/netbackup}"
 MOLD_RESTORE_API_METHOD="${MOLD_RESTORE_API_METHOD:-POST}"
 MOLD_RESTORE_MODE="${MOLD_RESTORE_MODE:-live}"
 MOLD_API_RESPONSE_FORMAT="${MOLD_API_RESPONSE_FORMAT:-json}"
+MOLD_ASYNC_JOB_POLL_INTERVAL="${MOLD_ASYNC_JOB_POLL_INTERVAL:-5}"
+MOLD_ASYNC_JOB_TIMEOUT="${MOLD_ASYNC_JOB_TIMEOUT:-1800}"
 MOLD_URL="${MOLD_URL:-}"
 MOLD_RESTORE_API_URL="${MOLD_RESTORE_API_URL:-}"
 ADMIN_APIKEY="${ADMIN_APIKEY:-}"
@@ -215,6 +217,93 @@ invoke_mold_api() {
   printf '%s' "${response}"
 }
 
+extract_json_value_by_key() {
+  local payload="$1"
+  local key_name="$2"
+
+  python3 - "$payload" "$key_name" <<'PY'
+import json
+import sys
+
+payload = sys.argv[1]
+target_key = sys.argv[2].lower()
+
+try:
+    data = json.loads(payload)
+except Exception:
+    sys.exit(1)
+
+def walk(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if str(key).lower() == target_key:
+                if isinstance(value, (dict, list)):
+                    print(json.dumps(value), end="")
+                elif value is None:
+                    print("", end="")
+                else:
+                    print(str(value), end="")
+                return True
+            if walk(value):
+                return True
+    elif isinstance(node, list):
+        for item in node:
+            if walk(item):
+                return True
+    return False
+
+if not walk(data):
+    sys.exit(1)
+PY
+}
+
+wait_for_mold_async_job() {
+  local operation_name="$1"
+  local job_id="$2"
+  local request_key="$3"
+  local request_value="$4"
+  local start_time
+  start_time="$(date +%s)"
+
+  while true; do
+    local response
+    response="$(invoke_mold_api "${MOLD_RESTORE_API_METHOD}" "queryAsyncJobResult" "jobid" "${job_id}")" || \
+      fail "Failed to query async job status for ${operation_name} jobId=${job_id}"
+
+    local job_status=""
+    job_status="$(extract_json_value_by_key "${response}" "jobstatus" 2>/dev/null || true)"
+    log_line "RESTORE async-job-poll command=${operation_name} jobid=${job_id} status=${job_status:-0} ${request_key}=${request_value}"
+
+    case "${job_status}" in
+      1)
+        local job_result=""
+        job_result="$(extract_json_value_by_key "${response}" "jobresult" 2>/dev/null || true)"
+        log_line "RESTORE async-job-success command=${operation_name} jobid=${job_id} status=1 result=${job_result}"
+        printf '%s' "${response}"
+        return 0
+        ;;
+      2)
+        local error_text=""
+        error_text="$(extract_json_value_by_key "${response}" "errortext" 2>/dev/null || true)"
+        [[ -n "${error_text}" ]] || error_text="$(extract_json_value_by_key "${response}" "jobresult" 2>/dev/null || true)"
+        log_line "RESTORE async-job-failed command=${operation_name} jobid=${job_id} status=2 error=${error_text:-unknown error}"
+        fail "Mold async job failed for ${operation_name} jobId=${job_id}: ${error_text:-unknown error}"
+        ;;
+      0|"")
+        ;;
+      *)
+        log_line "RESTORE async-job-unexpected command=${operation_name} jobid=${job_id} status=${job_status}"
+        ;;
+    esac
+
+    if (( $(date +%s) - start_time >= MOLD_ASYNC_JOB_TIMEOUT )); then
+      fail "Timed out waiting for Mold async job ${operation_name} jobId=${job_id} after ${MOLD_ASYNC_JOB_TIMEOUT}s"
+    fi
+
+    sleep "${MOLD_ASYNC_JOB_POLL_INTERVAL}"
+  done
+}
+
 main() {
   if [[ $# -lt 2 ]]; then
     fail "usage: netbackup-server-restore-notify <program_name> <external_id> [operation]"
@@ -253,7 +342,12 @@ main() {
   fi
 
   response="$(invoke_mold_api "${MOLD_RESTORE_API_METHOD}" "restoreNetBackup" "${request_key}" "${external_id}" "${operation}")"
-  log_line "RESTORE api-call-success command=restoreNetBackup ${request_key}=${external_id} response=${response}"
+  job_id="$(extract_json_value_by_key "${response}" "jobid" 2>/dev/null || true)"
+  [[ -n "${job_id}" ]] || fail "Mold restoreNetBackup API did not return jobid for ${request_key}=${external_id}"
+
+  log_line "RESTORE async-job-submitted command=restoreNetBackup jobid=${job_id} ${request_key}=${external_id} response=${response}"
+  final_response="$(wait_for_mold_async_job "restoreNetBackup" "${job_id}" "${request_key}" "${external_id}")"
+  log_line "RESTORE async-job-complete command=restoreNetBackup jobid=${job_id} ${request_key}=${external_id} response=${final_response}"
 }
 
 main "$@"
