@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# 파일명 수정 필요: netbackup-host-bpstart-notify.<정책명>
+# 파일명 수정 필요: bpstart_notify.<정책명>
 
 CLIENT="${1:-}"
 POLICY="${2:-}"

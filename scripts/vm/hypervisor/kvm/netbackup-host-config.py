@@ -36,7 +36,7 @@ NETBACKUP_OFFERING_NAME = "netbackup"
 NETBACKUP_OFFERING_DESCRIPTION = "netbackup"
 NETBACKUP_OFFERING_EXTERNAL_ID = "netbackup"
 SCRIPT_DIR = Path(__file__).resolve().parent
-POLICY_TEMPLATE_PATH = Path(os.environ.get("POLICY_TEMPLATE_PATH", str(SCRIPT_DIR / "netbackup-host-<policy>.conf")))
+POLICY_TEMPLATE_PATH = Path(os.environ.get("POLICY_TEMPLATE_PATH", str(SCRIPT_DIR / "netbackup-host-policy.conf")))
 
 
 def log_step(message: str) -> None:
@@ -497,6 +497,53 @@ def apply_netbackup_bp_conf() -> bool:
     set_bp_conf_value(NETBACKUP_BP_CONF_PATH, "SERVER_CONNECT_TIMEOUT", "1800")
     print(f"Updated NetBackup config: {NETBACKUP_BP_CONF_PATH}")
     return True
+
+
+def ensure_backup_staging_root() -> None:
+    BACKUP_STAGING_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        BACKUP_STAGING_ROOT.chmod(0o755)
+    except PermissionError:
+        # Directory may already exist with stricter ownership-based permissions.
+        pass
+
+
+def apply_permissions() -> None:
+    for directory in (HOOK_OUTPUT_DIR, CONFIG_OUTPUT_DIR, SECRET_OUTPUT_DIR, BACKUP_STAGING_ROOT):
+        if not directory.exists():
+            continue
+        try:
+            directory.chmod(0o755)
+        except PermissionError:
+            pass
+
+    for path in HOOK_OUTPUT_DIR.glob("bpstart_notify.*"):
+        if path.is_file():
+            try:
+                path.chmod(0o755)
+            except PermissionError:
+                pass
+
+    for path in HOOK_OUTPUT_DIR.glob("bpend_notify.*"):
+        if path.is_file():
+            try:
+                path.chmod(0o755)
+            except PermissionError:
+                pass
+
+    for path in CONFIG_OUTPUT_DIR.glob("netbackup-host-*.conf"):
+        if path.is_file():
+            try:
+                path.chmod(0o600)
+            except PermissionError:
+                pass
+
+    secret_path = SECRET_OUTPUT_DIR / "secret.enc"
+    if secret_path.is_file():
+        try:
+            secret_path.chmod(0o600)
+        except PermissionError:
+            pass
 
 
 def restart_netbackup_service() -> None:

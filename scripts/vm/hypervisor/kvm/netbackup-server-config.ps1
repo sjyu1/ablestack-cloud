@@ -207,11 +207,20 @@ function Copy-RestoreNotifyFiles {
         (Join-Path $ScriptDir 'netbackup-server-restore-notify.cmd'),
         (Join-Path $ScriptDir 'netbackup-server-restore-notify.ps1')
     )
+    $targets = @{
+        'netbackup-server-restore-notify.cmd' = 'restore-notify.cmd'
+        'netbackup-server-restore-notify.ps1' = 'restore-notify.ps1'
+    }
     foreach ($source in $sources) {
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "Required restore notify source file not found: $source"
         }
-        $target = Join-Path $DestinationDir (Split-Path -Leaf $source)
+        $leaf = Split-Path -Leaf $source
+        $targetName = $targets[$leaf]
+        if ([string]::IsNullOrWhiteSpace($targetName)) {
+            throw "No target mapping defined for restore notify source file: $leaf"
+        }
+        $target = Join-Path $DestinationDir $targetName
         Backup-ExistingFile -Path $target
         Copy-Item -LiteralPath $source -Destination $target -Force
     }
