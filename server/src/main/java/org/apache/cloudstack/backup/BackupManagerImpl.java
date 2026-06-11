@@ -1701,28 +1701,27 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private String resolveNetBackupRestoredExternalIdOnHost(final String backupId,
             final String restoreHostName, final List<BackupVO> backups) {
-        HostVO host = hostDao.findByName(restoreHostName);
-        if (host == null) {
-            host = hostDao.findByIp(restoreHostName);
-        }
+        final HostVO host = findRestoreHost(restoreHostName);
         if (host == null) {
             throw new CloudRuntimeException(String.format(
                     "Unable to find restore host [%s] for NetBackup backup ID [%s].", restoreHostName, backupId));
         }
 
-        final List<String> candidatePaths = backups.stream()
+        final List<String> restoreCandidatePaths = backups.stream()
                 .map(BackupVO::getExternalId)
                 .filter(StringUtils::isNotBlank)
                 .distinct()
                 .collect(Collectors.toList());
-        if (CollectionUtils.isEmpty(candidatePaths)) {
+        if (CollectionUtils.isEmpty(restoreCandidatePaths)) {
             throw new CloudRuntimeException(String.format(
                     "No candidate external IDs are available for NetBackup backup ID [%s].", backupId));
         }
 
+        // The KVM host resolves the first path that has the expected backup files.
+        // We keep the ordering from the DB query so the most recent backup is checked first.
         final AblestackNetBackupResolveRestorePathCommand command =
                 new AblestackNetBackupResolveRestorePathCommand(
-                        backupId, candidatePaths, NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS);
+                        backupId, restoreCandidatePaths, NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS);
         try {
             final BackupAnswer answer = (BackupAnswer) agentMgr.send(host.getId(), command);
             if (answer == null || !answer.getResult() || StringUtils.isBlank(answer.getDetails())) {
@@ -1737,6 +1736,14 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     "Failed to resolve restored path on host [%s] for NetBackup backup ID [%s]: %s",
                     restoreHostName, backupId, e.getMessage()), e);
         }
+    }
+
+    private HostVO findRestoreHost(final String restoreHostName) {
+        HostVO host = hostDao.findByName(restoreHostName);
+        if (host != null) {
+            return host;
+        }
+        return hostDao.findByIp(restoreHostName);
     }
 
     private BackupOffering getBackupOfferingForRestore(final VMInstanceVO vm, final BackupVO backup) {
