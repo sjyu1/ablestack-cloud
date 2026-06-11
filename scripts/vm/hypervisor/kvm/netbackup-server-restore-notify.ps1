@@ -433,7 +433,7 @@ function Wait-MoldAsyncJob {
                     $errorText = 'unknown error'
                 }
                 Write-Log "RESTORE async-job-failed pid=$PID command=$OperationName jobid=$JobId status=2 error=$errorText"
-                throw "Mold async job failed for $OperationName jobId=$JobId: $errorText"
+                throw "Mold async job failed for $OperationName jobId=${JobId}: $errorText"
             }
             default {
                 Write-Log "RESTORE async-job-unexpected pid=$PID command=$OperationName jobid=$JobId status=$jobStatus"
