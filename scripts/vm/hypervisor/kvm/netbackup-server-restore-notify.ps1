@@ -270,7 +270,7 @@ function Build-SignedUrl {
     $signature = [Convert]::ToBase64String($hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($sortedUrl)))
     $encodedApiKey = UrlEncodePlus $script:AdminApikey
     $encodedSignature = UrlEncodePlus $signature
-    return "$BaseUrl?$ApiParams&apiKey=$encodedApiKey&signature=$encodedSignature"
+    return "${BaseUrl}?${ApiParams}&apiKey=${encodedApiKey}&signature=${encodedSignature}"
 }
 
 function Invoke-MoldApi {
