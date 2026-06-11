@@ -32,9 +32,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -55,10 +52,6 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                     "No candidate restore paths were provided for NetBackup backup ID [%s].", command.getBackupId()));
         }
 
-        final long deadlineMillis =
-                System.currentTimeMillis() - (Math.max(command.getDiscoveryWindowSeconds(), 1) * 1000L);
-        final List<RestoreCandidate> matches = new ArrayList<>();
-
         for (final String candidatePath : command.getCandidatePaths()) {
             if (StringUtils.isBlank(candidatePath)) {
                 continue;
@@ -67,35 +60,12 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
             if (!isValidRestoreCandidate(path)) {
                 continue;
             }
-            final long modifiedAt = getCandidateModifiedAt(path);
-            if (modifiedAt >= deadlineMillis) {
-                matches.add(new RestoreCandidate(path.toAbsolutePath().normalize().toString(), modifiedAt));
-            }
+            return new BackupAnswer(command, true, path.toAbsolutePath().normalize().toString());
         }
 
-        if (matches.isEmpty()) {
-            return new BackupAnswer(command, false, String.format(
-                    "Unable to resolve restored path for NetBackup backup ID [%s]. "
-                            + "No valid candidate path was found within the discovery window.",
-                    command.getBackupId()));
-        }
-
-        matches.sort(Comparator.comparingLong(RestoreCandidate::getModifiedAt).reversed());
-        if (matches.size() > 1 && matches.get(0).getModifiedAt() == matches.get(1).getModifiedAt()) {
-            return new BackupAnswer(command, false, String.format(
-                    "Ambiguous restored paths detected for NetBackup backup ID [%s]: %s",
-                    command.getBackupId(), String.join(", ", toPaths(matches))));
-        }
-
-        return new BackupAnswer(command, true, matches.get(0).getPath());
-    }
-
-    private List<String> toPaths(final List<RestoreCandidate> candidates) {
-        final List<String> paths = new ArrayList<>();
-        for (final RestoreCandidate candidate : candidates) {
-            paths.add(candidate.getPath());
-        }
-        return paths;
+        return new BackupAnswer(command, false, String.format(
+                "Unable to resolve restored path for NetBackup backup ID [%s]. No candidate restore path contained the required files.",
+                command.getBackupId()));
     }
 
     private boolean isValidRestoreCandidate(final Path path) {
@@ -123,42 +93,5 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                 || StringUtils.endsWith(fileName, ".qcow2")
                 || StringUtils.endsWith(fileName, ".raw")
                 || StringUtils.endsWith(fileName, ".rbdiff");
-    }
-
-    private long getCandidateModifiedAt(final Path path) {
-        long latest = 0L;
-        try {
-            latest = Files.getLastModifiedTime(path).toMillis();
-            try (Stream<Path> children = Files.walk(path)) {
-                for (final Path child : (Iterable<Path>) children::iterator) {
-                    try {
-                        latest = Math.max(latest, Files.getLastModifiedTime(child).toMillis());
-                    } catch (IOException ignored) {
-                        logger.debug("Failed to read modified time of NetBackup restore artifact [{}].", child);
-                    }
-                }
-            }
-        } catch (IOException e) {
-            logger.debug("Failed to read modified time of NetBackup restore candidate [{}].", path, e);
-        }
-        return latest;
-    }
-
-    private static final class RestoreCandidate {
-        private final String path;
-        private final long modifiedAt;
-
-        private RestoreCandidate(final String path, final long modifiedAt) {
-            this.path = path;
-            this.modifiedAt = modifiedAt;
-        }
-
-        private String getPath() {
-            return path;
-        }
-
-        private long getModifiedAt() {
-            return modifiedAt;
-        }
     }
 }
