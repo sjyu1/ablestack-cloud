@@ -2611,6 +2611,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         cmdList.add(CreateNetBackupCmd.class);
         cmdList.add(ListBackupsCmd.class);
         cmdList.add(RestoreBackupCmd.class);
+        cmdList.add(RestoreNetBackupCmd.class);
         cmdList.add(DeleteBackupCmd.class);
         cmdList.add(RestoreVolumeFromBackupAndAttachToVMCmd.class);
         cmdList.add(AddBackupRepositoryCmd.class);
