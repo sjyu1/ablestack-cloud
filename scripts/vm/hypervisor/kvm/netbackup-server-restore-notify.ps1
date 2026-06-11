@@ -380,12 +380,66 @@ function Format-LogValue {
 function Get-AsyncJobResponse {
     param([Parameter(Mandatory = $true)][string]$ResponseJson)
 
-    $parsed = $ResponseJson | ConvertFrom-Json -Depth 20
+    $parsed = $ResponseJson | ConvertFrom-Json
     $asyncResponse = Find-JsonPropertyValue -InputObject $parsed -PropertyName 'queryasyncjobresultresponse'
     if ($null -eq $asyncResponse) {
         return $parsed
     }
     return $asyncResponse
+}
+
+function Get-AsyncJobFailureText {
+    param([Parameter(Mandatory = $true)][object]$AsyncResponse)
+
+    $jobResultCode = Find-JsonPropertyValue -InputObject $AsyncResponse -PropertyName 'jobresultcode'
+    $errorText = Find-JsonPropertyValue -InputObject $AsyncResponse -PropertyName 'errortext'
+    $jobResult = Find-JsonPropertyValue -InputObject $AsyncResponse -PropertyName 'jobresult'
+
+    $parts = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace([string]$jobResultCode)) {
+        $parts.Add("jobresultcode=$jobResultCode")
+    }
+
+    if ($jobResult -is [string]) {
+        if ([string]::IsNullOrWhiteSpace([string]$errorText)) {
+            $errorText = $jobResult
+        }
+        if (-not [string]::IsNullOrWhiteSpace($jobResult)) {
+            $parts.Add("jobresult=$jobResult")
+        }
+    } elseif ($null -ne $jobResult) {
+        $nestedErrorCode = Find-JsonPropertyValue -InputObject $jobResult -PropertyName 'errorcode'
+        $nestedErrorText = Find-JsonPropertyValue -InputObject $jobResult -PropertyName 'errortext'
+
+        if (-not [string]::IsNullOrWhiteSpace([string]$nestedErrorCode)) {
+            $parts.Add("jobresult.errorcode=$nestedErrorCode")
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$nestedErrorText)) {
+            $parts.Add("jobresult.errortext=$nestedErrorText")
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$errorText)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$nestedErrorText)) {
+                $errorText = $nestedErrorText
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$nestedErrorCode)) {
+                $errorText = "errorcode=$nestedErrorCode"
+            } else {
+                $errorText = Format-LogValue $jobResult
+            }
+        }
+
+        $parts.Add("jobresult=$(Format-LogValue $jobResult)")
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$errorText)) {
+        $parts.Insert(0, "errortext=$errorText")
+    }
+
+    if ($parts.Count -eq 0) {
+        return 'unknown error'
+    }
+
+    return ($parts -join '; ')
 }
 
 function Wait-MoldAsyncJob {
@@ -420,20 +474,9 @@ function Wait-MoldAsyncJob {
                 return $asyncResponse
             }
             2 {
-                $errorText = Find-JsonPropertyValue -InputObject $asyncResponse -PropertyName 'errortext'
-                if ([string]::IsNullOrWhiteSpace([string]$errorText)) {
-                    $jobResult = Find-JsonPropertyValue -InputObject $asyncResponse -PropertyName 'jobresult'
-                    if ($jobResult -is [string]) {
-                        $errorText = $jobResult
-                    } elseif ($null -ne $jobResult) {
-                        $errorText = Format-LogValue $jobResult
-                    }
-                }
-                if ([string]::IsNullOrWhiteSpace([string]$errorText)) {
-                    $errorText = 'unknown error'
-                }
-                Write-Log "RESTORE async-job-failed pid=$PID command=$OperationName jobid=$JobId status=2 error=$errorText"
-                throw "Mold async job failed for $OperationName jobId=${JobId}: $errorText"
+                $failureText = Get-AsyncJobFailureText -AsyncResponse $asyncResponse
+                Write-Log "RESTORE async-job-failed pid=$PID command=$OperationName jobid=$JobId status=2 details=$failureText"
+                throw "Mold async job failed for $OperationName jobId=${JobId}: $failureText"
             }
             default {
                 Write-Log "RESTORE async-job-unexpected pid=$PID command=$OperationName jobid=$JobId status=$jobStatus"
@@ -480,7 +523,7 @@ try {
         $RequestKey = $ExternalId
     } -ExternalId $ExternalId -Operation $Operation
 
-    $jobIdValue = Find-JsonPropertyValue -InputObject ($response | ConvertFrom-Json -Depth 20) -PropertyName 'jobid'
+    $jobIdValue = Find-JsonPropertyValue -InputObject ($response | ConvertFrom-Json) -PropertyName 'jobid'
     if ([string]::IsNullOrWhiteSpace([string]$jobIdValue)) {
         Write-Log "RESTORE api-call-response pid=$ProcessId command=restoreNetBackup $RequestKey=$ExternalId operation=$Operation response=$response"
         throw "Mold restoreNetBackup API did not return jobid for externalid=$ExternalId"
