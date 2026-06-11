@@ -343,7 +343,7 @@ SET @sql := (SELECT IF(COUNT(*)>0,'ALTER TABLE `cloud`.`vm_instance_details` DRO
 CALL `cloud`.`IDEMPOTENT_ADD_FOREIGN_KEY`('cloud.vm_instance_details', 'fk_vm_instance_details__vm_id', '(vm_id)', '`vm_instance`(`id`)');
 
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backup_schedule', 'uuid', 'VARCHAR(40) NOT NULL');
-UPDATE `cloud`.`backup_schedule` SET uuid = UUID() WHERE uuid IS NULL;
+UPDATE `cloud`.`backup_schedule` SET uuid = UUID() WHERE uuid IS NULL OR uuid = '';
 
 -- Extension framework
 UPDATE `cloud`.`configuration` SET value = CONCAT(value, ',External') WHERE name = 'hypervisor.list';
@@ -570,7 +570,7 @@ CALL `cloud`.`IDEMPOTENT_CHANGE_COLUMN`('cloud.networks','ip6_gateway','ip6_gate
 
 -- Add columns name, description and backup_interval_type to backup table
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backups', 'name', 'VARCHAR(255) NULL COMMENT "name of the backup"');
-UPDATE `cloud`.`backups` backup INNER JOIN `cloud`.`vm_instance` vm ON backup.vm_id = vm.id SET backup.name = vm.name;
+UPDATE `cloud`.`backups` backup INNER JOIN `cloud`.`vm_instance` vm ON backup.vm_id = vm.id SET backup.name = vm.name WHERE backup.name IS NULL OR backup.name = '';
 CALL `cloud`.`IDEMPOTENT_CHANGE_COLUMN`('cloud.backups','name','name','VARCHAR(255) NOT NULL');
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backups', 'description', 'VARCHAR(1024) COMMENT "description for the backup"');
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backups', 'backup_interval_type', 'int(5) COMMENT "type of backup, e.g. manual, recurring - hourly, daily, weekly or monthly"');
@@ -610,7 +610,8 @@ SET b.backed_volumes = (
     FROM `cloud`.`volumes` v
     LEFT JOIN `cloud`.`disk_offering` doff ON v.disk_offering_id = doff.id
     WHERE v.instance_id = vm.id
-);
+)
+WHERE b.backed_volumes IS NULL OR b.backed_volumes = '' OR b.backed_volumes NOT LIKE '%"diskOfferingId"%';
 
 -- Add diskOfferingId, deviceId, minIops and maxIops to backup_volumes in vm_instance table
 UPDATE `cloud`.`vm_instance` vm
@@ -636,7 +637,8 @@ SET vm.backup_volumes = (
     LEFT JOIN `cloud`.`disk_offering` doff ON v.disk_offering_id = doff.id
     WHERE v.instance_id = vm.id
 )
-WHERE vm.backup_offering_id IS NOT NULL;
+WHERE vm.backup_offering_id IS NOT NULL
+AND (vm.backup_volumes IS NULL OR vm.backup_volumes = '' OR vm.backup_volumes NOT LIKE '%"diskOfferingId"%');
 
 -- Add column allocated_size to object_store table. Rename column 'used_bytes' to 'used_size'
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.object_store', 'allocated_size', 'bigint unsigned COMMENT "allocated size in bytes"');
