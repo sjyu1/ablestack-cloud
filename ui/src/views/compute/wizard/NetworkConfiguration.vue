@@ -103,7 +103,7 @@
 
 <script>
 import { ref, reactive } from 'vue'
-import { api } from '@/api'
+import { getAPI } from '@/api'
 
 export default {
   name: 'NetworkConfiguration',
@@ -264,7 +264,7 @@ export default {
     fetchPublicIps (network) {
       this.ipOptionsLoading[network.id] = true
       this.ipOptions[network.id] = []
-      api('listPublicIpAddresses', {
+      getAPI('listPublicIpAddresses', {
         networkid: network.id,
         allocatedonly: false,
         forvirtualnetwork: false
@@ -280,7 +280,7 @@ export default {
     fetchAvailableGuestIps (network) {
       this.ipOptionsLoading[network.id] = true
       this.ipOptions[network.id] = []
-      api('listAvailableGuestIps', {
+      getAPI('listAvailableGuestIps', {
         networkid: network.id,
         pagesize: -1
       }).then(json => {

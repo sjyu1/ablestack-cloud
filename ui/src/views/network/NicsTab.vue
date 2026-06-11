@@ -491,7 +491,7 @@ export default {
     fetchAvailableGuestIps (networkid, selectedIp) {
       this.listIps.loading = true
       this.listIps.opts = []
-      api('listAvailableGuestIps', {
+      getAPI('listAvailableGuestIps', {
         networkid: networkid,
         pagesize: -1
       }).then(json => {

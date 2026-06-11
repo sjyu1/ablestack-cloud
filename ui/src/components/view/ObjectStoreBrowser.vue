@@ -324,7 +324,7 @@
 
 <script>
 import * as Minio from 'minio'
-import { api } from '@/api'
+import { getAPI } from '@/api'
 import { genericCompare } from '@/utils/sort.js'
 import InfoCard from '@/components/view/InfoCard'
 import TooltipButton from '@/components/widgets/TooltipButton'
@@ -688,7 +688,7 @@ export default {
         return
       }
       try {
-        const json = await api('syncBucketUsage', { id: this.resource.id })
+        const json = await getAPI('syncBucketUsage', { id: this.resource.id })
         const response = json?.syncbucketusageresponse || {}
         const size = response.size ?? response.bucket?.size
         if (size !== undefined && size !== null) {

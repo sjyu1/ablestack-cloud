@@ -369,9 +369,9 @@ public class AlertManagerImplTest {
     @Test
     public void sendPersistentAlertSendsDeliveryForNewWallAlert() {
         prepareZoneAndPod(1L, 2L);
-        Mockito.doReturn(null).when(alertDaoMock).getLastAlert(Mockito.anyShort(), Mockito.anyLong(),
+        Mockito.doReturn(null).when(_alertDao).getLastAlert(Mockito.anyShort(), Mockito.anyLong(),
                 Mockito.anyLong(), Mockito.<Long>isNull());
-        Mockito.doReturn(null).when(alertDaoMock).persist(Mockito.any());
+        Mockito.doReturn(null).when(_alertDao).persist(Mockito.any());
         Mockito.doNothing().when(alertManagerImplMock).sendAlertDeliveries(
                 Mockito.eq(AlertManager.AlertType.ALERT_TYPE_WALL_RULE),
                 Mockito.eq(1L),
@@ -382,7 +382,7 @@ public class AlertManagerImplTest {
 
         alertManagerImplMock.sendPersistentAlert(AlertManager.AlertType.ALERT_TYPE_WALL_RULE, 1L, 2L, "subject", "body");
 
-        Mockito.verify(alertDaoMock).persist(Mockito.any(AlertVO.class));
+        Mockito.verify(_alertDao).persist(Mockito.any(AlertVO.class));
         Mockito.verify(alertManagerImplMock).sendAlertDeliveries(
                 Mockito.eq(AlertManager.AlertType.ALERT_TYPE_WALL_RULE),
                 Mockito.eq(1L),
@@ -396,14 +396,14 @@ public class AlertManagerImplTest {
     public void sendPersistentAlertSendsDeliveryForDuplicateWallAlert() {
         prepareZoneAndPod(1L, 2L);
         AlertVO update = new AlertVO();
-        Mockito.doReturn(alertVOMock).when(alertDaoMock).getLastAlert(Mockito.anyShort(), Mockito.anyLong(),
+        Mockito.doReturn(alertVOMock).when(_alertDao).getLastAlert(Mockito.anyShort(), Mockito.anyLong(),
                 Mockito.anyLong(), Mockito.<Long>isNull());
         Mockito.doReturn(null).when(alertVOMock).getResolved();
         Mockito.doReturn("subject").when(alertVOMock).getSubject();
         Mockito.doReturn(3).when(alertVOMock).getSentCount();
         Mockito.doReturn(10L).when(alertVOMock).getId();
-        Mockito.doReturn(update).when(alertDaoMock).createForUpdate();
-        Mockito.doReturn(true).when(alertDaoMock).update(Mockito.eq(10L), Mockito.same(update));
+        Mockito.doReturn(update).when(_alertDao).createForUpdate();
+        Mockito.doReturn(true).when(_alertDao).update(Mockito.eq(10L), Mockito.same(update));
         Mockito.doNothing().when(alertManagerImplMock).sendAlertDeliveries(
                 Mockito.eq(AlertManager.AlertType.ALERT_TYPE_WALL_RULE),
                 Mockito.eq(1L),
@@ -414,8 +414,8 @@ public class AlertManagerImplTest {
 
         alertManagerImplMock.sendPersistentAlert(AlertManager.AlertType.ALERT_TYPE_WALL_RULE, 1L, 2L, "subject", "body");
 
-        Mockito.verify(alertDaoMock).update(Mockito.eq(10L), Mockito.same(update));
-        Mockito.verify(alertDaoMock, Mockito.never()).persist(Mockito.any(AlertVO.class));
+        Mockito.verify(_alertDao).update(Mockito.eq(10L), Mockito.same(update));
+        Mockito.verify(_alertDao, Mockito.never()).persist(Mockito.any(AlertVO.class));
         Mockito.verify(alertManagerImplMock).sendAlertDeliveries(
                 Mockito.eq(AlertManager.AlertType.ALERT_TYPE_WALL_RULE),
                 Mockito.eq(1L),
