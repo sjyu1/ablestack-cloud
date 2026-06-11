@@ -19,10 +19,13 @@ REM under the License.
 setlocal ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 
 set "SCRIPT_DIR=%~dp0"
-set "LOG_FILE=C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.log"
+for /f %%I in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMddHHmmssfff"') do set "RUN_TS=%%I"
+set "LOG_FILE=C:\ProgramData\AbleStack\NetBackup\netbackup-mold-restore.%RUN_TS%.log"
 set "PS1_SCRIPT=%SCRIPT_DIR%restore_notify.ps1"
 
 if not exist "C:\ProgramData\AbleStack\NetBackup" mkdir "C:\ProgramData\AbleStack\NetBackup" >nul 2>&1
+
+>> "%LOG_FILE%" echo [%DATE% %TIME%] START script=restore_notify.cmd log=%LOG_FILE% ps1=%PS1_SCRIPT%
 
 if not exist "%PS1_SCRIPT%" (
   >> "%LOG_FILE%" echo [%DATE% %TIME%] ERROR restore_notify.ps1 not found: %PS1_SCRIPT%
@@ -30,5 +33,5 @@ if not exist "%PS1_SCRIPT%" (
   exit /b 1
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1_SCRIPT%" %* >> "%LOG_FILE%" 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1_SCRIPT%" %*
 exit /b %ERRORLEVEL%

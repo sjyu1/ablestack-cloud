@@ -3,11 +3,14 @@ Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DefaultConfigRoot = 'C:\ProgramData\AbleStack\NetBackup'
-$DefaultLogFile = Join-Path $DefaultConfigRoot 'netbackup-mold-restore.log'
+$DefaultLogFile = Join-Path $DefaultConfigRoot ("netbackup-mold-restore.{0}.log" -f (Get-Date -Format 'yyyyMMddHHmmssfff'))
+$LegacyDefaultLogFile = Join-Path $DefaultConfigRoot 'netbackup-mold-restore.log'
 $DefaultConfigFile = Join-Path $DefaultConfigRoot 'restore.conf'
 
 $LogFile = $env:LOG_FILE
 if ([string]::IsNullOrWhiteSpace($LogFile)) {
+    $LogFile = $DefaultLogFile
+} elseif ($LogFile -eq $LegacyDefaultLogFile) {
     $LogFile = $DefaultLogFile
 }
 
@@ -142,7 +145,7 @@ function Load-Config {
         switch ($key) {
             'MOLD_URL' { if ([string]::IsNullOrWhiteSpace($script:MoldUrl)) { $script:MoldUrl = $value } }
             'ADMIN_APIKEY' { if ([string]::IsNullOrWhiteSpace($script:AdminApikey)) { $script:AdminApikey = $value } }
-            'LOG_FILE' { if ($script:LogFile -eq $DefaultLogFile) { $script:LogFile = $value } }
+            'LOG_FILE' { }
             'MOLD_SECRET_FILE' { if ([string]::IsNullOrWhiteSpace($script:MoldSecretFile)) { $script:MoldSecretFile = $value } }
             'SECRET_KEY_FILE' { if ([string]::IsNullOrWhiteSpace($script:SecretKeyFile)) { $script:SecretKeyFile = $value } }
             default { }
@@ -308,36 +311,46 @@ function Invoke-MoldApi {
     }
 }
 
-$ArgsFromCmd = @($args)
-if ($ArgsFromCmd.Count -lt 2) {
-    Write-Log "RESTORE missing required netbackup-server-restore-notify arguments args=$($ArgsFromCmd -join ' ')"
+try {
+    $ArgsFromCmd = @($args)
+    if ($ArgsFromCmd.Count -lt 2) {
+        Write-Log "RESTORE missing required netbackup-server-restore-notify arguments args=$($ArgsFromCmd -join ' ')"
+        exit 1
+    }
+
+    $ProgramName = $ArgsFromCmd[0]
+    $ExternalId = $ArgsFromCmd[1]
+    $Operation = if ($ArgsFromCmd.Count -ge 3) { $ArgsFromCmd[2] } else { '' }
+    $ProcessId = $PID
+
+    Write-Log "START script=netbackup-server-restore-notify.ps1 pid=$ProcessId program=$ProgramName externalid=$ExternalId operation=$Operation args=$($ArgsFromCmd -join ' ')"
+    Load-Config
+    Load-Secret
+    Write-Log "RESTORE config-loaded pid=$ProcessId program=$ProgramName externalid=$ExternalId operation=$Operation mold_url=$MoldRestoreApiUrl log_file=$LogFile"
+
+    if ($MoldRestoreMode -eq 'validate-only') {
+        $requestKey = if (LooksLike-BackupId -Value $ExternalId) { 'backupid' } else { 'externalid' }
+        Write-Log "RESTORE validate-only pid=$ProcessId command=restoreNetBackup $requestKey=$ExternalId operation=$Operation program=$ProgramName"
+        exit 0
+    }
+
+    if ($Operation -and $Operation.ToLowerInvariant() -ne 'restore') {
+        Write-Log "RESTORE skip pid=$ProcessId externalid=$ExternalId operation=$Operation reason=unsupported-operation"
+        exit 0
+    }
+
+    $RequestKey = if (LooksLike-BackupId -Value $ExternalId) { 'backupid' } else { 'externalid' }
+
+    $response = Invoke-MoldApi -Method $MoldRestoreApiMethod -CommandName 'restoreNetBackup' -Params @{
+        $RequestKey = $ExternalId
+    } -ExternalId $ExternalId -Operation $Operation
+
+    Write-Log "RESTORE api-call-success pid=$ProcessId command=restoreNetBackup $RequestKey=$ExternalId operation=$Operation response=$response"
+} catch {
+    $message = $_.Exception.Message
+    if ($_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($_.ErrorDetails.Message)) {
+        $message = $_.ErrorDetails.Message
+    }
+    Write-Log "RESTORE error pid=$PID externalid=$ExternalId operation=$Operation message=$message"
     exit 1
 }
-
-$ProgramName = $ArgsFromCmd[0]
-$ExternalId = $ArgsFromCmd[1]
-$Operation = if ($ArgsFromCmd.Count -ge 3) { $ArgsFromCmd[2] } else { '' }
-
-Write-Log "START script=netbackup-server-restore-notify.ps1 args=$($ArgsFromCmd -join ' ')"
-Load-Config
-Load-Secret
-Write-Log "RESTORE config-loaded program=$ProgramName externalid=$ExternalId operation=$Operation mold_url=$MoldRestoreApiUrl log_file=$LogFile"
-
-if ($MoldRestoreMode -eq 'validate-only') {
-    $requestKey = if (LooksLike-BackupId -Value $ExternalId) { 'backupid' } else { 'externalid' }
-    Write-Log "RESTORE validate-only command=restoreNetBackup $requestKey=$ExternalId operation=$Operation program=$ProgramName"
-    exit 0
-}
-
-if ($Operation -and $Operation.ToLowerInvariant() -ne 'restore') {
-    Write-Log "RESTORE skip externalid=$ExternalId operation=$Operation reason=unsupported-operation"
-    exit 0
-}
-
-$RequestKey = if (LooksLike-BackupId -Value $ExternalId) { 'backupid' } else { 'externalid' }
-
-$response = Invoke-MoldApi -Method $MoldRestoreApiMethod -CommandName 'restoreNetBackup' -Params @{
-    $RequestKey = $ExternalId
-} -ExternalId $ExternalId -Operation $Operation
-
-Write-Log "RESTORE api-call-success command=restoreNetBackup $RequestKey=$ExternalId response=$response"
