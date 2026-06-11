@@ -37,7 +37,31 @@ function Write-Log {
     if (-not [string]::IsNullOrWhiteSpace($directory)) {
         [System.IO.Directory]::CreateDirectory($directory) | Out-Null
     }
-    Add-Content -LiteralPath $LogFile -Value ("[{0}] {1}" -f (Get-Date -Format 'MM/dd/yyyy HH:mm:ss.fff'), $Message) -Encoding UTF8
+
+    $line = "[{0}] {1}" -f (Get-Date -Format 'MM/dd/yyyy HH:mm:ss.fff'), $Message
+    $encoding = [System.Text.UTF8Encoding]::new($false)
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            $stream = [System.IO.File]::Open($LogFile, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+            try {
+                $writer = [System.IO.StreamWriter]::new($stream, $encoding)
+                try {
+                    $writer.WriteLine($line)
+                    $writer.Flush()
+                    return
+                } finally {
+                    $writer.Dispose()
+                }
+            } finally {
+                $stream.Dispose()
+            }
+        } catch {
+            if ($attempt -eq 3) {
+                throw
+            }
+            Start-Sleep -Milliseconds (50 * $attempt)
+        }
+    }
 }
 
 function Fail {
