@@ -343,9 +343,9 @@
         <router-link
           v-if="['/publicip', '/privategw'].includes($route.path)"
           :to="{ path: $route.path + '/' + record.id }"
-        >{{ text }}</router-link>
+        >{{ ipAddress(text, record) }}</router-link>
         <span v-else>
-          <copy-label :label="text" />
+          <copy-label v-if="ipAddress(text, record)" :label="ipAddress(text, record)" />
         </span>
         <span v-if="record.issourcenat">
           &nbsp;
@@ -408,16 +408,27 @@
           >
       </template>
       <template v-else-if="['size', 'virtualsize'].includes(column.key)">
-        <span v-if="text && $route.path === '/kubernetes'">
+        <span v-if="$route.meta.name === 'buckets' && text !== undefined && text !== null">
+          {{ convertKB(text) }}
+        </span>
+        <span v-else-if="text && $route.path === '/kubernetes'">
           {{ text }}
         </span>
         <span v-else-if="text">
           {{ parseFloat(parseFloat(text) / 1024.0 / 1024.0 / 1024.0).toFixed(2) }} GiB
         </span>
       </template>
+      <template v-if="$route.meta.name === 'buckets' && column.key === 'quota' && text !== undefined && text !== null">
+        <span>{{ text }} GiB</span>
+      </template>
       <template v-if="column.key === 'physicalsize'">
         <span v-if="text">
           {{ isNaN(text) ? text : (parseFloat(parseFloat(text) / 1024.0 / 1024.0 / 1024.0).toFixed(2) + ' GiB') }}
+        </span>
+      </template>
+      <template v-if="['disksizetotal', 'disksizeused'].includes(column.key)">
+        <span v-if="text !== undefined && text !== null">
+          {{ $bytesToHumanReadableSize(text) }}
         </span>
       </template>
       <template v-if="column.key === 'videoram'">
@@ -1333,6 +1344,13 @@ export default {
     }
   },
   methods: {
+    convertKB (val) {
+      if (val < 1024) return `${Number(val).toFixed(2)} KB`
+      if (val < 1024 * 1024) return `${(val / 1024).toFixed(2)} MB`
+      if (val < 1024 * 1024 * 1024) return `${(val / 1024 / 1024).toFixed(2)} GB`
+      if (val < 1024 * 1024 * 1024 * 1024) return `${(val / 1024 / 1024 / 1024).toFixed(2)} TB`
+      return val
+    },
     getFirstSelectedItem () {
       const list = this.selectionList || []
       if (list.length > 0) {
@@ -1639,12 +1657,19 @@ export default {
     removeVMSchedule (record) {
       this.$emit('remove-vm-schedule', record)
     },
+    ipAddress (text, record) {
+      if (!record || !record.nic || record.nic.length === 0) {
+        return text
+      }
+
+      return record.nic.filter(e => e.linkstate !== false && e.ipaddress).map(e => e.ipaddress).join(', ')
+    },
     ipV6Address (text, record) {
       if (!record || !record.nic || record.nic.length === 0) {
         return ''
       }
 
-      return record.nic.filter(e => { return e.ip6address }).map(e => { return e.ip6address }).join(', ') || text
+      return record.nic.filter(e => e.linkstate !== false && e.ip6address).map(e => e.ip6address).join(', ') || text
     },
     generateCommentsPath (record) {
       if (this.entityTypeToPath(record.entitytype) === 'ssh') {
