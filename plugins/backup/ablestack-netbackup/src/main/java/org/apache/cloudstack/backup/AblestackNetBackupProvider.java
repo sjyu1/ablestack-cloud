@@ -1178,6 +1178,14 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
     }
 
+    private HostVO findRestoreHost(final String restoreHostName) {
+        HostVO host = hostDao.findByName(restoreHostName);
+        if (host != null) {
+            return host;
+        }
+        return hostDao.findByIp(restoreHostName);
+    }
+
     private void executeDeleteBackupPathCommand(final HostVO host, final String username, final String password, final int sshPort,
             final String command) {
         if (host == null || StringUtils.isBlank(command)) {
