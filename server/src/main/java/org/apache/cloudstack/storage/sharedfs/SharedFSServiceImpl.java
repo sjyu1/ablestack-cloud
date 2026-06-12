@@ -749,14 +749,23 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
                 storageServiceInstanceDao.update(instance.getId(), instance);
             }
 
-            StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS);
+            StorageServiceProtocolVO protocol = null;
+            for (StorageServiceProtocolVO candidate : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+                if (candidate.getPort() == null || candidate.getPort() == 2049) {
+                    protocol = candidate;
+                    break;
+                }
+                if (protocol == null) {
+                    protocol = candidate;
+                }
+            }
             if (protocol == null) {
                 protocol = new StorageServiceProtocolVO(instance.getId(), StorageServiceInstance.Protocol.NFS, isSharedFSReady(sharedFS.getState()), null, 2049);
                 protocol.setState(toStorageResourceState(sharedFS.getState()));
                 storageServiceProtocolDao.persist(protocol);
             } else {
                 protocol.setEnabled(isSharedFSReady(sharedFS.getState()));
-                protocol.setPort(2049);
+                protocol.setPort(protocol.getPort() == null ? 2049 : protocol.getPort());
                 protocol.setState(toStorageResourceState(sharedFS.getState()));
                 storageServiceProtocolDao.update(protocol.getId(), protocol);
             }
@@ -794,8 +803,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
                 }
                 storageFileShareDao.remove(share.getId());
             }
-            StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS);
-            if (protocol != null) {
+            for (StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
                 storageServiceProtocolDao.remove(protocol.getId());
             }
             storageServiceInstanceDao.remove(instance.getId());

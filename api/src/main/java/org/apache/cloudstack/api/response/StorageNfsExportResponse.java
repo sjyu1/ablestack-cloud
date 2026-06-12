@@ -67,9 +67,17 @@ public class StorageNfsExportResponse extends BaseResponse {
     @Param(description = "comma separated listen IPs that expose this NFS export")
     private String listenIps;
 
+    @SerializedName("listenerports")
+    @Param(description = "comma separated NFS listener group ports that expose this NFS export")
+    private String listenerPorts;
+
     @SerializedName("endpointmode")
     @Param(description = "NFS export endpoint exposure mode: ALL or SELECTED")
     private String endpointMode;
+
+    @SerializedName("protocolmode")
+    @Param(description = "NFS protocol mode: V4_ONLY or V3V4_DUAL")
+    private String protocolMode;
 
     @SerializedName("configvalid")
     @Param(description = "true if the stored NFS export configuration JSON is valid")
@@ -119,8 +127,16 @@ public class StorageNfsExportResponse extends BaseResponse {
         this.listenIps = listenIps;
     }
 
+    public void setListenerPorts(String listenerPorts) {
+        this.listenerPorts = listenerPorts;
+    }
+
     public void setEndpointMode(String endpointMode) {
         this.endpointMode = endpointMode;
+    }
+
+    public void setProtocolMode(String protocolMode) {
+        this.protocolMode = protocolMode;
     }
 
     public void setConfigValid(final Boolean configValid) {

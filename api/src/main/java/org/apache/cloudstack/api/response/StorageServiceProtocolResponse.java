@@ -52,6 +52,14 @@ public class StorageServiceProtocolResponse extends BaseResponse {
     @Param(description = "protocol state")
     private String state;
 
+    @SerializedName("protocolmode")
+    @Param(description = "NFS protocol mode when protocol is NFS")
+    private String protocolMode;
+
+    @SerializedName("config")
+    @Param(description = "protocol configuration JSON")
+    private String config;
+
     public void setId(String id) {
         this.id = id;
     }
@@ -78,5 +86,13 @@ public class StorageServiceProtocolResponse extends BaseResponse {
 
     public void setState(String state) {
         this.state = state;
+    }
+
+    public void setProtocolMode(String protocolMode) {
+        this.protocolMode = protocolMode;
+    }
+
+    public void setConfig(String config) {
+        this.config = config;
     }
 }

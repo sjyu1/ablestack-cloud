@@ -66,6 +66,7 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSer
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceHealthCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInventoryCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceProtocolsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceSessionsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
@@ -94,6 +95,8 @@ import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.Configurable;
 import org.apache.cloudstack.storage.sharedfs.SharedFS;
+import org.apache.cloudstack.storage.sharedfs.SharedFSVO;
+import org.apache.cloudstack.storage.sharedfs.dao.SharedFSDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageAccessRuleDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageBlockTargetDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageFileShareDao;
@@ -141,7 +144,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     private static final int FILE_SHARE_VOLUME_READY_ATTEMPTS = 30;
     private static final long FILE_SHARE_VOLUME_READY_INTERVAL_MS = 2000L;
     private static final List<String> SUPPORTED_FILE_SHARE_FILESYSTEMS = Arrays.asList("xfs", "ext4");
-    private static final Pattern NFS_ENDPOINT_MODE_PATTERN = Pattern.compile("\"endpointMode\"\\s*:\\s*\"(ALL|SELECTED)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NFS_ENDPOINT_MODE_PATTERN = Pattern.compile("\"endpointMode\"\\s*:\\s*\"(ALL|SELECTED|LISTENER_GROUP)\"", Pattern.CASE_INSENSITIVE);
     private static final Pattern IPV4_ADDRESS_PATTERN = Pattern.compile("\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b");
 
     @Inject
@@ -156,6 +159,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     private StorageBlockTargetDao storageBlockTargetDao;
     @Inject
     private StorageAccessRuleDao storageAccessRuleDao;
+    @Inject
+    private SharedFSDao sharedFSDao;
     @Inject
     private StorageServiceGuestCommandDispatcher guestCommandDispatcher;
     @Inject
@@ -205,6 +210,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         commands.add(ListStorageServiceDomainStatusCmd.class);
         commands.add(ListStorageServiceHealthCmd.class);
         commands.add(ListStorageServiceInventoryCmd.class);
+        commands.add(ListStorageServiceProtocolsCmd.class);
         commands.add(ListStorageServiceSessionsCmd.class);
         commands.add(DisconnectStorageServiceSessionCmd.class);
         commands.add(AttachStorageVolumeToFileShareCmd.class);
@@ -291,8 +297,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
         final StorageServiceInstance.Protocol protocol = parseProtocol(cmd.getProtocol());
         final Integer port = normalizeStorageServiceProtocolPort(protocol, cmd.getPort());
+        StorageServiceProtocolVO protocolVO = protocol == StorageServiceInstance.Protocol.NFS ?
+                findNfsProtocolEndpoint(instance.getId(), cmd.getListenIp(), port) :
+                storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocol);
+        final StorageServiceProtocolVO modeProtocol = protocol == StorageServiceInstance.Protocol.NFS ?
+                selectNfsModeProtocol(storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), protocol)) : protocolVO;
+        final String protocolMode = resolveProtocolModeForEnable(protocol, modeProtocol, cmd.getProtocolMode());
+        validateProtocolModeEndpointPolicy(protocol, modeProtocol, protocolMode, cmd.getListenIp(), port);
         final NicVO listenNic = resolveProtocolListenAddress(instance, cmd.getListenIp());
-        StorageServiceProtocolVO protocolVO = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocol);
+        final String protocolConfigJson = buildProtocolConfigJson(protocol, null, protocolMode, port, cmd.getListenIp());
+        final boolean dualModeServiceIpRegistration = protocol == StorageServiceInstance.Protocol.NFS
+                && modeProtocol != null && "V3V4_DUAL".equals(protocolMode);
         final boolean created = protocolVO == null;
         final Boolean previousEnabled = created ? null : protocolVO.isEnabled();
         final String previousListenIp = created ? null : protocolVO.getListenIp();
@@ -301,19 +316,33 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         if (protocolVO == null) {
             protocolVO = new StorageServiceProtocolVO(instance.getId(), protocol, true, cmd.getListenIp(), port);
             protocolVO.setState(StorageServiceInstance.ResourceState.Ready);
+            protocolVO.setConfigJson(protocolConfigJson);
             protocolVO = storageServiceProtocolDao.persist(protocolVO);
         } else {
             protocolVO.setEnabled(true);
-            protocolVO.setListenIp(cmd.getListenIp());
-            protocolVO.setPort(port);
+            if (protocol == StorageServiceInstance.Protocol.NFS) {
+                if (StringUtils.isBlank(protocolVO.getListenIp())) {
+                    protocolVO.setListenIp(cmd.getListenIp());
+                }
+                protocolVO.setPort(dualModeServiceIpRegistration ? 2049 : (protocolVO.getPort() == null ? port : protocolVO.getPort()));
+            } else {
+                protocolVO.setListenIp(cmd.getListenIp());
+                protocolVO.setPort(port);
+            }
+            protocolVO.setConfigJson(buildProtocolConfigJson(protocol, protocolVO.getConfigJson(), protocolMode, port, cmd.getListenIp()));
             protocolVO.setState(StorageServiceInstance.ResourceState.Ready);
             storageServiceProtocolDao.update(protocolVO.getId(), protocolVO);
         }
 
+        boolean registeredListenAddress = false;
         try {
+            registeredListenAddress = registerProtocolListenAddress(instance, cmd.getListenIp(), listenNic);
+            ensureGuestProtocolListenAddress(instance, cmd.getListenIp(), listenNic, port);
             applyStorageServiceProtocolDesiredState(instance, protocol);
-            registerProtocolListenAddress(instance, cmd.getListenIp(), listenNic);
         } catch (final RuntimeException e) {
+            if (registeredListenAddress) {
+                removeSecondaryListenAddress(instance, cmd.getListenIp());
+            }
             rollbackProtocolEnable(protocolVO, created, previousEnabled, previousListenIp, previousPort, previousState);
             throw e;
         }
@@ -326,6 +355,36 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final StorageServiceInstance.Protocol protocol = parseProtocol(cmd.getProtocol());
         if (StringUtils.isNotBlank(cmd.getListenIp())) {
             return deleteStorageServiceEndpoint(instance, protocol, cmd.getListenIp());
+        }
+        if (protocol == StorageServiceInstance.Protocol.NFS) {
+            final List<StorageServiceProtocolVO> protocols = storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), protocol);
+            if (protocols.isEmpty()) {
+                return true;
+            }
+            validateProtocolCanBeDeleted(instance, protocol);
+            final Map<Long, Boolean> previousEnabled = new HashMap<>();
+            final Map<Long, StorageServiceInstance.ResourceState> previousState = new HashMap<>();
+            for (final StorageServiceProtocolVO protocolVO : protocols) {
+                previousEnabled.put(protocolVO.getId(), protocolVO.isEnabled());
+                previousState.put(protocolVO.getId(), protocolVO.getState());
+                protocolVO.setEnabled(false);
+                protocolVO.setState(StorageServiceInstance.ResourceState.Updating);
+                storageServiceProtocolDao.update(protocolVO.getId(), protocolVO);
+            }
+            try {
+                applyStorageServiceProtocolDesiredState(instance, protocol);
+                for (final StorageServiceProtocolVO protocolVO : protocols) {
+                    storageServiceProtocolDao.remove(protocolVO.getId());
+                }
+            } catch (final RuntimeException e) {
+                for (final StorageServiceProtocolVO protocolVO : protocols) {
+                    protocolVO.setEnabled(Boolean.TRUE.equals(previousEnabled.get(protocolVO.getId())));
+                    protocolVO.setState(previousState.get(protocolVO.getId()));
+                    storageServiceProtocolDao.update(protocolVO.getId(), protocolVO);
+                }
+                throw e;
+            }
+            return true;
         }
         final StorageServiceProtocolVO protocolVO = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocol);
         if (protocolVO == null) {
@@ -350,8 +409,40 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     @Override
+    public ListResponse<StorageServiceProtocolResponse> listStorageServiceProtocols(final ListStorageServiceProtocolsCmd cmd) {
+        final List<StorageServiceProtocolVO> protocols = new ArrayList<>();
+        if (cmd.getInstanceId() != null) {
+            final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+            if (StringUtils.isNotBlank(cmd.getProtocol())) {
+                protocols.addAll(storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), parseProtocol(cmd.getProtocol())));
+            } else {
+                protocols.addAll(storageServiceProtocolDao.listByInstanceId(instance.getId()));
+            }
+        } else if (StringUtils.isNotBlank(cmd.getProtocol())) {
+            final StorageServiceInstance.Protocol protocol = parseProtocol(cmd.getProtocol());
+            storageServiceInstanceDao.listAll().forEach(instance ->
+                    protocols.addAll(storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), protocol)));
+        } else {
+            storageServiceInstanceDao.listAll().forEach(instance ->
+                    protocols.addAll(storageServiceProtocolDao.listByInstanceId(instance.getId())));
+        }
+
+        final List<StorageServiceProtocolResponse> responses = new ArrayList<>();
+        for (final StorageServiceProtocolVO protocol : protocols) {
+            responses.add(createProtocolResponse(protocol));
+        }
+        final ListResponse<StorageServiceProtocolResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
+    }
+
+    @Override
     public StorageNfsExportResponse createStorageNfsExport(final CreateStorageNfsExportCmd cmd) {
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        final String protocolMode = resolveNfsServiceProtocolMode(instance);
+        validateNfsRequestedProtocolMode(cmd.getProtocolMode(), protocolMode);
+        validateNfsEndpointPolicyForMode(protocolMode, cmd.getEndpointMode(), cmd.getListenIps(), cmd.getListenerPorts());
+        validateNfsListenerPortsExist(instance, protocolMode, cmd.getListenerPorts());
         validateStorageServiceBackingVolume(instance, cmd.getVolumeId(), "NFS export");
         final VolumeVO requestedVolume = cmd.getVolumeId() == null ? null : requireVolume(cmd.getVolumeId());
         validateFileShareFilesystem(cmd.getFilesystem(), cmd.getImportMode());
@@ -361,7 +452,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         validateFileSharePathAvailable(instance, path, null, cmd.getVolumeId(), "NFS export");
         String configJson = buildNfsConfigJson(null, cmd.getReadOnly(), cmd.getRootSquash(), cmd.getAllSquash(), cmd.getAnonUid(), cmd.getAnonGid(),
                 cmd.getOwnerUid(), cmd.getOwnerGid(), cmd.getMode(), cmd.getRecursivePermission(), cmd.getSync(), cmd.getSecure(),
-                cmd.getEndpointMode(), cmd.getListenIps(), true);
+                cmd.getEndpointMode(), cmd.getListenIps(), cmd.getListenerPorts(), protocolMode, true);
         configJson = buildFileShareDirectoryConfigJson(configJson, requestedVolume, cmd.getImportMode(), cmd.getCreateDirectory());
         validateJsonObjectConfigOrThrow(configJson, "NFS export " + cmd.getName());
         StorageFileShareVO share = new StorageFileShareVO(instance.getId(), StorageServiceInstance.Protocol.NFS, cmd.getName(), path,
@@ -372,11 +463,15 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         storageFileShareDao.update(share.getId(), share);
         try {
             prepareFileShareBackingVolume(instance, share, cmd.getImportMode());
-            applyNfsDesiredState(instance);
-            share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+            if (Boolean.TRUE.equals(cmd.getDeferApply())) {
+                share.setState(StorageServiceInstance.ResourceState.Allocated);
+            } else {
+                applyNfsDesiredState(instance);
+                share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+            }
             storageFileShareDao.update(share.getId(), share);
         } catch (final RuntimeException e) {
-            markFileShareCreateFailed(instance, share, e, Boolean.TRUE.equals(cmd.getCleanupVolumeOnFailure()));
+            cleanupFailedFileShareCreate(instance, share, Boolean.TRUE.equals(cmd.getCleanupVolumeOnFailure()));
             throw e;
         }
         return createExportResponse(share);
@@ -386,6 +481,10 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     public StorageNfsExportResponse updateStorageNfsExport(final UpdateStorageNfsExportCmd cmd) {
         final StorageFileShareVO share = requireNfsExport(cmd.getId());
         final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
+        final String protocolMode = resolveNfsServiceProtocolMode(instance);
+        validateNfsRequestedProtocolMode(cmd.getProtocolMode(), protocolMode);
+        validateNfsEndpointPolicyForMode(protocolMode, cmd.getEndpointMode(), cmd.getListenIps(), cmd.getListenerPorts());
+        validateNfsListenerPortsExist(instance, protocolMode, cmd.getListenerPorts());
         if (cmd.getName() != null) {
             validateNfsExportName(cmd.getName());
             share.setName(cmd.getName());
@@ -410,7 +509,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
         share.setConfigJson(buildNfsConfigJson(share.getConfigJson(), cmd.getReadOnly(), cmd.getRootSquash(), cmd.getAllSquash(), cmd.getAnonUid(),
                 cmd.getAnonGid(), cmd.getOwnerUid(), cmd.getOwnerGid(), cmd.getMode(), cmd.getRecursivePermission(), cmd.getSync(), cmd.getSecure(),
-                cmd.getEndpointMode(), cmd.getListenIps(), true));
+                cmd.getEndpointMode(), cmd.getListenIps(), cmd.getListenerPorts(), protocolMode, true));
         share.setConfigJson(buildFileShareDirectoryConfigJson(share.getConfigJson(), cmd.getVolumeId() == null ? null : requireVolume(cmd.getVolumeId()),
                 cmd.getImportMode(), cmd.getCreateDirectory()));
         validateJsonObjectConfigOrThrow(share.getConfigJson(), "NFS export " + share.getUuid());
@@ -479,6 +578,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final List<String> principals = parseNfsPrincipals(cmd.getPrincipal(), cmd.getPrincipals());
         final List<StorageAccessRuleVO> persistedRules = new ArrayList<>();
         final List<StorageAccessRuleVO> existingRules = storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId());
+        final StorageServiceInstance.ResourceState pendingState = instance.getVmId() == null ?
+                StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Updating;
         for (final String principal : principals) {
             StorageAccessRuleVO rule = null;
             for (final StorageAccessRuleVO existingRule : existingRules) {
@@ -497,12 +598,30 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
             rule.setPermission(permission);
             rule.setConfigJson(buildNfsConfigJson(rule.getConfigJson(), null, cmd.getRootSquash(), cmd.getAllSquash(), cmd.getAnonUid(), cmd.getAnonGid(),
-                    null, null, null, null, cmd.getSync(), cmd.getSecure(), null, null, false));
-            rule.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+                    null, null, null, null, cmd.getSync(), cmd.getSecure(), null, null, null, null, false));
+            rule.setState(pendingState);
             storageAccessRuleDao.update(rule.getId(), rule);
             persistedRules.add(rule);
         }
-        applyNfsDesiredState(instance);
+        try {
+            applyNfsDesiredState(instance, true);
+            final StorageServiceInstance.ResourceState finalState = instance.getVmId() == null ?
+                    StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready;
+            for (final StorageAccessRuleVO rule : persistedRules) {
+                rule.setState(finalState);
+                storageAccessRuleDao.update(rule.getId(), rule);
+            }
+            share.setState(finalState);
+            storageFileShareDao.update(share.getId(), share);
+        } catch (final RuntimeException e) {
+            for (final StorageAccessRuleVO rule : persistedRules) {
+                rule.setState(StorageServiceInstance.ResourceState.Error);
+                storageAccessRuleDao.update(rule.getId(), rule);
+            }
+            share.setState(StorageServiceInstance.ResourceState.Error);
+            storageFileShareDao.update(share.getId(), share);
+            throw e;
+        }
         return createAclResponse(persistedRules.get(0));
     }
 
@@ -518,7 +637,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             rule.setPermission(parseNfsPermission(cmd.getPermission()));
         }
         rule.setConfigJson(buildNfsConfigJson(rule.getConfigJson(), null, cmd.getRootSquash(), cmd.getAllSquash(), cmd.getAnonUid(), cmd.getAnonGid(),
-                null, null, null, null, cmd.getSync(), cmd.getSecure(), null, null, false));
+                null, null, null, null, cmd.getSync(), cmd.getSecure(), null, null, null, null, false));
         rule.setState(StorageServiceInstance.ResourceState.Updating);
         storageAccessRuleDao.update(rule.getId(), rule);
         applyNfsDesiredState(instance);
@@ -879,7 +998,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         addStringProperty(payload, "resourceId", cmd.getResourceId());
         addStringProperty(payload, "client", cmd.getClient());
         addStringProperty(payload, "state", cmd.getState());
-        return listRuntimeOperation(cmd.getInstanceId(), "sessions", GSON.toJson(payload));
+        return listRuntimeOperation(cmd.getInstanceId(), cmd.getSharedFileSystemId(), "sessions", GSON.toJson(payload));
     }
 
     @Override
@@ -985,6 +1104,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             return;
         }
         final Long volumeId = share.getVolumeId();
+        final String mountPath = resolveFileShareGuestMountPath(share);
         try {
             for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
                 storageAccessRuleDao.remove(rule.getId());
@@ -995,7 +1115,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             logger.warn("Failed to reconcile Storage Service file share [{}] after create failure", share.getUuid(), cleanupError);
         }
         if (cleanupVolumeOnFailure && volumeId != null) {
-            cleanupCreatedBackingVolume(instance, volumeId);
+            cleanupCreatedBackingVolume(instance, volumeId, mountPath);
         }
     }
 
@@ -1014,17 +1134,22 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             logger.warn("Failed to preserve failed Storage Service file share [{}] after create failure", share.getUuid(), reconcileError);
         }
         if (cleanupVolumeOnFailure && volumeId != null) {
-            cleanupCreatedBackingVolume(instance, volumeId);
+            cleanupCreatedBackingVolume(instance, volumeId, resolveFileShareGuestMountPath(share));
         }
     }
 
     protected void cleanupCreatedBackingVolume(final StorageServiceInstanceVO instance, final Long volumeId) {
+        cleanupCreatedBackingVolume(instance, volumeId, null);
+    }
+
+    protected void cleanupCreatedBackingVolume(final StorageServiceInstanceVO instance, final Long volumeId, final String mountPath) {
         try {
             VolumeVO volume = volumeDao.findById(volumeId);
             if (volume == null) {
                 return;
             }
             if (instance.getVmId() != null && instance.getVmId().equals(volume.getInstanceId())) {
+                prepareGuestBackingVolumeDetach(instance, volume, mountPath);
                 volumeApiService.detachVolumeViaDestroyVM(instance.getVmId(), volume.getId());
                 volume = volumeDao.findById(volumeId);
             }
@@ -1035,6 +1160,43 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
         } catch (final RuntimeException cleanupError) {
             logger.warn("Failed to cleanup newly created backing volume [{}] after Storage Service file share create failure", volumeId, cleanupError);
+        }
+    }
+
+    protected String resolveFileShareGuestMountPath(final StorageFileShareVO share) {
+        if (share == null) {
+            return null;
+        }
+        final JsonObject config = parseJsonObject(share.getConfigJson());
+        final String configuredMountPath = getJsonString(config, "volumeMountPath");
+        if (StringUtils.isNotBlank(configuredMountPath)) {
+            return configuredMountPath;
+        }
+        final JsonObject inspection = getJsonObject(config, "lastInspection");
+        final String inspectedMountPath = getJsonString(inspection, "volumeMountPath");
+        if (StringUtils.isNotBlank(inspectedMountPath)) {
+            return inspectedMountPath;
+        }
+        return getJsonString(inspection, "mountPath");
+    }
+
+    protected void prepareGuestBackingVolumeDetach(final StorageServiceInstanceVO instance, final VolumeVO volume, final String mountPath) {
+        if (instance == null || instance.getVmId() == null || volume == null) {
+            return;
+        }
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("volumeId", volume.getId());
+        payload.addProperty("volumeUuid", volume.getUuid());
+        payload.addProperty("volumeName", volume.getName());
+        if (StringUtils.isNotBlank(mountPath)) {
+            payload.addProperty("mountPath", mountPath);
+        }
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "volume detach prepare", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
+        if (!result.isSuccess()) {
+            logger.warn("Failed to prepare Storage Service backing volume [{}] detach after file share create failure: {}",
+                    volume.getUuid(), result.getDetails());
         }
     }
 
@@ -1364,10 +1526,18 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     protected void applyNfsDesiredState(final StorageServiceInstanceVO instance) {
-        applyNfsDesiredState(instance, null);
+        applyNfsDesiredState(instance, null, false);
+    }
+
+    protected void applyNfsDesiredState(final StorageServiceInstanceVO instance, final boolean includeAllocatedResources) {
+        applyNfsDesiredState(instance, null, includeAllocatedResources);
     }
 
     protected void applyNfsDesiredState(final StorageServiceInstanceVO instance, final String removeListenIp) {
+        applyNfsDesiredState(instance, removeListenIp, false);
+    }
+
+    protected void applyNfsDesiredState(final StorageServiceInstanceVO instance, final String removeListenIp, final boolean includeAllocatedResources) {
         if (instance.getVmId() == null) {
             logger.debug("Storage Service instance [{}] has no System VM yet; NFS state is stored but not applied", instance.getUuid());
             return;
@@ -1376,13 +1546,38 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final JsonObject payload = new JsonObject();
         payload.addProperty("instanceUuid", instance.getUuid());
         payload.addProperty("instanceId", instance.getId());
-        final StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS);
-        payload.addProperty("enabled", protocol == null || protocol.isEnabled());
+        final List<StorageServiceProtocolVO> nfsProtocols = storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS);
+        final StorageServiceProtocolVO protocol = selectNfsDefaultProtocol(nfsProtocols);
+        payload.addProperty("enabled", nfsProtocols.isEmpty() || nfsProtocols.stream().anyMatch(StorageServiceProtocolVO::isEnabled));
+        final String serviceProtocolMode = resolveNfsServiceProtocolMode(instance);
+        payload.addProperty("protocolMode", serviceProtocolMode);
+        final Integer defaultNfsListenerPort = protocol == null || protocol.getPort() == null ? 2049 : protocol.getPort();
+        final JsonArray listeners = new JsonArray();
+        for (final StorageServiceProtocolVO listenerProtocol : nfsProtocols) {
+            if (listenerProtocol == null || !listenerProtocol.isEnabled()) {
+                continue;
+            }
+            final JsonObject listener = new JsonObject();
+            if (StringUtils.isNotBlank(listenerProtocol.getListenIp())) {
+                listener.addProperty("listenIp", listenerProtocol.getListenIp());
+            }
+            listener.addProperty("port", listenerProtocol.getPort() == null ? 2049 : listenerProtocol.getPort());
+            listener.addProperty("state", listenerProtocol.getState() == null ? StorageServiceInstance.ResourceState.Ready.name() : listenerProtocol.getState().name());
+            listener.add("config", parseJsonObject(listenerProtocol.getConfigJson()));
+            listeners.add(listener);
+        }
+        if (listeners.size() == 0) {
+            final JsonObject listener = new JsonObject();
+            listener.addProperty("port", 2049);
+            listener.addProperty("state", StorageServiceInstance.ResourceState.Ready.name());
+            listeners.add(listener);
+        }
+        payload.add("listeners", listeners);
         if (protocol != null) {
             payload.addProperty("listenIp", protocol.getListenIp());
-            if (protocol.getPort() != null) {
-                payload.addProperty("port", protocol.getPort());
-            }
+            payload.addProperty("port", protocol.getPort() == null ? 2049 : protocol.getPort());
+        } else {
+            payload.addProperty("port", 2049);
         }
         if (StringUtils.isNotBlank(removeListenIp)) {
             payload.addProperty("removeListenIp", removeListenIp);
@@ -1390,11 +1585,16 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
 
         final JsonArray exports = new JsonArray();
         for (final StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
-            if (!isApplicableFileShareState(share.getState())) {
+            if (!isApplicableFileShareState(share.getState(), includeAllocatedResources)) {
                 logger.debug("Skipping NFS export [{}] in state [{}] while building desired state", share.getUuid(), share.getState());
                 continue;
             }
             final JsonObject shareConfig = parseJsonObjectStrict(share.getConfigJson(), "NFS export " + share.getUuid());
+            shareConfig.addProperty("protocolMode", serviceProtocolMode);
+            if (ensureNfsExportListenerGroupPorts(shareConfig, serviceProtocolMode, defaultNfsListenerPort)) {
+                share.setConfigJson(GSON.toJson(shareConfig));
+                storageFileShareDao.update(share.getId(), share);
+            }
             validateNfsExportBackingConfig(share, shareConfig);
             final JsonObject export = new JsonObject();
             export.addProperty("id", share.getId());
@@ -1414,7 +1614,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             final JsonArray acls = new JsonArray();
             final HashSet<String> aclKeys = new HashSet<>();
             for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
-                if (!isApplicableResourceState(rule.getState())) {
+                if (!isApplicableResourceState(rule.getState(), includeAllocatedResources)) {
                     logger.debug("Skipping NFS ACL [{}] in state [{}] while building desired state", rule.getUuid(), rule.getState());
                     continue;
                 }
@@ -1439,11 +1639,37 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             exports.add(export);
         }
         payload.add("exports", exports);
+        final int requestedExportCount = exports.size();
 
         final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
                 "nfs export apply", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
         if (!result.isSuccess()) {
             throw new CloudRuntimeException("Failed to apply NFS desired state on Storage Service System VM: " + result.getDetails());
+        }
+        final JsonObject resultJson = parseJsonObject(result.getResultJson());
+        if (resultJson.has("runtimeReady") && !resultJson.get("runtimeReady").getAsBoolean()) {
+            throw new CloudRuntimeException("Failed to apply NFS desired state on Storage Service System VM: nfs-ganesha did not report a listening endpoint");
+        }
+        if (requestedExportCount > 0) {
+            final int appliedExportCount = getJsonInt(resultJson, "exports", 0);
+            final int appliedEndpointCount = getJsonInt(resultJson, "endpoints", 0);
+            if (appliedExportCount <= 0 || appliedEndpointCount <= 0) {
+                throw new CloudRuntimeException("Failed to apply NFS desired state on Storage Service System VM: expected " + requestedExportCount +
+                        " export(s), but Ganesha runtime reported exports=" + appliedExportCount + ", endpoints=" + appliedEndpointCount);
+            }
+        }
+        if (resultJson.has("runtimeEndpoints") && resultJson.get("runtimeEndpoints").isJsonArray()) {
+            for (final JsonElement endpoint : resultJson.getAsJsonArray("runtimeEndpoints")) {
+                if (endpoint != null && endpoint.isJsonObject()) {
+                    final JsonObject endpointJson = endpoint.getAsJsonObject();
+                    if (endpointJson.has("listening") && !endpointJson.get("listening").getAsBoolean()) {
+                        final String endpointIp = endpointJson.has("listenIp") ? endpointJson.get("listenIp").getAsString() : "unknown";
+                        final String endpointPort = endpointJson.has("port") ? endpointJson.get("port").getAsString() : "unknown";
+                        throw new CloudRuntimeException("Failed to apply NFS desired state on Storage Service System VM: nfs-ganesha endpoint " +
+                                endpointIp + ":" + endpointPort + " is not listening");
+                    }
+                }
+            }
         }
     }
 
@@ -1685,15 +1911,35 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
         }
 
-        final StorageServiceProtocolVO protocolVO = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocol);
-        if (protocolVO != null && endpoint.equals(protocolVO.getListenIp())) {
-            protocolVO.setListenIp(null);
-            storageServiceProtocolDao.update(protocolVO.getId(), protocolVO);
-            changed = true;
+        for (final StorageServiceProtocolVO protocolVO : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), protocol)) {
+            if (endpoint.equals(protocolVO.getListenIp())) {
+                storageServiceProtocolDao.remove(protocolVO.getId());
+                changed = true;
+            }
         }
         removeSecondaryListenAddress(instance, endpoint);
         applyNfsDesiredState(instance, endpoint);
         return changed;
+    }
+
+    protected void freezeNfsImplicitAllEndpointExports(final StorageServiceInstanceVO instance, final String previousListenIp) {
+        final String endpoint = StringUtils.trim(previousListenIp);
+        if (StringUtils.isBlank(endpoint)) {
+            return;
+        }
+        for (final StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+            final JsonObject config = parseJsonObject(share.getConfigJson());
+            final String endpointMode = nfsEndpointModeAsString(config);
+            if (!"ALL".equals(endpointMode) || StringUtils.isNotBlank(nfsListenIpsAsString(config))) {
+                continue;
+            }
+            final JsonArray listenIps = new JsonArray();
+            listenIps.add(endpoint);
+            config.addProperty("endpointMode", "SELECTED");
+            config.add("listenIps", listenIps);
+            share.setConfigJson(GSON.toJson(config));
+            storageFileShareDao.update(share.getId(), share);
+        }
     }
 
     protected StorageServiceInstance.ResourceState getAppliedResourceState(final StorageServiceInstanceVO instance) {
@@ -1871,12 +2117,11 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     protected ListResponse<StorageServiceRuntimeResponse> listRuntimeOperation(final Long instanceId, final String operation, final String payload) {
-        final List<StorageServiceInstanceVO> instances = new ArrayList<>();
-        if (instanceId != null) {
-            instances.add(requireInstance(instanceId));
-        } else {
-            instances.addAll(storageServiceInstanceDao.listAll());
-        }
+        return listRuntimeOperation(instanceId, null, operation, payload);
+    }
+
+    protected ListResponse<StorageServiceRuntimeResponse> listRuntimeOperation(final Long instanceId, final Long sharedFileSystemId, final String operation, final String payload) {
+        final List<StorageServiceInstanceVO> instances = resolveRuntimeInstances(instanceId, sharedFileSystemId);
 
         final List<StorageServiceRuntimeResponse> responses = new ArrayList<>();
         for (final StorageServiceInstanceVO instance : instances) {
@@ -1885,6 +2130,38 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final ListResponse<StorageServiceRuntimeResponse> response = new ListResponse<>();
         response.setResponses(responses, responses.size());
         return response;
+    }
+
+    protected List<StorageServiceInstanceVO> resolveRuntimeInstances(final Long instanceId, final Long sharedFileSystemId) {
+        final List<StorageServiceInstanceVO> instances = new ArrayList<>();
+        if (instanceId != null) {
+            instances.add(requireInstance(instanceId));
+            return instances;
+        }
+        if (sharedFileSystemId != null) {
+            final SharedFSVO sharedFS = sharedFSDao.findById(sharedFileSystemId);
+            if (sharedFS != null && sharedFS.getVmId() != null) {
+                final StorageServiceInstanceVO instance = storageServiceInstanceDao.findByVmId(sharedFS.getVmId());
+                if (instance != null && isRuntimeInstanceActive(instance)) {
+                    instances.add(instance);
+                }
+            }
+            return instances;
+        }
+        storageServiceInstanceDao.listAll().forEach(instance -> {
+            if (isRuntimeInstanceActive(instance)) {
+                instances.add(instance);
+            }
+        });
+        return instances;
+    }
+
+    protected boolean isRuntimeInstanceActive(final StorageServiceInstanceVO instance) {
+        if (instance == null || instance.getRemoved() != null || instance.getVmId() == null || instance.getState() == null) {
+            return false;
+        }
+        final String state = instance.getState().name();
+        return !"Destroyed".equals(state) && !"Expunging".equals(state) && !"Expunged".equals(state);
     }
 
     protected StorageServiceRuntimeResponse createRuntimeResponse(final StorageServiceInstanceVO instance, final String operation) {
@@ -2381,13 +2658,12 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     protected Integer normalizeStorageServiceProtocolPort(final StorageServiceInstance.Protocol protocol, final Integer port) {
-        if (protocol == StorageServiceInstance.Protocol.NFS) {
-            if (port != null && port != 2049) {
-                throw new InvalidParameterValueException("NFS uses the service-wide port 2049 in the current Storage Service System VM");
-            }
-            return 2049;
+        final int defaultPort = protocol == StorageServiceInstance.Protocol.NFS ? 2049 : 0;
+        final Integer normalizedPort = port == null ? (defaultPort == 0 ? null : defaultPort) : port;
+        if (normalizedPort != null && (normalizedPort < 1 || normalizedPort > 65535)) {
+            throw new InvalidParameterValueException(String.format("Invalid %s port: %s", protocol, normalizedPort));
         }
-        return port;
+        return normalizedPort;
     }
 
     protected void validateProtocolCanBeDeleted(final StorageServiceInstanceVO instance, final StorageServiceInstance.Protocol protocol) {
@@ -2506,8 +2782,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
 
     protected String buildNfsConfigJson(final String currentConfig, final Boolean readOnly, final Boolean rootSquash,
             final Boolean allSquash, final Integer anonUid, final Integer anonGid, final Integer ownerUid, final Integer ownerGid,
-            final String mode, final Boolean recursivePermission, final Boolean sync, final Boolean secure, final String endpointMode, final String listenIps,
-            final boolean applyWritableRootSquashDefaults) {
+            final String mode, final Boolean recursivePermission, final Boolean sync, final Boolean secure, final String endpointMode, final String listenIps, final String listenerPorts,
+            final String protocolMode, final boolean applyWritableRootSquashDefaults) {
         final JsonObject config = parseJsonObject(currentConfig);
         if (!config.has("readOnly")) {
             config.addProperty("readOnly", false);
@@ -2562,7 +2838,22 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         if (secure != null) {
             config.addProperty("secure", secure);
         }
-        if (endpointMode != null || listenIps != null) {
+        if (StringUtils.isNotBlank(protocolMode)) {
+            config.addProperty("protocolMode", normalizeNfsProtocolMode(protocolMode));
+        } else if (!config.has("protocolMode") && !config.has("protocolmode")) {
+            config.addProperty("protocolMode", "V4_ONLY");
+        }
+        if (listenerPorts != null) {
+            final JsonArray parsedListenerPorts = parseNfsListenerPorts(listenerPorts);
+            if ("V3V4_DUAL".equals(nfsProtocolModeAsString(config, currentConfig))) {
+                config.add("listenerGroupPorts", singletonNfsListenerPortArray(2049));
+                config.addProperty("endpointMode", "ALL");
+            } else {
+                config.add("listenerGroupPorts", parsedListenerPorts.size() > 0 ? parsedListenerPorts : singletonNfsListenerPortArray(2049));
+                config.addProperty("endpointMode", "LISTENER_GROUP");
+            }
+            config.remove("listenIps");
+        } else if (endpointMode != null || listenIps != null) {
             final JsonArray parsedListenIps = parseNfsListenIps(listenIps);
             final String normalizedEndpointMode = normalizeNfsEndpointMode(endpointMode, parsedListenIps, false);
             config.addProperty("endpointMode", normalizedEndpointMode);
@@ -2571,11 +2862,122 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             } else {
                 config.remove("listenIps");
             }
+            if (!config.has("listenerGroupPorts")) {
+                config.add("listenerGroupPorts", singletonNfsListenerPortArray(2049));
+            }
         } else if (!config.has("endpointMode")) {
-            config.addProperty("endpointMode", StringUtils.isNotBlank(nfsListenIpsAsString(config)) ? "SELECTED" : "ALL");
+            config.addProperty("endpointMode", "LISTENER_GROUP");
+            config.add("listenerGroupPorts", singletonNfsListenerPortArray(2049));
         }
         applyNfsWritableRootSquashDefaults(config, applyWritableRootSquashDefaults);
         return GSON.toJson(config);
+    }
+
+    protected boolean ensureNfsExportListenerGroupPorts(final JsonObject config, final String protocolMode, final Integer defaultPort) {
+        boolean changed = false;
+        final int fallbackPort = defaultPort == null ? 2049 : defaultPort;
+        if ("V3V4_DUAL".equals(protocolMode)) {
+            final String currentMode = nfsEndpointModeAsString(config);
+            if (!"ALL".equals(currentMode)) {
+                config.addProperty("endpointMode", "ALL");
+                changed = true;
+            }
+            if (config.has("listenIps")) {
+                config.remove("listenIps");
+                changed = true;
+            }
+            if (!config.has("listenerGroupPorts") || !config.get("listenerGroupPorts").isJsonArray() || config.getAsJsonArray("listenerGroupPorts").size() == 0) {
+                config.add("listenerGroupPorts", singletonNfsListenerPortArray(2049));
+                changed = true;
+            }
+            return changed;
+        }
+
+        final String currentMode = nfsEndpointModeAsString(config);
+        if (!"LISTENER_GROUP".equals(currentMode)) {
+            config.addProperty("endpointMode", "LISTENER_GROUP");
+            changed = true;
+        }
+        if (config.has("listenIps")) {
+            config.remove("listenIps");
+            changed = true;
+        }
+        if (!config.has("listenerGroupPorts") || !config.get("listenerGroupPorts").isJsonArray() || config.getAsJsonArray("listenerGroupPorts").size() == 0) {
+            config.add("listenerGroupPorts", singletonNfsListenerPortArray(fallbackPort));
+            changed = true;
+        }
+        return changed;
+    }
+
+    protected String buildProtocolConfigJson(final StorageServiceInstance.Protocol protocol, final String currentConfig, final String protocolMode) {
+        return buildProtocolConfigJson(protocol, currentConfig, protocolMode, null, null);
+    }
+
+    protected String buildProtocolConfigJson(final StorageServiceInstance.Protocol protocol, final String currentConfig, final String protocolMode, final Integer listenerPort, final String listenIp) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        if (protocol == StorageServiceInstance.Protocol.NFS) {
+            final String mode = StringUtils.isBlank(protocolMode) ? nfsProtocolModeAsString(config, currentConfig) : normalizeNfsProtocolMode(protocolMode);
+            config.addProperty("protocolMode", mode);
+            if ("V3V4_DUAL".equals(mode)) {
+                config.add("listenerGroups", singletonNfsListenerGroupArray(2049));
+            } else if (listenerPort != null) {
+                addNfsListenerGroup(config, listenerPort);
+            } else if (!config.has("listenerGroups")) {
+                config.add("listenerGroups", singletonNfsListenerGroupArray(2049));
+            }
+            addNfsServiceIp(config, listenIp);
+        }
+        return config.entrySet().isEmpty() ? null : GSON.toJson(config);
+    }
+
+    protected JsonArray singletonNfsListenerPortArray(final int port) {
+        final JsonArray ports = new JsonArray();
+        ports.add(port);
+        return ports;
+    }
+
+    protected JsonArray singletonNfsListenerGroupArray(final int port) {
+        final JsonArray groups = new JsonArray();
+        final JsonObject group = new JsonObject();
+        group.addProperty("port", port);
+        group.addProperty("state", "Ready");
+        groups.add(group);
+        return groups;
+    }
+
+    protected void addNfsListenerGroup(final JsonObject config, final Integer port) {
+        if (port == null) {
+            return;
+        }
+        validateNfsListenerPort(port);
+        JsonArray groups = config.has("listenerGroups") && config.get("listenerGroups").isJsonArray() ? config.getAsJsonArray("listenerGroups") : new JsonArray();
+        for (final JsonElement element : groups) {
+            if (element != null && element.isJsonObject()) {
+                final JsonElement existingPort = element.getAsJsonObject().get("port");
+                if (existingPort != null && existingPort.getAsInt() == port) {
+                    return;
+                }
+            }
+        }
+        final JsonObject group = new JsonObject();
+        group.addProperty("port", port);
+        group.addProperty("state", "Ready");
+        groups.add(group);
+        config.add("listenerGroups", groups);
+    }
+
+    protected void addNfsServiceIp(final JsonObject config, final String listenIp) {
+        if (StringUtils.isBlank(listenIp) || "0.0.0.0".equals(listenIp) || "::".equals(listenIp)) {
+            return;
+        }
+        JsonArray ips = config.has("serviceIps") && config.get("serviceIps").isJsonArray() ? config.getAsJsonArray("serviceIps") : new JsonArray();
+        for (final JsonElement element : ips) {
+            if (element != null && !element.isJsonNull() && listenIp.equals(element.getAsString())) {
+                return;
+            }
+        }
+        ips.add(listenIp);
+        config.add("serviceIps", ips);
     }
 
     protected void applyNfsWritableRootSquashDefaults(final JsonObject config, final boolean enabled) {
@@ -2646,17 +3048,51 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return result;
     }
 
+    protected void validateNfsListenerPort(final Integer port) {
+        if (port == null || port < 1 || port > 65535) {
+            throw new InvalidParameterValueException("Invalid NFS listener group port: " + port);
+        }
+    }
+
+    protected JsonArray parseNfsListenerPorts(final String listenerPorts) {
+        final JsonArray result = new JsonArray();
+        if (StringUtils.isBlank(listenerPorts)) {
+            return result;
+        }
+        final HashSet<Integer> seen = new HashSet<>();
+        for (final String rawValue : StringUtils.split(listenerPorts, ',')) {
+            final String value = StringUtils.trim(rawValue);
+            if (StringUtils.isBlank(value)) {
+                continue;
+            }
+            final int port;
+            try {
+                port = Integer.parseInt(value);
+            } catch (final NumberFormatException e) {
+                throw new InvalidParameterValueException("Invalid NFS listener group port: " + value);
+            }
+            validateNfsListenerPort(port);
+            if (seen.add(port)) {
+                result.add(port);
+            }
+        }
+        return result;
+    }
+
     protected String normalizeNfsEndpointMode(final String endpointMode, final JsonArray listenIps, final boolean legacySelectedWhenBlank) {
         final String value = StringUtils.isBlank(endpointMode) ? null : StringUtils.trim(endpointMode).toUpperCase();
         final boolean hasListenIps = listenIps != null && listenIps.size() > 0;
         if (value == null) {
             return hasListenIps || legacySelectedWhenBlank ? "SELECTED" : "ALL";
         }
-        if (!"ALL".equals(value) && !"SELECTED".equals(value)) {
+        if (!"ALL".equals(value) && !"SELECTED".equals(value) && !"LISTENER_GROUP".equals(value)) {
             throw new InvalidParameterValueException("Invalid NFS export endpoint mode: " + endpointMode);
         }
         if ("SELECTED".equals(value) && !hasListenIps) {
             throw new InvalidParameterValueException("NFS export endpoint mode SELECTED requires at least one listen IP");
+        }
+        if ("LISTENER_GROUP".equals(value)) {
+            return value;
         }
         return value;
     }
@@ -2699,6 +3135,23 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return values.isEmpty() ? null : StringUtils.join(values, ',');
     }
 
+    protected String nfsListenerPortsAsString(final JsonObject config) {
+        if (config == null || !config.has("listenerGroupPorts") || !config.get("listenerGroupPorts").isJsonArray()) {
+            return null;
+        }
+        final List<String> values = new ArrayList<>();
+        for (final JsonElement element : config.getAsJsonArray("listenerGroupPorts")) {
+            if (element == null || element.isJsonNull()) {
+                continue;
+            }
+            final String value = StringUtils.trim(element.getAsString());
+            if (StringUtils.isNotBlank(value)) {
+                values.add(value);
+            }
+        }
+        return values.isEmpty() ? null : StringUtils.join(values, ',');
+    }
+
     protected String nfsEndpointModeAsString(final JsonObject config) {
         return nfsEndpointModeAsString(config, null);
     }
@@ -2710,7 +3163,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final JsonElement endpointMode = config.get("endpointMode") == null ? config.get("endpointmode") : config.get("endpointMode");
         if (endpointMode != null && !endpointMode.isJsonNull() && StringUtils.isNotBlank(endpointMode.getAsString())) {
             final String value = StringUtils.trim(endpointMode.getAsString()).toUpperCase();
-            if ("SELECTED".equals(value) || "ALL".equals(value)) {
+            if ("SELECTED".equals(value) || "ALL".equals(value) || "LISTENER_GROUP".equals(value)) {
                 return value;
             }
         }
@@ -2719,6 +3172,174 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             return rawEndpointMode;
         }
         return StringUtils.isNotBlank(nfsListenIpsAsString(config)) ? "SELECTED" : "ALL";
+    }
+
+    protected String explicitNfsProtocolModeAsString(final JsonObject config, final String rawConfig) {
+        if (config != null) {
+            final JsonElement protocolMode = config.get("protocolMode") == null ? config.get("protocolmode") : config.get("protocolMode");
+            if (protocolMode != null && !protocolMode.isJsonNull() && StringUtils.isNotBlank(protocolMode.getAsString())) {
+                return normalizeNfsProtocolMode(protocolMode.getAsString());
+            }
+        }
+        return nfsProtocolModeFromRawConfig(rawConfig);
+    }
+
+    protected String nfsProtocolModeAsString(final JsonObject config, final String rawConfig) {
+        final String explicitProtocolMode = explicitNfsProtocolModeAsString(config, rawConfig);
+        return StringUtils.isBlank(explicitProtocolMode) ? "V4_ONLY" : explicitProtocolMode;
+    }
+
+    protected String nfsProtocolModeFromRawConfig(final String rawConfig) {
+        if (StringUtils.isBlank(rawConfig)) {
+            return null;
+        }
+        final Matcher matcher = Pattern.compile("\\\"protocol[Mm]ode\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(rawConfig);
+        return matcher.find() ? normalizeNfsProtocolMode(matcher.group(1)) : null;
+    }
+
+    protected String normalizeNfsProtocolMode(final String protocolMode) {
+        final String normalized = StringUtils.defaultString(protocolMode, "V4_ONLY").trim().toUpperCase();
+        if ("V3V4_DUAL".equals(normalized) || "V4_ONLY".equals(normalized)) {
+            return normalized;
+        }
+        throw new InvalidParameterValueException("Unsupported NFS protocol mode: " + protocolMode);
+    }
+
+    protected StorageServiceProtocolVO findNfsProtocolEndpoint(final long instanceId, final String listenIp, final Integer port) {
+        final Integer normalizedPort = port == null ? 2049 : port;
+        for (final StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instanceId, StorageServiceInstance.Protocol.NFS)) {
+            final Integer existingPort = protocol.getPort() == null ? 2049 : protocol.getPort();
+            if (!normalizedPort.equals(existingPort)) {
+                continue;
+            }
+            final String existingIp = StringUtils.trimToNull(protocol.getListenIp());
+            final String requestedIp = StringUtils.trimToNull(listenIp);
+            if (StringUtils.equals(existingIp, requestedIp)) {
+                return protocol;
+            }
+        }
+        return null;
+    }
+
+    protected StorageServiceProtocolVO selectNfsModeProtocol(final List<StorageServiceProtocolVO> protocols) {
+        if (protocols == null || protocols.isEmpty()) {
+            return null;
+        }
+        StorageServiceProtocolVO fallback = null;
+        for (final StorageServiceProtocolVO protocol : protocols) {
+            if (protocol == null) {
+                continue;
+            }
+            if (fallback == null) {
+                fallback = protocol;
+            }
+            final JsonObject config = parseJsonObject(protocol.getConfigJson());
+            if (StringUtils.isNotBlank(explicitNfsProtocolModeAsString(config, protocol.getConfigJson()))) {
+                return protocol;
+            }
+        }
+        return fallback;
+    }
+
+    protected StorageServiceProtocolVO selectNfsDefaultProtocol(final List<StorageServiceProtocolVO> protocols) {
+        if (protocols == null || protocols.isEmpty()) {
+            return null;
+        }
+        StorageServiceProtocolVO fallback = null;
+        for (final StorageServiceProtocolVO protocol : protocols) {
+            if (protocol == null || !protocol.isEnabled()) {
+                continue;
+            }
+            if (fallback == null) {
+                fallback = protocol;
+            }
+            if (protocol.getPort() == null || protocol.getPort() == 2049) {
+                return protocol;
+            }
+        }
+        return fallback;
+    }
+
+    protected String resolveNfsServiceProtocolMode(final StorageServiceInstanceVO instance) {
+        final StorageServiceProtocolVO protocol = selectNfsModeProtocol(storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS));
+        if (protocol == null) {
+            return "V4_ONLY";
+        }
+        return nfsProtocolModeAsString(parseJsonObject(protocol.getConfigJson()), protocol.getConfigJson());
+    }
+
+    protected String resolveProtocolModeForEnable(final StorageServiceInstance.Protocol protocol, final StorageServiceProtocolVO protocolVO, final String requestedMode) {
+        if (protocol != StorageServiceInstance.Protocol.NFS) {
+            return null;
+        }
+        final String existingMode = protocolVO == null ? null : explicitNfsProtocolModeAsString(parseJsonObject(protocolVO.getConfigJson()), protocolVO.getConfigJson());
+        final String normalizedRequestedMode = StringUtils.isBlank(requestedMode) ? (StringUtils.isBlank(existingMode) ? "V4_ONLY" : existingMode) : normalizeNfsProtocolMode(requestedMode);
+        if (StringUtils.isNotBlank(existingMode) && !existingMode.equals(normalizedRequestedMode)) {
+            throw new InvalidParameterValueException("NFS protocol mode is fixed when the Storage Service is created. Existing mode is " + existingMode);
+        }
+        return normalizedRequestedMode;
+    }
+
+    protected void validateProtocolModeEndpointPolicy(final StorageServiceInstance.Protocol protocol, final StorageServiceProtocolVO protocolVO,
+            final String protocolMode, final String listenIp, final Integer port) {
+        if (protocol != StorageServiceInstance.Protocol.NFS || !"V3V4_DUAL".equals(protocolMode)) {
+            return;
+        }
+        if (port != null && port != 2049) {
+            throw new InvalidParameterValueException("NFSv3 + NFSv4 dual mode uses the service-wide NFS port 2049");
+        }
+        // Dual mode keeps NFS mode and port service-wide, but additional service IPs are allowed.
+        // The extra IP is registered on the System VM and does not create a separate Ganesha endpoint.
+    }
+
+    protected void validateNfsRequestedProtocolMode(final String requestedMode, final String serviceMode) {
+        if (StringUtils.isBlank(requestedMode)) {
+            return;
+        }
+        final String normalizedRequestedMode = normalizeNfsProtocolMode(requestedMode);
+        if (!normalizedRequestedMode.equals(serviceMode)) {
+            throw new InvalidParameterValueException("NFS protocol mode is fixed when the Storage Service is created. Existing mode is " + serviceMode);
+        }
+    }
+
+    protected void validateNfsEndpointPolicyForMode(final String protocolMode, final String endpointMode, final String listenIps, final String listenerPorts) {
+        if ("V3V4_DUAL".equals(protocolMode)) {
+            final JsonArray ports = parseNfsListenerPorts(listenerPorts);
+            if ("ALL".equalsIgnoreCase(StringUtils.defaultString(endpointMode)) || StringUtils.isNotBlank(listenIps) || ports.size() > 0 && !(ports.size() == 1 && ports.get(0).getAsInt() == 2049)) {
+                throw new InvalidParameterValueException("NFSv3 + NFSv4 dual mode exposes all NFS exports on the service-wide port 2049. Per-export endpoint or listener group selection is not supported.");
+            }
+            return;
+        }
+        if (StringUtils.isNotBlank(listenIps)) {
+            throw new InvalidParameterValueException("NFSv4-only exports are assigned to listener group ports, not individual listen IPs.");
+        }
+        parseNfsListenerPorts(listenerPorts);
+    }
+
+    protected void validateNfsListenerPortsExist(final StorageServiceInstanceVO instance, final String protocolMode, final String listenerPorts) {
+        if ("V3V4_DUAL".equals(protocolMode) || StringUtils.isBlank(listenerPorts)) {
+            return;
+        }
+        final JsonArray requestedPorts = parseNfsListenerPorts(listenerPorts);
+        if (requestedPorts.size() == 0) {
+            throw new InvalidParameterValueException("NFSv4-only exports require at least one listener port group.");
+        }
+        final HashSet<Integer> enabledPorts = new HashSet<>();
+        for (final StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+            if (protocol == null || !protocol.isEnabled()) {
+                continue;
+            }
+            enabledPorts.add(protocol.getPort() == null ? 2049 : protocol.getPort());
+        }
+        if (enabledPorts.isEmpty()) {
+            enabledPorts.add(2049);
+        }
+        for (final JsonElement element : requestedPorts) {
+            final int port = element.getAsInt();
+            if (!enabledPorts.contains(port)) {
+                throw new InvalidParameterValueException("NFS listener port group is not enabled for this Storage Service: " + port);
+            }
+        }
     }
 
     protected String nfsSelectedListenIpsAsString(final JsonObject config) {
@@ -3113,17 +3734,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return targetNic;
     }
 
-    protected void registerProtocolListenAddress(final StorageServiceInstanceVO instance, final String listenIp, final NicVO targetNic) {
+    protected boolean registerProtocolListenAddress(final StorageServiceInstanceVO instance, final String listenIp, final NicVO targetNic) {
         if (targetNic == null || StringUtils.isBlank(listenIp) || "0.0.0.0".equals(listenIp) || "::".equals(listenIp) || instance.getVmId() == null) {
-            return;
+            return false;
         }
         if (listenIp.equals(targetNic.getIPv4Address())) {
             logger.info("Storage Service listen IP [{}] is already the primary IP on NIC [{}] for instance [{}]; skipping secondary IP registration",
                     listenIp, targetNic.getUuid(), instance.getUuid());
-            return;
+            return false;
         }
         if (nicSecondaryIpDao.findByIp4AddressAndNicId(listenIp, targetNic.getId()) != null) {
-            return;
+            return false;
         }
         if (!targetNic.getSecondaryIp()) {
             targetNic.setSecondaryIp(true);
@@ -3131,6 +3752,50 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
         nicSecondaryIpDao.persist(new NicSecondaryIpVO(targetNic.getId(), listenIp, instance.getVmId(), instance.getAccountId(), instance.getDomainId(), targetNic.getNetworkId()));
         logger.info("Registered Storage Service listen IP [{}] as a secondary IP on NIC [{}] for instance [{}]", listenIp, targetNic.getUuid(), instance.getUuid());
+        return true;
+    }
+
+    protected void ensureGuestProtocolListenAddress(final StorageServiceInstanceVO instance, final String listenIp, final NicVO targetNic, final Integer port) {
+        if (targetNic == null || StringUtils.isBlank(listenIp) || "0.0.0.0".equals(listenIp) || "::".equals(listenIp) || instance.getVmId() == null) {
+            return;
+        }
+        final JsonObject payload = new JsonObject();
+        payload.addProperty("listenIp", listenIp);
+        payload.addProperty("primaryIp", targetNic.getIPv4Address());
+        payload.addProperty("netmask", targetNic.getIPv4Netmask());
+        payload.addProperty("prefixlen", ipv4NetmaskToPrefixLength(targetNic.getIPv4Netmask()));
+        if (port != null) {
+            payload.addProperty("port", port);
+        }
+        final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                "network endpoint apply", GSON.toJson(payload), StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
+        if (!result.isSuccess()) {
+            throw new CloudRuntimeException("Failed to activate Storage Service listen IP inside System VM: " + result.getDetails());
+        }
+    }
+
+    protected int ipv4NetmaskToPrefixLength(final String netmask) {
+        if (StringUtils.isBlank(netmask)) {
+            return 24;
+        }
+        final String[] parts = netmask.trim().split("\\.");
+        if (parts.length != 4) {
+            return 24;
+        }
+        int prefix = 0;
+        for (final String part : parts) {
+            final int value;
+            try {
+                value = Integer.parseInt(part);
+            } catch (final NumberFormatException e) {
+                return 24;
+            }
+            if (value < 0 || value > 255) {
+                return 24;
+            }
+            prefix += Integer.bitCount(value);
+        }
+        return prefix;
     }
 
     protected void rollbackProtocolEnable(final StorageServiceProtocolVO protocolVO, final boolean created, final Boolean previousEnabled,
@@ -3240,15 +3905,28 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     protected void ensureProtocol(final StorageServiceInstanceVO instance, final StorageServiceInstance.Protocol protocolType) {
-        StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocolType);
+        StorageServiceProtocolVO protocol = protocolType == StorageServiceInstance.Protocol.NFS ?
+                findNfsProtocolEndpoint(instance.getId(), null, 2049) :
+                storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocolType);
         if (protocol == null) {
-            protocol = new StorageServiceProtocolVO(instance.getId(), protocolType, true, null, null);
+            protocol = new StorageServiceProtocolVO(instance.getId(), protocolType, true, null, protocolType == StorageServiceInstance.Protocol.NFS ? 2049 : null);
             protocol.setState(StorageServiceInstance.ResourceState.Ready);
             storageServiceProtocolDao.persist(protocol);
         } else if (!protocol.isEnabled()) {
             protocol.setEnabled(true);
             protocol.setState(StorageServiceInstance.ResourceState.Ready);
             storageServiceProtocolDao.update(protocol.getId(), protocol);
+        }
+    }
+
+    protected int getJsonInt(final JsonObject object, final String key, final int defaultValue) {
+        if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
+            return defaultValue;
+        }
+        try {
+            return object.get(key).getAsInt();
+        } catch (final RuntimeException e) {
+            return defaultValue;
         }
     }
 
@@ -3295,11 +3973,20 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     protected boolean isApplicableFileShareState(final StorageServiceInstance.ResourceState state) {
-        return isApplicableResourceState(state);
+        return isApplicableFileShareState(state, false);
+    }
+
+    protected boolean isApplicableFileShareState(final StorageServiceInstance.ResourceState state, final boolean includeAllocatedResources) {
+        return isApplicableResourceState(state, includeAllocatedResources);
     }
 
     protected boolean isApplicableResourceState(final StorageServiceInstance.ResourceState state) {
-        return state == StorageServiceInstance.ResourceState.Ready || state == StorageServiceInstance.ResourceState.Updating;
+        return isApplicableResourceState(state, false);
+    }
+
+    protected boolean isApplicableResourceState(final StorageServiceInstance.ResourceState state, final boolean includeAllocatedResources) {
+        return state == StorageServiceInstance.ResourceState.Ready || state == StorageServiceInstance.ResourceState.Updating ||
+                (includeAllocatedResources && state == StorageServiceInstance.ResourceState.Allocated);
     }
 
     protected void validateNfsExportBackingConfig(final StorageFileShareVO share, final JsonObject config) {
@@ -3368,6 +4055,10 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         response.setListenIp(protocol.getListenIp());
         response.setPort(protocol.getPort());
         response.setState(protocol.getState().name());
+        response.setConfig(protocol.getConfigJson());
+        if (protocol.getProtocol() == StorageServiceInstance.Protocol.NFS) {
+            response.setProtocolMode(nfsProtocolModeAsString(parseJsonObject(protocol.getConfigJson()), protocol.getConfigJson()));
+        }
         response.setObjectName("storageserviceprotocol");
         return response;
     }
@@ -3395,6 +4086,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final JsonObject config = parseJsonObject(share.getConfigJson());
         response.setEndpointMode(nfsEndpointModeAsString(config, share.getConfigJson()));
         response.setListenIps(nfsSelectedListenIpsAsString(config, share.getConfigJson()));
+        response.setListenerPorts(nfsListenerPortsAsString(config));
+        response.setProtocolMode(instance == null ? nfsProtocolModeAsString(config, share.getConfigJson()) : resolveNfsServiceProtocolMode(instance));
         response.setObjectName("storagenfsexport");
         return response;
     }

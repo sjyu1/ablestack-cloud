@@ -107,8 +107,15 @@ public class UpdateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = "listenips", type = CommandType.STRING, description = "comma separated listen IPs that should expose this NFS export")
     private String listenIps;
 
+    @Parameter(name = "listenerports", type = CommandType.STRING,
+            description = "comma separated NFS listener group ports that should expose this NFS export. NFSv4-only exports are separated by listener group port.")
+    private String listenerPorts;
+
     @Parameter(name = "endpointmode", type = CommandType.STRING, description = "NFS export endpoint exposure mode: ALL or SELECTED")
     private String endpointMode;
+
+    @Parameter(name = "protocolmode", type = CommandType.STRING, description = "NFS protocol mode: V4_ONLY or V3V4_DUAL")
+    private String protocolMode;
 
     public Long getId() {
         return id;
@@ -194,8 +201,16 @@ public class UpdateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
         return listenIps;
     }
 
+    public String getListenerPorts() {
+        return listenerPorts;
+    }
+
     public String getEndpointMode() {
         return endpointMode;
+    }
+
+    public String getProtocolMode() {
+        return protocolMode;
     }
 
     @Override

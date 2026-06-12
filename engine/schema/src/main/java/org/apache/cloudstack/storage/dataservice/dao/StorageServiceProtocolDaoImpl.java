@@ -50,6 +50,14 @@ public class StorageServiceProtocolDaoImpl extends GenericDaoBase<StorageService
     }
 
     @Override
+    public List<StorageServiceProtocolVO> listByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol) {
+        SearchCriteria<StorageServiceProtocolVO> sc = InstanceProtocolSearch.create();
+        sc.setParameters("instanceId", instanceId);
+        sc.setParameters("protocol", protocol);
+        return listBy(sc);
+    }
+
+    @Override
     public List<StorageServiceProtocolVO> listByInstanceId(long instanceId) {
         SearchCriteria<StorageServiceProtocolVO> sc = InstanceSearch.create();
         sc.setParameters("instanceId", instanceId);

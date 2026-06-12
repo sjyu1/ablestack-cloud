@@ -53,6 +53,7 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSer
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceHealthCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInventoryCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceProtocolsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceSessionsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
@@ -85,6 +86,8 @@ public interface StorageService {
     StorageServiceProtocolResponse enableStorageServiceProtocol(EnableStorageServiceProtocolCmd cmd);
 
     boolean deleteStorageServiceProtocol(DeleteStorageServiceProtocolCmd cmd);
+
+    ListResponse<StorageServiceProtocolResponse> listStorageServiceProtocols(ListStorageServiceProtocolsCmd cmd);
 
     StorageNfsExportResponse createStorageNfsExport(CreateStorageNfsExportCmd cmd);
 

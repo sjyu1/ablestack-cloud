@@ -25,6 +25,7 @@ import org.apache.cloudstack.api.BaseListCmd;
 import org.apache.cloudstack.api.Parameter;
 import org.apache.cloudstack.api.command.user.UserCmd;
 import org.apache.cloudstack.api.response.ListResponse;
+import org.apache.cloudstack.api.response.SharedFSResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageServiceRuntimeResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
@@ -43,6 +44,9 @@ public class ListStorageServiceSessionsCmd extends BaseListCmd implements UserCm
     @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, description = "Storage Service instance ID")
     private Long instanceId;
 
+    @Parameter(name = "sharedfilesystemid", type = CommandType.UUID, entityType = SharedFSResponse.class, description = "Shared FileSystem ID used to resolve the active Storage Service instance")
+    private Long sharedFileSystemId;
+
     @Parameter(name = "protocol", type = CommandType.STRING, description = "Protocol filter: NFS, SMB, ISCSI, or NVME_OF")
     private String protocol;
 
@@ -57,6 +61,10 @@ public class ListStorageServiceSessionsCmd extends BaseListCmd implements UserCm
 
     public Long getInstanceId() {
         return instanceId;
+    }
+
+    public Long getSharedFileSystemId() {
+        return sharedFileSystemId;
     }
 
     public String getProtocol() {
