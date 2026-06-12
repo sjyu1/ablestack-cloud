@@ -950,6 +950,7 @@
 "label.enable.webhook": "Enable Webhook",
 "label.enabled": "Enabled",
 "label.enabled.revocation.check": "Enables revocation checking for certificates",
+"label.backend.ssl": "HTTPS backend",
 "label.encrypt": "Encrypt",
 "label.encryptroot": "Encrypt Root Disk",
 "label.end": "End",
