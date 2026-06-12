@@ -45,8 +45,6 @@ import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -210,9 +208,8 @@ public class AblestackNetBackupClient {
             return false;
         }
 
-        final String encodedBackupId = URLEncoder.encode(backupId, StandardCharsets.UTF_8);
-        final HttpGet request = new HttpGet(resolvePath(String.format("%s?backupId=%s",
-                NETBACKUP_CATALOG_IMAGES_PATH, encodedBackupId)));
+        final HttpGet request = new HttpGet(resolvePath(String.format("%s/%s",
+                NETBACKUP_CATALOG_IMAGES_PATH, backupId)));
         request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
         applyAuthenticationHeaders(request);
 
