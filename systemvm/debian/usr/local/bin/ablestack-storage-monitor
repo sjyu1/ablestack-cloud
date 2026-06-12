@@ -70,6 +70,10 @@ PY
   mv "$tmp" "${CACHE_DIR}/${scope}.json"
 }
 
+reconcile_network_endpoints() {
+  "$STORAGECTL" network endpoints reconcile >/dev/null 2>&1 || true
+}
+
 collect_scope() {
   local scope="$1"
   if ABLESTACK_STORAGECTL_CACHE=0 "$STORAGECTL" "$scope" 2>/dev/null | write_json "$scope"; then
@@ -177,6 +181,7 @@ PY
 
 collect_once() {
   mkdir -p "$CACHE_DIR"
+  reconcile_network_endpoints
   collect_scope health || true
   collect_scope inventory || true
   collect_scope sessions || true

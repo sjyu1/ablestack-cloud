@@ -21,6 +21,8 @@ set -euo pipefail
 
 LOG_FILE="/var/log/ablestack-storagectl.log"
 MONITOR_CACHE_DIR="${ABLESTACK_STORAGE_MONITOR_CACHE_DIR:-/run/ablestack-storage/monitor}"
+DESIRED_STATE_DIR="${ABLESTACK_STORAGE_DESIRED_STATE_DIR:-/etc/ablestack-storage/desired-state}"
+NFS_DESIRED_STATE_FILE="${ABLESTACK_STORAGE_NFS_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/nfs-export-apply.json}"
 
 json_escape() {
   local value="${1:-}"
@@ -45,6 +47,19 @@ log_command() {
   printf '%s command=%s payload=%s\n' "$(date -Is)" "${1:-}" "${2:-}" >> "$LOG_FILE"
 }
 
+persist_nfs_desired_state() {
+  local payload_file="$1"
+  local tmp
+  if [[ -z "$payload_file" || ! -r "$payload_file" ]]; then
+    return
+  fi
+  mkdir -p "$DESIRED_STATE_DIR"
+  tmp="$(mktemp "${DESIRED_STATE_DIR}/.nfs-export-apply.XXXXXX")"
+  cp "$payload_file" "$tmp"
+  chmod 0600 "$tmp"
+  mv "$tmp" "$NFS_DESIRED_STATE_FILE"
+}
+
 open_tcp_firewall_port() {
   local port="$1"
   if [[ -z "$port" ]]; then
@@ -56,7 +71,22 @@ open_tcp_firewall_port() {
   fi
   if command -v iptables >/dev/null 2>&1; then
     iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || \
-      iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
+    iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
+  fi
+}
+
+open_udp_firewall_port() {
+  local port="$1"
+  if [[ -z "$port" ]]; then
+    return
+  fi
+  if command -v firewall-cmd >/dev/null 2>&1; then
+    firewall-cmd --add-port="${port}/udp" >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-port="${port}/udp" >/dev/null 2>&1 || true
+  fi
+  if command -v iptables >/dev/null 2>&1; then
+    iptables -C INPUT -p udp --dport "$port" -j ACCEPT >/dev/null 2>&1 || \
+      iptables -I INPUT -p udp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
   fi
 }
 
@@ -121,11 +151,145 @@ print(json.dumps(cached, sort_keys=True))
 PY
 }
 
+
+network_endpoint_apply() {
+  local payload_file="${1:-}"
+  if [[ -z "$payload_file" || ! -r "$payload_file" ]]; then
+    emit_error "A readable payload file is required for network endpoint apply."
+    exit 2
+  fi
+  python3 - "$payload_file" <<'PY'
+import ipaddress
+import json
+import os
+import subprocess
+import sys
+
+STATE_PATH = "/etc/ablestack-storage/network-endpoints.json"
+payload_path = sys.argv[1]
+
+def run(args):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+def load_json(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return default
+
+def write_state(entries):
+    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump({"endpoints": entries}, handle, sort_keys=True)
+        handle.write("\n")
+    os.replace(tmp, STATE_PATH)
+
+def normalize_payload(payload):
+    if isinstance(payload, dict) and isinstance(payload.get("endpoints"), list):
+        return payload.get("endpoints")
+    if isinstance(payload, list):
+        return payload
+    return [payload]
+
+def netmask_to_prefix(netmask):
+    if not netmask:
+        return 24
+    try:
+        return ipaddress.IPv4Network("0.0.0.0/" + str(netmask), strict=False).prefixlen
+    except Exception:
+        return 24
+
+def interface_addresses():
+    result = run(["ip", "-j", "-4", "addr", "show", "scope", "global"])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "failed to inspect IPv4 addresses")
+    return json.loads(result.stdout or "[]")
+
+def find_existing_iface(listen_ip, links):
+    for link in links:
+        for addr in link.get("addr_info") or []:
+            if addr.get("local") == listen_ip:
+                return link.get("ifname"), int(addr.get("prefixlen") or 24)
+    return None, None
+
+def find_target_iface(entry, links):
+    primary_ip = str(entry.get("primaryIp") or "").strip()
+    requested_prefix = int(entry.get("prefixlen") or netmask_to_prefix(entry.get("netmask")))
+    if primary_ip:
+        for link in links:
+            for addr in link.get("addr_info") or []:
+                if addr.get("local") == primary_ip:
+                    return link.get("ifname"), int(addr.get("prefixlen") or requested_prefix)
+    listen_ip = ipaddress.IPv4Address(str(entry.get("listenIp")))
+    for link in links:
+        for addr in link.get("addr_info") or []:
+            local = addr.get("local")
+            prefix = int(addr.get("prefixlen") or requested_prefix)
+            if not local:
+                continue
+            try:
+                network = ipaddress.IPv4Interface(f"{local}/{prefix}").network
+            except Exception:
+                continue
+            if listen_ip in network:
+                return link.get("ifname"), prefix
+    return None, requested_prefix
+
+def apply_one(entry):
+    listen_ip = str(entry.get("listenIp") or entry.get("listenip") or "").strip()
+    if not listen_ip or listen_ip in ("0.0.0.0", "::"):
+        return None
+    ipaddress.IPv4Address(listen_ip)
+    links = interface_addresses()
+    iface, prefix = find_existing_iface(listen_ip, links)
+    if iface:
+        return {"listenIp": listen_ip, "interface": iface, "prefixlen": prefix, "active": True, "changed": False}
+    iface, prefix = find_target_iface({**entry, "listenIp": listen_ip}, links)
+    if not iface:
+        raise RuntimeError(f"No System VM interface can host Storage Service listen IP {listen_ip}")
+    result = run(["ip", "addr", "add", f"{listen_ip}/{prefix}", "dev", iface])
+    if result.returncode != 0 and "File exists" not in (result.stderr or ""):
+        raise RuntimeError(result.stderr.strip() or f"failed to add {listen_ip}/{prefix} to {iface}")
+    links = interface_addresses()
+    verify_iface, verify_prefix = find_existing_iface(listen_ip, links)
+    if not verify_iface:
+        raise RuntimeError(f"Storage Service listen IP {listen_ip} was not active after ip addr add")
+    return {"listenIp": listen_ip, "interface": verify_iface, "prefixlen": verify_prefix, "active": True, "changed": result.returncode == 0}
+
+payload = load_json(payload_path, {})
+requested = [entry for entry in normalize_payload(payload) if isinstance(entry, dict)]
+state = load_json(STATE_PATH, {"endpoints": []})
+merged = {str(entry.get("listenIp") or entry.get("listenip") or "").strip(): entry for entry in state.get("endpoints", []) if isinstance(entry, dict)}
+results = []
+for entry in requested:
+    result = apply_one(entry)
+    if not result:
+        continue
+    merged[result["listenIp"]] = {**entry, "listenIp": result["listenIp"], "prefixlen": result["prefixlen"]}
+    results.append(result)
+write_state(list(merged.values()))
+print(json.dumps({"success": True, "status": "ok", "endpoints": results, "count": len(results)}, sort_keys=True))
+PY
+}
+
+network_endpoints_reconcile() {
+  local state="/etc/ablestack-storage/network-endpoints.json"
+  if [[ ! -r "$state" ]]; then
+    emit_success "No Storage Service network endpoints to reconcile."
+    return 0
+  fi
+  network_endpoint_apply "$state"
+}
+
 runtime_health() {
   emit_cached_runtime "health" && return 0
   python3 - <<'PY'
+import glob
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -163,6 +327,98 @@ def port_listening(port):
         if len(parts) >= 4 and parts[3].endswith(suffix):
             return True
     return False
+
+def endpoint_listening(ip, port, timeout=1.0):
+    deadline = time.time() + max(timeout, 0.5)
+    last_error = ""
+    candidate_ip = str(ip or "127.0.0.1").strip()
+    if candidate_ip in ("0.0.0.0", "::"):
+        candidate_ip = "127.0.0.1"
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((candidate_ip, int(port)), timeout=1.0):
+                return True, ""
+        except Exception as exc:
+            last_error = str(exc)
+            time.sleep(0.25)
+    return False, last_error
+
+def nfs_protocol_mode_from_content(content):
+    if not content:
+        return "V4_ONLY"
+    for match in re.finditer(r"Protocols\s*=\s*([^;]+);", content, re.I):
+        value = re.sub(r"\s+", "", match.group(1))
+        if "3" in value and "4" in value:
+            return "V3V4_DUAL"
+        if value == "4":
+            return "V4_ONLY"
+    return "V4_ONLY"
+
+def rpcbind_active():
+    if not shutil.which("systemctl"):
+        return False
+    for unit in ("rpcbind.socket", "rpcbind.service"):
+        try:
+            result = subprocess.run(["systemctl", "is-active", "--quiet", unit],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+def collect_ganesha_runtime():
+    runtime_dir = "/run/ablestack-storage/ganesha"
+    endpoints = []
+    for conf_path in sorted(glob.glob("/etc/ganesha/ablestack-storage/*.conf")):
+        item = {"file": os.path.basename(conf_path), "listening": False, "processRunning": False}
+        try:
+            with open(conf_path, "r", encoding="utf-8") as fp:
+                content = fp.read()
+            listen_ip = ""
+            listen_port = 2049
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("Bind_addr"):
+                    listen_ip = stripped.split("=", 1)[1].strip().rstrip(";").strip('"')
+                elif stripped.startswith("NFS_Port"):
+                    try:
+                        listen_port = int(stripped.split("=", 1)[1].strip().rstrip(";"))
+                    except Exception:
+                        listen_port = 2049
+            protocol_mode = nfs_protocol_mode_from_content(content)
+            key = os.path.splitext(os.path.basename(conf_path))[0]
+            pid_path = os.path.join(runtime_dir, f"{key}.pid")
+            log_path = os.path.join(runtime_dir, f"{key}.log")
+            item.update({"listenIp": listen_ip, "port": listen_port, "protocolMode": protocol_mode, "pidPath": pid_path, "logPath": log_path})
+            if os.path.exists(pid_path):
+                try:
+                    with open(pid_path, "r", encoding="utf-8") as pid_fp:
+                        pid = int(pid_fp.read().strip())
+                    item["pid"] = pid
+                    item["processRunning"] = os.path.exists(f"/proc/{pid}")
+                except Exception as exc:
+                    item["error"] = str(exc)
+            item["listening"], listen_error = endpoint_listening(listen_ip or "127.0.0.1", listen_port)
+            if not item["listening"] and listen_error:
+                item["error"] = listen_error
+            item["status"] = "active" if item["listening"] else "inactive"
+        except Exception as exc:
+            item["error"] = str(exc)
+            item["status"] = "error"
+        endpoints.append(item)
+    active = [item for item in endpoints if item.get("listening")]
+    needs_rpcbind = any(item.get("protocolMode") == "V3V4_DUAL" for item in endpoints)
+    return {
+        "configured": len(endpoints),
+        "active": len(active),
+        "listening": bool(active),
+        "status": "ok" if (not endpoints or active) and (not needs_rpcbind or rpcbind_active()) else "degraded",
+        "protocolMode": "V3V4_DUAL" if any(item.get("protocolMode") == "V3V4_DUAL" for item in endpoints) else "V4_ONLY",
+        "rpcbindRequired": needs_rpcbind,
+        "rpcbindActive": rpcbind_active(),
+        "endpoints": endpoints,
+    }
 
 def collect_network_addresses():
     if not shutil.which("ip"):
@@ -270,9 +526,14 @@ def load_state(name):
         return False
     return os.path.getsize(path) >= 0
 
+ganesha_runtime = collect_ganesha_runtime()
+
 services = {
     "qemuGuestAgent": service_state("qemu-guest-agent"),
-    "nfs": service_state("nfs-server") if service_state("nfs-server") != "unknown" else service_state("nfs-kernel-server"),
+    "nfs": ganesha_runtime["status"] if ganesha_runtime["configured"] else (
+        service_state("nfs-server") if service_state("nfs-server") != "unknown" else service_state("nfs-kernel-server")
+    ),
+    "nfsGanesha": ganesha_runtime["status"],
     "smbd": service_state("smbd"),
     "nmbd": service_state("nmbd"),
     "winbind": service_state("winbind"),
@@ -293,13 +554,15 @@ desired_state = {
     "nvmeofSubsystems": load_state("nvmeof-subsystems.json"),
 }
 listen_ports = {
-    "nfs": port_listening(2049),
+    "nfs": ganesha_runtime["listening"] if ganesha_runtime["configured"] else port_listening(2049),
     "smb": port_listening(445) or port_listening(139),
     "iscsi": port_listening(3260),
     "nvmeof": port_listening(4420),
 }
 status = "ok"
 if services["qemuGuestAgent"] not in ("active", "unknown"):
+    status = "degraded"
+if ganesha_runtime["configured"] and not ganesha_runtime["listening"]:
     status = "degraded"
 if desired_state["iscsiTargets"] and not listen_ports["iscsi"]:
     status = "degraded"
@@ -314,6 +577,7 @@ print(json.dumps({
     "commands": commands,
     "desiredState": desired_state,
     "listenPorts": listen_ports,
+    "nfsGanesha": ganesha_runtime,
     "capabilities": {
         "nvmeof": nvmeof_capabilities(),
     },
@@ -329,6 +593,9 @@ import json
 import os
 import shutil
 import subprocess
+import re
+import socket
+import time
 
 def load_json(path, default):
     try:
@@ -484,6 +751,45 @@ def nvmeof_capabilities():
                 pass
     return result
 
+def endpoint_listening(ip, port, timeout=1.0):
+    deadline = time.time() + max(timeout, 0.5)
+    candidate_ip = str(ip or "127.0.0.1").strip()
+    if candidate_ip in ("0.0.0.0", "::"):
+        candidate_ip = "127.0.0.1"
+    last_error = ""
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((candidate_ip, int(port)), timeout=1.0):
+                return True, ""
+        except Exception as exc:
+            last_error = str(exc)
+            time.sleep(0.25)
+    return False, last_error
+
+def nfs_protocol_mode_from_content(content):
+    if not content:
+        return "V4_ONLY"
+    for match in re.finditer(r"Protocols\s*=\s*([^;]+);", content, re.I):
+        value = re.sub(r"\s+", "", match.group(1))
+        if "3" in value and "4" in value:
+            return "V3V4_DUAL"
+        if value == "4":
+            return "V4_ONLY"
+    return "V4_ONLY"
+
+def rpcbind_active():
+    if not shutil.which("systemctl"):
+        return False
+    for unit in ("rpcbind.socket", "rpcbind.service"):
+        try:
+            result = subprocess.run(["systemctl", "is-active", "--quiet", unit],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                return True
+        except Exception:
+            continue
+    return False
+
 exports = []
 for path in sorted(glob.glob("/etc/exports.d/ablestack-*.exports")):
     try:
@@ -501,18 +807,47 @@ for path in sorted(glob.glob("/etc/ganesha/ablestack-storage/*.conf")):
             content = fp.read()
         bind_match = re.search(r"Bind_addr\s*=\s*\"?([^\";\n]+)\"?", content)
         port_match = re.search(r"NFS_Port\s*=\s*(\d+)", content)
+        protocol_mode = nfs_protocol_mode_from_content(content)
         item["listenIp"] = bind_match.group(1).strip() if bind_match else ""
         item["port"] = int(port_match.group(1)) if port_match else 2049
+        item["protocolMode"] = protocol_mode
+        pid_path = os.path.join("/run/ablestack-storage/ganesha", os.path.splitext(os.path.basename(path))[0] + ".pid")
+        item["pidPath"] = pid_path
+        if os.path.exists(pid_path):
+            try:
+                with open(pid_path, "r", encoding="utf-8") as pid_fp:
+                    pid = int(pid_fp.read().strip())
+                item["pid"] = pid
+                item["processRunning"] = os.path.exists(f"/proc/{pid}")
+            except Exception as exc:
+                item["error"] = str(exc)
+        item["listening"], listen_error = endpoint_listening(item.get("listenIp"), item["port"])
+        if not item["listening"] and listen_error:
+            item["error"] = listen_error
         for export_block in re.findall(r"EXPORT\s*\{(.*?)\n\}", content, re.S):
             pseudo = re.search(r"Pseudo\s*=\s*\"?([^\";\n]+)\"?", export_block)
             export_path = re.search(r"Path\s*=\s*\"?([^\";\n]+)\"?", export_block)
+            export_protocol_mode = nfs_protocol_mode_from_content(export_block)
             item["entries"].append({
                 "pseudo": pseudo.group(1).strip() if pseudo else "",
                 "path": export_path.group(1).strip() if export_path else "",
+                "protocolMode": export_protocol_mode,
             })
+        item["status"] = "active" if item.get("listening") else "inactive"
     except Exception as exc:
         item["error"] = str(exc)
+        item["status"] = "error"
     ganesha_exports.append(item)
+
+ganesha_runtime = {
+    "configured": len(ganesha_exports),
+    "active": len([item for item in ganesha_exports if item.get("listening")]),
+    "protocolMode": "V3V4_DUAL" if any(item.get("protocolMode") == "V3V4_DUAL" for item in ganesha_exports) else "V4_ONLY",
+    "rpcbindRequired": any(item.get("protocolMode") == "V3V4_DUAL" for item in ganesha_exports),
+    "rpcbindActive": rpcbind_active(),
+}
+ganesha_runtime["listening"] = bool(ganesha_runtime["active"])
+ganesha_runtime["status"] = "ok" if not ganesha_exports or (ganesha_runtime["listening"] and (not ganesha_runtime["rpcbindRequired"] or ganesha_runtime["rpcbindActive"])) else "degraded"
 
 smb_shares = []
 current = None
@@ -587,6 +922,7 @@ print(json.dumps({
     "network": {"addresses": collect_network_addresses()},
     "nfsExports": exports,
     "nfsGaneshaExports": ganesha_exports,
+    "nfsGaneshaRuntime": ganesha_runtime,
     "nfsQuotas": load_json("/etc/ablestack-storage/nfs-quotas.json", {}),
     "smbShares": smb_shares,
     "smbQuotas": load_json("/etc/ablestack-storage/smb-quotas.json", {}),
@@ -1282,17 +1618,22 @@ apply_nfs_exports() {
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl disable --now nfs-server >/dev/null 2>&1 || systemctl disable --now nfs-kernel-server >/dev/null 2>&1 || true
+    systemctl disable --now nfs-ganesha.service >/dev/null 2>&1 || true
+    systemctl reset-failed nfs-ganesha.service >/dev/null 2>&1 || true
   fi
   exportfs -ua >/dev/null 2>&1 || true
 
   python3 - "$payload_file" <<'PY'
 import json
+import ipaddress
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import socket
 import zlib
 
 payload_path = sys.argv[1]
@@ -1304,10 +1645,12 @@ quota_dir = "/etc/ablestack-storage"
 alias_state_path = os.path.join(quota_dir, "nfs-export-aliases.json")
 ganesha_conf_dir = "/etc/ganesha/ablestack-storage"
 ganesha_run_dir = "/run/ablestack-storage/ganesha"
+nfs_probe_root = "/run/ablestack-storage/nfs-probe"
 os.makedirs(exports_dir, exist_ok=True)
 os.makedirs(quota_dir, exist_ok=True)
 os.makedirs(ganesha_conf_dir, exist_ok=True)
 os.makedirs(ganesha_run_dir, exist_ok=True)
+os.makedirs(nfs_probe_root, exist_ok=True)
 
 def remove_legacy_root_export():
     exports_path = "/etc/exports"
@@ -1412,12 +1755,96 @@ def ganesha_access(permission, read_only):
 def quote_ganesha(value):
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
+def ganesha_raw_literal(value, label):
+    token = str(value or "").strip()
+    if not token:
+        raise ValueError(f"{label} is required")
+    if re.search(r"\s", token) or any(ch in token for ch in ['"', "'", ";", "{", "}"]):
+        raise ValueError(f"invalid {label}: {token}")
+    return token
+
+
+def ganesha_bind_addr(value):
+    return ganesha_raw_literal(value or "0.0.0.0", "Ganesha bind address")
+
+
+def ganesha_client_list(value):
+    rendered = ganesha_clients(value)
+    tokens = [item.strip() for item in str(rendered).split(",") if item.strip()]
+    if not tokens:
+        raise ValueError("Ganesha client list is required")
+    return ", ".join(ganesha_raw_literal(item, "Ganesha client") for item in tokens)
+
+def nfs_protocols_for_mode(protocol_mode):
+    mode = str(protocol_mode or "V4_ONLY").strip().upper()
+    return "3,4" if mode == "V3V4_DUAL" else "4"
+
+def nfs_protocol_mode_from_content(content):
+    if not content:
+        return "V4_ONLY"
+    for match in re.finditer(r"Protocols\s*=\s*([^;]+);", content, re.I):
+        value = re.sub(r"\s+", "", match.group(1))
+        if "3" in value and "4" in value:
+            return "V3V4_DUAL"
+        if value == "4":
+            return "V4_ONLY"
+    return "V4_ONLY"
+
+GANESHA_EXPORT_ID_MIN = 1000
+GANESHA_EXPORT_ID_MAX = 65535
+
 def export_id(value):
-    return (zlib.crc32(str(value).encode("utf-8")) % 2147480000) + 1000
+    span = GANESHA_EXPORT_ID_MAX - GANESHA_EXPORT_ID_MIN + 1
+    return GANESHA_EXPORT_ID_MIN + (zlib.crc32(str(value).encode("utf-8")) % span)
+
+def assign_ganesha_export_ids(exports):
+    span = GANESHA_EXPORT_ID_MAX - GANESHA_EXPORT_ID_MIN + 1
+    used = set()
+    assigned = []
+    for index, export in enumerate(exports or []):
+        rendered = dict(export)
+        source = rendered.get("uuid") or rendered.get("name") or rendered.get("path") or index
+        candidate = export_id(source)
+        for _ in range(span):
+            if candidate not in used:
+                used.add(candidate)
+                rendered["id"] = candidate
+                assigned.append(rendered)
+                break
+            candidate += 1
+            if candidate > GANESHA_EXPORT_ID_MAX:
+                candidate = GANESHA_EXPORT_ID_MIN
+        else:
+            raise RuntimeError("No available Ganesha Export_Id values for Storage Service NFS endpoint")
+    return assigned
 
 def endpoint_key(ip, port):
     safe_ip = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(ip or "0.0.0.0"))
     return f"{safe_ip}_{int(port)}"
+
+def rpcbind_active():
+    if not shutil.which("systemctl"):
+        return False
+    for unit in ("rpcbind.socket", "rpcbind.service"):
+        try:
+            result = subprocess.run(["systemctl", "is-active", "--quiet", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+def ensure_rpcbind_started():
+    if not shutil.which("systemctl"):
+        return False
+    started = False
+    for unit in ("rpcbind.socket", "rpcbind.service"):
+        try:
+            result = subprocess.run(["systemctl", "start", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            started = started or result.returncode == 0
+        except Exception:
+            continue
+    return rpcbind_active() or started
 
 def nfs_export_endpoint_ips(export_config, default_ip):
     mode = str(export_config.get("endpointMode") or export_config.get("endpointmode") or "").strip().upper()
@@ -1430,9 +1857,43 @@ def nfs_export_endpoint_ips(export_config, default_ip):
         ips = []
     if mode == "SELECTED":
         if not ips:
-            raise ValueError("NFS export endpoint mode SELECTED requires at least one listen IP")
+            return [default_ip or "0.0.0.0"]
+        return ips
+    if not mode and ips:
         return ips
     return [default_ip or "0.0.0.0"]
+
+def nfs_export_listener_ports(export_config, default_port, protocol_mode):
+    if str(protocol_mode or "V4_ONLY").strip().upper() == "V3V4_DUAL":
+        return [2049]
+    raw_ports = None
+    for key in ("listenerGroupPorts", "listenergroupports", "listenerPorts", "listenerports"):
+        if key in export_config:
+            raw_ports = export_config.get(key)
+            break
+    if isinstance(raw_ports, list):
+        values = raw_ports
+    elif raw_ports is None or str(raw_ports).strip() == "":
+        values = []
+    else:
+        values = str(raw_ports).split(",")
+    ports = []
+    seen = set()
+    for value in values:
+        try:
+            port = int(str(value).strip())
+        except Exception:
+            continue
+        if 1 <= port <= 65535 and port not in seen:
+            seen.add(port)
+            ports.append(port)
+    if not ports:
+        try:
+            fallback = int(default_port or 2049)
+        except Exception:
+            fallback = 2049
+        ports.append(fallback)
+    return ports
 
 def cleanup_legacy_kernel_exports(managed_files):
     for name in os.listdir(exports_dir):
@@ -1443,17 +1904,112 @@ def cleanup_legacy_kernel_exports(managed_files):
             with open(full_path, "w", encoding="utf-8"):
                 pass
 
-def stop_ganesha_endpoints():
+def process_cmdline(pid):
+    try:
+        with open(f"/proc/{int(pid)}/cmdline", "rb") as cmd_fp:
+            return cmd_fp.read().replace(b"\x00", b" ").decode("utf-8", "replace").strip()
+    except Exception:
+        return ""
+
+
+def process_exists(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def managed_ganesha_process(pid):
+    cmdline = process_cmdline(pid)
+    return "ganesha.nfsd" in cmdline and ganesha_conf_dir in cmdline
+
+
+def tail_file(path, limit=20):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fp:
+            lines = fp.readlines()
+        return "".join(lines[-limit:]).strip()
+    except Exception:
+        return ""
+
+
+def terminate_pid(pid):
+    try:
+        pid = int(pid)
+    except Exception:
+        return
+    if not managed_ganesha_process(pid):
+        return
+    try:
+        os.kill(pid, 15)
+    except ProcessLookupError:
+        return
+    except Exception:
+        return
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if not os.path.exists(f"/proc/{pid}"):
+            return
+        time.sleep(0.2)
+    try:
+        os.kill(pid, 9)
+    except Exception:
+        pass
+
+
+def stop_default_ganesha_service():
+    if shutil.which("systemctl"):
+        for unit in ("nfs-ganesha.service",):
+            subprocess.run(["systemctl", "disable", "--now", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=20)
+            subprocess.run(["systemctl", "reset-failed", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=20)
+    default_pid_path = "/var/run/ganesha/ganesha.pid"
+    try:
+        with open(default_pid_path, "r", encoding="utf-8") as pid_fp:
+            pid = int(pid_fp.read().strip())
+        cmdline = process_cmdline(pid)
+        if "ganesha.nfsd" in cmdline and ganesha_conf_dir not in cmdline:
+            os.kill(pid, 15)
+    except ProcessLookupError:
+        pass
+    except Exception:
+        pass
+
+
+
+def stop_ganesha_endpoints(active_keys=None):
+    active_keys = set(active_keys or [])
+    unit_prefix = "ablestack-storage-ganesha@"
+    if shutil.which("systemctl") and os.path.isdir("/run/systemd/system"):
+        try:
+            proc = subprocess.run(["systemctl", "list-units", "--all", "--plain", "--no-legend", f"{unit_prefix}*.service"],
+                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=20)
+            for line in proc.stdout.splitlines():
+                unit = line.split()[0] if line.split() else ""
+                if not unit.startswith(unit_prefix) or not unit.endswith(".service"):
+                    continue
+                key = unit[len(unit_prefix):-len(".service")]
+                if key in active_keys:
+                    continue
+                subprocess.run(["systemctl", "stop", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=30)
+                subprocess.run(["systemctl", "reset-failed", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=20)
+        except Exception:
+            pass
     for name in os.listdir(ganesha_run_dir):
         if not name.endswith(".pid"):
             continue
         pid_path = os.path.join(ganesha_run_dir, name)
+        key = name[:-4]
+        if key in active_keys:
+            continue
         try:
             with open(pid_path, "r", encoding="utf-8") as pid_fp:
                 pid = int(pid_fp.read().strip())
-            os.kill(pid, 15)
-        except ProcessLookupError:
-            pass
+            terminate_pid(pid)
         except Exception:
             pass
         try:
@@ -1462,12 +2018,15 @@ def stop_ganesha_endpoints():
             pass
 
 def render_ganesha_export(rendered):
+    protocol_mode = str(rendered.get('protocolMode') or 'V4_ONLY').strip().upper()
+    anonymous_uid = rendered.get("anonUid")
+    anonymous_gid = rendered.get("anonGid")
     lines = [
         "EXPORT {",
         f"    Export_Id = {rendered['id']};",
         f"    Path = {quote_ganesha(rendered['path'])};",
         f"    Pseudo = {quote_ganesha(rendered['pseudo'])};",
-        "    Protocols = 4;",
+        f"    Protocols = {nfs_protocols_for_mode(protocol_mode)};",
         "    Transports = TCP;",
         "    Access_Type = None;",
         "    Squash = Root_Squash;",
@@ -1476,14 +2035,22 @@ def render_ganesha_export(rendered):
         "        Name = VFS;",
         "    }",
     ]
+    if anonymous_uid is not None:
+        lines.append(f"    Anonymous_uid = {int(anonymous_uid)};")
+    if anonymous_gid is not None:
+        lines.append(f"    Anonymous_gid = {int(anonymous_gid)};")
     for client in rendered["clients"]:
         lines.extend([
             "    CLIENT {",
-            f"        Clients = {quote_ganesha(client['clients'])};",
+            f"        Clients = {ganesha_client_list(client['clients'])};",
             f"        Access_Type = {client['access']};",
             f"        Squash = {client['squash']};",
-            "    }",
         ])
+        if client.get("anonUid") is not None:
+            lines.append(f"        Anonymous_uid = {int(client['anonUid'])};")
+        if client.get("anonGid") is not None:
+            lines.append(f"        Anonymous_gid = {int(client['anonGid'])};")
+        lines.append("    }")
     lines.append("}")
     return "\n".join(lines)
 
@@ -1495,45 +2062,366 @@ def write_ganesha_configs(endpoint_exports, port):
     for (ip, endpoint_port), exports in sorted(endpoint_exports.items()):
         if not exports:
             continue
+        endpoint_mode = "V3V4_DUAL" if any(str(export.get("protocolMode") or "V4_ONLY").strip().upper() == "V3V4_DUAL" for export in exports) else "V4_ONLY"
         key = endpoint_key(ip, endpoint_port)
         conf_path = os.path.join(ganesha_conf_dir, f"{key}.conf")
         content = [
             "NFS_Core_Param {",
             f"    NFS_Port = {int(endpoint_port)};",
-            f"    Bind_addr = {quote_ganesha(ip)};",
-            "    Protocols = 4;",
+            f"    Bind_addr = {ganesha_bind_addr(ip)};",
+            f"    Protocols = {nfs_protocols_for_mode(endpoint_mode)};",
+        ]
+        if endpoint_mode == "V3V4_DUAL":
+            content.append("    mount_path_pseudo = true;")
+        else:
+            content.extend([
+                "    Transports = TCP;",
+                "    Enable_NLM = false;",
+                "    Enable_RQUOTA = false;",
+            ])
+        content.extend([
             "}",
             "NFSV4 {",
             "    Grace_Period = 5;",
             "}",
             "EXPORT_DEFAULTS {",
             "    Access_Type = None;",
-            "    Protocols = 4;",
+            f"    Protocols = {nfs_protocols_for_mode(endpoint_mode)};",
             "    Transports = TCP;",
             "    SecType = sys;",
             "}",
-        ]
-        content.extend(render_ganesha_export(export) for export in exports)
+        ])
+        rendered_exports = assign_ganesha_export_ids(exports)
+        content.extend(render_ganesha_export(export) for export in rendered_exports)
         with open(conf_path, "w", encoding="utf-8") as conf_fp:
             conf_fp.write("\n\n".join(content) + "\n")
-        configs.append((key, conf_path, ip, endpoint_port))
+        configs.append((key, conf_path, ip, endpoint_port, endpoint_mode))
     return configs
 
+
 def start_ganesha_endpoints(configs):
-    stop_ganesha_endpoints()
+    stop_default_ganesha_service()
     if not configs:
-        return
+        stop_ganesha_endpoints()
+        return []
     ganesha = shutil.which("ganesha.nfsd")
     if not ganesha:
         raise RuntimeError("nfs-ganesha is required for Storage Service NFS endpoint isolation")
-    for key, conf_path, _ip, _port in configs:
+    if not ensure_rpcbind_started():
+        raise RuntimeError("rpcbind is required for Storage Service NFS Ganesha runtime")
+    active_keys = {key for key, _conf_path, _ip, _port, _mode in configs}
+    if shutil.which("systemctl") and os.path.isdir("/run/systemd/system"):
+        subprocess.run(["systemctl", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=30)
+    stop_ganesha_endpoints(active_keys=active_keys)
+    started = []
+    for key, conf_path, ip, port, mode in configs:
         log_path = os.path.join(ganesha_run_dir, f"{key}.log")
-        log_fp = open(log_path, "ab")
-        proc = subprocess.Popen([ganesha, "-F", "-L", log_path, "-f", conf_path],
-                                stdin=subprocess.DEVNULL, stdout=log_fp, stderr=log_fp,
-                                start_new_session=True, close_fds=True)
-        with open(os.path.join(ganesha_run_dir, f"{key}.pid"), "w", encoding="utf-8") as pid_fp:
-            pid_fp.write(str(proc.pid))
+        pid_path = os.path.join(ganesha_run_dir, f"{key}.pid")
+        try:
+            if os.path.exists(pid_path):
+                os.unlink(pid_path)
+        except Exception:
+            pass
+        try:
+            open(log_path, "ab").close()
+        except Exception:
+            pass
+        if shutil.which("systemctl") and os.path.isdir("/run/systemd/system"):
+            unit = f"ablestack-storage-ganesha@{key}.service"
+            result = subprocess.run(["systemctl", "restart", unit], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30)
+            if result.returncode != 0:
+                item_tail = tail_file(log_path, 80)
+                raise RuntimeError(f"failed to start {unit}: {(result.stderr or result.stdout).strip()}{': ' + item_tail if item_tail else ''}")
+            pid = 0
+            deadline_pid = time.time() + 10
+            while time.time() < deadline_pid:
+                show = subprocess.run(["systemctl", "show", "-p", "MainPID", "--value", unit], text=True,
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=10)
+                try:
+                    pid = int(show.stdout.strip() or "0")
+                except Exception:
+                    pid = 0
+                if pid > 0:
+                    try:
+                        with open(pid_path, "w", encoding="utf-8") as pid_fp:
+                            pid_fp.write(str(pid))
+                    except Exception:
+                        pass
+                    break
+                time.sleep(0.2)
+            started.append((key, conf_path, ip, int(port), mode, pid, log_path))
+        else:
+            log_fp = open(log_path, "wb")
+            proc = subprocess.Popen([ganesha, "-F", "-p", pid_path, "-L", log_path, "-f", conf_path],
+                                    stdin=subprocess.DEVNULL, stdout=log_fp, stderr=log_fp,
+                                    start_new_session=True, close_fds=True)
+            with open(pid_path, "w", encoding="utf-8") as pid_fp:
+                pid_fp.write(str(proc.pid))
+            started.append((key, conf_path, ip, int(port), mode, proc.pid, log_path))
+    runtime = []
+    deadline = time.time() + 15
+    for key, conf_path, ip, port, mode, pid, log_path in started:
+        item = {
+            "key": key,
+            "listenIp": ip,
+            "port": port,
+            "protocolMode": mode,
+            "pid": pid,
+            "logPath": log_path,
+            "processRunning": managed_ganesha_process(pid) if pid else False,
+            "listening": False,
+        }
+        candidate_ip = str(ip or "127.0.0.1").strip()
+        if candidate_ip in ("0.0.0.0", "::"):
+            candidate_ip = "127.0.0.1"
+        last_error = ""
+        while time.time() < deadline:
+            item["processRunning"] = managed_ganesha_process(pid) if pid else False
+            if pid and not process_exists(pid):
+                item["error"] = "managed ganesha process exited"
+                failed_conf_path = conf_path + ".failed"
+                try:
+                    shutil.copyfile(conf_path, failed_conf_path)
+                    item["failedConfPath"] = failed_conf_path
+                    conf_tail = tail_file(failed_conf_path, 80)
+                    if conf_tail:
+                        item["confTail"] = conf_tail
+                except Exception:
+                    pass
+                log_tail = tail_file(log_path, 80)
+                if log_tail:
+                    item["logTail"] = log_tail
+                break
+            try:
+                with socket.create_connection((candidate_ip, port), timeout=1.0):
+                    item["listening"] = True
+                    break
+            except Exception as exc:
+                last_error = str(exc)
+                time.sleep(0.5)
+        if item.get("listening"):
+            managed_deadline = time.time() + 3
+            while pid and not managed_ganesha_process(pid) and process_exists(pid) and time.time() < managed_deadline:
+                time.sleep(0.2)
+            item["processRunning"] = managed_ganesha_process(pid) if pid else False
+            try:
+                with open(conf_path, "r", encoding="utf-8", errors="replace") as conf_fp:
+                    conf_body = conf_fp.read()
+            except Exception:
+                conf_body = ""
+            if "EXPORT {" in conf_body:
+                log_tail = tail_file(log_path, 80)
+                rejection_markers = (
+                    "No export entries found",
+                    "out of range",
+                    "invalid param value",
+                    "errors found block EXPORT",
+                    "Expected an IP address",
+                    "Could not parse",
+                    "Error while parsing",
+                )
+                if any(marker in log_tail for marker in rejection_markers):
+                    item["listening"] = False
+                    item["error"] = "managed ganesha config was rejected"
+                    item["logTail"] = log_tail
+                    failed_conf_path = conf_path + ".failed"
+                    try:
+                        shutil.copyfile(conf_path, failed_conf_path)
+                        item["failedConfPath"] = failed_conf_path
+                    except Exception:
+                        pass
+        if item.get("listening") and not item.get("processRunning"):
+            item["listening"] = False
+            item["processRunning"] = False
+            item["error"] = "endpoint port is open but the managed ganesha process is not confirmed"
+        if not item["listening"]:
+            item["error"] = item.get("error") or last_error or "endpoint did not begin listening"
+            log_tail = tail_file(log_path, 80)
+            if log_tail:
+                item["logTail"] = log_tail
+        runtime.append(item)
+    failures = [item for item in runtime if not item.get("listening")]
+    if failures:
+        stop_ganesha_endpoints()
+        details = ", ".join(f"{item.get('listenIp')}:{item.get('port')} ({item.get('error') or 'not listening'}{': ' + item.get('logTail') if item.get('logTail') else ''})" for item in failures)
+        raise RuntimeError(f"nfs-ganesha endpoints failed to start: {details}")
+    return runtime
+
+def probe_nfs_export_visibility(runtime, endpoint_exports):
+    def local_global_ipv4_addresses():
+        proc = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"], check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        addresses = []
+        if proc.returncode != 0:
+            return addresses
+        for line in proc.stdout.splitlines():
+            parts = line.split()
+            if "inet" not in parts:
+                continue
+            try:
+                inet_value = parts[parts.index("inet") + 1]
+                address = str(ipaddress.ip_interface(inet_value).ip)
+            except Exception:
+                continue
+            if address not in addresses:
+                addresses.append(address)
+        return addresses
+
+    def client_tokens(export):
+        tokens = []
+        for client in export.get("clients") or []:
+            for token in str(client.get("clients") or "").split(","):
+                token = token.strip()
+                if token:
+                    tokens.append(token)
+        return tokens
+
+    def address_matches_client(address, client):
+        client = str(client or "").strip()
+        if client in ("*", "0.0.0.0/0", "::/0"):
+            return True
+        try:
+            probe_address = ipaddress.ip_address(address)
+        except Exception:
+            return False
+        try:
+            if "/" in client:
+                return probe_address in ipaddress.ip_network(client, strict=False)
+            return probe_address == ipaddress.ip_address(client)
+        except Exception:
+            return False
+
+    def address_allowed_by_export(address, export):
+        tokens = client_tokens(export)
+        if not tokens:
+            return False
+        return any(address_matches_client(address, token) for token in tokens)
+
+    def select_mount_host(listen_ip, export, local_addresses):
+        host = str(listen_ip or "").strip()
+        if host not in ("", "0.0.0.0", "::") and address_allowed_by_export(host, export):
+            return host, None
+        for address in local_addresses:
+            if host not in ("", "0.0.0.0", "::") and address != host:
+                continue
+            if address_allowed_by_export(address, export):
+                return address, None
+        if any(token in ("*", "0.0.0.0/0", "::/0") for token in client_tokens(export)):
+            return "127.0.0.1", None
+        clients = ", ".join(client_tokens(export)) or "none"
+        return None, f"no local IPv4 address is allowed by export clients: {clients}"
+
+    failures = []
+    local_addresses = local_global_ipv4_addresses()
+    for endpoint in runtime:
+        listen_ip = str(endpoint.get("listenIp") or "").strip()
+        port = int(endpoint.get("port") or 0)
+        exports = endpoint_exports.get((listen_ip, port), []) or []
+        endpoint["probeSuccess"] = True
+        endpoint["exportsVisible"] = True
+        endpoint["probeResults"] = []
+        if not exports:
+            continue
+
+        endpoint_success = True
+        for export in exports:
+            export_mode = str(export.get("protocolMode") or "V4_ONLY").strip().upper()
+            export_name = str(export.get("name") or export.get("path") or "export").strip() or "export"
+            host, host_error = select_mount_host(listen_ip, export, local_addresses)
+            probe_specs = []
+            if export_mode == "V3V4_DUAL":
+                probe_specs.append({
+                    "mode": "NFSv4",
+                    "mountType": "nfs4",
+                    "target": f"{host}:{export.get('pseudo')}",
+                    "options": f"vers=4.1,proto=tcp,port={port},ro,soft,timeo=1,retrans=1",
+                })
+                probe_specs.append({
+                    "mode": "NFSv3",
+                    "mountType": "nfs",
+                    "target": f"{host}:{export.get('pseudo')}",
+                    "options": f"vers=3,proto=tcp,port={port},nolock,ro,soft,timeo=1,retrans=1",
+                })
+            else:
+                probe_specs.append({
+                    "mode": "NFSv4",
+                    "mountType": "nfs4",
+                    "target": f"{host}:{export.get('pseudo')}",
+                    "options": f"vers=4.1,proto=tcp,port={port},ro,soft,timeo=1,retrans=1",
+                })
+
+            export_result = {
+                "exportUuid": export.get("uuid"),
+                "exportName": export_name,
+                "protocolMode": export_mode,
+                "targetPath": export.get("path"),
+                "pseudoPath": export.get("pseudo"),
+                "success": True,
+                "probes": [],
+            }
+            if host_error:
+                export_result["success"] = False
+                export_result["error"] = host_error
+                export_result["probes"].append({
+                    "mode": "host-selection",
+                    "mountType": "nfs",
+                    "target": export.get("pseudo") or export.get("path"),
+                    "options": "",
+                    "success": False,
+                    "error": host_error,
+                })
+                endpoint["probeResults"].append(export_result)
+                endpoint_success = False
+                break
+            for spec in probe_specs:
+                probe_dir = tempfile.mkdtemp(prefix=f"nfs-probe-{endpoint_key(listen_ip, port)}-", dir=nfs_probe_root)
+                try:
+                    cmd = [
+                        "mount",
+                        "-t",
+                        spec["mountType"],
+                        "-o",
+                        spec["options"],
+                        spec["target"],
+                        probe_dir,
+                    ]
+                    proc = subprocess.run(cmd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+                    success = proc.returncode == 0
+                    error = None
+                    if success:
+                        umount = subprocess.run(["umount", probe_dir], check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+                        if umount.returncode != 0:
+                            success = False
+                            error = umount.stderr.strip() or umount.stdout.strip() or "failed to unmount probe mountpoint"
+                    else:
+                        error = proc.stderr.strip() or proc.stdout.strip() or "mount probe failed"
+                    probe_info = {
+                        "mode": spec["mode"],
+                        "mountType": spec["mountType"],
+                        "target": spec["target"],
+                        "options": spec["options"],
+                        "success": success,
+                    }
+                    if error:
+                        probe_info["error"] = error
+                    export_result["probes"].append(probe_info)
+                    if not success:
+                        export_result["success"] = False
+                        export_result["error"] = error or "mount probe failed"
+                        endpoint_success = False
+                        break
+                finally:
+                    shutil.rmtree(probe_dir, ignore_errors=True)
+
+            endpoint["probeResults"].append(export_result)
+            if not export_result["success"]:
+                endpoint_success = False
+                break
+
+        endpoint["probeSuccess"] = endpoint_success
+        endpoint["exportsVisible"] = endpoint_success
+        if not endpoint_success:
+            failures.append(endpoint)
+    return failures
 
 def run(command):
     return subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -1734,6 +2622,9 @@ remove_listen_ip()
 ensure_listen_ip()
 default_listen_ip = str(payload.get("listenIp") or "0.0.0.0").strip() or "0.0.0.0"
 default_port = int(payload.get("port") or 2049)
+service_protocol_mode = str(payload.get("protocolMode") or payload.get("protocolmode") or "V4_ONLY").strip().upper()
+if service_protocol_mode not in ("V4_ONLY", "V3V4_DUAL"):
+    service_protocol_mode = "V4_ONLY"
 
 for export in payload.get("exports", []):
     uuid = safe_uuid(export.get("uuid"))
@@ -1789,16 +2680,32 @@ for export in payload.get("exports", []):
                 "clients": ganesha_clients(principal),
                 "access": ganesha_access(permission, truth(export_config, "readOnly", False)),
                 "squash": ganesha_squash(all_squash, truth(acl_config, "rootSquash", truth(export_config, "rootSquash", True))),
+                "anonUid": anon_uid,
+                "anonGid": anon_gid,
+            })
+        if not clients:
+            anon_uid = int_config(export_config, "anonUid")
+            anon_gid = int_config(export_config, "anonGid")
+            clients.append({
+                "clients": "*",
+                "access": ganesha_access("READ_WRITE", truth(export_config, "readOnly", False)),
+                "squash": ganesha_squash(truth(export_config, "allSquash", False), truth(export_config, "rootSquash", True)),
+                "anonUid": anon_uid,
+                "anonGid": anon_gid,
+                "implicit": True,
             })
         rendered_export = {
-            "id": export_id(uuid),
+            "uuid": uuid,
             "name": export.get("name"),
             "path": exposed_path,
             "pseudo": f"/{root_name}",
+            "protocolMode": service_protocol_mode,
+            "anonUid": int_config(export_config, "anonUid"),
+            "anonGid": int_config(export_config, "anonGid"),
             "clients": clients,
         }
-        for endpoint_ip in nfs_export_endpoint_ips(export_config, default_listen_ip):
-            endpoint_exports.setdefault((endpoint_ip, default_port), []).append(rendered_export)
+        for listener_port in nfs_export_listener_ports(export_config, default_port, service_protocol_mode):
+            endpoint_exports.setdefault(("0.0.0.0", int(listener_port)), []).append(dict(rendered_export))
         if export.get("quotaBytes") is not None:
             quota_state[uuid] = {
                 "path": path,
@@ -1808,6 +2715,19 @@ for export in payload.get("exports", []):
             }
     with open(export_file, "w", encoding="utf-8"):
         pass
+
+if service_protocol_mode == "V3V4_DUAL":
+    collapsed_exports = []
+    seen_exports = set()
+    for exports in endpoint_exports.values():
+        for export in exports:
+            export_key = export.get("uuid") or export.get("name") or export.get("pseudo")
+            if export_key in seen_exports:
+                continue
+            seen_exports.add(export_key)
+            export["protocolMode"] = "V3V4_DUAL"
+            collapsed_exports.append(export)
+    endpoint_exports = {("0.0.0.0", 2049): collapsed_exports} if collapsed_exports else {}
 
 cleanup_legacy_kernel_exports(managed_files)
 
@@ -1826,10 +2746,39 @@ with open(alias_state_path, "w", encoding="utf-8") as alias_fp:
     json.dump(next_alias_state, alias_fp, sort_keys=True, indent=2)
 
 configs = write_ganesha_configs(endpoint_exports, default_port)
-start_ganesha_endpoints(configs if enabled else [])
+needs_rpcbind = any(mode == "V3V4_DUAL" for _, _, _, _, mode in configs)
+runtime_endpoints = start_ganesha_endpoints(configs if enabled else [])
+runtime_probe_failures = probe_nfs_export_visibility(runtime_endpoints, endpoint_exports if enabled else {})
+if runtime_probe_failures:
+    stop_ganesha_endpoints()
+    details = []
+    for endpoint in runtime_probe_failures:
+        listen_ip = endpoint.get("listenIp") or "unknown"
+        port = endpoint.get("port") or "unknown"
+        for export in endpoint.get("probeResults", []):
+            for probe in export.get("probes", []):
+                if not probe.get("success"):
+                    target = probe.get("target") or "unknown"
+                    details.append(f"{listen_ip}:{port} {export.get('exportName') or 'export'} {probe.get('mode') or 'probe'} -> {target}: {probe.get('error') or 'probe failed'}")
+    raise RuntimeError("nfs-ganesha export visibility probe failed: " + "; ".join(details))
+runtime_ready = (not enabled) or not configs or all(item.get("listening") and item.get("probeSuccess", True) for item in runtime_endpoints)
 
-print(json.dumps({"success": True, "exports": len(payload.get("exports", [])), "endpoints": len(configs), "quotas": len(quota_state)}))
+print(json.dumps({
+    "success": True,
+    "exports": len(payload.get("exports", [])),
+    "endpoints": len(configs),
+    "quotas": len(quota_state),
+    "runtimeReady": runtime_ready,
+    "runtimeEndpoints": runtime_endpoints,
+    "runtimeProbeSuccess": True,
+    "runtimeProbeFailures": [],
+    "rpcbindRequired": needs_rpcbind,
+    "rpcbindActive": rpcbind_active(),
+    "listenPorts": {str(item.get("listenIp")): int(item.get("port") or default_port) for item in runtime_endpoints},
+}, sort_keys=True))
 PY
+
+  persist_nfs_desired_state "$payload_file"
 
   local nfs_port
   nfs_port="$(python3 - "$payload_file" <<'PY'
@@ -1842,7 +2791,24 @@ except Exception:
     print(2049)
 PY
 )"
+  local rpcbind_required
+  rpcbind_required="$(python3 - "$payload_file" <<'PY'
+import json
+import sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as payload_fp:
+        payload = json.load(payload_fp)
+    value = str(payload.get("protocolMode") or payload.get("protocolmode") or "V4_ONLY").strip().upper()
+    print("1" if value == "V3V4_DUAL" else "0")
+except Exception:
+    print("0")
+PY
+)"
   open_tcp_firewall_port "$nfs_port"
+  if [[ "$rpcbind_required" == "1" ]]; then
+    open_tcp_firewall_port "111"
+    open_udp_firewall_port "111"
+  fi
 }
 
 apply_smb_shares() {
@@ -2711,6 +3677,22 @@ case "$command" in
     fi
     log_command "$command $subcommand" "$payload"
     session_disconnect "$payload"
+    ;;
+  network)
+    if [[ "$subcommand" == "endpoint" && "$action" == "apply" ]]; then
+      if [[ -z "$payload" || ! -r "$payload" ]]; then
+        emit_error "A readable payload file is required for network endpoint apply."
+        exit 2
+      fi
+      log_command "$command $subcommand $action" "$payload"
+      network_endpoint_apply "$payload"
+    elif [[ "$subcommand" == "endpoints" && "$action" == "reconcile" ]]; then
+      log_command "$command $subcommand $action" ""
+      network_endpoints_reconcile
+    else
+      emit_error "Unsupported network operation: ${subcommand:-<empty>} ${action:-<empty>}"
+      exit 2
+    fi
     ;;
   volume)
     if [[ "$subcommand" == "attach" && "$action" == "inspect" ]]; then

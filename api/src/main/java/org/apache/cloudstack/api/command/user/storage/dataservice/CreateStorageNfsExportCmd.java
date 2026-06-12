@@ -108,12 +108,23 @@ public class CreateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = "listenips", type = CommandType.STRING, description = "comma separated listen IPs that should expose this NFS export")
     private String listenIps;
 
+    @Parameter(name = "listenerports", type = CommandType.STRING,
+            description = "comma separated NFS listener group ports that should expose this NFS export. NFSv4-only exports are separated by listener group port.")
+    private String listenerPorts;
+
     @Parameter(name = "endpointmode", type = CommandType.STRING, description = "NFS export endpoint exposure mode: ALL or SELECTED")
     private String endpointMode;
+
+    @Parameter(name = "protocolmode", type = CommandType.STRING, description = "NFS protocol mode: V4_ONLY or V3V4_DUAL")
+    private String protocolMode;
 
     @Parameter(name = "cleanupvolumeonfailure", type = CommandType.BOOLEAN,
             description = "destroy the provided backing volume if this create operation fails. Use only for a volume created specifically for this export.")
     private Boolean cleanupVolumeOnFailure;
+
+    @Parameter(name = "deferapply", type = CommandType.BOOLEAN,
+            description = "defer applying the NFS desired state until a later API call completes the initial export policy")
+    private Boolean deferApply;
 
     public Long getInstanceId() {
         return instanceId;
@@ -199,12 +210,24 @@ public class CreateStorageNfsExportCmd extends BaseAsyncCmd implements UserCmd {
         return listenIps;
     }
 
+    public String getListenerPorts() {
+        return listenerPorts;
+    }
+
     public String getEndpointMode() {
         return endpointMode;
     }
 
+    public String getProtocolMode() {
+        return protocolMode;
+    }
+
     public Boolean getCleanupVolumeOnFailure() {
         return cleanupVolumeOnFailure;
+    }
+
+    public Boolean getDeferApply() {
+        return deferApply;
     }
 
     @Override

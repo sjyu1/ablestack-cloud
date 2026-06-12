@@ -1,0 +1,49 @@
+#!/bin/bash
+
+set -euo pipefail
+
+STORAGECTL="${ABLESTACK_STORAGECTL:-/usr/local/bin/ablestack-storagectl}"
+MONITOR="${ABLESTACK_STORAGE_MONITOR:-/usr/local/bin/ablestack-storage-monitor}"
+DESIRED_STATE_DIR="${ABLESTACK_STORAGE_DESIRED_STATE_DIR:-/etc/ablestack-storage/desired-state}"
+NFS_PAYLOAD="${ABLESTACK_STORAGE_NFS_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/nfs-export-apply.json}"
+LOG_FILE="${ABLESTACK_STORAGE_BOOT_RECONCILE_LOG:-/var/log/ablestack-storage-boot-reconcile.log}"
+MAX_ATTEMPTS="${ABLESTACK_STORAGE_BOOT_RECONCILE_ATTEMPTS:-12}"
+SLEEP_SECONDS="${ABLESTACK_STORAGE_BOOT_RECONCILE_SLEEP:-5}"
+
+log() {
+  mkdir -p "$(dirname "$LOG_FILE")"
+  printf '%s %s\n' "$(date -Is)" "$*" >> "$LOG_FILE"
+}
+
+if [[ ! -s "$NFS_PAYLOAD" ]]; then
+  log "no saved NFS desired state; skipping boot reconcile"
+  exit 0
+fi
+
+if [[ ! -x "$STORAGECTL" ]]; then
+  log "storagectl is not executable: $STORAGECTL"
+  exit 1
+fi
+
+log "starting boot reconcile from $NFS_PAYLOAD"
+systemctl daemon-reload >/dev/null 2>&1 || true
+
+attempt=1
+while (( attempt <= MAX_ATTEMPTS )); do
+  log "attempt $attempt/$MAX_ATTEMPTS"
+  mount -a >> "$LOG_FILE" 2>&1 || true
+  "$STORAGECTL" network endpoints reconcile >> "$LOG_FILE" 2>&1 || true
+  if "$STORAGECTL" nfs export apply "$NFS_PAYLOAD" >> "$LOG_FILE" 2>&1; then
+    log "NFS desired state reapplied successfully"
+    if [[ -x "$MONITOR" ]]; then
+      "$MONITOR" --once >> "$LOG_FILE" 2>&1 || true
+    fi
+    exit 0
+  fi
+  log "NFS desired state reapply failed"
+  sleep "$SLEEP_SECONDS"
+  attempt=$((attempt + 1))
+done
+
+log "boot reconcile failed after $MAX_ATTEMPTS attempts"
+exit 1

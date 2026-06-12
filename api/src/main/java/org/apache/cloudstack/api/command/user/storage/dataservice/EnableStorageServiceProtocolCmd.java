@@ -53,6 +53,9 @@ public class EnableStorageServiceProtocolCmd extends BaseAsyncCmd implements Use
     @Parameter(name = "port", type = CommandType.INTEGER, description = "protocol port")
     private Integer port;
 
+    @Parameter(name = "protocolmode", type = CommandType.STRING, description = "NFS protocol mode. Supported values are V4_ONLY and V3V4_DUAL")
+    private String protocolMode;
+
     public Long getInstanceId() {
         return instanceId;
     }
@@ -67,6 +70,10 @@ public class EnableStorageServiceProtocolCmd extends BaseAsyncCmd implements Use
 
     public Integer getPort() {
         return port;
+    }
+
+    public String getProtocolMode() {
+        return protocolMode;
     }
 
     @Override

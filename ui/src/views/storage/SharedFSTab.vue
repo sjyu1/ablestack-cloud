@@ -118,20 +118,22 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-space>
-                      <a-button size="small" @click="openActionModal('editNfsExport', record)">
-                        <template #icon><EditOutlined /></template>
-                        {{ $t('label.edit') }}
-                      </a-button>
-                      <a-button size="small" @click="openActionModal('resizeShare', { id: record.id })">
-                        <template #icon><ExpandAltOutlined /></template>
-                        {{ $t('label.storage.service.resize.file.share') }}
-                      </a-button>
-                      <a-button size="small" danger @click="openDeleteModal('nfsExport', record)">
-                        <template #icon><DeleteOutlined /></template>
-                        {{ $t('label.delete') }}
-                      </a-button>
-                    </a-space>
+                    <div class="storage-table-actions">
+                      <a-space class="storage-table-actions__space">
+                        <a-button size="small" @click="openActionModal('editNfsExport', record)">
+                          <template #icon><EditOutlined /></template>
+                          {{ $t('label.edit') }}
+                        </a-button>
+                        <a-button size="small" @click="openActionModal('resizeShare', { id: record.id })">
+                          <template #icon><ExpandAltOutlined /></template>
+                          {{ $t('label.storage.service.resize.file.share') }}
+                        </a-button>
+                        <a-button size="small" danger @click="openDeleteModal('nfsExport', record)">
+                          <template #icon><DeleteOutlined /></template>
+                          {{ $t('label.delete') }}
+                        </a-button>
+                      </a-space>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -167,16 +169,19 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-space>
-                      <a-button size="small" @click="openActionModal('editNfsAcl', record)">
-                        <template #icon><EditOutlined /></template>
-                        {{ $t('label.edit') }}
-                      </a-button>
-                      <a-button size="small" danger @click="openDeleteModal('nfsAcl', record)">
-                        <template #icon><DeleteOutlined /></template>
-                        {{ $t('label.delete') }}
-                      </a-button>
-                    </a-space>
+                    <div class="storage-table-actions">
+                      <a-space v-if="!record.implicit" class="storage-table-actions__space">
+                        <a-button size="small" @click="openActionModal('editNfsAcl', record)">
+                          <template #icon><EditOutlined /></template>
+                          {{ $t('label.edit') }}
+                        </a-button>
+                        <a-button size="small" danger @click="openDeleteModal('nfsAcl', record)">
+                          <template #icon><DeleteOutlined /></template>
+                          {{ $t('label.delete') }}
+                        </a-button>
+                      </a-space>
+                      <span v-else class="storage-table-actions__empty">-</span>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -206,14 +211,18 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" :disabled="!record.exportId" @click="openActionModal('resizeVolume', { id: record.exportId, volumeid: record.id })">
-                      <template #icon><ExpandAltOutlined /></template>
-                      {{ $t('label.storage.service.resize.volume') }}
-                    </a-button>
-                    <a-button size="small" danger :disabled="!record.detachAllowed" @click="openActionModal('detachBackingVolume', record)">
-                      <template #icon><DisconnectOutlined /></template>
-                      {{ $t('label.storage.service.detach.backing.volume') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-space class="storage-table-actions__space">
+                        <a-button size="small" :disabled="!record.exportId" @click="openActionModal('resizeVolume', { id: record.exportId, volumeid: record.id })">
+                          <template #icon><ExpandAltOutlined /></template>
+                          {{ $t('label.storage.service.resize.volume') }}
+                        </a-button>
+                        <a-button size="small" danger :disabled="!record.detachAllowed" @click="openActionModal('detachBackingVolume', record)">
+                          <template #icon><DisconnectOutlined /></template>
+                          {{ $t('label.storage.service.detach.backing.volume') }}
+                        </a-button>
+                      </a-space>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -243,10 +252,12 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
-                      <template #icon><DisconnectOutlined /></template>
-                      {{ $t('label.storage.service.disconnect.session') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
+                        <template #icon><DisconnectOutlined /></template>
+                        {{ $t('label.storage.service.disconnect.session') }}
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -848,6 +859,12 @@ wrapClassName="storage-service-action-modal"
               <a-select-option value="NVME_OF">NVMe-oF</a-select-option>
             </a-select>
           </a-form-item>
+          <a-alert
+            v-if="isEnableProtocolNfsDualMode"
+            type="info"
+            show-icon
+            class="storage-service-inline-alert"
+            :message="$t('message.storage.service.nfs.dual.mode.endpoint.locked')" />
           <a-form-item required>
             <template #label>
               <tooltip-label :title="$t('label.storage.service.listen.ip.mode')" :tooltip="$t('message.storage.service.listen.ip.mode.help')" />
@@ -875,26 +892,34 @@ wrapClassName="storage-service-action-modal"
           </a-form-item>
           <a-form-item required>
             <template #label>
-              <tooltip-label :title="$t('label.port')" :tooltip="$t('message.storage.service.protocol.port.help')" />
+              <tooltip-label :title="$t('label.port')" :tooltip="forms.enableProtocol.protocol === 'NFS' ? $t('message.storage.service.nfs.port.help') : $t('message.storage.service.protocol.port.help')" />
             </template>
-            <a-input-number v-model:value="forms.enableProtocol.port" class="storage-input-number" :disabled="forms.enableProtocol.protocol === 'NFS'" />
-            <div v-if="forms.enableProtocol.protocol === 'NFS'" class="field-validation-hint">
-              {{ $t('message.storage.service.nfs.port.fixed') }}
-            </div>
+            <a-input-number
+              v-model:value="forms.enableProtocol.port"
+              class="storage-input-number storage-fixed-value"
+              :min="1"
+              :max="65535"
+              :disabled="isEnableProtocolNfsDualMode" />
+          </a-form-item>
+          <a-form-item v-if="forms.enableProtocol.protocol === 'NFS'" required>
+            <template #label>
+              <tooltip-label :title="$t('label.storage.service.nfs.protocol.mode')" :tooltip="$t('message.storage.service.nfs.protocol.mode.help')" />
+            </template>
+            <a-input :value="nfsProtocolModeLabel(forms.enableProtocol.protocolmode)" readonly class="storage-fixed-value" />
           </a-form-item>
         </div>
         <div v-if="actionModal.type === 'nfsExport' || actionModal.type === 'editNfsExport'" class="storage-action-form storage-action-form--vertical">
-          <a-form-item>
+          <a-form-item required>
             <template #label>
-              <tooltip-label :title="$t('label.name')" :tooltip="$t('message.storage.service.nfs.name.autogenerated')" />
+              <tooltip-label :title="$t('label.name')" :tooltip="$t('message.storage.service.nfs.export.name.help')" />
             </template>
             <a-input v-model:value="forms.nfsExport.name" />
           </a-form-item>
           <a-form-item required>
             <template #label>
-              <tooltip-label :title="$t('label.storage.service.internal.path')" :tooltip="$t('message.storage.service.nfs.internal.path.help')" />
+              <tooltip-label :title="$t('label.storage.service.internal.path')" :tooltip="$t('message.storage.service.nfs.backing.path.help')" />
             </template>
-            <a-input v-model:value="forms.nfsExport.path" placeholder="/export/nfs01" />
+            <a-input v-model:value="forms.nfsExport.path" />
           </a-form-item>
           <section class="storage-action-section">
             <div class="storage-action-section__title">{{ $t('label.storage.service.backing.volume') }}</div>
@@ -995,27 +1020,47 @@ wrapClassName="storage-service-action-modal"
             </template>
           </section>
           <capacity-input :label="$t('label.storage.service.nfs.export.capacity.limit')" :tooltip="$t('message.storage.service.nfs.quota.help')" v-model:amount="forms.nfsExport.quotaamount" v-model:unit="forms.nfsExport.quotaunit" :units="capacityUnits" />
-          <section class="storage-action-section">
+          <section v-if="isNfsRuntimeDualMode" class="storage-action-section">
             <div class="storage-action-section__title">{{ $t('label.storage.service.nfs.export.endpoints') }}</div>
+            <a-alert
+              type="info"
+              show-icon
+              class="storage-service-inline-alert"
+              :message="$t('message.storage.service.nfs.dual.mode.export.exposure')" />
+            <div class="storage-action-summary-box storage-action-summary-box--compact">
+              <div class="storage-action-summary-row">
+                <span>{{ $t('label.storage.service.nfs.exposure.scope') }}</span>
+                <code>{{ $t('label.storage.service.service.wide.endpoints') }}</code>
+              </div>
+              <div class="storage-action-summary-row">
+                <span>{{ $t('label.storage.service.listen.ip') }}</span>
+                <code>{{ nfsServiceWideEndpointSummary }}</code>
+              </div>
+            </div>
+          </section>
+          <section v-else class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.nfs.listener.groups') }}</div>
+            <a-alert
+              type="info"
+              show-icon
+              class="storage-service-inline-alert"
+              :message="$t('message.storage.service.nfs.listener.group.exposure')" />
             <a-form-item required>
               <template #label>
-                <tooltip-label :title="$t('label.storage.service.endpoint.selection')" :tooltip="$t('message.storage.service.nfs.endpoint.selection.help')" />
+                <tooltip-label :title="$t('label.storage.service.nfs.listener.group')" :tooltip="$t('message.storage.service.nfs.listener.group.help')" />
               </template>
-              <a-radio-group v-model:value="forms.nfsExport.endpointmode">
-                <a-radio value="ALL">{{ $t('label.storage.service.all.endpoints') }}</a-radio>
-                <a-radio value="SELECTED">{{ $t('label.storage.service.selected.endpoints') }}</a-radio>
-              </a-radio-group>
-            </a-form-item>
-            <a-form-item v-if="forms.nfsExport.endpointmode === 'SELECTED'" required>
-              <template #label>
-                <tooltip-label :title="$t('label.storage.service.listen.ip')" :tooltip="$t('message.storage.service.nfs.endpoint.listenips.help')" />
-              </template>
-              <a-select v-model:value="forms.nfsExport.listenips" mode="multiple" show-search optionFilterProp="label">
-                <a-select-option v-for="endpoint in serviceListenIps" :key="endpoint.ipaddress" :value="endpoint.ipaddress" :label="endpoint.label">
-                  {{ endpoint.label }}
+              <a-select v-model:value="forms.nfsExport.listenerports" mode="multiple" show-search optionFilterProp="label">
+                <a-select-option v-for="group in nfsListenerGroupOptions" :key="group.value" :value="group.value" :label="group.label">
+                  {{ group.label }}
                 </a-select-option>
               </a-select>
             </a-form-item>
+            <div class="storage-action-summary-box storage-action-summary-box--compact">
+              <div class="storage-action-summary-row">
+                <span>{{ $t('label.storage.service.accessible.endpoints') }}</span>
+                <code>{{ formatNfsListenerGroupEndpoints(forms.nfsExport.listenerports) }}</code>
+              </div>
+            </div>
           </section>
           <section class="storage-action-section">
             <div class="storage-action-section__title">{{ $t('label.storage.service.nfs.export.options') }}</div>
@@ -1070,6 +1115,12 @@ wrapClassName="storage-service-action-modal"
               <code>/{{ shareNameLabel(selectedNfsAclExport) }}</code>
             </div>
           </div>
+          <a-alert
+            v-if="isNfsRuntimeDualMode"
+            type="info"
+            show-icon
+            class="storage-service-inline-alert"
+            :message="$t('message.storage.service.nfs.dual.mode.acl.scope')" />
           <a-form-item required>
             <template #label>
               <tooltip-label :title="$t('label.storage.service.principal')" :tooltip="$t('message.storage.service.allowed.cidrs.help')" />
@@ -1573,6 +1624,7 @@ export default {
         instance: null,
         health: [],
         inventory: [],
+        protocols: [],
         sessions: [],
         domains: [],
         nfsExports: [],
@@ -1605,7 +1657,8 @@ export default {
           protocol: 'NFS',
           listenipmode: 'EXISTING',
           listenip: '',
-          port: null
+          port: null,
+          protocolmode: 'V4_ONLY'
         },
         nfsExport: {
           name: '',
@@ -1621,8 +1674,10 @@ export default {
           createdirectory: false,
           quotaamount: null,
           quotaunit: 'GiB',
-          endpointmode: 'SELECTED',
+          protocolmode: 'V4_ONLY',
+          endpointmode: 'LISTENER_GROUP',
           listenips: [],
+          listenerports: [2049],
           readonly: false,
           rootsquash: true,
           allsquash: false,
@@ -1838,7 +1893,7 @@ export default {
             dynamic = this.boolValue(item.dynamic)
           }
           ipaddress = String(ipaddress || '').trim()
-          if (!ipaddress || seen.has(ipaddress)) {
+          if (this.isWildcardListenIp(ipaddress) || !ipaddress || seen.has(ipaddress)) {
             return
           }
           if (!role) {
@@ -1868,7 +1923,7 @@ export default {
       const items = []
       const seen = new Set()
       const addIp = (nic, ipaddress, kind) => {
-        if (!ipaddress || seen.has(ipaddress)) {
+        if (this.isWildcardListenIp(ipaddress) || !ipaddress || seen.has(ipaddress)) {
           return
         }
         seen.add(ipaddress)
@@ -1907,12 +1962,37 @@ export default {
       })
       return items
     },
+    nfsListenerGroupOptions () {
+      const ports = new Set([2049])
+      this.nfsRuntimeProtocolEntries().forEach(entry => {
+        const port = Number(entry.port)
+        if (Number.isFinite(port) && port > 0) ports.add(port)
+      })
+      const addPorts = value => this.normalizeListenerPorts(value).forEach(port => ports.add(port))
+      const addConfigPorts = config => {
+        if (!config || typeof config !== 'object') return
+        addPorts(config.listenerGroupPorts ?? config.listenergroupports ?? config.listenerPorts ?? config.listenerports)
+        const groups = config.listenerGroups ?? config.listenergroups
+        if (Array.isArray(groups)) {
+          groups.forEach(group => addPorts(group?.port ?? group?.listenerPort ?? group?.listenerport))
+        }
+      }
+      (this.storageService.protocols || []).forEach(protocol => {
+        addPorts(protocol?.port ?? protocol?.listenPort ?? protocol?.listenport ?? protocol?.endpointPort)
+        addConfigPorts(this.parseStorageConfig(protocol.config))
+      })
+      this.storageService.nfsExports.forEach(share => addConfigPorts(this.parseStorageConfig(share.config)))
+      return Array.from(ports).sort((a, b) => a - b).map(port => ({
+        value: port,
+        label: `${this.$t('label.port')} ${port} / ${this.formatNfsListenerGroupEndpoints([port])}`
+      }))
+    },
     serviceEndpoint () {
       const nic = this.serviceListenIps.find(item => item.kind === 'PRIMARY' && item.ipaddress) || this.serviceListenIps.find(item => item.ipaddress) || {}
       return nic.ipaddress || this.vm.ipaddress || this.resource.ipaddress || this.resource.serviceip || this.resource.ip || ''
     },
     serviceEndpoints () {
-      const endpoints = this.serviceListenIps.map(item => item.ipaddress).filter(Boolean)
+      const endpoints = this.serviceListenIps.map(item => item.ipaddress).filter(ip => ip && !this.isWildcardListenIp(ip))
       const fallback = this.serviceEndpoint
       if (fallback && !endpoints.includes(fallback)) {
         endpoints.unshift(fallback)
@@ -1926,6 +2006,10 @@ export default {
       })
     },
     serviceEndpointSummary () {
+      const nfsEndpoints = this.nfsRuntimeEndpointSummary()
+      if (nfsEndpoints) {
+        return nfsEndpoints
+      }
       return this.serviceEndpoints.length ? this.serviceEndpoints.join(', ') : this.serviceEndpoint
     },
     selectedNfsAclExport () {
@@ -1979,8 +2063,24 @@ export default {
       return protocols
     },
     nfsConnectionCommands () {
-      const endpoint = this.serviceEndpoints.length === 1 ? this.serviceEndpoints[0] : `<${this.$t('label.storage.service.endpoint.ip.placeholder')}>`
-      return [`mount -t nfs ${endpoint}:/<${this.$t('label.storage.service.export.name.placeholder')}> <${this.$t('label.storage.service.local.mount.path.placeholder')}>`, `showmount -e ${endpoint}`]
+      const runtimeEndpoints = this.nfsRuntimeEndpointDetails()
+      const runtimeMode = this.nfsRuntimeProtocolMode()
+      const runtimeEndpoint = runtimeEndpoints[0] || {}
+      const uniquePorts = [...new Set(runtimeEndpoints.map(entry => entry.port).filter(port => port !== undefined && port !== null && port !== ''))]
+      const endpointIp = runtimeEndpoints.length === 1
+        ? runtimeEndpoint.listenIp || this.serviceEndpoint || `<${this.$t('label.storage.service.endpoint.ip.placeholder')}>`
+        : `<${this.$t('label.storage.service.endpoint.ip.placeholder')}>`
+      const endpointPort = uniquePorts.length === 1
+        ? uniquePorts[0] || this.nfsRuntimePort() || this.defaultProtocolPort('NFS')
+        : '<port>'
+      const exportName = `<${this.$t('label.storage.service.export.name.placeholder')}>`
+      const mountPath = `<${this.$t('label.storage.service.local.mount.path.placeholder')}>`
+      const commands = [`mount -t nfs4 -o vers=4.1,proto=tcp,port=${endpointPort} ${endpointIp}:/${exportName} ${mountPath}`]
+      if (runtimeMode === 'V3V4_DUAL') {
+        commands.push(`mount -t nfs -o vers=3,proto=tcp,port=${endpointPort} ${endpointIp}:/export/${exportName} ${mountPath}`)
+        commands.push(`showmount -e ${endpointIp}`)
+      }
+      return commands
     },
     smbConnectionCommands () {
       const endpoint = this.serviceEndpoint || '<service-ip>'
@@ -2079,6 +2179,7 @@ export default {
         { title: this.$t('label.storage.service.export.name'), dataIndex: 'name', key: 'name', fixed: 'left', width: 180, code: true },
         { title: this.$t('label.storage.service.client.mount.root'), dataIndex: 'clientPath', key: 'clientPath', width: 240, code: true },
         { title: this.$t('label.storage.service.internal.path'), dataIndex: 'path', key: 'path', width: 220, code: true },
+        { title: this.$t('label.storage.service.nfs.protocol.mode'), dataIndex: 'protocolMode', key: 'protocolMode', width: 150 },
         { title: this.$t('label.storage.service.ip.port'), dataIndex: 'endpoint', key: 'endpoint', width: 170, code: true },
         { title: this.$t('label.storage.service.permission'), dataIndex: 'permission', key: 'permission', width: 130 },
         { title: this.$t('label.storage.service.root.squash'), dataIndex: 'rootSquash', key: 'rootSquash', width: 130 },
@@ -2087,7 +2188,7 @@ export default {
         { title: this.$t('label.storage.service.capacity'), dataIndex: 'capacity', key: 'capacity', width: 150 },
         { title: this.$t('label.storage.service.backing.volume'), dataIndex: 'volumeName', key: 'volumeName', width: 210 },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 110 },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 310 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 310, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     nfsAclColumns () {
@@ -2101,7 +2202,7 @@ export default {
         { title: this.$t('label.storage.service.sync'), dataIndex: 'sync', key: 'sync', width: 110 },
         { title: this.$t('label.storage.service.secure'), dataIndex: 'secure', key: 'secure', width: 130 },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 180 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 180, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     nfsVolumeColumns () {
@@ -2115,7 +2216,7 @@ export default {
         { title: this.$t('label.filesystem'), dataIndex: 'filesystem', key: 'filesystem', width: 130 },
         { title: this.$t('label.storage.service.attached.export'), dataIndex: 'exportName', key: 'exportName', width: 200, code: true },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 290 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 290, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     nfsSessionColumns () {
@@ -2125,7 +2226,7 @@ export default {
         { title: this.$t('label.storage.service.connected.at'), dataIndex: 'connectedAt', key: 'connectedAt', width: 190 },
         { title: this.$t('label.storage.service.export.name'), dataIndex: 'resourceName', key: 'resourceName', width: 200, code: true },
         { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 220, code: true },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     smbShareColumns () {
@@ -2186,13 +2287,15 @@ export default {
         const acls = this.nfsAclsForShare(share)
         const config = this.effectiveNfsExportConfig(this.parseStorageConfig(share.config))
         const volume = this.volumeForShare(share)
+        const protocolMode = this.nfsExportProtocolMode(share, config)
         return {
           key: share.id || `nfs-export-${index}`,
           id: share.id,
           name,
           clientPath: this.formatNfsClientMountRoots(share, name),
           path: share.path || share.mountpath || share.backingpath || '-',
-          endpoint: this.formatNfsExportEndpoints(share, share.port || 2049),
+          endpoint: this.formatNfsExportEndpoints(share),
+          protocolMode: this.nfsProtocolModeLabel(protocolMode),
           permission: this.permissionLabel(share.permission || (share.readonly || config.readOnly ? 'READ_ONLY' : 'READ_WRITE')),
           rootSquash: this.booleanLabel(config.rootSquash),
           posixPermission: this.posixPermissionSummary(config),
@@ -2216,7 +2319,7 @@ export default {
         })
     },
     nfsAclRows () {
-      return this.storageService.nfsAcls.map((acl, index) => {
+      const rows = this.storageService.nfsAcls.map((acl, index) => {
         const share = this.nfsShareForAcl(acl)
         const config = this.parseStorageConfig(acl.config)
         return {
@@ -2233,6 +2336,27 @@ export default {
           raw: acl
         }
       })
+      this.storageService.nfsExports.forEach((share, index) => {
+        if (this.nfsAclsForShare(share).length > 0) {
+          return
+        }
+        const config = this.effectiveNfsExportConfig(this.parseStorageConfig(share.config))
+        rows.push({
+          key: `nfs-acl-implicit-${share.id || share.uuid || index}`,
+          exportName: this.clientVisibleName(share.name || share.exportname, '-'),
+          principal: '*',
+          permission: this.permissionLabel(share.permission || (share.readonly || config.readOnly ? 'READ_ONLY' : 'READ_WRITE')),
+          rootSquash: this.booleanLabel(config.rootSquash),
+          allSquash: this.booleanLabel(config.allSquash),
+          anonUidGid: this.uidGidSummary(config.anonUid ?? config.anonuid, config.anonGid ?? config.anongid),
+          sync: this.booleanLabel(config.sync),
+          secure: this.booleanLabel(config.secure),
+          state: this.$t('label.storage.service.implicit.default'),
+          implicit: true,
+          raw: {}
+        })
+      })
+      return rows
     },
     nfsVolumeRows () {
       const rows = []
@@ -2593,6 +2717,35 @@ export default {
           (this.actionModal.type === 'detachBackingVolume' && !this.forms.detachBackingVolume.confirmation)
       }
     },
+    isNfsRuntimeDualMode () {
+      return this.nfsRuntimeProtocolMode() === 'V3V4_DUAL'
+    },
+    nfsServiceWideEndpointSummary () {
+      const endpoints = []
+      const add = (ip, port = 2049) => {
+        if (!ip) return
+        const normalizedIp = String(ip).trim()
+        if (!normalizedIp || this.isWildcardListenIp(normalizedIp)) return
+        const value = `${normalizedIp}:${port || 2049}`
+        if (!endpoints.includes(value)) endpoints.push(value)
+      }
+      this.nfsRuntimeProtocolEntries().forEach(entry => {
+        if (entry.listenIp === '0.0.0.0') {
+          this.serviceEndpoints.forEach(ip => add(ip, entry.port))
+        } else {
+          add(entry.listenIp, entry.port)
+        }
+      })
+      if (!endpoints.length) {
+        this.serviceEndpoints.forEach(ip => add(ip, 2049))
+      }
+      return endpoints.length ? endpoints.join(', ') : '-'
+    },
+    isEnableProtocolNfsDualMode () {
+      return this.actionModal.type === 'enableProtocol' &&
+        String(this.forms.enableProtocol.protocol || '').toUpperCase() === 'NFS' &&
+        this.isNfsRuntimeDualMode
+    },
     deleteConfirmationMatched () {
       if (this.actionModal.type !== 'deleteConfirm') {
         return true
@@ -2640,6 +2793,9 @@ export default {
     },
     'forms.enableProtocol.protocol': function (protocol) {
       this.forms.enableProtocol.port = this.defaultProtocolPort(protocol)
+      if (String(protocol || '').toUpperCase() === 'NFS' && !this.forms.enableProtocol.protocolmode) {
+        this.forms.enableProtocol.protocolmode = this.nfsRuntimeProtocolMode()
+      }
     },
     'forms.nfsExport.volumemode': function (mode) {
       if (mode === 'CURRENT' && !this.forms.nfsExport.volumeid) {
@@ -2883,6 +3039,7 @@ export default {
         await Promise.all([
           this.fetchRuntime('listStorageServiceHealth', 'health'),
           this.fetchRuntime('listStorageServiceInventory', 'inventory'),
+          this.fetchCollection('listStorageServiceProtocols', 'protocols', 'storageserviceprotocol'),
           this.fetchRuntime('listStorageServiceSessions', 'sessions'),
           this.fetchCollection('listStorageServiceDomainStatus', 'domains', 'storageidentitydomain'),
           this.fetchCollection('listStorageNfsExports', 'nfsExports', 'storagenfsexport'),
@@ -2904,6 +3061,7 @@ export default {
     clearStorageServiceRuntime () {
       this.storageService.health = []
       this.storageService.inventory = []
+      this.storageService.protocols = []
       this.storageService.sessions = []
       this.storageService.domains = []
       this.storageService.nfsExports = []
@@ -3142,6 +3300,7 @@ export default {
         await Promise.all([
           this.fetchRuntime('listStorageServiceHealth', 'health'),
           this.fetchRuntime('listStorageServiceInventory', 'inventory'),
+          this.fetchCollection('listStorageServiceProtocols', 'protocols', 'storageserviceprotocol'),
           this.fetchRuntime('listStorageServiceSessions', 'sessions')
         ])
         if (['nfsExport', 'editNfsExport', 'nfsAcl', 'editNfsAcl', 'resizeShare', 'resizeVolume', 'detachBackingVolume', 'enableProtocol', 'deleteEndpoint'].includes(key)) {
@@ -3594,8 +3753,12 @@ export default {
     },
     formatProtocolEndpoints (port, preferredIp = null) {
       const ips = preferredIp ? [preferredIp] : this.serviceEndpoints
-      const values = ips.filter(Boolean).map(ip => `${ip}:${port}`)
+      const values = ips.filter(ip => ip && !this.isWildcardListenIp(ip)).map(ip => `${ip}:${port}`)
       return values.length ? values.join(', ') : '-'
+    },
+    isWildcardListenIp (ip) {
+      const value = String(ip || '').trim()
+      return value === '0.0.0.0' || value === '::' || value === '*'
     },
     normalizeEndpointIps (value) {
       if (!value) {
@@ -3604,31 +3767,203 @@ export default {
       const values = Array.isArray(value) ? value : String(value).split(',')
       const seen = new Set()
       return values.map(item => String(item || '').trim())
-        .filter(item => item && !seen.has(item) && seen.add(item))
+        .filter(item => item && !this.isWildcardListenIp(item) && !seen.has(item) && seen.add(item))
+    },
+    normalizeListenerPorts (value) {
+      if (value === undefined || value === null || value === '') {
+        return []
+      }
+      const values = Array.isArray(value) ? value : String(value).split(',')
+      const seen = new Set()
+      return values.map(item => Number(String(item || '').trim()))
+        .filter(port => Number.isFinite(port) && port > 0 && port <= 65535 && !seen.has(port) && seen.add(port))
+    },
+    defaultNfsListenerPort () {
+      if (this.isNfsRuntimeDualMode) {
+        return 2049
+      }
+      const options = this.nfsListenerGroupOptions || []
+      return options[0]?.value || 2049
+    },
+    nfsExportListenerPorts (share, config = null) {
+      if (this.isNfsRuntimeDualMode || this.nfsExportProtocolMode(share, config) === 'V3V4_DUAL') {
+        return [2049]
+      }
+      const parsedConfig = config || this.parseStorageConfig(share?.config)
+      const ports = this.normalizeListenerPorts(share?.listenerports ?? share?.listenerPorts ?? parsedConfig.listenerGroupPorts ?? parsedConfig.listenergroupports ?? parsedConfig.listenerPorts ?? parsedConfig.listenerports)
+      return ports.length ? ports : [this.defaultNfsListenerPort()]
+    },
+    selectedNfsListenerPorts () {
+      return this.normalizeListenerPorts(this.forms.nfsExport.listenerports)
+    },
+    formatNfsListenerGroupEndpoints (ports) {
+      const normalizedPorts = this.normalizeListenerPorts(ports)
+      const values = []
+      normalizedPorts.forEach(port => {
+        this.serviceEndpoints.forEach(ip => {
+          if (ip) values.push(`${ip}:${port}`)
+        })
+      })
+      return values.length ? values.join(', ') : '-'
+    },
+    nfsProtocolModeLabel (mode) {
+      return String(mode || 'V4_ONLY').trim().toUpperCase() === 'V3V4_DUAL'
+        ? this.$t('label.storage.service.nfs.protocol.mode.dual')
+        : this.$t('label.storage.service.nfs.protocol.mode.v4only')
+    },
+    normalizeNfsProtocolModeValue (mode) {
+      return String(mode || '').trim().toUpperCase() === 'V3V4_DUAL' ? 'V3V4_DUAL' : (mode ? 'V4_ONLY' : '')
+    },
+    nfsProtocolModeFromObject (source) {
+      if (!source || typeof source !== 'object') {
+        return ''
+      }
+      return this.normalizeNfsProtocolModeValue(source.protocolMode || source.protocolmode || source.mode || source.nfsProtocolMode || source.nfsprotocolmode)
+    },
+    nfsRuntimeProtocolEntries () {
+      const items = []
+      const seen = new Set()
+      const add = (entry, inheritedMode = '') => {
+        if (!entry || typeof entry !== 'object') {
+          return
+        }
+        const protocol = String(entry.protocol || entry.service || entry.name || entry.type || '').trim().toUpperCase()
+        if (protocol && protocol !== 'NFS') {
+          return
+        }
+        const listenIp = String(entry.listenIp || entry.listenip || entry.ip || entry.address || entry.listenAddress || entry.addr || '').trim()
+        if (!listenIp) {
+          return
+        }
+        const port = Number(entry.port || entry.listenPort || entry.listenport || entry.endpointPort || this.defaultProtocolPort('NFS'))
+        const resolvedPort = Number.isFinite(port) && port > 0 ? port : this.defaultProtocolPort('NFS')
+        const resolvedMode = this.nfsProtocolModeFromObject(entry) || this.normalizeNfsProtocolModeValue(inheritedMode) || 'V4_ONLY'
+        const key = `${listenIp}:${resolvedPort}:${resolvedMode}`
+        if (seen.has(key)) {
+          return
+        }
+        seen.add(key)
+        items.push({
+          listenIp,
+          port: resolvedPort,
+          protocolMode: resolvedMode
+        })
+      }
+      const addSource = (source, inheritedMode = '') => {
+        if (!source) {
+          return
+        }
+        if (Array.isArray(source)) {
+          source.forEach(item => add(item, inheritedMode))
+          return
+        }
+        if (typeof source === 'object') {
+          const sourceMode = this.nfsProtocolModeFromObject(source) || inheritedMode
+          if (source.protocol || source.service || source.name || source.listenIp || source.listenip || source.port || source.endpointMode || source.protocolMode || source.protocolmode) {
+            add(source, sourceMode)
+          }
+          Object.values(source).forEach(value => {
+            if (Array.isArray(value)) {
+              value.forEach(item => add(item, sourceMode))
+            } else if (value && typeof value === 'object') {
+              add(value, sourceMode)
+            }
+          })
+        }
+      }
+      addSource(this.storageService.protocols)
+      addSource(this.storageService.enabledProtocols)
+      addSource(this.storageService.protocol)
+      addSource(this.parsedHealth.protocols)
+      addSource(this.parsedHealth.enabledProtocols)
+      addSource(this.parsedHealth.nfsGanesha)
+      addSource(this.parsedHealth.nfsGanesha?.endpoints, this.nfsProtocolModeFromObject(this.parsedHealth.nfsGanesha))
+      addSource(this.parsedInventory.protocols)
+      addSource(this.parsedInventory.enabledProtocols)
+      addSource(this.parsedInventory.nfsGaneshaRuntime)
+      addSource(this.parsedInventory.nfsGaneshaExports, this.nfsProtocolModeFromObject(this.parsedInventory.nfsGaneshaRuntime))
+      return items
+    },
+    nfsRuntimeProtocolMode () {
+      const explicitSources = [
+        this.storageService.protocols,
+        this.storageService.enabledProtocols,
+        this.storageService.protocol,
+        this.parsedHealth.nfsGanesha,
+        this.parsedInventory.nfsGaneshaRuntime
+      ]
+      for (const source of explicitSources) {
+        const values = Array.isArray(source) ? source : (source ? [source] : [])
+        for (const item of values) {
+          const protocol = String(item?.protocol || item?.service || item?.name || item?.type || '').trim().toUpperCase()
+          if (protocol && protocol !== 'NFS') {
+            continue
+          }
+          const mode = this.nfsProtocolModeFromObject(item)
+          if (mode) {
+            return mode
+          }
+        }
+      }
+      return this.nfsRuntimeProtocolEntries()[0]?.protocolMode || 'V4_ONLY'
+    },
+    nfsRuntimePort () {
+      return this.nfsRuntimeProtocolEntries()[0]?.port || this.defaultProtocolPort('NFS')
+    },
+    nfsRuntimeEndpointSummary () {
+      const entries = this.nfsRuntimeProtocolEntries()
+      if (!entries.length) {
+        return ''
+      }
+      const endpoints = []
+      const add = (ip, port) => {
+        if (!ip) return
+        const normalizedIp = String(ip).trim()
+        if (!normalizedIp || this.isWildcardListenIp(normalizedIp)) return
+        const value = `${normalizedIp}:${port || this.defaultProtocolPort('NFS')}`
+        if (!endpoints.includes(value)) endpoints.push(value)
+      }
+      entries.forEach(entry => {
+        if (this.isWildcardListenIp(entry.listenIp)) {
+          this.serviceEndpoints.forEach(ip => add(ip, entry.port))
+        } else {
+          add(entry.listenIp, entry.port)
+        }
+      })
+      return endpoints.join(', ')
+    },
+    nfsExportProtocolMode (share, config = null) {
+      const parsedConfig = config || this.parseStorageConfig(share?.config)
+      const mode = String(share?.protocolmode || share?.protocolMode || parsedConfig.protocolMode || parsedConfig.protocolmode || 'V4_ONLY').trim().toUpperCase()
+      return mode === 'V3V4_DUAL' ? 'V3V4_DUAL' : 'V4_ONLY'
+    },
+    nfsExportEndpointDetails (share) {
+      const protocolMode = this.nfsExportProtocolMode(share)
+      const ports = this.nfsExportListenerPorts(share)
+      return ports.flatMap(port => this.nfsExportEndpointIps(share).map(ip => ({
+        listenIp: ip,
+        port,
+        protocolMode
+      })))
     },
     nfsExportEndpointIps (share) {
-      const config = this.parseStorageConfig(share?.config)
-      const rawShareValue = share?.listenips ?? share?.listenIps
-      const rawConfigValue = config.listenIps ?? config.listenips
-      const rawListenIps = this.normalizeEndpointIps(rawShareValue ?? rawConfigValue)
-      const endpointMode = this.nfsExportEndpointMode(share, config, rawListenIps)
-      if (endpointMode === 'SELECTED') {
-        return rawListenIps
-      }
       return this.serviceEndpoints
     },
     nfsExportEndpointMode (share, config = null, rawListenIps = null) {
       const parsedConfig = config || this.parseStorageConfig(share?.config)
       const rawMode = share?.endpointmode ?? share?.endpointMode ?? parsedConfig.endpointMode ?? parsedConfig.endpointmode
       const mode = String(rawMode || '').trim().toUpperCase()
-      if (mode === 'ALL' || mode === 'SELECTED') {
+      if (mode === 'ALL' || mode === 'SELECTED' || mode === 'LISTENER_GROUP') {
         return mode
       }
       const listenIps = rawListenIps || this.normalizeEndpointIps(share?.listenips ?? share?.listenIps ?? parsedConfig.listenIps ?? parsedConfig.listenips)
       return listenIps.length ? 'SELECTED' : 'ALL'
     },
     formatNfsExportEndpoints (share, port = 2049) {
-      const values = this.nfsExportEndpointIps(share).map(ip => `${ip}:${port}`)
+      if (this.isNfsRuntimeDualMode) {
+        return this.nfsServiceWideEndpointSummary
+      }
+      const values = this.nfsExportEndpointDetails(share).map(item => `${item.listenIp}:${item.port || port}`)
       return values.length ? values.join(', ') : '-'
     },
     formatNfsClientMountRoots (share, name) {
@@ -3720,8 +4055,10 @@ export default {
         createdirectory: true,
         quotaamount: null,
         quotaunit: 'GiB',
-        endpointmode: 'SELECTED',
+        protocolmode: this.nfsRuntimeProtocolMode(),
+        endpointmode: 'LISTENER_GROUP',
         listenips: [],
+        listenerports: [this.defaultNfsListenerPort()],
         readonly: false,
         rootsquash: true,
         allsquash: false,
@@ -3756,8 +4093,10 @@ export default {
       const quota = this.capacityBytesToInput(share.quotabytes || share.quotaBytes || share.capacitybytes || share.sizebytes)
       const rawListenIps = this.normalizeEndpointIps(share.listenips ?? share.listenIps ?? config.listenIps ?? config.listenips)
       const endpointMode = this.nfsExportEndpointMode(share, config, rawListenIps)
+      const listenerPorts = this.nfsExportListenerPorts(share, config)
       const volumeId = share.volumeid || share.volumeId || ''
       const currentVolume = this.currentBackingVolumes.find(volume => String(volume.id) === String(volumeId))
+      const protocolMode = this.nfsRuntimeProtocolMode()
       Object.assign(this.forms.nfsExport, {
         name: this.clientVisibleName(share.name || share.exportname, ''),
         path: share.path || share.mountpath || share.backingpath || '',
@@ -3771,8 +4110,10 @@ export default {
         createdirectory: config.createDirectory === undefined && config.createdirectory === undefined ? true : this.boolValue(config.createDirectory ?? config.createdirectory),
         quotaamount: quota.amount,
         quotaunit: quota.unit,
+        protocolmode: protocolMode,
         endpointmode: endpointMode,
         listenips: endpointMode === 'SELECTED' ? rawListenIps : [],
+        listenerports: listenerPorts,
         readonly: this.boolValue(config.readOnly ?? config.readonly),
         rootsquash: this.boolValue(config.rootSquash ?? config.rootsquash),
         allsquash: this.boolValue(config.allSquash ?? config.allsquash),
@@ -3822,7 +4163,13 @@ export default {
       this.actionModal.visible = true
       if (type === 'enableProtocol' && context?.protocol) {
         this.forms.enableProtocol.protocol = context.protocol
-        this.forms.enableProtocol.port = this.defaultProtocolPort(context.protocol)
+        this.forms.enableProtocol.protocolmode = String(context.protocol || '').toUpperCase() === 'NFS' ? this.nfsRuntimeProtocolMode() : 'V4_ONLY'
+        this.forms.enableProtocol.port = String(context.protocol || '').toUpperCase() === 'NFS' ? this.nfsRuntimePort() : this.defaultProtocolPort(context.protocol)
+        if (String(context.protocol || '').toUpperCase() === 'NFS' && this.forms.enableProtocol.protocolmode === 'V3V4_DUAL') {
+          this.forms.enableProtocol.listenipmode = 'NEW'
+          this.forms.enableProtocol.listenip = ''
+          this.forms.enableProtocol.port = 2049
+        }
       }
       if (type === 'nfsExport') {
         this.resetNfsExportForm()
@@ -3834,8 +4181,9 @@ export default {
         if (!this.forms.nfsExport.path) {
           this.forms.nfsExport.path = this.defaultNfsExportPath(this.forms.nfsExport.name)
         }
-        this.forms.nfsExport.endpointmode = 'SELECTED'
+        this.forms.nfsExport.endpointmode = this.isNfsRuntimeDualMode ? 'ALL' : 'LISTENER_GROUP'
         this.forms.nfsExport.listenips = []
+        this.forms.nfsExport.listenerports = [this.defaultNfsListenerPort()]
         this.applyNfsWritableDefaults()
       }
       if (type === 'editNfsExport') {
@@ -3958,7 +4306,8 @@ export default {
         instanceid: this.storageService.instance.id,
         protocol: this.forms.enableProtocol.protocol,
         listenip: this.forms.enableProtocol.listenip,
-        port: this.forms.enableProtocol.port
+        port: this.forms.enableProtocol.port,
+        protocolmode: this.forms.enableProtocol.protocol === 'NFS' ? this.forms.enableProtocol.protocolmode : undefined
       }, this.$t('label.storage.service.enable.protocol'))
     },
     async createNfsExport () {
@@ -3971,9 +4320,10 @@ export default {
       if (!this.validateNfsExportNameAndPath()) {
         return Promise.resolve()
       }
-      const listenIps = this.selectedNfsExportListenIps()
-      if (this.forms.nfsExport.endpointmode === 'SELECTED' && listenIps.length === 0) {
-        this.$message.error(this.$t('message.storage.service.nfs.endpoint.required'))
+      const dualMode = this.forms.nfsExport.protocolmode === 'V3V4_DUAL' || this.isNfsRuntimeDualMode
+      const listenerPorts = dualMode ? [2049] : this.selectedNfsListenerPorts()
+      if (!dualMode && listenerPorts.length === 0) {
+        this.$message.error(this.$t('message.storage.service.nfs.listener.group.required'))
         return Promise.resolve()
       }
       this.applyNfsWritableDefaults()
@@ -3988,6 +4338,7 @@ export default {
         createdirectory: this.forms.nfsExport.createdirectory,
         volumeid: volumeId,
         filesystem: this.forms.nfsExport.filesystem,
+        protocolmode: this.forms.nfsExport.protocolmode,
         importmode: this.nfsExportImportMode(),
         quotabytes: this.toCapacityBytes(this.forms.nfsExport.quotaamount, this.forms.nfsExport.quotaunit),
         readonly: this.forms.nfsExport.readonly,
@@ -4001,8 +4352,9 @@ export default {
         recursivepermission: this.forms.nfsExport.recursivepermission,
         sync: this.forms.nfsExport.sync,
         secure: this.forms.nfsExport.secure,
-        endpointmode: this.forms.nfsExport.endpointmode,
-        listenips: listenIps.join(','),
+        endpointmode: dualMode ? undefined : 'LISTENER_GROUP',
+        listenips: undefined,
+        listenerports: listenerPorts.join(','),
         cleanupvolumeonfailure: this.forms.nfsExport.volumemode === 'NEW' && !!volumeId
       }, this.$t('label.storage.service.create.nfs.export'))
     },
@@ -4069,9 +4421,10 @@ export default {
     },
     updateNfsExport () {
       const context = this.actionModal.context?.raw || this.actionModal.context || {}
-      const listenIps = this.selectedNfsExportListenIps()
-      if (this.forms.nfsExport.endpointmode === 'SELECTED' && listenIps.length === 0) {
-        this.$message.error(this.$t('message.storage.service.nfs.endpoint.required'))
+      const dualMode = this.forms.nfsExport.protocolmode === 'V3V4_DUAL' || this.isNfsRuntimeDualMode
+      const listenerPorts = dualMode ? [2049] : this.selectedNfsListenerPorts()
+      if (!dualMode && listenerPorts.length === 0) {
+        this.$message.error(this.$t('message.storage.service.nfs.listener.group.required'))
         return Promise.resolve()
       }
       if (!this.validateNfsExportNameAndPath()) {
@@ -4085,6 +4438,7 @@ export default {
         createdirectory: this.forms.nfsExport.createdirectory,
         volumeid: this.forms.nfsExport.volumeid,
         filesystem: this.forms.nfsExport.filesystem,
+        protocolmode: this.forms.nfsExport.protocolmode,
         importmode: this.nfsExportImportMode(),
         quotabytes: this.toCapacityBytes(this.forms.nfsExport.quotaamount, this.forms.nfsExport.quotaunit),
         readonly: this.forms.nfsExport.readonly,
@@ -4098,8 +4452,9 @@ export default {
         recursivepermission: this.forms.nfsExport.recursivepermission,
         sync: this.forms.nfsExport.sync,
         secure: this.forms.nfsExport.secure,
-        endpointmode: this.forms.nfsExport.endpointmode,
-        listenips: listenIps.join(',')
+        endpointmode: dualMode ? undefined : 'LISTENER_GROUP',
+        listenips: undefined,
+        listenerports: listenerPorts.join(',')
       }, this.$t('label.storage.service.update.nfs.export'))
     },
     updateNfsAcl () {
@@ -4599,7 +4954,17 @@ export default {
     :deep(.ant-table-cell-fix-left),
     :deep(.ant-table-cell-fix-right) {
       color: inherit;
-      background: inherit;
+      background: rgba(255, 255, 255, 0.98);
+    }
+
+    :deep(.ant-table-tbody > tr:hover > td.ant-table-cell-fix-right),
+    :deep(.ant-table-tbody > tr:hover > td.ant-table-cell-fix-left) {
+      background: #eef7ff;
+    }
+
+    :deep(.storage-table-actions-column) {
+      text-align: right;
+      box-shadow: -8px 0 12px -12px rgba(0, 0, 0, 0.45);
     }
 
     :deep(.ant-empty-normal) {
@@ -4628,6 +4993,24 @@ export default {
       border-radius: 999px;
       background: rgba(127, 127, 127, 0.45);
     }
+  }
+  .storage-table-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    width: 100%;
+    min-height: 28px;
+    white-space: nowrap;
+  }
+  .storage-table-actions__space {
+    justify-content: flex-end;
+    white-space: nowrap;
+  }
+  .storage-table-actions__empty {
+    display: inline-block;
+    width: 100%;
+    text-align: right;
+    color: rgba(127, 127, 127, 0.95);
   }
   .storage-ellipsis {
     display: inline-block;
@@ -4825,9 +5208,19 @@ export default {
   :global(body.dark-mode) .storage-data-table :deep(.ant-table-cell-fix-left),
   :global(body.dark-mode) .storage-data-table :deep(.ant-table-cell-fix-right) {
     color: rgba(229, 236, 246, 0.9);
+    background: #1f272f;
+  }
+  :global(body.dark-mode) .storage-data-table :deep(.ant-table-thead > tr > th.ant-table-cell-fix-left),
+  :global(body.dark-mode) .storage-data-table :deep(.ant-table-thead > tr > th.ant-table-cell-fix-right) {
+    background: #222b35;
+  }
+  :global(body.dark-mode) .storage-data-table :deep(.ant-table-tbody > tr:hover > td.ant-table-cell-fix-left),
+  :global(body.dark-mode) .storage-data-table :deep(.ant-table-tbody > tr:hover > td.ant-table-cell-fix-right) {
+    background: #243447;
   }
   :global(body.dark-mode) .storage-data-table :deep(.ant-empty-normal),
-  :global(body.dark-mode) .storage-data-table :deep(.ant-empty-description) {
+  :global(body.dark-mode) .storage-data-table :deep(.ant-empty-description),
+  :global(body.dark-mode) .storage-table-actions__empty {
     color: rgba(229, 236, 246, 0.72);
   }
   :global(body.dark-mode) {
@@ -4928,6 +5321,29 @@ export default {
   :global(body.dark-mode .storage-service-action-modal .storage-action-delete-alert .ant-alert-message),
   :global(body.dark-mode .storage-service-action-modal .storage-action-delete-alert .ant-alert-icon) {
     color: rgba(255, 239, 186, 0.94);
+  }
+  .storage-service-inline-alert {
+    margin-bottom: 16px;
+  }
+  :global(body.dark-mode .storage-service-action-modal .storage-service-inline-alert) {
+    color: rgba(214, 234, 255, 0.94);
+    background: rgba(24, 144, 255, 0.12);
+    border-color: rgba(64, 169, 255, 0.35);
+  }
+  :global(body.dark-mode .storage-service-action-modal .storage-service-inline-alert .ant-alert-message),
+  :global(body.dark-mode .storage-service-action-modal .storage-service-inline-alert .ant-alert-icon) {
+    color: rgba(214, 234, 255, 0.94);
+  }
+  :global(body.dark-mode .storage-service-action-modal .storage-fixed-value),
+  :global(body.dark-mode .storage-service-action-modal .storage-fixed-value.ant-input),
+  :global(body.dark-mode .storage-service-action-modal .storage-fixed-value .ant-input-number-input) {
+    color: rgba(229, 236, 246, 0.88) !important;
+    background: rgba(255, 255, 255, 0.045) !important;
+    border-color: rgba(255, 255, 255, 0.16) !important;
+  }
+  :global(body.dark-mode .storage-service-action-modal .storage-fixed-value.ant-input-number-disabled) {
+    background: rgba(255, 255, 255, 0.045) !important;
+    border-color: rgba(255, 255, 255, 0.16) !important;
   }
   :global(body.dark-mode .storage-service-action-modal .ant-input::placeholder),
   :global(body.dark-mode .storage-service-action-modal .ant-select-selection-placeholder) {

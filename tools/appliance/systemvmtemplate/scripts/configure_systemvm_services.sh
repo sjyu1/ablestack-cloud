@@ -71,12 +71,49 @@ function install_cloud_scripts() {
     echo "Missing or empty /usr/local/bin/ablestack-storagectl" >&2
     exit 1
   fi
+  if ! grep -q "probe_nfs_export_visibility" /usr/local/bin/ablestack-storagectl; then
+    echo "Stale /usr/local/bin/ablestack-storagectl missing runtime probe support" >&2
+    exit 1
+  fi
+  if grep -qE "\berro\b" /usr/local/bin/ablestack-storagectl; then
+    echo "Stale /usr/local/bin/ablestack-storagectl contains known typo token erro" >&2
+    exit 1
+  fi
+  if [ "$(grep -c "def rpcbind_active" /usr/local/bin/ablestack-storagectl)" -lt 3 ]; then
+    echo "Stale /usr/local/bin/ablestack-storagectl missing standalone monitor rpcbind helper support" >&2
+    exit 1
+  fi
+  if [ "$(grep -c "def nfs_protocol_mode_from_content" /usr/local/bin/ablestack-storagectl)" -lt 3 ]; then
+    echo "Stale /usr/local/bin/ablestack-storagectl missing standalone monitor protocol-mode parser support" >&2
+    exit 1
+  fi
   chmod +x /usr/local/bin/ablestack-storagectl
   if [ ! -s /usr/local/bin/ablestack-storage-monitor ]; then
     echo "Missing or empty /usr/local/bin/ablestack-storage-monitor" >&2
     exit 1
   fi
   chmod +x /usr/local/bin/ablestack-storage-monitor
+  if [ ! -s /usr/local/bin/ablestack-storage-boot-reconcile ]; then
+    echo "Missing or empty /usr/local/bin/ablestack-storage-boot-reconcile" >&2
+    exit 1
+  fi
+  chmod +x /usr/local/bin/ablestack-storage-boot-reconcile
+  if [ ! -s /etc/systemd/system/ablestack-storage-ganesha@.service ]; then
+    echo "Missing or empty /etc/systemd/system/ablestack-storage-ganesha@.service" >&2
+    exit 1
+  fi
+  if ! grep -q "ganesha.nfsd -F" /etc/systemd/system/ablestack-storage-ganesha@.service; then
+    echo "Storage Service Ganesha unit missing foreground managed runtime" >&2
+    exit 1
+  fi
+  if ! grep -q "ablestack-storage-ganesha@.*.service" /usr/local/bin/ablestack-storagectl; then
+    echo "Stale /usr/local/bin/ablestack-storagectl missing Ganesha endpoint unit naming" >&2
+    exit 1
+  fi
+  if ! grep -q '"restart", unit' /usr/local/bin/ablestack-storagectl; then
+    echo "Stale /usr/local/bin/ablestack-storagectl missing systemd-owned Ganesha restart" >&2
+    exit 1
+  fi
 
   chmod +x /root/health_checks/*
   chmod -x /etc/systemd/system/* || true
@@ -89,6 +126,11 @@ function install_cloud_scripts() {
     chmod 0644 /etc/systemd/system/ablestack-storage-monitor.service
     systemctl unmask ablestack-storage-monitor.service || true
     systemctl enable ablestack-storage-monitor.service
+  fi
+  if [ -f /etc/systemd/system/ablestack-storage-reconcile.service ]; then
+    chmod 0644 /etc/systemd/system/ablestack-storage-reconcile.service
+    systemctl unmask ablestack-storage-reconcile.service || true
+    systemctl enable ablestack-storage-reconcile.service
   fi
 }
 
@@ -137,6 +179,7 @@ function configure_services() {
   systemctl disable nfs-common
   systemctl disable nfs-server
   systemctl disable nfs-ganesha || true
+  systemctl mask nfs-ganesha || true
   systemctl disable portmap
   systemctl disable smbd
   systemctl disable nmbd

@@ -81,10 +81,12 @@
               <dl class="review-list">
                 <dt>{{ $t('label.storage.service.nfs.export.name') }}</dt>
                 <dd>{{ effectiveNfsName }}</dd>
-                <dt>{{ $t('label.storage.service.internal.path') }}</dt>
-                <dd>{{ form.nfspath || '-' }}</dd>
+                  <dt>{{ $t('label.storage.service.internal.path') }}</dt>
+                  <dd>{{ form.nfspath || '-' }}</dd>
+                  <dt>{{ $t('label.storage.service.nfs.protocol.mode') }}</dt>
+                  <dd>{{ nfsProtocolModeLabel(form.nfsprotocolmode) }}</dd>
                 <dt>{{ $t('label.storage.service.allowed.cidr') }}</dt>
-                <dd>{{ form.nfsprincipal || '-' }}</dd>
+                <dd>{{ form.nfsprincipal || $t('label.storage.service.nfs.acl.implicit.open') }}</dd>
                 <dt>{{ $t('label.storage.service.permission') }}</dt>
                 <dd>{{ storagePermissionLabel(form.nfspermission) }}</dd>
                 <dt>{{ $t('label.storage.service.nfs.export.capacity.limit') }}</dt>
@@ -426,7 +428,7 @@
               <template #label>
                 <tooltip-label :title="$t('label.storage.service.internal.path')" :tooltip="$t('message.storage.service.nfs.internal.path.help')" />
               </template>
-              <a-input v-model:value="form.nfspath" placeholder="/export/nfs01" />
+              <a-input v-model:value="form.nfspath" placeholder="/export/&lt;share-name&gt;" />
               <div class="field-hint">{{ $t('message.storage.service.nfs.internal.path.help') }}</div>
             </a-form-item>
             <a-form-item name="nfsquotaamount">
@@ -444,13 +446,37 @@
               </div>
               <div class="field-hint">{{ $t('message.storage.service.nfs.quota.help') }}</div>
             </a-form-item>
+            <a-form-item name="nfsprotocolmode">
+              <template #label>
+                <tooltip-label :title="$t('label.storage.service.nfs.protocol.mode')" :tooltip="$t('message.storage.service.nfs.protocol.mode.help')" />
+              </template>
+              <a-radio-group
+                v-model:value="form.nfsprotocolmode"
+                class="nfs-protocol-mode-radio"
+                @change="form.nfsport = form.nfsprotocolmode === 'V3V4_DUAL' ? 2049 : form.nfsport">
+                <a-radio value="V4_ONLY">{{ $t('label.storage.service.nfs.protocol.mode.v4only') }}</a-radio>
+                <a-radio value="V3V4_DUAL">{{ $t('label.storage.service.nfs.protocol.mode.dual') }}</a-radio>
+              </a-radio-group>
+            </a-form-item>
+            <a-alert
+              v-if="form.nfsprotocolmode === 'V3V4_DUAL'"
+              type="info"
+              show-icon
+              class="sharedfs-inline-alert"
+              :message="$t('message.storage.service.nfs.dual.mode.export.exposure')" />
+            <a-form-item name="nfsport" required>
+              <template #label>
+                <tooltip-label :title="$t('label.storage.service.protocol.port')" :tooltip="$t('message.storage.service.nfs.port.help')" />
+              </template>
+              <a-input-number v-model:value="form.nfsport" :min="1" :max="65535" class="full-width-input sharedfs-fixed-value" :disabled="form.nfsprotocolmode === 'V3V4_DUAL'" />
+            </a-form-item>
             <a-row :gutter="12">
               <a-col :xs="24" :md="12">
-                <a-form-item name="nfsprincipal" required>
+                <a-form-item name="nfsprincipal">
                   <template #label>
                     <tooltip-label :title="$t('label.storage.service.allowed.cidr')" :tooltip="$t('message.storage.service.allowed.cidr.help')" />
                   </template>
-                  <a-input v-model:value="form.nfsprincipal" placeholder="10.10.0.0/16" />
+                  <a-input v-model:value="form.nfsprincipal" :placeholder="$t('message.storage.service.nfs.acl.optional.placeholder')" />
                 </a-form-item>
               </a-col>
               <a-col :xs="24" :md="12">
@@ -1086,6 +1112,13 @@ export default {
     nvmeDhChapCreateSupported () {
       return false
     },
+    nfsProtocolModeLabel () {
+      const labels = {
+        V4_ONLY: this.$t('label.storage.service.nfs.protocol.mode.v4only'),
+        V3V4_DUAL: this.$t('label.storage.service.nfs.protocol.mode.dual')
+      }
+      return value => labels[String(value || 'V4_ONLY').toUpperCase()] || String(value || '-')
+    },
     importModeLabel () {
       const labels = {
         INSPECT_ONLY: this.$t('label.storage.service.import.inspect'),
@@ -1117,7 +1150,9 @@ export default {
       this.form = reactive({
         services: ['NFS'],
         nfsname: '',
-        nfspath: '/export/nfs01',
+        nfspath: '',
+        nfsprotocolmode: 'V4_ONLY',
+        nfsport: 2049,
         nfsprincipal: '',
         nfspermission: 'READ_WRITE',
         nfsrootsquash: true,
@@ -1214,9 +1249,6 @@ export default {
         }],
         nfsprincipal: [{
           validator: async (rule, value) => {
-            if (this.isServiceSelected('NFS') && !value) {
-              return Promise.reject(this.$t('message.storage.service.nfs.acl.required'))
-            }
             return Promise.resolve()
           }
         }],
@@ -1321,12 +1353,8 @@ export default {
       if (!this.form) {
         return
       }
-      const current = this.form.nfspath || ''
-      const previousPath = previousName ? `/export/${previousName}` : ''
-      if (!current || current === '/export/nfs01' || current === previousPath) {
-        const exportName = this.effectiveNfsName
-        this.form.nfspath = exportName && exportName !== '-' ? `/export/${exportName}` : ''
-      }
+      const exportName = this.effectiveNfsName
+      this.form.nfspath = exportName && exportName !== '-' ? `/export/${exportName}` : ''
     },
     arrayHasItems (array) {
       return array !== null && array !== undefined && Array.isArray(array) && array.length > 0
@@ -1608,6 +1636,7 @@ export default {
         e.preventDefault()
       }
       if (this.loading) return
+      this.syncInitialNfsPath()
       this.formRef.value.validate().then(async () => {
         const formRaw = toRaw(this.form)
         const values = this.handleRemoveFields(formRaw)
@@ -1806,7 +1835,8 @@ export default {
           instanceid: instance.id,
           protocol: service,
           listenip: listenIp,
-          port: this.defaultProtocolPort(service, setup)
+          port: this.defaultProtocolPort(service, setup),
+          protocolmode: service === 'NFS' ? (setup.nfsprotocolmode || 'V4_ONLY') : undefined
         })
       }
     },
@@ -1825,6 +1855,7 @@ export default {
           importmode: 'FORMAT_IF_EMPTY',
           createdirectory: true,
           quotabytes: this.toCapacityBytes(snapshot.nfsquotaamount, snapshot.nfsquotaunit),
+          protocolmode: snapshot.nfsprotocolmode || 'V4_ONLY',
           readonly: snapshot.nfspermission === 'READ_ONLY',
           rootsquash: snapshot.nfsrootsquash,
           anonuid: snapshot.nfspermission === 'READ_ONLY' || !snapshot.nfsrootsquash ? null : 65534,
@@ -1834,7 +1865,8 @@ export default {
           mode: snapshot.nfspermission === 'READ_ONLY' || !snapshot.nfsrootsquash ? null : '0775',
           recursivepermission: false,
           sync: snapshot.nfssync,
-          secure: snapshot.nfssecure
+          secure: snapshot.nfssecure,
+          deferapply: !!snapshot.nfsprincipal
         })
         const exportId = this.extractCreatedId(exportResponse, 'storagenfsexport')
         setup.nfsExportId = exportId
@@ -2164,6 +2196,9 @@ export default {
     },
     nfsRuntimePrincipal (principal) {
       const value = String(principal || '').trim()
+      if (!value) {
+        return '*'
+      }
       return value === '0.0.0.0/0' || value === '::/0' ? '*' : value
     },
     isExpectedNfsRuntimeEntry (entry, expectedPath, expectedPrincipal) {
@@ -2222,7 +2257,7 @@ export default {
     },
     defaultProtocolPort (protocol, snapshot = this.form) {
       const ports = {
-        NFS: 2049,
+        NFS: Number(snapshot.nfsport) || 2049,
         SMB: 445,
         ISCSI: 3260,
         NVME_OF: Number(snapshot.nvmeport) || 4420
@@ -2418,7 +2453,8 @@ export default {
   }
 }
 
-.smb-identity-radio {
+.smb-identity-radio,
+.nfs-protocol-mode-radio {
   :deep(.ant-radio-wrapper),
   :deep(.ant-radio-wrapper span),
   :deep(.ant-radio + span) {
@@ -2426,16 +2462,22 @@ export default {
   }
 }
 
-:global(body.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper),
-:global(body.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper span),
-:global(body.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio + span) {
-  color: rgba(255, 255, 255, 0.74) !important;
+:global(.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper),
+:global(.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper span),
+:global(.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio + span),
+:global(.dark-mode .sharedfs-create-dialog .nfs-protocol-mode-radio .ant-radio-wrapper),
+:global(.dark-mode .sharedfs-create-dialog .nfs-protocol-mode-radio .ant-radio-wrapper span),
+:global(.dark-mode .sharedfs-create-dialog .nfs-protocol-mode-radio .ant-radio + span) {
+  color: rgba(255, 255, 255, 0.84) !important;
 }
 
-:global(body.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper-disabled),
-:global(body.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper-disabled span),
-:global(body.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-disabled + span) {
-  color: rgba(255, 255, 255, 0.65) !important;
+:global(.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper-disabled),
+:global(.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-wrapper-disabled span),
+:global(.dark-mode .sharedfs-create-dialog .smb-identity-radio .ant-radio-disabled + span),
+:global(.dark-mode .sharedfs-create-dialog .nfs-protocol-mode-radio .ant-radio-wrapper-disabled),
+:global(.dark-mode .sharedfs-create-dialog .nfs-protocol-mode-radio .ant-radio-wrapper-disabled span),
+:global(.dark-mode .sharedfs-create-dialog .nfs-protocol-mode-radio .ant-radio-disabled + span) {
+  color: rgba(255, 255, 255, 0.68) !important;
 }
 
 .service-selector {
@@ -2494,6 +2536,28 @@ export default {
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid rgba(127, 127, 127, 0.2);
+}
+
+.sharedfs-inline-alert {
+  margin-bottom: 16px;
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-inline-alert) {
+  color: rgba(214, 234, 255, 0.94);
+  background: rgba(24, 144, 255, 0.12);
+  border-color: rgba(64, 169, 255, 0.35);
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-inline-alert .ant-alert-message),
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-inline-alert .ant-alert-icon) {
+  color: rgba(214, 234, 255, 0.94);
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-fixed-value.ant-input-number-disabled),
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-fixed-value .ant-input-number-input[disabled]) {
+  color: rgba(229, 236, 246, 0.88) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
 }
 
 .field-hint {

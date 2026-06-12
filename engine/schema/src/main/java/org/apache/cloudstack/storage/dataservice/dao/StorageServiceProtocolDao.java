@@ -27,5 +27,7 @@ import java.util.List;
 public interface StorageServiceProtocolDao extends GenericDao<StorageServiceProtocolVO, Long> {
     StorageServiceProtocolVO findByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol);
 
+    List<StorageServiceProtocolVO> listByInstanceIdAndProtocol(long instanceId, StorageServiceInstance.Protocol protocol);
+
     List<StorageServiceProtocolVO> listByInstanceId(long instanceId);
 }

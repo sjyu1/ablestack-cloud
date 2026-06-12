@@ -44,6 +44,26 @@ function apt_clean() {
   apt-get autoclean
 }
 
+function verify_storage_service_packages() {
+  local missing=0
+  local pkg
+  for pkg in nfs-ganesha nfs-ganesha-vfs rpcbind; do
+    if ! dpkg-query -W -f='${Status}\n' "${pkg}" 2>/dev/null | grep -q 'install ok installed'; then
+      echo "ERROR: required package ${pkg} is not installed" >&2
+      missing=1
+    fi
+  done
+
+  if [[ ! -x /usr/sbin/ganesha.nfsd && ! -x /usr/bin/ganesha.nfsd ]]; then
+    echo "ERROR: ganesha.nfsd binary is missing from the template image" >&2
+    missing=1
+  fi
+
+  if [[ "${missing}" -ne 0 ]]; then
+    return 1
+  fi
+}
+
 function install_packages() {
   export DEBIAN_FRONTEND=noninteractive
   export DEBIAN_PRIORITY=critical
@@ -63,7 +83,7 @@ function install_packages() {
     sysstat \
     apache2 ssl-cert \
     dnsmasq dnsmasq-utils \
-    nfs-common nfs-kernel-server nfs-ganesha nfs-ganesha-vfs xfsprogs quota acl parted lvm2 \
+    nfs-common nfs-kernel-server nfs-ganesha nfs-ganesha-vfs rpcbind xfsprogs quota acl parted lvm2 \
     samba samba-common smbclient cifs-utils winbind libnss-winbind libpam-winbind \
     krb5-user realmd sssd sssd-tools libnss-sss libpam-sss adcli \
     targetcli-fb nvme-cli \
@@ -87,6 +107,7 @@ function install_packages() {
   apt-get install -y python3-json-pointer python3-jsonschema cloud-init
 
   apt_clean
+  verify_storage_service_packages
 
   # 32 bit architecture support for vhd-util
   if [[ "${arch}" != "i386" && "${arch}" == "amd64" ]]; then

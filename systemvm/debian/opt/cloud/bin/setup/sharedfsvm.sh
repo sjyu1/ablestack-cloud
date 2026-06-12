@@ -50,14 +50,25 @@ setup_sharedfsvm() {
 
     rm -f /etc/logrotate.d/cloud
     mkdir -p /etc/ablestack-storage
-    mkdir -p /etc/ganesha/ablestack-storage
-    mkdir -p /run/ablestack-storage/ganesha
     touch /var/log/ablestack-storagectl.log
     if [ ! -s /usr/local/bin/ablestack-storagectl ]; then
       log_it "Missing or empty /usr/local/bin/ablestack-storagectl"
       exit 1
     fi
+    if ! grep -q "probe_nfs_export_visibility" /usr/local/bin/ablestack-storagectl; then
+      log_it "Stale /usr/local/bin/ablestack-storagectl missing runtime probe support"
+      exit 1
+    fi
+    if grep -qE "\berro\b" /usr/local/bin/ablestack-storagectl; then
+      log_it "Stale /usr/local/bin/ablestack-storagectl contains known typo token erro"
+      exit 1
+    fi
     chmod +x /usr/local/bin/ablestack-storagectl
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl disable --now nfs-ganesha.service >/dev/null 2>&1 || true
+      systemctl mask nfs-ganesha.service >/dev/null 2>&1 || true
+      systemctl reset-failed nfs-ganesha.service >/dev/null 2>&1 || true
+    fi
     if [ -s /usr/local/bin/ablestack-storage-monitor ] && [ -f /etc/systemd/system/ablestack-storage-monitor.service ]; then
       chmod +x /usr/local/bin/ablestack-storage-monitor
       chmod 0644 /etc/systemd/system/ablestack-storage-monitor.service
