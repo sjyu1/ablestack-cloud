@@ -68,6 +68,7 @@
             <a-select-option value="tcp" :label="$t('label.tcp')">{{ $t('label.tcp') }}</a-select-option>
             <a-select-option value="udp" :label="$t('label.udp')">{{ $t('label.udp') }}</a-select-option>
             <a-select-option value="ssl" :label="$t('label.ssl')">{{ $t('label.ssl') }}</a-select-option>
+            <a-select-option value="http" :label="$t('label.lb.protocol.http')">{{ $t('label.lb.protocol.http') }}</a-select-option>
           </a-select>
         </div>
         <div class="form__item">
@@ -457,6 +458,7 @@
             <a-select-option value="tcp" :label="$t('label.tcp')">{{ $t('label.tcp') }}</a-select-option>
             <a-select-option value="udp" :label="$t('label.udp')">{{ $t('label.udp') }}</a-select-option>
             <a-select-option value="ssl" :label="$t('label.ssl')">{{ $t('label.ssl') }}</a-select-option>
+            <a-select-option value="http" :label="$t('label.lb.protocol.http')">{{ $t('label.lb.protocol.http') }}</a-select-option>
           </a-select>
         </div>
         <div class="edit-rule__item" v-if="editRuleDetails.protocol === 'ssl'">

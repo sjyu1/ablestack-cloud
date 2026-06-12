@@ -581,7 +581,7 @@ public class HAProxyConfigurator implements LoadBalancerConfigurator {
             logger.warn("Haproxy stickiness policy for lb rule: " + lbTO.getSrcIp() + ":" + lbTO.getSrcPort() + ": Not Applied, cause:  backends are unavailable");
         }
         boolean keepAliveEnabled = lbCmd.keepAliveEnabled;
-        boolean http = (publicPort == NetUtils.HTTP_PORT && !keepAliveEnabled);
+        boolean http = (publicPort == NetUtils.HTTP_PORT && !keepAliveEnabled) || NetUtils.HTTP_PROTO.equals(lbTO.getLbProtocol());
         if (http || httpbasedStickiness || sslOffloading) {
             frontendConfigs.add("\tmode http");
             String keepAliveLine = keepAliveEnabled ? "\tno option forceclose" : "\toption httpclose";
