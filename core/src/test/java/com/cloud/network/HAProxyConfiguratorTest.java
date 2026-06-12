@@ -134,6 +134,20 @@ public class HAProxyConfiguratorTest {
     }
 
     @Test
+    public void testGenerateConfigurationLoadBalancerHttpProtocolConfigCommand() {
+        final List<LbDestination> dests = new ArrayList<>();
+        dests.add(new LbDestination(8080, 8080, "10.1.10.2", false));
+        LoadBalancerTO lb = new LoadBalancerTO("1", "10.2.0.1", 8080, "tcp", "roundrobin", false, false, false, dests);
+        lb.setLbProtocol("http");
+        LoadBalancerTO[] lba = new LoadBalancerTO[1];
+        lba[0] = lb;
+        HAProxyConfigurator hpg = new HAProxyConfigurator();
+        LoadBalancerConfigCommand cmd = new LoadBalancerConfigCommand(lba, "10.0.0.1", "10.1.0.1", "10.1.1.1", null, 1L, "12", false);
+        String result = genConfig(hpg, cmd);
+        assertTrue("'mode http' should result if protocol is 'http'", result.contains("\tmode http"));
+    }
+
+    @Test
     public void generateConfigurationTestWithCidrList() {
         LoadBalancerTO lb = new LoadBalancerTO("1", "10.2.0.1", 22, "tcp", "roundrobin", false, false, false, null, null);
         lb.setCidrList("1.1.1.1 2.2.2.2/24");
