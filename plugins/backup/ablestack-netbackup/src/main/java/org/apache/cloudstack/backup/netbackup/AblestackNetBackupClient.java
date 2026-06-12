@@ -229,16 +229,21 @@ public class AblestackNetBackupClient {
                 return false;
             }
             final JSONObject responseJson = new JSONObject(responseBody);
+            final JSONObject image = responseJson.optJSONObject("data");
+            if (image != null) {
+                return StringUtils.equals(backupId, image.optString("id", null));
+            }
+
             final JSONArray data = responseJson.optJSONArray("data");
             if (data == null || data.length() == 0) {
                 return false;
             }
             for (int i = 0; i < data.length(); i++) {
-                final JSONObject image = data.optJSONObject(i);
-                if (image == null) {
+                final JSONObject item = data.optJSONObject(i);
+                if (item == null) {
                     continue;
                 }
-                if (StringUtils.equals(backupId, image.optString("id", null))) {
+                if (StringUtils.equals(backupId, item.optString("id", null))) {
                     return true;
                 }
             }
