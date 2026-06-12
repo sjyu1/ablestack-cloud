@@ -37,7 +37,6 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.net.ssl.SSLContext;
@@ -232,20 +231,6 @@ public class AblestackNetBackupClient {
             final JSONObject image = responseJson.optJSONObject("data");
             if (image != null) {
                 return StringUtils.equals(backupId, image.optString("id", null));
-            }
-
-            final JSONArray data = responseJson.optJSONArray("data");
-            if (data == null || data.length() == 0) {
-                return false;
-            }
-            for (int i = 0; i < data.length(); i++) {
-                final JSONObject item = data.optJSONObject(i);
-                if (item == null) {
-                    continue;
-                }
-                if (StringUtils.equals(backupId, item.optString("id", null))) {
-                    return true;
-                }
             }
             return false;
         } catch (IOException e) {
