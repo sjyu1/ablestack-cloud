@@ -1607,7 +1607,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             final BackupOffering offering = getBackupOfferingForRestore(vm, backup);
             final String backupDetailsInMessage = ReflectionToStringBuilderUtils.reflectOnlySelectedFields(
                     backup, "uuid", "externalId", "vmId", "name");
-            tryRestoreVM(backup, vm, offering, backupDetailsInMessage);
+            if (resolution.preparedRestoreHostName != null) {
+                tryRestorePreparedNetBackupVM(
+                        backup, vm, offering, backupDetailsInMessage, resolution.preparedRestoreHostName);
+            } else {
+                tryRestoreVM(backup, vm, offering, backupDetailsInMessage);
+            }
             updateVolumeState(vm, Volume.Event.RestoreSucceeded, Volume.State.Ready);
             updateVmState(vm, VirtualMachine.Event.RestoringSuccess, VirtualMachine.State.Stopped);
             return importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
