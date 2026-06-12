@@ -782,53 +782,57 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         validateRestoreChainIntegrity(backup);
         final Host host = resolveRestoreHost(vm, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
-        if (!restoreSourcesAlreadyPrepared) {
-            prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
-        }
-
-        final List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
-        if (backupVolumes == null || backupVolumes.isEmpty()) {
-            throw new CloudRuntimeException(String.format("Backup [%s] does not contain backed up volume information.", backup.getUuid()));
-        }
-
-        final List<String> backedVolumesUUIDs = backupVolumes.stream()
-                .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
-                .map(Backup.VolumeInfo::getUuid)
-                .collect(Collectors.toList());
-
-        final List<VolumeVO> restoreVolumes = volumeDao.findByInstance(vm.getId()).stream()
-                .sorted(Comparator.comparingLong(VolumeVO::getDeviceId))
-                .collect(Collectors.toList());
-        if (restoreVolumes.size() != backupVolumes.size()) {
-            throw new CloudRuntimeException(String.format(
-                    "Unable to restore VM [%s] from NetBackup [%s] because the backup has [%s] disks but the VM has [%s] disks.",
-                    vm.getInstanceName(), backup.getUuid(), backupVolumes.size(), restoreVolumes.size()));
-        }
-
-        final AblestackNetBackupRestoreBackupCommand restoreCommand = new AblestackNetBackupRestoreBackupCommand();
-        restoreCommand.setBackupPath(backup.getExternalId());
-        restoreCommand.setVmName(vm.getName());
-        restoreCommand.setBackupVolumesUUIDs(backedVolumesUUIDs);
-        restoreCommand.setBackupFiles(getBackupFiles(backupVolumes, backup));
-        restoreCommand.setBackupFileChains(getBackupFileChains(backupVolumes, backup));
-        restoreCommand.setVolumeChainStates(getVolumeChainStates(backupVolumes, backup));
-        final Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(restoreVolumes);
-        restoreCommand.setRestoreVolumePools(volumePoolsAndPaths.first());
-        restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
-        restoreCommand.setVmExists(vm.getRemoved() == null);
-        restoreCommand.setVmState(vm.getState());
-        restoreCommand.setRestorePlan(createRestorePlan(false));
-        restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
-
-        final BackupAnswer answer;
         try {
-            answer = (BackupAnswer) agentManager.send(host.getId(), restoreCommand);
-        } catch (final AgentUnavailableException e) {
-            throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup restore", e);
-        } catch (final OperationTimedoutException e) {
-            throw new CloudRuntimeException("Operation to restore NetBackup backup timed out, please try again", e);
+            if (!restoreSourcesAlreadyPrepared) {
+                prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
+            }
+
+            final List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
+            if (backupVolumes == null || backupVolumes.isEmpty()) {
+                throw new CloudRuntimeException(String.format("Backup [%s] does not contain backed up volume information.", backup.getUuid()));
+            }
+
+            final List<String> backedVolumesUUIDs = backupVolumes.stream()
+                    .sorted(Comparator.comparingLong(Backup.VolumeInfo::getDeviceId))
+                    .map(Backup.VolumeInfo::getUuid)
+                    .collect(Collectors.toList());
+
+            final List<VolumeVO> restoreVolumes = volumeDao.findByInstance(vm.getId()).stream()
+                    .sorted(Comparator.comparingLong(VolumeVO::getDeviceId))
+                    .collect(Collectors.toList());
+            if (restoreVolumes.size() != backupVolumes.size()) {
+                throw new CloudRuntimeException(String.format(
+                        "Unable to restore VM [%s] from NetBackup [%s] because the backup has [%s] disks but the VM has [%s] disks.",
+                        vm.getInstanceName(), backup.getUuid(), backupVolumes.size(), restoreVolumes.size()));
+            }
+
+            final AblestackNetBackupRestoreBackupCommand restoreCommand = new AblestackNetBackupRestoreBackupCommand();
+            restoreCommand.setBackupPath(backup.getExternalId());
+            restoreCommand.setVmName(vm.getName());
+            restoreCommand.setBackupVolumesUUIDs(backedVolumesUUIDs);
+            restoreCommand.setBackupFiles(getBackupFiles(backupVolumes, backup));
+            restoreCommand.setBackupFileChains(getBackupFileChains(backupVolumes, backup));
+            restoreCommand.setVolumeChainStates(getVolumeChainStates(backupVolumes, backup));
+            final Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(restoreVolumes);
+            restoreCommand.setRestoreVolumePools(volumePoolsAndPaths.first());
+            restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
+            restoreCommand.setVmExists(vm.getRemoved() == null);
+            restoreCommand.setVmState(vm.getState());
+            restoreCommand.setRestorePlan(createRestorePlan(false));
+            restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
+
+            final BackupAnswer answer;
+            try {
+                answer = (BackupAnswer) agentManager.send(host.getId(), restoreCommand);
+            } catch (final AgentUnavailableException e) {
+                throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup restore", e);
+            } catch (final OperationTimedoutException e) {
+                throw new CloudRuntimeException("Operation to restore NetBackup backup timed out, please try again", e);
+            }
+            return new Pair<>(answer != null && answer.getResult(), answer != null ? answer.getDetails() : null);
+        } finally {
+            cleanupRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
         }
-        return new Pair<>(answer != null && answer.getResult(), answer != null ? answer.getDetails() : null);
     }
 
     @Override
@@ -863,67 +867,71 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
 
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
-        prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreChain);
-
-        final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
-                backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
-        final String volumeUuid = UUID.randomUUID().toString();
-        restoredVolume.setName("RestoredVol-" + backupVolumeInfo.getUuid());
-        restoredVolume.setProvisioningType(diskOffering.getProvisioningType());
-        restoredVolume.setUpdated(new Date());
-        restoredVolume.setUuid(volumeUuid);
-        restoredVolume.setRemoved(null);
-        restoredVolume.setDisplayVolume(true);
-        restoredVolume.setPoolId(pool.getId());
-        restoredVolume.setPoolType(pool.getPoolType());
-        restoredVolume.setPath(restoredVolume.getUuid());
-        restoredVolume.setState(Volume.State.Copying);
-        restoredVolume.setSize(backupVolumeInfo.getSize());
-        restoredVolume.setDiskOfferingId(diskOffering.getId());
-        restoredVolume.setFormat(pool.getPoolType() != Storage.StoragePoolType.RBD ? Storage.ImageFormat.QCOW2 : Storage.ImageFormat.RAW);
-
-        final AblestackNetBackupRestoreBackupCommand restoreCommand = new AblestackNetBackupRestoreBackupCommand();
-        restoreCommand.setBackupPath(backup.getExternalId());
-        restoreCommand.setVmName(vmNameAndState.first());
-        restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(matchingVolume) : matchingVolume.getPath()));
-        if (!isLegacyBackup(backup)) {
-            restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(matchingVolume, backup)));
-        }
-        restoreCommand.setVolumeChainStates(getVolumeChainStates(Collections.singletonList(matchingVolume), backup));
-        final String restoreVolumePath = String.format("%s/%s", getVolumePathPrefix(pool), volumeUuid);
-        restoreCommand.setRestoreVolumePaths(Collections.singletonList(restoreVolumePath));
-        final DataStore dataStore = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
-        if (dataStore == null) {
-            throw new CloudRuntimeException(String.format(
-                    "Unable to get primary datastore TO for pool [%s] while restoring volume [%s]", pool.getUuid(), backupVolumeInfo.getUuid()));
-        }
-        restoreCommand.setRestoreVolumePools(Collections.singletonList((PrimaryDataStoreTO) dataStore.getTO()));
-        restoreCommand.setDiskType(matchingVolume.getType().name().toLowerCase(Locale.ROOT));
-        restoreCommand.setVmExists(null);
-        restoreCommand.setVmState(vmNameAndState.second());
-        restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
-        restoreCommand.setRestorePlan(createRestorePlan(false));
-        restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
-
-        final BackupAnswer answer;
         try {
-            answer = (BackupAnswer) agentManager.send(restoreHost.getId(), restoreCommand);
-        } catch (AgentUnavailableException e) {
-            throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup restore");
-        } catch (OperationTimedoutException e) {
-            throw new CloudRuntimeException("Operation to restore backed up volume timed out, please try again");
-        }
+            prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreChain);
 
-        if (answer != null && answer.getResult()) {
-            try {
-                volumeDao.persist(restoredVolume);
-            } catch (Exception e) {
-                throw new CloudRuntimeException("Unable to create restored volume due to: " + e);
+            final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
+                    backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
+            final String volumeUuid = UUID.randomUUID().toString();
+            restoredVolume.setName("RestoredVol-" + backupVolumeInfo.getUuid());
+            restoredVolume.setProvisioningType(diskOffering.getProvisioningType());
+            restoredVolume.setUpdated(new Date());
+            restoredVolume.setUuid(volumeUuid);
+            restoredVolume.setRemoved(null);
+            restoredVolume.setDisplayVolume(true);
+            restoredVolume.setPoolId(pool.getId());
+            restoredVolume.setPoolType(pool.getPoolType());
+            restoredVolume.setPath(restoredVolume.getUuid());
+            restoredVolume.setState(Volume.State.Copying);
+            restoredVolume.setSize(backupVolumeInfo.getSize());
+            restoredVolume.setDiskOfferingId(diskOffering.getId());
+            restoredVolume.setFormat(pool.getPoolType() != Storage.StoragePoolType.RBD ? Storage.ImageFormat.QCOW2 : Storage.ImageFormat.RAW);
+
+            final AblestackNetBackupRestoreBackupCommand restoreCommand = new AblestackNetBackupRestoreBackupCommand();
+            restoreCommand.setBackupPath(backup.getExternalId());
+            restoreCommand.setVmName(vmNameAndState.first());
+            restoreCommand.setBackupFiles(Collections.singletonList(isLegacyBackup(backup) ? getLegacyBackupFileName(matchingVolume) : matchingVolume.getPath()));
+            if (!isLegacyBackup(backup)) {
+                restoreCommand.setBackupFileChains(Collections.singletonList(getBackupFileChain(matchingVolume, backup)));
             }
-            return new Pair<>(true, restoredVolume.getUuid());
-        }
+            restoreCommand.setVolumeChainStates(getVolumeChainStates(Collections.singletonList(matchingVolume), backup));
+            final String restoreVolumePath = String.format("%s/%s", getVolumePathPrefix(pool), volumeUuid);
+            restoreCommand.setRestoreVolumePaths(Collections.singletonList(restoreVolumePath));
+            final DataStore dataStore = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
+            if (dataStore == null) {
+                throw new CloudRuntimeException(String.format(
+                        "Unable to get primary datastore TO for pool [%s] while restoring volume [%s]", pool.getUuid(), backupVolumeInfo.getUuid()));
+            }
+            restoreCommand.setRestoreVolumePools(Collections.singletonList((PrimaryDataStoreTO) dataStore.getTO()));
+            restoreCommand.setDiskType(matchingVolume.getType().name().toLowerCase(Locale.ROOT));
+            restoreCommand.setVmExists(null);
+            restoreCommand.setVmState(vmNameAndState.second());
+            restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
+            restoreCommand.setRestorePlan(createRestorePlan(false));
+            restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
 
-        return new Pair<>(false, answer != null ? answer.getDetails() : "NetBackup restore agent returned no response");
+            final BackupAnswer answer;
+            try {
+                answer = (BackupAnswer) agentManager.send(restoreHost.getId(), restoreCommand);
+            } catch (AgentUnavailableException e) {
+                throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup restore");
+            } catch (OperationTimedoutException e) {
+                throw new CloudRuntimeException("Operation to restore backed up volume timed out, please try again");
+            }
+
+            if (answer != null && answer.getResult()) {
+                try {
+                    volumeDao.persist(restoredVolume);
+                } catch (Exception e) {
+                    throw new CloudRuntimeException("Unable to create restored volume due to: " + e);
+                }
+                return new Pair<>(true, restoredVolume.getUuid());
+            }
+
+            return new Pair<>(false, answer != null ? answer.getDetails() : "NetBackup restore agent returned no response");
+        } finally {
+            cleanupRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreChain);
+        }
     }
 
     @Override
@@ -1128,6 +1136,61 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                     sourceHost, destinationHostName,
                     sourceHostChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
             client.restoreBackupChain(sourceHost, destinationHostName, sourceHostChain);
+        }
+    }
+
+    private void cleanupRestoreSourcesOnStageHosts(final Long zoneId, final String destinationHostName, final List<Backup> restoreChain) {
+        if (CollectionUtils.isEmpty(restoreChain)) {
+            return;
+        }
+        for (final Map.Entry<String, List<Backup>> entry : groupRestoreChainByStageHost(destinationHostName, restoreChain).entrySet()) {
+            final String sourceHost = entry.getKey();
+            final List<Backup> sourceHostChain = entry.getValue();
+            if (CollectionUtils.isEmpty(sourceHostChain)) {
+                continue;
+            }
+            cleanupBackupPathsOnHost(zoneId, sourceHost, sourceHostChain.stream()
+                    .map(Backup::getExternalId)
+                    .filter(StringUtils::isNotBlank)
+                    .distinct()
+                    .collect(Collectors.toList()));
+        }
+    }
+
+    private void cleanupBackupPathsOnHost(final Long zoneId, final String hostName, final List<String> backupPaths) {
+        if (CollectionUtils.isEmpty(backupPaths) || StringUtils.isBlank(hostName)) {
+            return;
+        }
+        final HostVO host = findRestoreHost(hostName);
+        if (host == null) {
+            LOG.warn("Unable to find restore host [{}] while cleaning up NetBackup restore paths {}.", hostName, backupPaths);
+            return;
+        }
+        final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
+        final Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
+        for (final String backupPath : backupPaths) {
+            try {
+                executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort,
+                        String.format("rm -rf %s", shellQuote(backupPath)));
+            } catch (final Exception e) {
+                LOG.warn("Failed to cleanup NetBackup restore source path [{}] on host [{}]", backupPath, hostName, e);
+            }
+        }
+    }
+
+    private void executeDeleteBackupPathCommand(final HostVO host, final String username, final String password, final int sshPort,
+            final String command) {
+        if (host == null || StringUtils.isBlank(command)) {
+            return;
+        }
+        try {
+            final Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), sshPort,
+                    username, null, password, command, 120000, 120000, 3600000);
+            if (!response.first()) {
+                LOG.warn("NetBackup restore cleanup command failed on host [{}]: {}", host.getName(), response.second());
+            }
+        } catch (final Exception e) {
+            LOG.warn("Failed to execute NetBackup restore cleanup command on host [{}]", host.getName(), e);
         }
     }
 
