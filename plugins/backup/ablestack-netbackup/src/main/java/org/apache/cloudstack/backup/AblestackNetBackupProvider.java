@@ -782,8 +782,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         validateRestoreChainIntegrity(backup);
         final Host host = resolveRestoreHost(vm, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
+        final boolean incrementalRestore = StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup.getType());
         try {
-            if (!restoreSourcesAlreadyPrepared) {
+            if (!restoreSourcesAlreadyPrepared || incrementalRestore) {
                 prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
             }
 
