@@ -46,9 +46,11 @@ cleanup_runtime_backup_paths() {
   local removed=0
   local backup_path=""
   local cleanup_failed=0
+  local -a staged_paths=()
 
   while IFS= read -r backup_path; do
     [[ -z "${backup_path}" ]] && continue
+    staged_paths+=("${backup_path}")
     if [[ -e "${backup_path}" ]]; then
       if rm -rf "${backup_path}"; then
         removed=$((removed + 1))
@@ -62,9 +64,15 @@ cleanup_runtime_backup_paths() {
     fi
   done < <(list_runtime_success_paths)
 
-  if list_runtime_success_paths | grep -q .; then
+  for backup_path in "${staged_paths[@]}"; do
+    if [[ -e "${backup_path}" ]]; then
+      cleanup_failed=1
+      log -ne "NetBackup staged backup path still exists after cleanup: ${backup_path}"
+    fi
+  done
+
+  if [[ "${cleanup_failed}" -ne 0 ]]; then
     cleanup_failed=1
-    log -ne "NetBackup staged backup paths remain after cleanup"
   fi
 
   builtin echo "${removed}"
