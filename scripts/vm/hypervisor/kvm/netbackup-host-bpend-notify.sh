@@ -45,19 +45,30 @@ EOF
 cleanup_runtime_backup_paths() {
   local removed=0
   local backup_path=""
+  local cleanup_failed=0
 
   while IFS= read -r backup_path; do
     [[ -z "${backup_path}" ]] && continue
     if [[ -e "${backup_path}" ]]; then
-      rm -rf "${backup_path}"
-      removed=$((removed + 1))
-      log -ne "Removed NetBackup staged backup path ${backup_path}"
+      if rm -rf "${backup_path}"; then
+        removed=$((removed + 1))
+        log -ne "Removed NetBackup staged backup path ${backup_path}"
+      else
+        cleanup_failed=1
+        log -ne "Failed to remove NetBackup staged backup path ${backup_path}"
+      fi
     else
       log -ne "NetBackup staged backup path not found, skipping cleanup: ${backup_path}"
     fi
   done < <(list_runtime_success_paths)
 
+  if list_runtime_success_paths | grep -q .; then
+    cleanup_failed=1
+    log -ne "NetBackup staged backup paths remain after cleanup"
+  fi
+
   builtin echo "${removed}"
+  return "${cleanup_failed}"
 }
 
 update_netbackup_backup_ids() {
@@ -132,16 +143,40 @@ log -ne "NetBackup post-backup finalize start policy=${POLICY_NAME} schedule=${S
 
 if netbackup_job_success_confirmed; then
   log -ne "NetBackup success confirmed"
-  updated_count="$(update_netbackup_backup_ids BackedUp)"
-  log -ne "NetBackup metadata update complete count=${updated_count} backupId=${BACKUP_ID}"
-  removed_count="$(cleanup_runtime_backup_paths)"
-  update_runtime_status "NBU_CLIENT_SUCCESS_CLEANED"
-  log -ne "NetBackup cleanup complete removed=${removed_count}"
+  if removed_count="$(cleanup_runtime_backup_paths)"; then
+    cleanup_status=0
+  else
+    cleanup_status=$?
+  fi
+  if [[ "${cleanup_status}" -eq 0 ]]; then
+    updated_count="$(update_netbackup_backup_ids BackedUp)"
+    log -ne "NetBackup metadata update complete count=${updated_count} backupId=${BACKUP_ID}"
+    update_runtime_status "NBU_CLIENT_SUCCESS_CLEANED"
+    log -ne "NetBackup cleanup complete removed=${removed_count}"
+  else
+    updated_count="$(update_netbackup_backup_ids Error)"
+    log -ne "NetBackup metadata marked as Error count=${updated_count} backupId=${BACKUP_ID}"
+    update_runtime_status "NBU_CLIENT_SUCCESS_CLEANUP_ERROR"
+    log -ne "NetBackup cleanup incomplete removed=${removed_count}"
+  fi
 else
   log -ne "NetBackup success not confirmed"
-  updated_count="$(update_netbackup_backup_ids Error)"
-  log -ne "NetBackup metadata marked as Error count=${updated_count} backupId=${BACKUP_ID}"
-  update_runtime_status "NBU_CLIENT_FAILED_PRESERVED"
+  if removed_count="$(cleanup_runtime_backup_paths)"; then
+    cleanup_status=0
+  else
+    cleanup_status=$?
+  fi
+  if [[ "${cleanup_status}" -eq 0 ]]; then
+    updated_count="$(update_netbackup_backup_ids Failed)"
+    log -ne "NetBackup metadata marked as Failed count=${updated_count} backupId=${BACKUP_ID}"
+    update_runtime_status "NBU_CLIENT_FAILED_CLEANED"
+    log -ne "NetBackup cleanup complete removed=${removed_count}"
+  else
+    updated_count="$(update_netbackup_backup_ids Error)"
+    log -ne "NetBackup metadata marked as Error count=${updated_count} backupId=${BACKUP_ID}"
+    update_runtime_status "NBU_CLIENT_FAILED_CLEANUP_ERROR"
+    log -ne "NetBackup cleanup incomplete removed=${removed_count}"
+  fi
 fi
 
 clear_context_in_progress

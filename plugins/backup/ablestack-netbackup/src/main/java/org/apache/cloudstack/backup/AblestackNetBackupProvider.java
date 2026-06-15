@@ -274,7 +274,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
                 backupVO.setDate(new Date());
                 backupVO.setSize(answer.getSize() != null ? answer.getSize() : backupVO.getProtectedSize());
-                backupVO.setStatus(Backup.Status.BackedUp);
                 backupVO.setDetails(backupDetails);
                 backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
                 if (backupDao.update(backupVO.getId(), backupVO)) {
@@ -285,13 +284,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
             final String details = answer != null ? answer.getDetails() : "No answer received";
             LOG.error("Failed to take NetBackup backup for VM {}: {}", vm.getInstanceName(), details);
-            if (answer != null && answer.getNeedsCleanup()) {
-                backupVO.setStatus(Backup.Status.Error);
-                backupDao.update(backupVO.getId(), backupVO);
-            } else {
-                backupVO.setStatus(Backup.Status.Failed);
-                backupDao.update(backupVO.getId(), backupVO);
-            }
+            backupVO.setStatus(Backup.Status.Failed);
+            backupDao.update(backupVO.getId(), backupVO);
             return BackupExecutionResult.failure(details, backupVO);
         } catch (final AgentUnavailableException e) {
             backupVO.setStatus(Backup.Status.Failed);
