@@ -1288,6 +1288,14 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     @Override
+    public String getCatalogBackupTime(final Long zoneId, final String backupId) {
+        if (StringUtils.isBlank(backupId)) {
+            return null;
+        }
+        return getClient(zoneId).getCatalogBackupTime(backupId);
+    }
+
+    @Override
     public void syncBackups(final VirtualMachine vm) {
         AblestackNetBackupClient client = null;
         final Set<Long> removedBackupIds = new HashSet<>();

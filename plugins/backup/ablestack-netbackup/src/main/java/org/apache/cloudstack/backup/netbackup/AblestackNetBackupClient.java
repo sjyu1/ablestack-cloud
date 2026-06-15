@@ -62,9 +62,10 @@ public class AblestackNetBackupClient {
     private static final String NETBACKUP_EXPIRE_IMAGES_PATH = "/catalog/expire-images";
     private static final String NETBACKUP_CATALOG_IMAGES_PATH = "/catalog/images";
     private static final String NETBACKUP_JOBS_PATH = "/admin/jobs/";
-    private static final String NETBACKUP_PART_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=5.0";
+    private static final String DETAIL_BACKUP_TIME = "netbackup.backup.time";
+    private static final String NETBACKUP_PART_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=12.0";
     private static final String NETBACKUP_RECOVER_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=12.0";
-    private static final String NETBACKUP_EXPIRE_PART_CONTENT_TYPE = "application/vnd.netbackup+json;version=6.0";
+    private static final String NETBACKUP_EXPIRE_PART_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
     private static final String NETBACKUP_JSON_V12_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
     private static final String NETBACKUP_POLICY_TYPE_STANDARD = "STANDARD";
     private static final int NETBACKUP_JOB_POLL_INTERVAL_MS = 5000;
@@ -245,8 +246,8 @@ public class AblestackNetBackupClient {
         final JSONObject recoveryPoint = new JSONObject();
         recoveryPoint.put("client", recoveryClient);
         recoveryPoint.put("policyType", NETBACKUP_POLICY_TYPE_STANDARD);
-        recoveryPoint.put("startDate", formatUtcDate(fullBackup.getDate()));
-        recoveryPoint.put("endDate", formatUtcDate(targetBackup.getDate()));
+        recoveryPoint.put("startDate", resolveCatalogBackupTime(fullBackup));
+        recoveryPoint.put("endDate", resolveCatalogBackupTime(targetBackup));
 
         final JSONObject recoveryOptions = new JSONObject();
         recoveryOptions.put("server", apiUri.getHost());
@@ -269,7 +270,7 @@ public class AblestackNetBackupClient {
         for (final Backup restoreBackup : restoreChain) {
             selections.put(new JSONObject()
                     .put("path", ensureTrailingSlash(restoreBackup.getExternalId()))
-                    .put("backupTime", formatUtcDate(restoreBackup.getDate())));
+                    .put("backupTime", resolveCatalogBackupTime(restoreBackup)));
         }
 
         final StringBuilder builder = new StringBuilder();
@@ -286,6 +287,71 @@ public class AblestackNetBackupClient {
         builder.append("Content-Type: ").append(partContentType).append("\r\n");
         builder.append("\r\n");
         builder.append(content).append("\r\n");
+    }
+
+    private String resolveCatalogBackupTime(final Backup backup) {
+        if (backup == null) {
+            throw new CloudRuntimeException("NetBackup restore backup metadata is missing");
+        }
+
+        final String storedBackupTime = backup.getDetail(DETAIL_BACKUP_TIME);
+        if (StringUtils.isNotBlank(storedBackupTime)) {
+            return storedBackupTime;
+        }
+
+        final String backupId = backup.getExternalId();
+        if (StringUtils.isBlank(backupId)) {
+            return formatUtcDate(backup.getDate());
+        }
+
+        final String catalogBackupTime = getCatalogBackupTime(backupId);
+        if (StringUtils.isNotBlank(catalogBackupTime)) {
+            return catalogBackupTime;
+        }
+
+        LOG.warn("NetBackup catalog backupTime was not found for backup [{}]. Falling back to backup date [{}].",
+                backupId, backup.getDate());
+        return formatUtcDate(backup.getDate());
+    }
+
+    public String getCatalogBackupTime(final String backupId) {
+        final HttpGet request = new HttpGet(resolvePath(String.format("%s/%s", NETBACKUP_CATALOG_IMAGES_PATH, backupId)));
+        request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
+        applyAuthenticationHeaders(request);
+
+        try {
+            final HttpResponse response = httpClient.execute(request);
+            final int statusCode = response.getStatusLine().getStatusCode();
+            final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
+            if (statusCode == HttpStatus.SC_NOT_FOUND) {
+                return null;
+            }
+            if (statusCode != HttpStatus.SC_OK) {
+                throw new CloudRuntimeException(String.format(
+                        "Failed to query NetBackup catalog image [%s]. status [%s], response [%s]",
+                        backupId, statusCode, responseBody));
+            }
+            if (StringUtils.isBlank(responseBody)) {
+                return null;
+            }
+
+            final JSONObject responseJson = new JSONObject(responseBody);
+            final JSONObject image = responseJson.optJSONObject("data");
+            if (image == null) {
+                return null;
+            }
+            final JSONObject attributes = image.optJSONObject("attributes");
+            if (attributes == null) {
+                return null;
+            }
+            final String backupTime = attributes.optString("backupTime", null);
+            if (StringUtils.isBlank(backupTime)) {
+                return null;
+            }
+            return backupTime;
+        } catch (IOException e) {
+            throw new CloudRuntimeException("Failed to query NetBackup catalog image API: " + e.getMessage(), e);
+        }
     }
 
     private String ensureTrailingSlash(final String path) {

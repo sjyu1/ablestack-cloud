@@ -266,6 +266,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
     private static final String DETAIL_NETBACKUP_BACKUP_ID = "netbackup.backup.id";
+    private static final String DETAIL_NETBACKUP_BACKUP_TIME = "netbackup.backup.time";
     private static final String DETAIL_NETBACKUP_MEMBER_COUNT = "netbackup.backup.member.count";
     private static final String DETAIL_NETBACKUP_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_NETBACKUP_MAX_CHAIN = "netbackup.max.chain";
@@ -1148,6 +1149,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID);
         backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId(), false);
+        backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_TIME);
+        final String backupTime = resolveNetBackupCatalogBackupTime(backup, cmd.getBackupId());
+        if (StringUtils.isNotBlank(backupTime)) {
+            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_TIME, backupTime, false);
+        }
         if (StringUtils.isNotBlank(cmd.getPolicyId())) {
             backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME);
             backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME, cmd.getPolicyId(), false);
@@ -1169,6 +1175,32 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         backupDao.update(backup.getId(), backup);
         backupDao.loadDetails(backup);
         return true;
+    }
+
+    private String resolveNetBackupCatalogBackupTime(final BackupVO backup, final String backupId) {
+        if (StringUtils.isBlank(backupId)) {
+            return null;
+        }
+
+        try {
+            final BackupOffering offering = backupOfferingDao.findById(backup.getBackupOfferingId());
+            if (offering == null || !BackupProviderNameUtils.isNetBackupFamily(offering.getProvider())) {
+                return null;
+            }
+            final BackupProvider provider = getBackupProvider(offering.getProvider());
+            final String backupTime = provider != null ? provider.getCatalogBackupTime(backup.getZoneId(), backupId) : null;
+            if (StringUtils.isNotBlank(backupTime)) {
+                return backupTime;
+            }
+            logger.warn(String.format(
+                    "NetBackup catalog backupTime was not found for backup ID [%s] in zone [%s].",
+                    backupId, backup.getZoneId()));
+        } catch (Exception e) {
+            logger.warn(String.format(
+                    "Failed to resolve NetBackup catalog backupTime for backup ID [%s] in zone [%s]: %s",
+                    backupId, backup.getZoneId(), e.getMessage()), e);
+        }
+        return null;
     }
 
     private Backup.Status resolveNetBackupStatus(final String status) {
