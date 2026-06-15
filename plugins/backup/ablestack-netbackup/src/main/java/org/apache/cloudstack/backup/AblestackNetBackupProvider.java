@@ -290,23 +290,23 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 backupDao.update(backupVO.getId(), backupVO);
             } else {
                 backupVO.setStatus(Backup.Status.Failed);
-                removeBackupWithDetails(backupVO.getId());
+                backupDao.update(backupVO.getId(), backupVO);
             }
             return BackupExecutionResult.failure(details, backupVO);
         } catch (final AgentUnavailableException e) {
             backupVO.setStatus(Backup.Status.Failed);
-            removeBackupWithDetails(backupVO.getId());
+            backupDao.update(backupVO.getId(), backupVO);
             throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup backup", e);
         } catch (final OperationTimedoutException e) {
             backupVO.setStatus(Backup.Status.Failed);
-            removeBackupWithDetails(backupVO.getId());
+            backupDao.update(backupVO.getId(), backupVO);
             throw new CloudRuntimeException("Operation to initiate NetBackup backup timed out, please try again", e);
         } catch (final RuntimeException e) {
             try {
                 final Backup existingBackup = backupDao.findById(backupVO.getId());
                 if (existingBackup != null) {
                     backupVO.setStatus(Backup.Status.Failed);
-                    removeBackupWithDetails(backupVO.getId());
+                    backupDao.update(backupVO.getId(), backupVO);
                 }
             } catch (final Exception cleanupException) {
                 LOG.warn("Failed to cleanup incomplete NetBackup backup entry [{}]", backupVO.getUuid(), cleanupException);
@@ -411,7 +411,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     private void cleanupFailedBackupForFullRetry(final Backup backup) {
         if (backup != null) {
-            removeBackupWithDetails(backup.getId());
+            LOG.info("Preserving failed NetBackup backup [{}] before full retry so the failure remains visible in backup history.",
+                    backup.getUuid());
         }
     }
 

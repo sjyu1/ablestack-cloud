@@ -1160,8 +1160,26 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_MEMBER_COUNT);
             backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_MEMBER_COUNT, String.valueOf(cmd.getMemberCount()), false);
         }
+        final Backup.Status finalStatus = resolveNetBackupStatus(cmd.getStatus());
+        backup.setStatus(finalStatus);
+        backup.setDate(new Date());
+        if (Backup.Status.BackedUp.equals(finalStatus)) {
+            backup.setSize(calculateBackupSize(vmId));
+        }
+        backupDao.update(backup.getId(), backup);
         backupDao.loadDetails(backup);
         return true;
+    }
+
+    private Backup.Status resolveNetBackupStatus(final String status) {
+        if (StringUtils.isBlank(status)) {
+            return Backup.Status.BackedUp;
+        }
+        try {
+            return Backup.Status.valueOf(status);
+        } catch (IllegalArgumentException e) {
+            throw new CloudRuntimeException(String.format("Invalid NetBackup final status [%s].", status), e);
+        }
     }
 
     private void createCheckedBackup(CreateNetBackupCmd cmd, Account owner, boolean isScheduledBackup, Long backupSize,

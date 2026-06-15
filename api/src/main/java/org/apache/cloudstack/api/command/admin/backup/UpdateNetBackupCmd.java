@@ -80,6 +80,13 @@ public class UpdateNetBackupCmd extends BaseCmd {
             description = "Number of successful VM backup members created in the same NetBackup backup group")
     private Integer memberCount;
 
+    @Parameter(name = ApiConstants.STATUS,
+            type = CommandType.STRING,
+            required = false,
+            description = "Final backup status to set when NetBackup processing completes",
+            since = "4.22.0")
+    private String status;
+
     public Long getVmId() {
         return vmId;
     }
@@ -102,6 +109,10 @@ public class UpdateNetBackupCmd extends BaseCmd {
 
     public Integer getMemberCount() {
         return memberCount;
+    }
+
+    public String getStatus() {
+        return status;
     }
 
     @Override

@@ -66,6 +66,7 @@ update_netbackup_backup_ids() {
   local backup_path=""
   local response=""
   local member_count=0
+  local final_status="${1:-BackedUp}"
 
   [[ -n "${BACKUP_ID:-}" ]] || fail "NetBackup BACKUP_ID is empty; cannot update backup_details"
   member_count="$(read_runtime_count "success_count" 2>/dev/null || echo 0)"
@@ -77,11 +78,12 @@ update_netbackup_backup_ids() {
       "virtualmachineid" "${vm_id}" \
       "backupid" "${BACKUP_ID}" \
       "externalid" "${backup_path}" \
+      "status" "${final_status}" \
       "membercount" "${member_count}" \
       "policyid" "${POLICY_NAME}" \
       "maxbackups" "${MAX_INCREMENTAL_CHAIN}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id} backupPath=${backup_path}"
     updated=$((updated + 1))
-    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} backupPath=${backup_path} memberCount=${member_count} policyName=${POLICY_NAME} maxChain=${MAX_INCREMENTAL_CHAIN}"
+    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} backupPath=${backup_path} status=${final_status} memberCount=${member_count} policyName=${POLICY_NAME} maxChain=${MAX_INCREMENTAL_CHAIN}"
   done < <(list_runtime_success_vm_refs)
 
   builtin echo "${updated}"
@@ -130,13 +132,15 @@ log -ne "NetBackup post-backup finalize start policy=${POLICY_NAME} schedule=${S
 
 if netbackup_job_success_confirmed; then
   log -ne "NetBackup success confirmed"
-  updated_count="$(update_netbackup_backup_ids)"
+  updated_count="$(update_netbackup_backup_ids BackedUp)"
   log -ne "NetBackup metadata update complete count=${updated_count} backupId=${BACKUP_ID}"
   removed_count="$(cleanup_runtime_backup_paths)"
   update_runtime_status "NBU_CLIENT_SUCCESS_CLEANED"
   log -ne "NetBackup cleanup complete removed=${removed_count}"
 else
   log -ne "NetBackup success not confirmed"
+  updated_count="$(update_netbackup_backup_ids Error)"
+  log -ne "NetBackup metadata marked as Error count=${updated_count} backupId=${BACKUP_ID}"
   update_runtime_status "NBU_CLIENT_FAILED_PRESERVED"
 fi
 
