@@ -169,7 +169,7 @@ class LibvirtAblestackNetBackupHelper {
 
     private String[] buildBackupScriptCommand(AblestackNetBackupTakeBackupCommand command, List<String> diskPaths, BackupExecutionMode executionMode) {
         return new String[] {
-                resource.getAbleCvtBackupPath(),
+                resource.getAbleNetBackupPath(),
                 "-o", executionMode.getScriptOperation(),
                 "-v", command.getVmName(),
                 "-p", command.getBackupPath(),
