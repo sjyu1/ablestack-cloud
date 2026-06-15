@@ -1146,6 +1146,10 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                         "Unable to find NetBackup backup row for VM [%s] and external ID [%s].",
                         vm.getInstanceName(), cmd.getExternalId())));
 
+        final Backup.Status finalStatus = resolveNetBackupStatus(cmd.getStatus());
+        backup.setStatus(finalStatus);
+        backup.setDate(new Date());
+        backupDao.update(backup.getId(), backup);
         backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID);
         backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId(), false);
         if (StringUtils.isNotBlank(cmd.getPolicyId())) {
@@ -1160,10 +1164,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_MEMBER_COUNT);
             backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_MEMBER_COUNT, String.valueOf(cmd.getMemberCount()), false);
         }
-        final Backup.Status finalStatus = resolveNetBackupStatus(cmd.getStatus());
-        backup.setStatus(finalStatus);
-        backup.setDate(new Date());
-        backupDao.update(backup.getId(), backup);
         backupDao.loadDetails(backup);
         return true;
     }
