@@ -63,6 +63,7 @@ public class AblestackNetBackupClient {
     private static final String NETBACKUP_CATALOG_IMAGES_PATH = "/catalog/images";
     private static final String NETBACKUP_JOBS_PATH = "/admin/jobs/";
     private static final String NETBACKUP_PART_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=5.0";
+    private static final String NETBACKUP_RECOVER_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=12.0";
     private static final String NETBACKUP_EXPIRE_PART_CONTENT_TYPE = "application/vnd.netbackup+json;version=6.0";
     private static final String NETBACKUP_JSON_V12_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
     private static final String NETBACKUP_POLICY_TYPE_STANDARD = "STANDARD";
@@ -126,22 +127,22 @@ public class AblestackNetBackupClient {
         final String body = buildMultipartBody(boundary, recoveryClient, destinationClient, fullBackup, targetBackup, restoreChain);
 
         final HttpPost request = new HttpPost(resolvePath(NETBACKUP_RECOVER_PATH));
-        request.setHeader(HttpHeaders.ACCEPT, "application/json");
-        request.setHeader(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
+        request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
+        request.setHeader(HttpHeaders.CONTENT_TYPE, NETBACKUP_RECOVER_CONTENT_TYPE + "; boundary=" + boundary);
         applyAuthenticationHeaders(request);
-        request.setEntity(new StringEntity(body, ContentType.create("multipart/form-data", "UTF-8")));
+        request.setEntity(new StringEntity(body, ContentType.create("multipart/vnd.netbackup+form-data", "UTF-8")));
 
         try {
             final HttpResponse response = httpClient.execute(request);
             final int statusCode = response.getStatusLine().getStatusCode();
             final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
-            if (statusCode != HttpStatus.SC_OK && statusCode != HttpStatus.SC_ACCEPTED) {
+            if (statusCode != HttpStatus.SC_OK && statusCode != HttpStatus.SC_ACCEPTED && statusCode != HttpStatus.SC_CREATED) {
                 LOG.error("NetBackup restore request failed. statusCode={}, response={}", statusCode, responseBody);
                 throw new CloudRuntimeException(String.format(
                         "NetBackup restore REST API failed with status [%s]: %s", statusCode, responseBody));
             }
 
-            final String recoveryJobId = extractRecoveryJobId(responseBody);
+            final String recoveryJobId = extractRecoveryJobId(responseBody, response);
             if (StringUtils.isBlank(recoveryJobId)) {
                 throw new CloudRuntimeException("NetBackup restore REST API did not return a recovery job ID");
             }
@@ -303,12 +304,33 @@ public class AblestackNetBackupClient {
         return sdf.format(date);
     }
 
-    private String extractRecoveryJobId(final String responseBody) {
+    private String extractRecoveryJobId(final String responseBody, final HttpResponse response) {
         if (StringUtils.isBlank(responseBody)) {
+            final String recoveryJobIdFromLocation = extractRecoveryJobIdFromLocation(response);
+            return StringUtils.isNotBlank(recoveryJobIdFromLocation) ? recoveryJobIdFromLocation : null;
+        }
+        final JSONObject responseJson = new JSONObject(responseBody);
+        final String recoveryJobId = extractString(responseJson, "relationships.recoveryJob.data.id");
+        if (StringUtils.isNotBlank(recoveryJobId)) {
+            return recoveryJobId;
+        }
+        return extractRecoveryJobIdFromLocation(response);
+    }
+
+    private String extractRecoveryJobIdFromLocation(final HttpResponse response) {
+        if (response == null || response.getFirstHeader("Location") == null) {
             return null;
         }
-        final JSONObject response = new JSONObject(responseBody);
-        return extractString(response, "relationships.recoveryJob.data.id");
+        final String location = response.getFirstHeader("Location").getValue();
+        if (StringUtils.isBlank(location)) {
+            return null;
+        }
+        final String normalized = location.endsWith("/") ? location.substring(0, location.length() - 1) : location;
+        final int lastSlash = normalized.lastIndexOf('/');
+        if (lastSlash < 0 || lastSlash == normalized.length() - 1) {
+            return normalized;
+        }
+        return normalized.substring(lastSlash + 1);
     }
 
     private void waitForRecoveryJob(final String recoveryJobId) {
