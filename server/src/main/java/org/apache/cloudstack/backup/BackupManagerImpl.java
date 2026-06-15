@@ -1163,9 +1163,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         final Backup.Status finalStatus = resolveNetBackupStatus(cmd.getStatus());
         backup.setStatus(finalStatus);
         backup.setDate(new Date());
-        if (Backup.Status.BackedUp.equals(finalStatus)) {
-            backup.setSize(calculateBackupSize(vmId));
-        }
         backupDao.update(backup.getId(), backup);
         backupDao.loadDetails(backup);
         return true;
