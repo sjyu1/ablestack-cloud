@@ -266,7 +266,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
     private static final String DETAIL_NETBACKUP_BACKUP_ID = "netbackup.backup.id";
-    private static final String DETAIL_NETBACKUP_BACKUP_TIME = "netbackup.backup.time";
     private static final String DETAIL_NETBACKUP_MEMBER_COUNT = "netbackup.backup.member.count";
     private static final String DETAIL_NETBACKUP_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_NETBACKUP_MAX_CHAIN = "netbackup.max.chain";
@@ -1149,11 +1148,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID);
         backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId(), false);
-        backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_TIME);
-        final String backupTime = resolveNetBackupCatalogBackupTime(backup, cmd.getBackupId());
-        if (StringUtils.isNotBlank(backupTime)) {
-            backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_TIME, backupTime, false);
-        }
         if (StringUtils.isNotBlank(cmd.getPolicyId())) {
             backupDetailsDao.removeDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME);
             backupDetailsDao.addDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME, cmd.getPolicyId(), false);

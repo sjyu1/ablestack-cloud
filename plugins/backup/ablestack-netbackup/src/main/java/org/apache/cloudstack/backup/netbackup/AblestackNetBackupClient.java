@@ -62,7 +62,6 @@ public class AblestackNetBackupClient {
     private static final String NETBACKUP_EXPIRE_IMAGES_PATH = "/catalog/expire-images";
     private static final String NETBACKUP_CATALOG_IMAGES_PATH = "/catalog/images";
     private static final String NETBACKUP_JOBS_PATH = "/admin/jobs/";
-    private static final String DETAIL_BACKUP_TIME = "netbackup.backup.time";
     private static final String NETBACKUP_PART_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=12.0";
     private static final String NETBACKUP_RECOVER_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=12.0";
     private static final String NETBACKUP_EXPIRE_PART_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
@@ -292,11 +291,6 @@ public class AblestackNetBackupClient {
     private String resolveCatalogBackupTime(final Backup backup) {
         if (backup == null) {
             throw new CloudRuntimeException("NetBackup restore backup metadata is missing");
-        }
-
-        final String storedBackupTime = backup.getDetail(DETAIL_BACKUP_TIME);
-        if (StringUtils.isNotBlank(storedBackupTime)) {
-            return storedBackupTime;
         }
 
         final String backupId = backup.getExternalId();
