@@ -142,6 +142,7 @@ redefine_checkpoint_if_needed() {
   fi
   if ! virsh -c qemu:///system checkpoint-create --domain "$vm_name" --xmlfile "$checkpoint_file" --redefine > /dev/null 2>&1; then
     echo "Failed to redefine checkpoint $PARENT_CHECKPOINT_NAME on domain $vm_name"
+    cleanup
     exit 1
   fi
 }
