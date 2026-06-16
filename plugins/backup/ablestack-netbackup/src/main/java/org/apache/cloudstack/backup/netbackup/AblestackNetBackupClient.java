@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class AblestackNetBackupClient {
     private static final Logger LOG = LogManager.getLogger(AblestackNetBackupClient.class);
@@ -125,6 +126,20 @@ public class AblestackNetBackupClient {
         final Backup targetBackup = restoreChain.get(restoreChain.size() - 1);
         final String boundary = "----AbleStackNetBackup" + UUID.randomUUID().toString().replace("-", "");
         final String body = buildMultipartBody(boundary, recoveryClient, destinationClient, fullBackup, targetBackup, restoreChain);
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug(
+                    "Preparing NetBackup restore request. apiUriHost=[{}], recoveryClient=[{}], destinationClient=[{}], "
+                            + "fullBackupExternalId=[{}], targetBackupExternalId=[{}], restoreChain=[{}], boundary=[{}], body=[{}]",
+                    apiUri.getHost(),
+                    recoveryClient,
+                    destinationClient,
+                    fullBackup.getExternalId(),
+                    targetBackup.getExternalId(),
+                    restoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()),
+                    boundary,
+                    body);
+        }
 
         final HttpPost request = new HttpPost(resolvePath(NETBACKUP_RECOVER_PATH));
         request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
@@ -270,6 +285,13 @@ public class AblestackNetBackupClient {
             selections.put(new JSONObject()
                     .put("path", ensureTrailingSlash(restoreBackup.getExternalId()))
                     .put("backupTime", resolveCatalogBackupTime(restoreBackup)));
+        }
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("NetBackup restore recoveryPoint=[{}]", recoveryPoint);
+            LOG.debug("NetBackup restore recoveryOptions=[{}]", recoveryOptions);
+            LOG.debug("NetBackup restore selectionsFile=[{}]", selections);
+            LOG.debug("NetBackup restore requestPayload=[{}]", requestPayload);
         }
 
         final StringBuilder builder = new StringBuilder();
