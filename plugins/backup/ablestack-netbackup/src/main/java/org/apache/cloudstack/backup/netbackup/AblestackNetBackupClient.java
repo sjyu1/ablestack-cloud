@@ -48,11 +48,7 @@ import java.net.URISyntaxException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
-import java.util.TimeZone;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -68,6 +64,7 @@ public class AblestackNetBackupClient {
     private static final String NETBACKUP_EXPIRE_PART_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
     private static final String NETBACKUP_JSON_V12_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
     private static final String NETBACKUP_POLICY_TYPE_STANDARD = "STANDARD";
+    private static final String DETAIL_BACKUP_ID = "netbackup.backup.id";
     private static final int NETBACKUP_JOB_POLL_INTERVAL_MS = 5000;
 
     private final URI apiUri;
@@ -315,19 +312,20 @@ public class AblestackNetBackupClient {
             throw new CloudRuntimeException("NetBackup restore backup metadata is missing");
         }
 
-        final String backupId = backup.getExternalId();
+        final String backupId = backup.getDetail(DETAIL_BACKUP_ID);
         if (StringUtils.isBlank(backupId)) {
-            return formatUtcDate(backup.getDate());
+            throw new CloudRuntimeException(String.format(
+                    "NetBackup backup ID is missing for backup [%s].",
+                    backup.getExternalId()));
         }
 
         final String catalogBackupTime = getCatalogBackupTime(backupId);
-        if (StringUtils.isNotBlank(catalogBackupTime)) {
-            return catalogBackupTime;
+        if (StringUtils.isBlank(catalogBackupTime)) {
+            throw new CloudRuntimeException(String.format(
+                    "NetBackup catalog backupTime was not found for backup ID [%s] (external ID [%s]).",
+                    backupId, backup.getExternalId()));
         }
-
-        LOG.warn("NetBackup catalog backupTime was not found for backup [{}]. Falling back to backup date [{}].",
-                backupId, backup.getDate());
-        return formatUtcDate(backup.getDate());
+        return catalogBackupTime;
     }
 
     public String getCatalogBackupTime(final String backupId) {
@@ -375,15 +373,6 @@ public class AblestackNetBackupClient {
             return path;
         }
         return path.endsWith("/") ? path : path + "/";
-    }
-
-    private String formatUtcDate(final Date date) {
-        if (date == null) {
-            throw new CloudRuntimeException("NetBackup restore requires backup timestamps to be present");
-        }
-        final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
-        sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-        return sdf.format(date);
     }
 
     private String extractRecoveryJobId(final String responseBody, final HttpResponse response) {
