@@ -555,6 +555,24 @@
         <a-tag v-if="text === 'Not Installed'" color="error">{{ this.$t('label.state.qemuagentversion.notinstalled') }}</a-tag>
         <a-tag v-else-if="text" color="success">{{ text }}</a-tag>
       </template>
+      <template v-if="column.key === 'resources'">
+        <div v-if="hasValue(record.cpunumber) || hasValue(record.memory)" class="resource-summary">
+          <span v-if="hasValue(record.cpunumber)" class="resource-item resource-item--cpu">
+            <a-tooltip>
+              <template #title>{{ $t('label.cpu') }}</template>
+              <font-awesome-icon :icon="['fa-solid', 'fa-microchip']" class="resource-icon" />
+            </a-tooltip>
+            {{ record.cpunumber }} CPU
+          </span>
+          <span v-if="hasValue(record.memory)" class="resource-item resource-item--memory">
+            <a-tooltip>
+              <template #title>{{ $t('label.memory') }}</template>
+              <font-awesome-icon :icon="['fa-solid', 'fa-memory']" class="resource-icon" />
+            </a-tooltip>
+            {{ record.memory }} MB
+          </span>
+        </div>
+      </template>
       <template v-if="column.key === 'mirroringagentstatus'">
         <status :text="text ? text : ''" displayText />
       </template>
@@ -1809,6 +1827,9 @@ export default {
       var duration = Date.parse(enddate) - Date.parse(startdate)
       return (duration > 0 ? duration / 1000.0 : 0) + ''
     },
+    hasValue (value) {
+      return value !== undefined && value !== null && value !== ''
+    },
     getUsageTypes () {
       if (this.$route.path.split('/')[1] === 'usage') {
         getAPI('listUsageTypes').then(json => {
@@ -1985,6 +2006,33 @@ export default {
     .icon-monthly:before {
       content: "***";
     }
+
+  .resource-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    line-height: 20px;
+    white-space: nowrap;
+    color: inherit;
+
+    .resource-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .resource-icon {
+      font-size: 13px;
+    }
+
+    .resource-item--cpu .resource-icon {
+      color: #5b6b84;
+    }
+
+    .resource-item--memory .resource-icon {
+      color: #68758a;
+    }
+  }
 
   .quickview-context-menu {
     position: fixed;

@@ -10787,6 +10787,10 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 throw new CloudRuntimeException(ex.getMessage());
             }
         }
+        if (!cmd.getLinkState() && network.getGuestType() == Network.GuestType.L2 && nic.getIPv4Address() != null) {
+            nic.setIPv4Address(null);
+            _nicDao.update(nicId, nic);
+        }
         return _vmDao.findById(vmInstance.getId());
     }
 

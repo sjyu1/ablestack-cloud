@@ -5630,5 +5630,7 @@
   "message.success.create.kubernetes.cluter": "Successfully created Kubernetes cluster",
   "alert.storage.backup": "BACKUP.STORAGE",
   "message.rbd.name": "Please enter image name",
-  "label.override.root.no": "If you have selected a Glue image as your virtual machine image, please select the Compute offering to match the image size"
+  "label.override.root.no": "If you have selected a Glue image as your virtual machine image, please select the Compute offering to match the image size",
+  "label.compute.resources": "Allocated resources",
+  "message.kubernetes.management.rule.delete.disabled": "Management rules created by Kubernetes cannot be deleted."
 }

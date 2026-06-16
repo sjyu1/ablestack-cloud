@@ -1506,11 +1506,20 @@ export default {
             customRender[key] = columnKey[key]
           }
         }
+        const sorter = key === 'resources'
+          ? (a, b) => {
+            const cpuCompare = Number(a.cpunumber || 0) - Number(b.cpunumber || 0)
+            if (cpuCompare !== 0) {
+              return cpuCompare
+            }
+            return Number(a.memory || 0) - Number(b.memory || 0)
+          }
+          : (a, b) => genericCompare(a[key] || '', b[key] || '')
         this.columns.push({
           key: key,
           title: this.$t('label.' + String(title).toLowerCase()),
           dataIndex: key,
-          sorter: this.getColumnSorter(key)
+          sorter: sorter
         })
         this.selectedColumns.push(key)
       }

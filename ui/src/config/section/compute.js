@@ -52,7 +52,7 @@ export default {
         return filters
       },
       columns: () => {
-        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', 'qemuagentversion', 'ipaddress', 'templatetype', 'backupofferingname']
+        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', { field: 'resources', customTitle: 'compute.resources' }, 'qemuagentversion', 'ipaddress', 'templatetype', 'backupofferingname']
         const metricsFields = ['cpunumber', 'cputotal', 'cpuused', 'memorytotal',
           {
             memoryused: (record) => {
@@ -79,7 +79,7 @@ export default {
         }
         fields.push('arch')
         if (store.getters.userInfo.roletype === 'Admin') {
-          fields.splice(3, 0, 'instancename')
+          fields.splice(1, 0, 'instancename')
           fields.push('hostname')
           fields.push('account')
         } else if (store.getters.userInfo.roletype === 'DomainAdmin') {
