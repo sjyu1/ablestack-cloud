@@ -192,11 +192,16 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, backupScheduleId);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, host, vmVolumes, volumePoolsAndPaths, latestBackup,
                 incrementalBackup, null, null);
+        Backup failedIncrementalBackup = null;
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
-            cleanupFailedBackupForFullRetry(result.backup);
+            failedIncrementalBackup = result.backup;
+            cleanupFailedBackupForFullRetry(host, failedIncrementalBackup);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
             result = executeBackup(vm, quiesceVM, host, vmVolumes, volumePoolsAndPaths, null, false,
                     null, null);
+            if (result.success && failedIncrementalBackup != null) {
+                removeFailedBackupAfterSuccessfulFullRetry(failedIncrementalBackup);
+            }
         }
         return new Pair<>(result.success, result.backup);
     }
@@ -215,11 +220,16 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final boolean incrementalBackup = shouldUseIncrementalBackupForNetBackup(vm, latestBackup, maxChain);
         BackupExecutionResult result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, latestBackup,
                 incrementalBackup, policyName, maxChain);
+        Backup failedIncrementalBackup = null;
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
-            cleanupFailedBackupForFullRetry(result.backup);
+            failedIncrementalBackup = result.backup;
+            cleanupFailedBackupForFullRetry(host, failedIncrementalBackup);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
             result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, null, false,
                     policyName, maxChain);
+            if (result.success && failedIncrementalBackup != null) {
+                removeFailedBackupAfterSuccessfulFullRetry(failedIncrementalBackup);
+            }
         }
         return new Pair<>(result.success, result.backup);
     }
@@ -403,10 +413,31 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return vmVolumes.size() > 1;
     }
 
-    private void cleanupFailedBackupForFullRetry(final Backup backup) {
-        if (backup != null) {
-            LOG.info("Preserving failed NetBackup backup [{}] before full retry so the failure remains visible in backup history.",
-                    backup.getUuid());
+    private void cleanupFailedBackupForFullRetry(final Host host, final Backup backup) {
+        if (backup == null) {
+            return;
+        }
+
+        final String failedBackupPath = backup.getExternalId();
+        if (StringUtils.isNotBlank(failedBackupPath)) {
+            cleanupBackupPathsOnHost(backup.getZoneId(), host.getName(), List.of(failedBackupPath));
+        }
+
+        LOG.info("Removed failed NetBackup backup path [{}] before full retry for backup [{}].",
+                failedBackupPath, backup.getUuid());
+    }
+
+    private void removeFailedBackupAfterSuccessfulFullRetry(final Backup backup) {
+        if (backup == null) {
+            return;
+        }
+
+        try {
+            removeBackupWithDetails(backup.getId());
+            LOG.info("Removed failed NetBackup backup row [{}] after successful full retry.", backup.getUuid());
+        } catch (Exception e) {
+            LOG.warn("Failed to remove failed NetBackup backup row [{}] after successful full retry: {}",
+                    backup.getUuid(), e.getMessage(), e);
         }
     }
 
