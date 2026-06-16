@@ -3104,8 +3104,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         private void processRemoveList(List<Long> removeList, VirtualMachine vm) {
             for (final Long backupIdToRemove : removeList) {
-                logger.warn(String.format("Removing backup with ID: [%s].", backupIdToRemove));
                 Backup backup = backupDao.findById(backupIdToRemove);
+                if (backup == null) {
+                    logger.warn("Skipping removal of backup [ID: {}] during sync because it was not found.", backupIdToRemove);
+                    continue;
+                }
                 if (backup != null && Backup.Status.BackingUp.equals(backup.getStatus())) {
                     final BackupOffering offering = backupOfferingDao.findById(backup.getBackupOfferingId());
                     if (offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider())) {
@@ -3114,6 +3117,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                         continue;
                     }
                 }
+                logger.warn(String.format("Removing backup with ID: [%s].", backupIdToRemove));
                 resourceLimitMgr.decrementResourceCount(backup.getAccountId(), Resource.ResourceType.backup);
                 resourceLimitMgr.decrementResourceCount(backup.getAccountId(), Resource.ResourceType.backup_storage, backup.getSize());
                 boolean result = backupDao.remove(backupIdToRemove);
