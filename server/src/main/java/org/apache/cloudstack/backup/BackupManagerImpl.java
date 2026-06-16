@@ -3106,6 +3106,14 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             for (final Long backupIdToRemove : removeList) {
                 logger.warn(String.format("Removing backup with ID: [%s].", backupIdToRemove));
                 Backup backup = backupDao.findById(backupIdToRemove);
+                if (backup != null && Backup.Status.BackingUp.equals(backup.getStatus())) {
+                    final BackupOffering offering = backupOfferingDao.findById(backup.getBackupOfferingId());
+                    if (offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider())) {
+                        logger.debug("Skipping removal of NetBackup backup [{}] for VM [{}] because it is still BackingUp.",
+                                backup.getId(), vm.getInstanceName());
+                        continue;
+                    }
+                }
                 resourceLimitMgr.decrementResourceCount(backup.getAccountId(), Resource.ResourceType.backup);
                 resourceLimitMgr.decrementResourceCount(backup.getAccountId(), Resource.ResourceType.backup_storage, backup.getSize());
                 boolean result = backupDao.remove(backupIdToRemove);
