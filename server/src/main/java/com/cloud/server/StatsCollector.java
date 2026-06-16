@@ -1442,11 +1442,15 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
                 logger.debug(String.format("VmStatsCollector is running to process VMs across %d UP hosts", hosts.size()));
 
                 List<UserVmJoinVO> listL2netVMs = userVmJoinDao.listGuestTypeVMs(Network.GuestType.L2);
-                ArrayList<String> listL2NicMacAddr = new ArrayList<String>();
+                Map<Long, List<String>> l2NicMacsByVmId = new HashMap<>();
 
                 for (UserVmJoinVO vm : listL2netVMs) {
-                    if(!listL2NicMacAddr.contains(vm.getMacAddress())){
-                        listL2NicMacAddr.add(vm.getMacAddress());
+                    if (StringUtils.isBlank(vm.getMacAddress())) {
+                        continue;
+                    }
+                    List<String> l2NicMacs = l2NicMacsByVmId.computeIfAbsent(vm.getId(), k -> new ArrayList<>());
+                    if (!l2NicMacs.contains(vm.getMacAddress())) {
+                        l2NicMacs.add(vm.getMacAddress());
                     }
                 }
 
@@ -1472,10 +1476,18 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
 
                                 Map<String, String> agentNicMap = statsForCurrentIteration.getNicAddrMap();
                                 if (agentNicMap != null) {
-                                    for (String key : agentNicMap.keySet()) {
-                                        NicVO nicVO = _nicDao.findByMacAddress(key);
-                                        if (listL2NicMacAddr.contains(key)) {
-                                            nicVO.setIPv4Address(agentNicMap.get(key));
+                                    List<String> l2NicMacs = l2NicMacsByVmId.get(vmId);
+                                    if (CollectionUtils.isNotEmpty(l2NicMacs)) {
+                                        for (String macAddress : l2NicMacs) {
+                                            NicVO nicVO = _nicDao.findByMacAddress(macAddress);
+                                            if (nicVO == null) {
+                                                continue;
+                                            }
+                                            String guestIpAddress = agentNicMap.get(macAddress);
+                                            if (StringUtils.equals(nicVO.getIPv4Address(), guestIpAddress)) {
+                                                continue;
+                                            }
+                                            nicVO.setIPv4Address(guestIpAddress);
                                             _nicDao.update(nicVO.getId(), nicVO);
                                         }
                                     }
