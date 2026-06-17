@@ -52,6 +52,8 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                     "No candidate restore paths were provided for NetBackup backup ID [%s].", command.getBackupId()));
         }
 
+        logger.info("Resolving NetBackup restore path on KVM. backupId=[{}], candidatePaths={}",
+                command.getBackupId(), command.getCandidatePaths());
         for (final String candidatePath : command.getCandidatePaths()) {
             if (StringUtils.isBlank(candidatePath)) {
                 continue;
@@ -60,6 +62,7 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
             if (!isValidRestoreCandidate(path)) {
                 continue;
             }
+            logger.info("Selected NetBackup restore path for backupId [{}]: [{}]", command.getBackupId(), path);
             return new BackupAnswer(command, true, path.toAbsolutePath().normalize().toString());
         }
 

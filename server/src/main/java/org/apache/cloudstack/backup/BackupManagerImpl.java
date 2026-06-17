@@ -1603,11 +1603,15 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_BACKUP_RESTORE, eventDescription = "restoring VM from NetBackup external ID", async = true)
     public boolean restoreNetBackup(final RestoreNetBackupCmd cmd) {
+        logger.info("NetBackup restore requested. externalId=[{}], backupId=[{}], vmId=[{}]",
+                cmd.getExternalId(), cmd.getBackupId(), cmd.getVmId());
         if (StringUtils.isBlank(cmd.getExternalId()) && StringUtils.isBlank(cmd.getBackupId())) {
             throw new CloudRuntimeException("NetBackup backup external ID or backup ID is required");
         }
         final NetBackupRestoreResolution resolution = resolveNetBackupRestoreRequest(cmd);
         final BackupVO backup = resolution.backup;
+        logger.info("NetBackup restore resolved. requestIdentifier=[{}], resolvedBackupUuid=[{}], resolvedExternalId=[{}], restoreHostName=[{}]",
+                resolution.requestIdentifier, backup.getUuid(), backup.getExternalId(), resolution.preparedRestoreHostName);
         if (!Backup.Status.BackedUp.equals(backup.getStatus())) {
             throw new CloudRuntimeException(String.format(
                     "NetBackup external ID [%s] is mapped to backup [%s] in state [%s]. Only BackedUp backups can be restored.",
@@ -1668,6 +1672,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private NetBackupRestoreResolution resolveNetBackupRestoreRequest(final RestoreNetBackupCmd cmd) {
         if (StringUtils.isNotBlank(cmd.getExternalId())) {
             try {
+                logger.debug("Resolving NetBackup restore by externalId [{}].", cmd.getExternalId());
                 return new NetBackupRestoreResolution(
                         findNetBackupBackupByExternalId(cmd.getExternalId()), cmd.getExternalId(), null);
             } catch (CloudRuntimeException e) {
@@ -1685,9 +1690,13 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
 
         final List<BackupVO> candidates = findNetBackupBackupsByBackupId(backupId);
+        logger.info("NetBackup backupId [{}] matched [{}] candidate backup rows: {}",
+                backupId, candidates.size(), summarizeNetBackupCandidates(candidates));
         final String restoreHostName = resolveNetBackupRestoreHostName(candidates, backupId);
         final String resolvedExternalId = resolveNetBackupRestoredExternalIdOnHost(
                 backupId, restoreHostName, candidates);
+        logger.info("NetBackup backupId [{}] resolved to externalId [{}] on restoreHostName [{}].",
+                backupId, resolvedExternalId, restoreHostName);
         return new NetBackupRestoreResolution(
                 findNetBackupBackupByExternalId(resolvedExternalId), backupId, restoreHostName);
     }
@@ -1727,6 +1736,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     "Unable to find NetBackup backup rows for backup ID [%s].", backupId));
         }
         backups.forEach(backupDao::loadDetails);
+        logger.debug("Loaded NetBackup backup rows for backupId [{}]: {}", backupId, summarizeNetBackupCandidates(backups));
         return backups;
     }
 
@@ -1765,6 +1775,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         // The KVM host resolves the first path that has the expected backup files.
         // We keep the ordering from the DB query so the most recent backup is checked first.
+        logger.info("Resolving NetBackup restored externalId on host [{}] for backupId [{}] with candidate paths {}",
+                restoreHostName, backupId, restoreCandidatePaths);
         final AblestackNetBackupResolveRestorePathCommand command =
                 new AblestackNetBackupResolveRestorePathCommand(
                         backupId, restoreCandidatePaths, NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS);
@@ -1776,12 +1788,24 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                                 "No response from restore host [%s] while resolving NetBackup backup ID [%s].",
                                 restoreHostName, backupId));
             }
+            logger.info("NetBackup restore host [{}] selected restored externalId [{}] for backupId [{}].",
+                    restoreHostName, answer.getDetails(), backupId);
             return answer.getDetails();
         } catch (Exception e) {
             throw new CloudRuntimeException(String.format(
                     "Failed to resolve restored path on host [%s] for NetBackup backup ID [%s]: %s",
                     restoreHostName, backupId, e.getMessage()), e);
         }
+    }
+
+    private String summarizeNetBackupCandidates(final List<BackupVO> candidates) {
+        if (CollectionUtils.isEmpty(candidates)) {
+            return "[]";
+        }
+        return candidates.stream()
+                .map(candidate -> String.format("{uuid=%s, externalId=%s, type=%s, date=%s}",
+                        candidate.getUuid(), candidate.getExternalId(), candidate.getType(), candidate.getDate()))
+                .collect(Collectors.joining(", ", "[", "]"));
     }
 
     private HostVO findRestoreHost(final String restoreHostName) {

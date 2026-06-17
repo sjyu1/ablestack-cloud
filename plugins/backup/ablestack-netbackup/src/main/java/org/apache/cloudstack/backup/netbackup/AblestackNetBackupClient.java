@@ -122,6 +122,10 @@ public class AblestackNetBackupClient {
 
         final Backup fullBackup = restoreChain.get(0);
         final Backup targetBackup = restoreChain.get(restoreChain.size() - 1);
+        LOG.info("NetBackup restore API request. recoveryClient=[{}], destinationClient=[{}], chain=[{}], fullBackup=[{}], targetBackup=[{}]",
+                recoveryClient, destinationClient,
+                restoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()),
+                fullBackup.getExternalId(), targetBackup.getExternalId());
         final String boundary = "----AbleStackNetBackup" + UUID.randomUUID().toString().replace("-", "");
         final String body = buildMultipartBody(boundary, recoveryClient, destinationClient, fullBackup, targetBackup, restoreChain);
 
@@ -160,6 +164,8 @@ public class AblestackNetBackupClient {
                 throw new CloudRuntimeException("NetBackup restore REST API did not return a recovery job ID");
             }
 
+            LOG.info("NetBackup restore API accepted. recoveryJobId=[{}], destinationClient=[{}], targetBackup=[{}]",
+                    recoveryJobId, destinationClient, targetBackup.getExternalId());
             waitForRecoveryJob(recoveryJobId);
             LOG.info("NetBackup restore request completed for destination client [{}] using target backup path [{}].",
                     destinationClient, targetBackup.getExternalId());

@@ -809,6 +809,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final Host host = resolveRestoreHost(vm, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
         final boolean incrementalRestore = StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup.getType());
+        LOG.info("NetBackup restore flow starting. vm=[{}], backup=[{}], restoreHost=[{}], preparedSourcesAlreadyPrepared=[{}], incrementalRestore=[{}], restoreChain={}",
+                vm.getInstanceName(), backup.getUuid(), host.getName(), restoreSourcesAlreadyPrepared, incrementalRestore,
+                restoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
         try {
             if (!restoreSourcesAlreadyPrepared || incrementalRestore) {
                 prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
@@ -1176,6 +1179,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             if (CollectionUtils.isEmpty(sourceHostChain)) {
                 continue;
             }
+            LOG.info("Cleaning up NetBackup restore sources on stage/source host [{}] for backup paths {}",
+                    sourceHost, sourceHostChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
             cleanupBackupPathsOnHost(zoneId, sourceHost, sourceHostChain.stream()
                     .map(Backup::getExternalId)
                     .filter(StringUtils::isNotBlank)
