@@ -67,6 +67,9 @@ public class AblestackNetBackupClient {
     private static final String NETBACKUP_POLICY_TYPE_STANDARD = "STANDARD";
     private static final String DETAIL_BACKUP_ID = "netbackup.backup.id";
     private static final int NETBACKUP_JOB_POLL_INTERVAL_MS = 5000;
+    private static final int NETBACKUP_JOB_RETRY_COUNT = 5;
+    private static final int NETBACKUP_JOB_404_RETRY_INTERVAL_MS = 5000;
+    private static final int NETBACKUP_JOB_RETRY_INTERVAL_MS = 5000;
 
     private final URI apiUri;
     private final String apiKey;
@@ -438,22 +441,36 @@ public class AblestackNetBackupClient {
     }
 
     private JSONObject getRecoveryJob(final String recoveryJobId) {
-        final HttpGet request = new HttpGet(resolvePath(NETBACKUP_JOBS_PATH + recoveryJobId));
-        request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
-        applyAuthenticationHeaders(request);
-        try {
-            final HttpResponse response = httpClient.execute(request);
-            final int statusCode = response.getStatusLine().getStatusCode();
-            final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
-            if (statusCode != HttpStatus.SC_OK) {
+        for (int attempt = 1; attempt <= NETBACKUP_JOB_RETRY_COUNT; attempt++) {
+            try {
+                final HttpGet request = new HttpGet(resolvePath(NETBACKUP_JOBS_PATH + recoveryJobId));
+                request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
+                applyAuthenticationHeaders(request);
+                final HttpResponse response = httpClient.execute(request);
+                final int statusCode = response.getStatusLine().getStatusCode();
+                final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
+                if (statusCode == HttpStatus.SC_OK) {
+                    return StringUtils.isBlank(responseBody) ? new JSONObject() : new JSONObject(responseBody);
+                }
+
+                if (shouldRetryRecoveryJob(statusCode) && attempt < NETBACKUP_JOB_RETRY_COUNT) {
+                    LOG.warn("NetBackup recovery job [{}] query returned status [{}] on attempt [{}/{}]; retrying after [{}] ms. response=[{}]",
+                            recoveryJobId, statusCode, attempt, NETBACKUP_JOB_RETRY_COUNT, NETBACKUP_JOB_RETRY_INTERVAL_MS, responseBody);
+                    sleepBeforeRecoveryJobRetry(recoveryJobId);
+                    continue;
+                }
+
                 throw new CloudRuntimeException(String.format(
                         "Failed to query NetBackup recovery job [%s]. status [%s], response [%s]",
                         recoveryJobId, statusCode, responseBody));
+            } catch (IOException e) {
+                throw new CloudRuntimeException("Failed to query NetBackup recovery job: " + e.getMessage(), e);
             }
-            return StringUtils.isBlank(responseBody) ? new JSONObject() : new JSONObject(responseBody);
-        } catch (IOException e) {
-            throw new CloudRuntimeException("Failed to query NetBackup recovery job: " + e.getMessage(), e);
         }
+
+        throw new CloudRuntimeException(String.format(
+                "Failed to query NetBackup recovery job [%s] after [%s] retries.",
+                recoveryJobId, NETBACKUP_JOB_RETRY_COUNT));
     }
 
     private void applyAuthenticationHeaders(final HttpRequestBase request) {
@@ -546,6 +563,22 @@ public class AblestackNetBackupClient {
             throw new CloudRuntimeException(String.format(
                     "Interrupted while polling NetBackup recovery job [%s].", recoveryJobId), e);
         }
+    }
+
+    private void sleepBeforeRecoveryJobRetry(final String recoveryJobId) {
+        try {
+            Thread.sleep(NETBACKUP_JOB_404_RETRY_INTERVAL_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CloudRuntimeException(String.format(
+                    "Interrupted while retrying NetBackup recovery job [%s].", recoveryJobId), e);
+        }
+    }
+
+    private boolean shouldRetryRecoveryJob(final int statusCode) {
+        return statusCode == HttpStatus.SC_NOT_FOUND
+                || statusCode == HttpStatus.SC_INTERNAL_SERVER_ERROR
+                || statusCode == HttpStatus.SC_SERVICE_UNAVAILABLE;
     }
 
     private URI resolvePath(final String path) {
