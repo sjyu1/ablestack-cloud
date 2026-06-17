@@ -1603,8 +1603,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_BACKUP_RESTORE, eventDescription = "restoring VM from NetBackup external ID", async = true)
     public boolean restoreNetBackup(final RestoreNetBackupCmd cmd) {
-        logger.info("NetBackup restore requested. externalId=[{}], backupId=[{}], vmId=[{}]",
-                cmd.getExternalId(), cmd.getBackupId(), cmd.getVmId());
+        logger.info("NetBackup restore requested. externalId=[{}], backupId=[{}]",
+                cmd.getExternalId(), cmd.getBackupId());
         if (StringUtils.isBlank(cmd.getExternalId()) && StringUtils.isBlank(cmd.getBackupId())) {
             throw new CloudRuntimeException("NetBackup backup external ID or backup ID is required");
         }

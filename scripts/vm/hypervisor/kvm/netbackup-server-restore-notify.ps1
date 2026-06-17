@@ -35,6 +35,8 @@ $AdminApikey = $env:ADMIN_APIKEY
 $AdminSecretKey = $env:ADMIN_SECRETKEY
 $MoldSecretFile = $env:MOLD_SECRET_FILE
 $SecretKeyFile = $env:SECRET_KEY_FILE
+$script:RestoreLockStream = $null
+$script:RestoreLockPath = $null
 
 function Write-Log {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -489,6 +491,39 @@ function Wait-MoldAsyncJob {
     throw "Timed out waiting for Mold async job $OperationName jobId=$JobId after $MoldAsyncJobTimeoutSeconds seconds"
 }
 
+function Acquire-RestoreGuard {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProgramName,
+        [Parameter(Mandatory = $true)][string]$Operation
+    )
+
+    $lockRoot = if ([string]::IsNullOrWhiteSpace($env:NETBACKUP_STAGING_ROOT)) { Join-Path $DefaultConfigRoot '.restore-notify-locks' } else { Join-Path $env:NETBACKUP_STAGING_ROOT '.restore-notify-locks' }
+    $lockKey = (($ProgramName + '_' + $Operation) -replace '[^A-Za-z0-9._-]', '_')
+    $script:RestoreLockPath = Join-Path $lockRoot ($lockKey + '.lock')
+
+    [System.IO.Directory]::CreateDirectory($lockRoot) | Out-Null
+    try {
+        $script:RestoreLockStream = [System.IO.File]::Open($script:RestoreLockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+    } catch {
+        Write-Log "RESTORE guard-skip pid=$PID program=$ProgramName operation=$Operation lock_path=$script:RestoreLockPath reason=restore-already-in-flight"
+        return $false
+    }
+
+    Write-Log "RESTORE guard-acquired pid=$PID program=$ProgramName operation=$Operation lock_path=$script:RestoreLockPath"
+    return $true
+}
+
+function Release-RestoreGuard {
+    if ($script:RestoreLockStream) {
+        $script:RestoreLockStream.Dispose()
+        $script:RestoreLockStream = $null
+    }
+    if ($script:RestoreLockPath -and (Test-Path -LiteralPath $script:RestoreLockPath)) {
+        Write-Log "RESTORE guard-release pid=$PID lock_path=$script:RestoreLockPath"
+        Remove-Item -LiteralPath $script:RestoreLockPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 try {
     $ArgsFromCmd = @($args)
     if ($ArgsFromCmd.Count -lt 2) {
@@ -517,6 +552,10 @@ try {
         exit 0
     }
 
+    if (-not (Acquire-RestoreGuard -ProgramName $ProgramName -Operation $(if ([string]::IsNullOrWhiteSpace($Operation)) { 'restore' } else { $Operation }))) {
+        exit 0
+    }
+
     $RequestKey = if (LooksLike-BackupId -Value $ExternalId) { 'backupid' } else { 'externalid' }
 
     $response = Invoke-MoldApi -Method $MoldRestoreApiMethod -CommandName 'restoreNetBackup' -Params @{
@@ -540,4 +579,6 @@ try {
     }
     Write-Log "RESTORE error pid=$PID externalid=$ExternalId operation=$Operation message=$message"
     exit 1
+} finally {
+    Release-RestoreGuard
 }
