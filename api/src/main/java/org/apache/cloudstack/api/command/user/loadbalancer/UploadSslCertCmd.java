@@ -37,7 +37,7 @@ import com.cloud.exception.ResourceAllocationException;
 import com.cloud.exception.ResourceUnavailableException;
 import org.apache.cloudstack.network.tls.CertService;
 
-@APICommand(name = "uploadSslCert", description = "Upload a certificate to CloudStack", responseObject = SslCertResponse.class,
+@APICommand(name = "uploadSslCert", description = "Upload a certificate to ABLESTACK", responseObject = SslCertResponse.class,
         requestHasSensitiveInfo = false, responseHasSensitiveInfo = false)
 public class UploadSslCertCmd extends BaseCmd {
 
@@ -54,7 +54,7 @@ public class UploadSslCertCmd extends BaseCmd {
 
     @Parameter(name = ApiConstants.PRIVATE_KEY, type = CommandType.STRING, required = true,
             description = "PEM formatted private key. Supported formats: unencrypted PKCS#8, encrypted PKCS#8, and OpenSSL legacy RSA/DSA/EC private keys. " +
-                    "Encrypted keys are decrypted using the password parameter and stored as unencrypted PKCS#8 PEM protected by CloudStack encryption.",
+                    "Encrypted keys are decrypted using the password parameter and stored as unencrypted PKCS#8 PEM protected by ABLESTACK encryption.",
             length = 16384)
     private String key;
 
