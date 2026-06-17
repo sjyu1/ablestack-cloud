@@ -433,7 +433,7 @@ public class AblestackNetBackupClient {
 
     private JSONObject getRecoveryJob(final String recoveryJobId) {
         final HttpGet request = new HttpGet(resolvePath(NETBACKUP_JOBS_PATH + recoveryJobId));
-        request.setHeader(HttpHeaders.ACCEPT, "application/json");
+        request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
         applyAuthenticationHeaders(request);
         try {
             final HttpResponse response = httpClient.execute(request);
