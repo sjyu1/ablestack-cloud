@@ -119,6 +119,19 @@ public class KVMHAMonitor extends KVMHABase implements Runnable {
         }
     }
 
+    public void removeStoragePoolFromMonitoring(String uuid) {
+        removeStoragePoolFromMonitoring(storagePool, uuid);
+        removeStoragePoolFromMonitoring(storageGfsPool, uuid);
+        removeStoragePoolFromMonitoring(storageRbdPool, uuid);
+        removeStoragePoolFromMonitoring(storageClvmPool, uuid);
+    }
+
+    private void removeStoragePoolFromMonitoring(Map<String, HAStoragePool> storagePools, String uuid) {
+        synchronized (storagePools) {
+            storagePools.remove(uuid);
+        }
+    }
+
     public List<HAStoragePool> getStoragePools() {
         synchronized (storagePool) {
             return new ArrayList<>(storagePool.values());
