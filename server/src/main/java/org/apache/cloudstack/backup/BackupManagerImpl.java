@@ -190,8 +190,6 @@ import com.cloud.vm.dao.VMInstanceDetailsDao;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import org.apache.cloudstack.backup.NetBackupRestorePrecheckResult;
-
 public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private static final long NETBACKUP_RESTORE_GUARD_TTL_MS = TimeUnit.MINUTES.toMillis(30);
