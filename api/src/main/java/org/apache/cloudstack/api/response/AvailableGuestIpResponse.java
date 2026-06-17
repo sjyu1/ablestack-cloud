@@ -14,14 +14,33 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package com.cloud.network.dao;
+package org.apache.cloudstack.api.response;
 
-import java.util.List;
+import org.apache.cloudstack.api.ApiConstants;
+import org.apache.cloudstack.api.BaseResponse;
 
-import com.cloud.utils.db.GenericDao;
+import com.cloud.serializer.Param;
+import com.google.gson.annotations.SerializedName;
 
-public interface SslCertDao extends GenericDao<SslCertVO, Long> {
-    List<SslCertVO> listByAccountId(Long id);
+public class AvailableGuestIpResponse extends BaseResponse {
+    @SerializedName(ApiConstants.IP_ADDRESS)
+    @Param(description = "the available guest IP address")
+    private String ipAddress;
 
-    int removeByAccountId(long accountId);
+    public AvailableGuestIpResponse() {
+        setObjectName("availableguestip");
+    }
+
+    public AvailableGuestIpResponse(String ipAddress) {
+        this();
+        this.ipAddress = ipAddress;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public void setIpAddress(String ipAddress) {
+        this.ipAddress = ipAddress;
+    }
 }
