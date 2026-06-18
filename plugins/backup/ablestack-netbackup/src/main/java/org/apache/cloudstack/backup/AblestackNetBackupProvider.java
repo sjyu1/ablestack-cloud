@@ -808,6 +808,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         validateRestoreChainIntegrity(backup);
         final Host host = resolveRestoreHost(vm, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
+        final List<Backup> stagedRestoreChain = getStagedRestoreChainForBackup(backup);
         final boolean incrementalRestore = StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup.getType());
         LOG.info("NetBackup restore flow starting. vm=[{}], backup=[{}], restoreHost=[{}], preparedSourcesAlreadyPrepared=[{}], incrementalRestore=[{}], restoreChain={}",
                 vm.getInstanceName(), backup.getUuid(), host.getName(), restoreSourcesAlreadyPrepared, incrementalRestore,
@@ -817,9 +818,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 LOG.info("Waiting for NetBackup root restore job to finish before preparing incremental chain restore. vm=[{}], backup=[{}], restoreHost=[{}], rootPath=[{}]",
                         vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
                 prepareRestoreJobGateOnDestinationHost(vm.getDataCenterId(), host.getName(), backup.getExternalId());
+                LOG.info("Incremental restore will skip the already-restored target path from staged sources. vm=[{}], backup=[{}], excludedPath=[{}], stagedRestoreChain={}",
+                        vm.getInstanceName(), backup.getUuid(), backup.getExternalId(),
+                        stagedRestoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
             }
             if (!restoreSourcesAlreadyPrepared || incrementalRestore) {
-                prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
+                prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), stagedRestoreChain);
             }
 
             final List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
@@ -866,7 +870,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             }
             return new Pair<>(answer != null && answer.getResult(), answer != null ? answer.getDetails() : null);
         } finally {
-            cleanupRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
+            cleanupRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), stagedRestoreChain);
         }
     }
 
@@ -902,8 +906,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
 
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
+        final List<Backup> stagedRestoreChain = getStagedRestoreChainForBackup(backup);
         try {
-            prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreChain);
+            prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), stagedRestoreChain);
 
             final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
                     backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
@@ -965,7 +970,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
             return new Pair<>(false, answer != null ? answer.getDetails() : "NetBackup restore agent returned no response");
         } finally {
-            cleanupRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreChain);
+            cleanupRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), stagedRestoreChain);
         }
     }
 
@@ -1162,6 +1167,20 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             return getBackupChain(backup);
         }
         return Collections.singletonList(backup);
+    }
+
+    private List<Backup> getStagedRestoreChainForBackup(final Backup backup) {
+        final List<Backup> restoreChain = getRestoreChainForBackup(backup);
+        if (CollectionUtils.isEmpty(restoreChain)) {
+            return restoreChain;
+        }
+        if (!StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup != null ? backup.getType() : null)) {
+            return restoreChain;
+        }
+        if (restoreChain.size() <= 1) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(restoreChain.subList(0, restoreChain.size() - 1));
     }
 
     private void prepareRestoreSourcesOnStageHosts(final Long zoneId, final String destinationHostName, final List<Backup> restoreChain) {
