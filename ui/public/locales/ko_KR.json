@@ -2026,7 +2026,7 @@
   "label.private.registry": "사설 레지스트리",
   "label.privateinterface": "사설 인터페이스",
   "label.privateip": "사설 IP 주소",
-  "label.privatekey": "PKC#8 비밀 키",
+  "label.privatekey": "개인키",
   "label.privatenetwork": "사설 네트워크",
   "label.privateport": "사설 포트",
   "label.profilename": "정보",
