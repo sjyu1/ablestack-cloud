@@ -813,6 +813,11 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 vm.getInstanceName(), backup.getUuid(), host.getName(), restoreSourcesAlreadyPrepared, incrementalRestore,
                 restoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
         try {
+            if (incrementalRestore) {
+                LOG.info("Waiting for NetBackup root restore job to finish before preparing incremental chain restore. vm=[{}], backup=[{}], restoreHost=[{}], rootPath=[{}]",
+                        vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
+                prepareRestoreJobGateOnDestinationHost(vm.getDataCenterId(), host.getName(), backup.getExternalId());
+            }
             if (!restoreSourcesAlreadyPrepared || incrementalRestore) {
                 prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreChain);
             }
@@ -962,6 +967,14 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         } finally {
             cleanupRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreChain);
         }
+    }
+
+    private void prepareRestoreJobGateOnDestinationHost(final Long zoneId, final String destinationHostName, final String restorePath) {
+        if (zoneId == null || StringUtils.isBlank(destinationHostName) || StringUtils.isBlank(restorePath)) {
+            return;
+        }
+        final AblestackNetBackupClient client = getClient(zoneId);
+        client.waitForRestoreJobCompletionForPaths(destinationHostName, Collections.singletonList(restorePath));
     }
 
     @Override

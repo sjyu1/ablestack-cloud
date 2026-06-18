@@ -1702,8 +1702,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 }
                 updateVolumeState(vm, Volume.Event.RestoreSucceeded, Volume.State.Ready);
                 updateVmState(vm, VirtualMachine.Event.RestoringSuccess, VirtualMachine.State.Stopped);
-                return importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
+                final boolean imported = importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
                         vm.getInstanceName(), vm.getHypervisorType(), backup);
+                if (imported) {
+                    releaseNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier);
+                }
+                return imported;
             }
 
             if (isNetBackupIncrementalBackup(backup)) {
@@ -1722,8 +1726,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 }
                 updateVolumeState(vm, Volume.Event.RestoreSucceeded, Volume.State.Ready);
                 updateVmState(vm, VirtualMachine.Event.RestoringSuccess, VirtualMachine.State.Stopped);
-                return importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
+                final boolean imported = importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
                         vm.getInstanceName(), vm.getHypervisorType(), backup);
+                if (imported) {
+                    releaseNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier);
+                }
+                return imported;
             }
 
             throw new CloudRuntimeException(String.format(
@@ -1887,6 +1895,28 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             return null;
         }
         return session;
+    }
+
+    private void releaseNetBackupRestoreSession(final Long vmId, final String requestIdentifier) {
+        if (vmId == null) {
+            return;
+        }
+
+        final AtomicBoolean released = new AtomicBoolean(false);
+        NETBACKUP_RESTORE_SESSIONS.computeIfPresent(vmId, (key, existing) -> {
+            if (StringUtils.isBlank(requestIdentifier) || Objects.equals(existing.requestIdentifier, requestIdentifier)) {
+                released.set(true);
+                return null;
+            }
+            return existing;
+        });
+
+        if (released.get()) {
+            logger.info("Released NetBackup restore session for vmId=[{}] requestIdentifier=[{}].", vmId, requestIdentifier);
+        } else {
+            logger.debug("Skipped releasing NetBackup restore session for vmId=[{}] requestIdentifier=[{}] because the active session changed.",
+                    vmId, requestIdentifier);
+        }
     }
 
     private BackupVO findNetBackupBackupByExternalId(final String externalId) {
