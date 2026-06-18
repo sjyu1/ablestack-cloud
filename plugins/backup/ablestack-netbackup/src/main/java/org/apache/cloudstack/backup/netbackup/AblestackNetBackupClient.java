@@ -121,7 +121,7 @@ public class AblestackNetBackupClient {
                 .build();
     }
 
-    public void restoreBackupChain(final String recoveryClient, final String destinationClient, final List<Backup> restoreChain) {
+    public String restoreBackupChain(final String recoveryClient, final String destinationClient, final List<Backup> restoreChain) {
         if (restoreChain == null || restoreChain.isEmpty()) {
             throw new CloudRuntimeException("NetBackup restore chain backups cannot be empty");
         }
@@ -178,12 +178,13 @@ public class AblestackNetBackupClient {
             waitForRecoveryJob(recoveryJobId);
             LOG.info("NetBackup restore request completed for destination client [{}] using target backup path [{}].",
                     destinationClient, targetBackup.getExternalId());
+            return recoveryJobId;
         } catch (IOException e) {
             throw new CloudRuntimeException("Failed to request NetBackup restore API: " + e.getMessage(), e);
         }
     }
 
-    public void waitForRestoreJobCompletionForPaths(final String clientName, final List<String> restorePaths) {
+    public String waitForRestoreJobCompletionForPaths(final String clientName, final List<String> restorePaths) {
         if (StringUtils.isBlank(clientName)) {
             throw new CloudRuntimeException("NetBackup client name cannot be empty when waiting for restore job completion");
         }
@@ -200,7 +201,7 @@ public class AblestackNetBackupClient {
                 LOG.info("Matched NetBackup restore job [{}] for client [{}] and restore paths [{}].",
                         matchedJobId, clientName, expectedPaths);
                 waitForRecoveryJob(matchedJobId);
-                return;
+                return matchedJobId;
             }
 
             if (attempt >= NETBACKUP_RESTORE_JOB_MATCH_RETRY_COUNT) {
@@ -215,6 +216,14 @@ public class AblestackNetBackupClient {
         throw new CloudRuntimeException(String.format(
                 "Unable to find a NetBackup restore job for client [%s] and restore paths [%s] within [%s] seconds.",
                 clientName, expectedPaths, timeoutSeconds));
+    }
+
+    public String getRecoveryJobState(final String recoveryJobId) {
+        if (StringUtils.isBlank(recoveryJobId)) {
+            return null;
+        }
+        final JSONObject response = getRecoveryJob(recoveryJobId);
+        return normalizeJobState(extractJobState(response));
     }
 
     public ExpireImageResult expireBackupImage(final String backupId, final int copyNumber) {

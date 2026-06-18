@@ -35,7 +35,6 @@ import java.util.TimerTask;
 import java.util.Iterator;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -192,9 +191,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
-    private static final long NETBACKUP_RESTORE_GUARD_TTL_MS = TimeUnit.MINUTES.toMillis(30);
     private static final ConcurrentHashMap<Long, NetBackupRestoreGuard> NETBACKUP_RESTORE_GUARDS = new ConcurrentHashMap<>();
-    private static final long NETBACKUP_RESTORE_SESSION_TTL_MS = TimeUnit.MINUTES.toMillis(30);
     private static final ConcurrentHashMap<Long, NetBackupRestoreSession> NETBACKUP_RESTORE_SESSIONS = new ConcurrentHashMap<>();
 
     @Inject
@@ -246,44 +243,54 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     @Inject
     private VMInstanceDetailsDao vmInstanceDetailsDao;
 
+    private enum NetBackupRestorePhase {
+        CLAIMED,
+        ROOT_RESTORE_IN_PROGRESS,
+        CHAIN_RESTORE_IN_PROGRESS,
+        COMPLETED,
+        FAILED
+    }
+
     private static final class NetBackupRestoreGuard {
-        private final long acquiredAtMs;
         private final String token;
         private final String requestIdentifier;
         private final String vmName;
 
-        private NetBackupRestoreGuard(final long acquiredAtMs, final String token, final String requestIdentifier, final String vmName) {
-            this.acquiredAtMs = acquiredAtMs;
+        private NetBackupRestoreGuard(final String token, final String requestIdentifier, final String vmName) {
             this.token = token;
             this.requestIdentifier = requestIdentifier;
             this.vmName = vmName;
         }
-
-        private boolean isExpired(final long nowMs) {
-            return nowMs - acquiredAtMs >= NETBACKUP_RESTORE_GUARD_TTL_MS;
-        }
     }
 
     private static final class NetBackupRestoreSession {
-        private final long createdAtMs;
         private final String requestIdentifier;
         private final Long backupId;
         private final String backupUuid;
         private final String externalId;
         private final String vmName;
+        private volatile NetBackupRestorePhase phase;
 
-        private NetBackupRestoreSession(final long createdAtMs, final String requestIdentifier, final Long backupId,
+        private NetBackupRestoreSession(final String requestIdentifier, final Long backupId,
                                         final String backupUuid, final String externalId, final String vmName) {
-            this.createdAtMs = createdAtMs;
             this.requestIdentifier = requestIdentifier;
             this.backupId = backupId;
             this.backupUuid = backupUuid;
             this.externalId = externalId;
             this.vmName = vmName;
+            this.phase = NetBackupRestorePhase.CLAIMED;
         }
 
-        private boolean isExpired(final long nowMs) {
-            return nowMs - createdAtMs >= NETBACKUP_RESTORE_SESSION_TTL_MS;
+        private NetBackupRestorePhase getPhase() {
+            return phase;
+        }
+
+        private void setPhase(final NetBackupRestorePhase phase) {
+            this.phase = phase;
+        }
+
+        private boolean isTerminal() {
+            return NetBackupRestorePhase.COMPLETED.equals(phase) || NetBackupRestorePhase.FAILED.equals(phase);
         }
     }
     @Inject
@@ -320,6 +327,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private static final String DETAIL_NETBACKUP_MEMBER_COUNT = "netbackup.backup.member.count";
     private static final String DETAIL_NETBACKUP_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_NETBACKUP_MAX_CHAIN = "netbackup.max.chain";
+    private static final String DETAIL_NETBACKUP_RESTORE_VM_UUID = "netbackup.restore.vm.uuid";
+    private static final String DETAIL_NETBACKUP_RESTORE_REQUEST_ID = "netbackup.restore.request.id";
+    private static final String DETAIL_NETBACKUP_RESTORE_PHASE = "netbackup.restore.phase";
+    private static final String DETAIL_NETBACKUP_RESTORE_UPDATED_AT = "netbackup.restore.updated.at";
+    private static final String DETAIL_NETBACKUP_RESTORE_ROOT_JOB_ID = "netbackup.restore.root.job.id";
+    private static final String DETAIL_NETBACKUP_RESTORE_CHAIN_JOB_ID = "netbackup.restore.chain.job.id";
     private static final int NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS = 1800;
     private List<BackupProvider> backupProviders;
     private final List<PostRestoreMaintenanceTask> postRestoreMaintenanceTasks = Collections.synchronizedList(new ArrayList<>());
@@ -1687,6 +1700,13 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             return true;
         }
 
+        final NetBackupRestoreSession activeSession = findNetBackupRestoreSession(vm.getId());
+        if (activeSession != null) {
+            updateNetBackupRestoreSessionPhase(vm.getId(), resolution.requestIdentifier, NetBackupRestorePhase.ROOT_RESTORE_IN_PROGRESS);
+        }
+
+        persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.ROOT_RESTORE_IN_PROGRESS);
+
         try {
             if (isNetBackupFullBackup(backup)) {
                 logger.info("Resolved NetBackup FULL restore request for VM [{}] using external ID [{}] and backup [{}].",
@@ -1705,12 +1725,19 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 final boolean imported = importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
                         vm.getInstanceName(), vm.getHypervisorType(), backup);
                 if (imported) {
-                    releaseNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier);
+                    persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.COMPLETED);
+                    completeNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier);
+                } else {
+                    persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.FAILED);
+                    failNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier, "Imported VM result was false");
                 }
                 return imported;
             }
 
             if (isNetBackupIncrementalBackup(backup)) {
+                updateNetBackupRestoreSessionPhase(vm.getId(), resolution.requestIdentifier,
+                        NetBackupRestorePhase.CHAIN_RESTORE_IN_PROGRESS);
+                persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.CHAIN_RESTORE_IN_PROGRESS);
                 final List<BackupVO> restoreChain = getNetBackupRestoreChain(backup);
                 logger.info("Resolved NetBackup INCREMENTAL restore chain for VM [{}] using external ID [{}]: {}",
                         vm.getInstanceName(), resolution.requestIdentifier,
@@ -1729,7 +1756,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 final boolean imported = importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
                         vm.getInstanceName(), vm.getHypervisorType(), backup);
                 if (imported) {
-                    releaseNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier);
+                    persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.COMPLETED);
+                    completeNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier);
+                } else {
+                    persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.FAILED);
+                    failNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier, "Imported VM result was false");
                 }
                 return imported;
             }
@@ -1737,6 +1768,10 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException(String.format(
                     "NetBackup external ID [%s] is mapped to backup [%s] with unsupported type [%s].",
                     resolution.requestIdentifier, backup.getUuid(), backup.getType()));
+        } catch (RuntimeException e) {
+            persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.FAILED);
+            failNetBackupRestoreSession(vm.getId(), resolution.requestIdentifier, e.getMessage());
+            throw e;
         } finally {
             releaseNetBackupRestoreGuard(vm.getId(), restoreGuardToken, resolution.requestIdentifier);
         }
@@ -1758,17 +1793,37 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
         accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
 
+        BackupVO activeRestoreBackup = findActiveNetBackupRestoreBackupForVm(vm);
+        if (activeRestoreBackup != null && clearStaleNetBackupRestoreState(vm, activeRestoreBackup)) {
+            activeRestoreBackup = null;
+        }
+        if (activeRestoreBackup != null) {
+            final String activePhase = activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_PHASE);
+            final String activeRequestId = activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_REQUEST_ID);
+            final String skipReason = String.format(
+                    "NetBackup restore session for VM [%s] is already active on backup [%s] in phase [%s] for request [%s]",
+                    vm.getInstanceName(), activeRestoreBackup.getUuid(), activePhase, activeRequestId);
+            logger.info("NetBackup restore precheck skip by detail state. vm=[{}], vmId=[{}], requestIdentifier=[{}], activeBackup=[{}], phase=[{}], activeRequestIdentifier=[{}]",
+                    vm.getInstanceName(), vm.getId(), resolution.requestIdentifier,
+                    activeRestoreBackup.getUuid(), activePhase, activeRequestId);
+            return new NetBackupRestorePrecheckResult(false, skipReason, vm.getId(), vm.getInstanceName(),
+                    backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
+        }
+
         final NetBackupRestoreSession session = claimNetBackupRestoreSession(vm, resolution.requestIdentifier, backup);
         if (session == null) {
             final NetBackupRestoreSession existing = findNetBackupRestoreSession(vm.getId());
             final String skipReason = existing == null
                     ? String.format("NetBackup restore session for VM [%s] is already active", vm.getInstanceName())
-                    : String.format("NetBackup restore session for VM [%s] is already active for request [%s]", vm.getInstanceName(), existing.requestIdentifier);
+                    : String.format("NetBackup restore session for VM [%s] is already active for request [%s] in phase [%s]",
+                    vm.getInstanceName(), existing.requestIdentifier, existing.getPhase());
             logger.info("NetBackup restore precheck skip. vm=[{}], vmId=[{}], requestIdentifier=[{}], reason=[{}]",
                     vm.getInstanceName(), vm.getId(), resolution.requestIdentifier, skipReason);
             return new NetBackupRestorePrecheckResult(false, skipReason, vm.getId(), vm.getInstanceName(),
                     backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
         }
+
+        persistNetBackupRestoreState(backup, vm, resolution.requestIdentifier, NetBackupRestorePhase.CLAIMED);
 
         logger.info("NetBackup restore precheck approved. vm=[{}], vmId=[{}], requestIdentifier=[{}], backupUuid=[{}], externalId=[{}]",
                 vm.getInstanceName(), vm.getId(), resolution.requestIdentifier, backup.getUuid(), backup.getExternalId());
@@ -1777,16 +1832,15 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     }
 
     private String acquireNetBackupRestoreGuard(final VMInstanceVO vm, final String requestIdentifier) {
-        final long nowMs = System.currentTimeMillis();
         final AtomicReference<String> acquiredToken = new AtomicReference<>();
         final AtomicBoolean blockedByFreshGuard = new AtomicBoolean(false);
         NETBACKUP_RESTORE_GUARDS.compute(vm.getId(), (vmId, existing) -> {
-            if (existing == null || existing.isExpired(nowMs)) {
+            if (existing == null) {
                 final String token = UUID.randomUUID().toString();
                 acquiredToken.set(token);
                 logger.info("Acquired NetBackup restore guard for VM [{}] (vmId=[{}]) requestIdentifier=[{}] token=[{}].",
                         vm.getInstanceName(), vmId, requestIdentifier, token);
-                return new NetBackupRestoreGuard(nowMs, token, requestIdentifier, vm.getInstanceName());
+                return new NetBackupRestoreGuard(token, requestIdentifier, vm.getInstanceName());
             }
 
             blockedByFreshGuard.set(true);
@@ -1795,12 +1849,10 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         if (acquiredToken.get() == null && blockedByFreshGuard.get()) {
             final NetBackupRestoreGuard existing = NETBACKUP_RESTORE_GUARDS.get(vm.getId());
-            logger.info("Skipping NetBackup restore re-entry for VM [{}] (vmId=[{}]) requestIdentifier=[{}]; activeRequestIdentifier=[{}], activeVmName=[{}], ageSeconds=[{}], ttlSeconds=[{}].",
+            logger.info("Skipping NetBackup restore re-entry for VM [{}] (vmId=[{}]) requestIdentifier=[{}]; activeRequestIdentifier=[{}], activeVmName=[{}].",
                     vm.getInstanceName(), vm.getId(), requestIdentifier,
                     existing != null ? existing.requestIdentifier : "unknown",
-                    existing != null ? existing.vmName : "unknown",
-                    existing != null ? TimeUnit.MILLISECONDS.toSeconds(nowMs - existing.acquiredAtMs) : -1,
-                    TimeUnit.MILLISECONDS.toSeconds(NETBACKUP_RESTORE_GUARD_TTL_MS));
+                    existing != null ? existing.vmName : "unknown");
         }
         return acquiredToken.get();
     }
@@ -1862,12 +1914,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private NetBackupRestoreSession claimNetBackupRestoreSession(final VMInstanceVO vm, final String requestIdentifier,
             final BackupVO backup) {
-        final long nowMs = System.currentTimeMillis();
         final AtomicReference<NetBackupRestoreSession> claimedSession = new AtomicReference<>();
         NETBACKUP_RESTORE_SESSIONS.compute(vm.getId(), (vmId, existing) -> {
-            if (existing == null || existing.isExpired(nowMs)) {
+            if (existing == null || existing.isTerminal()) {
                 final NetBackupRestoreSession session = new NetBackupRestoreSession(
-                        nowMs, requestIdentifier, backup.getId(), backup.getUuid(), backup.getExternalId(), vm.getInstanceName());
+                        requestIdentifier, backup.getId(), backup.getUuid(), backup.getExternalId(), vm.getInstanceName());
                 claimedSession.set(session);
                 return session;
             }
@@ -1890,33 +1941,201 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         if (session == null) {
             return null;
         }
-        if (session.isExpired(System.currentTimeMillis())) {
+        if (session.isTerminal()) {
             NETBACKUP_RESTORE_SESSIONS.remove(vmId, session);
             return null;
         }
         return session;
     }
 
-    private void releaseNetBackupRestoreSession(final Long vmId, final String requestIdentifier) {
+    private void updateNetBackupRestoreSessionPhase(final Long vmId, final String requestIdentifier,
+            final NetBackupRestorePhase phase) {
+        if (vmId == null || phase == null) {
+            return;
+        }
+
+        NETBACKUP_RESTORE_SESSIONS.computeIfPresent(vmId, (key, existing) -> {
+            if (StringUtils.isBlank(requestIdentifier) || Objects.equals(existing.requestIdentifier, requestIdentifier)) {
+                existing.setPhase(phase);
+                logger.info("Updated NetBackup restore session phase for vmId=[{}] requestIdentifier=[{}] phase=[{}].",
+                        vmId, requestIdentifier, phase);
+            }
+            return existing;
+        });
+    }
+
+    private void completeNetBackupRestoreSession(final Long vmId, final String requestIdentifier) {
         if (vmId == null) {
             return;
         }
 
-        final AtomicBoolean released = new AtomicBoolean(false);
+        final AtomicBoolean completed = new AtomicBoolean(false);
         NETBACKUP_RESTORE_SESSIONS.computeIfPresent(vmId, (key, existing) -> {
             if (StringUtils.isBlank(requestIdentifier) || Objects.equals(existing.requestIdentifier, requestIdentifier)) {
-                released.set(true);
+                existing.setPhase(NetBackupRestorePhase.COMPLETED);
+                completed.set(true);
                 return null;
             }
             return existing;
         });
 
-        if (released.get()) {
-            logger.info("Released NetBackup restore session for vmId=[{}] requestIdentifier=[{}].", vmId, requestIdentifier);
+        if (completed.get()) {
+            logger.info("Completed NetBackup restore session for vmId=[{}] requestIdentifier=[{}].", vmId, requestIdentifier);
+        }
+    }
+
+    private void failNetBackupRestoreSession(final Long vmId, final String requestIdentifier, final String reason) {
+        if (vmId == null) {
+            return;
+        }
+
+        final AtomicBoolean failed = new AtomicBoolean(false);
+        NETBACKUP_RESTORE_SESSIONS.computeIfPresent(vmId, (key, existing) -> {
+            if (StringUtils.isBlank(requestIdentifier) || Objects.equals(existing.requestIdentifier, requestIdentifier)) {
+                existing.setPhase(NetBackupRestorePhase.FAILED);
+                failed.set(true);
+                return null;
+            }
+            return existing;
+        });
+
+        if (failed.get()) {
+            logger.info("Failed NetBackup restore session for vmId=[{}] requestIdentifier=[{}] reason=[{}].",
+                    vmId, requestIdentifier, reason);
         } else {
-            logger.debug("Skipped releasing NetBackup restore session for vmId=[{}] requestIdentifier=[{}] because the active session changed.",
+            logger.debug("Skipped failing NetBackup restore session for vmId=[{}] requestIdentifier=[{}] because the active session changed.",
                     vmId, requestIdentifier);
         }
+    }
+
+    private void persistNetBackupRestoreState(final BackupVO backup, final VMInstanceVO vm, final String requestIdentifier,
+            final NetBackupRestorePhase phase) {
+        if (backup == null || vm == null || phase == null) {
+            return;
+        }
+
+        upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_RESTORE_VM_UUID, vm.getUuid());
+        upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_RESTORE_PHASE, phase.name());
+        upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_RESTORE_UPDATED_AT, String.valueOf(System.currentTimeMillis()));
+        if (StringUtils.isNotBlank(requestIdentifier)) {
+            upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_RESTORE_REQUEST_ID, requestIdentifier);
+        }
+    }
+
+    private boolean clearStaleNetBackupRestoreState(final VMInstanceVO vm, final BackupVO activeRestoreBackup) {
+        if (vm == null || activeRestoreBackup == null) {
+            return false;
+        }
+
+        final String activePhase = activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_PHASE);
+        if (!isActiveNetBackupRestorePhase(activePhase)) {
+            return false;
+        }
+
+        final String activeJobId = StringUtils.defaultIfBlank(
+                activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_ROOT_JOB_ID),
+                activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_CHAIN_JOB_ID));
+        if (StringUtils.isNotBlank(activeJobId)) {
+            final BackupProvider provider = getBackupProviderForOffering(activeRestoreBackup.getBackupOfferingId());
+            if (provider != null) {
+                try {
+                    final String jobState = provider.getRestoreJobState(vm.getDataCenterId(), activeJobId);
+                    if (isTerminalNetBackupJobState(jobState)) {
+                        logger.info("Clearing stale NetBackup restore state for vm=[{}], vmId=[{}], backup=[{}], jobId=[{}], jobState=[{}], phase=[{}].",
+                                vm.getInstanceName(), vm.getId(), activeRestoreBackup.getUuid(), activeJobId, jobState, activePhase);
+                        clearNetBackupRestoreState(activeRestoreBackup.getId(), vm.getId());
+                        return true;
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to query NetBackup restore job state for vm=[{}], backup=[{}], jobId=[{}]. Keeping existing restore state. {}",
+                            vm.getInstanceName(), activeRestoreBackup.getUuid(), activeJobId, e.getMessage());
+                }
+            }
+        }
+
+        if (!VirtualMachine.State.Restoring.equals(vm.getState())) {
+            logger.info("Clearing stale NetBackup restore state for vm=[{}], vmId=[{}], backup=[{}] because VM state is [{}] while restore phase is [{}].",
+                    vm.getInstanceName(), vm.getId(), activeRestoreBackup.getUuid(), vm.getState(), activePhase);
+            clearNetBackupRestoreState(activeRestoreBackup.getId(), vm.getId());
+            return true;
+        }
+
+        return false;
+    }
+
+    private void clearNetBackupRestoreState(final long backupId, final Long vmId) {
+        upsertBackupDetail(backupId, DETAIL_NETBACKUP_RESTORE_VM_UUID, null);
+        upsertBackupDetail(backupId, DETAIL_NETBACKUP_RESTORE_REQUEST_ID, null);
+        upsertBackupDetail(backupId, DETAIL_NETBACKUP_RESTORE_PHASE, null);
+        upsertBackupDetail(backupId, DETAIL_NETBACKUP_RESTORE_UPDATED_AT, null);
+        upsertBackupDetail(backupId, DETAIL_NETBACKUP_RESTORE_ROOT_JOB_ID, null);
+        upsertBackupDetail(backupId, DETAIL_NETBACKUP_RESTORE_CHAIN_JOB_ID, null);
+        if (vmId != null) {
+            NETBACKUP_RESTORE_SESSIONS.remove(vmId);
+            NETBACKUP_RESTORE_GUARDS.remove(vmId);
+        }
+    }
+
+    private void persistNetBackupRestoreRootJobId(final BackupVO backup, final String rootJobId) {
+        if (backup == null || StringUtils.isBlank(rootJobId)) {
+            return;
+        }
+        upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_RESTORE_ROOT_JOB_ID, rootJobId);
+    }
+
+    private void persistNetBackupRestoreChainJobId(final BackupVO backup, final String chainJobId) {
+        if (backup == null || StringUtils.isBlank(chainJobId)) {
+            return;
+        }
+        upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_RESTORE_CHAIN_JOB_ID, chainJobId);
+    }
+
+    private void upsertBackupDetail(final long backupId, final String key, final String value) {
+        if (StringUtils.isBlank(key)) {
+            return;
+        }
+
+        backupDetailsDao.removeDetail(backupId, key);
+        if (StringUtils.isNotBlank(value)) {
+            backupDetailsDao.addDetail(backupId, key, value, false);
+        }
+    }
+
+    private BackupVO findActiveNetBackupRestoreBackupForVm(final VMInstanceVO vm) {
+        if (vm == null || StringUtils.isBlank(vm.getUuid())) {
+            return null;
+        }
+
+        final List<BackupDetailVO> restoreMarkers = backupDetailsDao.findDetails(DETAIL_NETBACKUP_RESTORE_VM_UUID, vm.getUuid(), false);
+        if (CollectionUtils.isEmpty(restoreMarkers)) {
+            return null;
+        }
+
+        for (final BackupDetailVO marker : restoreMarkers) {
+            final BackupVO backup = backupDao.findByIdIncludingRemoved(marker.getResourceId());
+            if (backup == null) {
+                continue;
+            }
+            backupDao.loadDetails(backup);
+            final String phase = backup.getDetail(DETAIL_NETBACKUP_RESTORE_PHASE);
+            if (isActiveNetBackupRestorePhase(phase)) {
+                return backup;
+            }
+        }
+        return null;
+    }
+
+    private boolean isActiveNetBackupRestorePhase(final String phase) {
+        return StringUtils.isNotBlank(phase)
+                && !StringUtils.equalsIgnoreCase(NetBackupRestorePhase.COMPLETED.name(), phase)
+                && !StringUtils.equalsIgnoreCase(NetBackupRestorePhase.FAILED.name(), phase);
+    }
+
+    private boolean isTerminalNetBackupJobState(final String jobState) {
+        if (StringUtils.isBlank(jobState)) {
+            return false;
+        }
+        return StringUtils.equalsAnyIgnoreCase(jobState, "DONE", "COMPLETED", "SUCCEEDED", "SUCCESS", "FAILED", "FAILURE", "ERROR", "CANCELLED", "ABORTED");
     }
 
     private BackupVO findNetBackupBackupByExternalId(final String externalId) {

@@ -215,6 +215,10 @@ public interface BackupProvider {
         return false;
     }
 
+    default String getRestoreJobState(Long zoneId, String recoveryJobId) {
+        return null;
+    }
+
     default boolean supportsPostRestoreMaintenance() {
         return false;
     }

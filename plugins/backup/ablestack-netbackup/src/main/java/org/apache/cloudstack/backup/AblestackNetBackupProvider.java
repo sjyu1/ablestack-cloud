@@ -115,6 +115,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_MEMBER_COUNT = "netbackup.backup.member.count";
     private static final String DETAIL_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_MAX_CHAIN = "netbackup.max.chain";
+    private static final String DETAIL_RESTORE_ROOT_JOB_ID = "netbackup.restore.root.job.id";
+    private static final String DETAIL_RESTORE_CHAIN_JOB_ID = "netbackup.restore.chain.job.id";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final long STALE_BACKUP_THRESHOLD_MS = 24L * 60L * 60L * 1000L;
     private static final long NETBACKUP_SYNC_DELETE_GRACE_MS = 10L * 60L * 1000L;
@@ -817,7 +819,11 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             if (incrementalRestore) {
                 LOG.info("Waiting for NetBackup root restore job to finish before preparing incremental chain restore. vm=[{}], backup=[{}], restoreHost=[{}], rootPath=[{}]",
                         vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
-                prepareRestoreJobGateOnDestinationHost(vm.getDataCenterId(), host.getName(), backup.getExternalId());
+                final String restoreJobId = prepareRestoreJobGateOnDestinationHost(vm.getDataCenterId(), host.getName(), backup.getExternalId());
+                if (StringUtils.isNotBlank(restoreJobId)) {
+                    backupDetailsDao.removeDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID);
+                    backupDetailsDao.addDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID, restoreJobId, false);
+                }
                 LOG.info("Incremental restore will skip the already-restored target path from staged sources. vm=[{}], backup=[{}], excludedPath=[{}], stagedRestoreChain={}",
                         vm.getInstanceName(), backup.getUuid(), backup.getExternalId(),
                         stagedRestoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
@@ -974,12 +980,23 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
     }
 
-    private void prepareRestoreJobGateOnDestinationHost(final Long zoneId, final String destinationHostName, final String restorePath) {
+    private String prepareRestoreJobGateOnDestinationHost(final Long zoneId, final String destinationHostName, final String restorePath) {
         if (zoneId == null || StringUtils.isBlank(destinationHostName) || StringUtils.isBlank(restorePath)) {
-            return;
+            return null;
         }
         final AblestackNetBackupClient client = getClient(zoneId);
-        client.waitForRestoreJobCompletionForPaths(destinationHostName, Collections.singletonList(restorePath));
+        return client.waitForRestoreJobCompletionForPaths(destinationHostName, Collections.singletonList(restorePath));
+    }
+
+    @Override
+    public String getRestoreJobState(final Long zoneId, final String recoveryJobId) {
+        if (StringUtils.isBlank(recoveryJobId)) {
+            return null;
+        }
+        if (zoneId == null) {
+            return null;
+        }
+        return getClient(zoneId).getRecoveryJobState(recoveryJobId);
     }
 
     @Override
@@ -1197,7 +1214,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             LOG.info("Preparing NetBackup restore sources from stage/source host [{}] to destination host [{}] for backup paths {}",
                     sourceHost, destinationHostName,
                     sourceHostChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
-            client.restoreBackupChain(sourceHost, destinationHostName, sourceHostChain);
+            final String chainJobId = client.restoreBackupChain(sourceHost, destinationHostName, sourceHostChain);
+            if (StringUtils.isNotBlank(chainJobId) && CollectionUtils.isNotEmpty(sourceHostChain)) {
+                final Backup chainTarget = sourceHostChain.get(sourceHostChain.size() - 1);
+                backupDetailsDao.removeDetail(chainTarget.getId(), DETAIL_RESTORE_CHAIN_JOB_ID);
+                backupDetailsDao.addDetail(chainTarget.getId(), DETAIL_RESTORE_CHAIN_JOB_ID, chainJobId, false);
+            }
         }
     }
 
