@@ -369,12 +369,27 @@ public class AblestackNetBackupClient {
                             backupTime);
                     selectedFileCount++;
                 }
+                if (isRbdBackupSelection(backedUpVolumes) && StringUtils.isNotBlank(restoreBackup.getExternalId())) {
+                    addRestoreSelection(selections, selectedPaths,
+                            String.format("%s/rbd-backup.meta", StringUtils.removeEnd(restoreBackup.getExternalId(), "/")),
+                            backupTime);
+                }
             }
             if (selectedFileCount == 0 && StringUtils.isNotBlank(restoreBackup.getExternalId())) {
                 addRestoreSelection(selections, selectedPaths, ensureTrailingSlash(restoreBackup.getExternalId()), backupTime);
             }
         }
         return selections;
+    }
+
+    private boolean isRbdBackupSelection(final List<Backup.VolumeInfo> backedUpVolumes) {
+        if (backedUpVolumes == null) {
+            return false;
+        }
+        return backedUpVolumes.stream()
+                .map(Backup.VolumeInfo::getPath)
+                .filter(StringUtils::isNotBlank)
+                .anyMatch(path -> StringUtils.endsWith(path, ".raw") || StringUtils.endsWith(path, ".rbdiff"));
     }
 
     private void addRestoreSelection(final JSONArray selections, final Set<String> selectedPaths, final String path, final String backupTime) {

@@ -1363,6 +1363,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 }
                 requiredFiles.add(String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath()));
             }
+            if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(chainBackup, DETAIL_BACKUP_ENGINE))) {
+                requiredFiles.add(String.format("%s/rbd-backup.meta", StringUtils.removeEnd(chainBackup.getExternalId(), "/")));
+            }
         }
         return requiredFiles.stream()
                 .filter(StringUtils::isNotBlank)
