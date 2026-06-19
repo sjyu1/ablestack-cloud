@@ -130,6 +130,13 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             true,
             BackupFrameworkEnabled.key());
 
+    private final ConfigKey<Integer> NetBackupPreparedRestorePathReadyTimeout = new ConfigKey<>("Advanced", Integer.class,
+            "netbackup.prepared.restore.path.ready.timeout",
+            "120",
+            "Timeout in seconds to wait for a NetBackup WebUI-prepared restore path to become visible on the KVM host.",
+            true,
+            BackupFrameworkEnabled.key());
+
     public ConfigKey<String> NetBackupUrl = new ConfigKey<>("Advanced", String.class,
             "backup.plugin.netbackup.url", "https://localhost:1556/netbackup",
             "NetBackup API URL.", true, ConfigKey.Scope.Zone);
@@ -640,21 +647,55 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return host;
     }
 
-    private Host resolveRestoreHost(final VirtualMachine vm, final String hostIp) {
+    private Host resolveRestoreHost(final VirtualMachine vm, final Backup backup, final String hostIp) {
         if (StringUtils.isNotBlank(hostIp)) {
-            Host host = hostDao.findByIp(hostIp);
-            if (host == null) {
-                host = hostDao.findByName(hostIp);
-            }
-            if (host == null) {
-                throw new CloudRuntimeException(String.format("Unable to find restore host [%s] for NetBackup restore", hostIp));
-            }
-            if (!Status.Up.equals(host.getStatus()) || !Hypervisor.HypervisorType.KVM.equals(host.getHypervisorType())) {
-                throw new CloudRuntimeException(String.format("Restore host [%s] is not an available KVM host for NetBackup restore", host.getName()));
-            }
-            return host;
+            return findAvailableKvmRestoreHost(hostIp, "NetBackup restore");
+        }
+        final Host backupSourceHost = resolveBackupSourceHostForRestore(backup);
+        if (backupSourceHost != null) {
+            return backupSourceHost;
         }
         return getVMHypervisorHostForBackup(vm);
+    }
+
+    private HostVO findAvailableKvmRestoreHost(final String hostIdentifier, final String restoreContext) {
+        HostVO host = hostDao.findByIp(hostIdentifier);
+        if (host == null) {
+            host = hostDao.findByName(hostIdentifier);
+        }
+        if (host == null) {
+            throw new CloudRuntimeException(String.format("Unable to find restore host [%s] for %s", hostIdentifier, restoreContext));
+        }
+        if (!Status.Up.equals(host.getStatus()) || !Hypervisor.HypervisorType.KVM.equals(host.getHypervisorType())) {
+            throw new CloudRuntimeException(String.format("Restore host [%s] is not an available KVM host for %s", host.getName(), restoreContext));
+        }
+        return host;
+    }
+
+    private Host resolveBackupSourceHostForRestore(final Backup backup) {
+        if (backup == null) {
+            return null;
+        }
+        loadBackupDetailsIfNeeded(backup);
+        final String sourceHostName = getBackupDetail(backup, DETAIL_POLICY_NAME);
+        if (StringUtils.isBlank(sourceHostName)) {
+            return null;
+        }
+        Host host = hostDao.findByName(sourceHostName);
+        if (host == null) {
+            host = hostDao.findByIp(sourceHostName);
+        }
+        if (host == null) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to find backup source host [%s] for NetBackup restore from backup [%s]",
+                    sourceHostName, backup.getUuid()));
+        }
+        if (!Status.Up.equals(host.getStatus()) || !Hypervisor.HypervisorType.KVM.equals(host.getHypervisorType())) {
+            throw new CloudRuntimeException(String.format(
+                    "Backup source host [%s] is not an available KVM host for NetBackup restore from backup [%s]",
+                    host.getName(), backup.getUuid()));
+        }
+        return host;
     }
 
     private Long getClusterIdFromRootVolume(final VirtualMachine vm) {
@@ -799,6 +840,17 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return restoreVirtualMachine(vm, backup, restoreHostIp, true).first();
     }
 
+    @Override
+    public void cleanupPreparedRestore(final VirtualMachine vm, final Backup backup, final String restoreHostName) {
+        if (backup == null || StringUtils.isBlank(restoreHostName) || StringUtils.isBlank(backup.getExternalId())) {
+            return;
+        }
+        loadBackupDetailsIfNeeded(backup);
+        LOG.info("Cleaning up prepared NetBackup restore after failed Mold restore validation. vm=[{}], backup=[{}], restoreHost=[{}], restoredPath=[{}]",
+                vm != null ? vm.getInstanceName() : null, backup.getUuid(), restoreHostName, backup.getExternalId());
+        cleanupBackupPathsOnHost(backup.getZoneId(), restoreHostName, Collections.singletonList(backup.getExternalId()));
+    }
+
     private Pair<Boolean, String> restoreVirtualMachine(final VirtualMachine vm, final Backup backup, final String restoreHostIp) {
         return restoreVirtualMachine(vm, backup, restoreHostIp, false);
     }
@@ -808,7 +860,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         validateNoKvmFileBasedVmSnapshots(vm);
         loadBackupDetailsIfNeeded(backup);
         validateRestoreChainIntegrity(backup);
-        final Host host = resolveRestoreHost(vm, restoreHostIp);
+        final Host host = resolveRestoreHost(vm, backup, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
         final List<Backup> stagedRestoreChain = getStagedRestoreChainForBackup(backup);
         final boolean incrementalRestore = StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup.getType());
@@ -817,12 +869,18 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 restoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
         try {
             if (incrementalRestore) {
-                LOG.info("Waiting for NetBackup root restore job to finish before preparing incremental chain restore. vm=[{}], backup=[{}], restoreHost=[{}], rootPath=[{}]",
-                        vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
-                final String restoreJobId = prepareRestoreJobGateOnDestinationHost(vm.getDataCenterId(), host.getName(), backup.getExternalId());
-                if (StringUtils.isNotBlank(restoreJobId)) {
-                    backupDetailsDao.removeDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID);
-                    backupDetailsDao.addDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID, restoreJobId, false);
+                if (restoreSourcesAlreadyPrepared) {
+                    LOG.info("Skipping NetBackup root restore job completion wait for prepared incremental restore. vm=[{}], backup=[{}], restoreHost=[{}], rootPath=[{}]",
+                            vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
+                    waitForPreparedRestorePathOnDestinationHost(host, backup.getExternalId());
+                } else {
+                    LOG.info("Waiting for NetBackup root restore job to finish before preparing incremental chain restore. vm=[{}], backup=[{}], restoreHost=[{}], rootPath=[{}]",
+                            vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
+                    final String restoreJobId = prepareRestoreJobGateOnDestinationHost(vm.getDataCenterId(), host.getName(), backup.getExternalId());
+                    if (StringUtils.isNotBlank(restoreJobId)) {
+                        backupDetailsDao.removeDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID);
+                        backupDetailsDao.addDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID, restoreJobId, false);
+                    }
                 }
                 LOG.info("Incremental restore will skip the already-restored target path from staged sources. vm=[{}], backup=[{}], excludedPath=[{}], stagedRestoreChain={}",
                         vm.getInstanceName(), backup.getUuid(), backup.getExternalId(),
@@ -891,13 +949,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             throw new CloudRuntimeException(String.format("Unable to find datastore [%s] for NetBackup volume restore", dataStoreUuid));
         }
 
-        HostVO restoreHost = hostDao.findByIp(hostIp);
-        if (restoreHost == null) {
-            restoreHost = hostDao.findByName(hostIp);
-        }
-        if (restoreHost == null) {
-            throw new CloudRuntimeException(String.format("Unable to find host [%s] for NetBackup volume restore", hostIp));
-        }
+        final HostVO restoreHost = findAvailableKvmRestoreHost(hostIp, "NetBackup volume restore");
 
         final Backup.VolumeInfo matchingVolume = getBackedUpVolumeInfo(backup.getBackedUpVolumes(), backupVolumeInfo.getUuid());
         if (matchingVolume == null) {
@@ -984,8 +1036,39 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         if (zoneId == null || StringUtils.isBlank(destinationHostName) || StringUtils.isBlank(restorePath)) {
             return null;
         }
+        final HostVO destinationHost = findRestoreHost(destinationHostName);
+        if (destinationHost == null) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to find destination host [%s] while waiting for prepared NetBackup restore path [%s].",
+                    destinationHostName, restorePath));
+        }
         final AblestackNetBackupClient client = getClient(zoneId);
-        return client.waitForRestoreJobCompletionForPaths(destinationHostName, Collections.singletonList(restorePath));
+        final String restoreJobId = client.waitForRestoreJobCompletionForPaths(destinationHostName, Collections.singletonList(restorePath));
+        waitForPreparedRestorePathOnDestinationHost(destinationHost, restorePath);
+        return restoreJobId;
+    }
+
+    private void waitForPreparedRestorePathOnDestinationHost(final Host destinationHost, final String restorePath) {
+        final AblestackNetBackupResolveRestorePathCommand command = new AblestackNetBackupResolveRestorePathCommand(
+                restorePath, Collections.singletonList(restorePath), NetBackupPreparedRestorePathReadyTimeout.value());
+        try {
+            final BackupAnswer answer = (BackupAnswer) agentManager.send(destinationHost.getId(), command);
+            if (answer == null || !answer.getResult()) {
+                throw new CloudRuntimeException(answer != null ? answer.getDetails() : String.format(
+                        "No response from destination host [%s] while waiting for NetBackup restore path [%s].",
+                        destinationHost.getName(), restorePath));
+            }
+            LOG.info("Prepared NetBackup restore path [{}] is ready on destination host [{}].",
+                    answer.getDetails(), destinationHost.getName());
+        } catch (AgentUnavailableException e) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to contact destination host [%s] while waiting for NetBackup restore path [%s].",
+                    destinationHost.getName(), restorePath), e);
+        } catch (OperationTimedoutException e) {
+            throw new CloudRuntimeException(String.format(
+                    "Timed out waiting for destination host [%s] to confirm NetBackup restore path [%s].",
+                    destinationHost.getName(), restorePath), e);
+        }
     }
 
     @Override
@@ -1078,6 +1161,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     public ConfigKey<?>[] getConfigKeys() {
         return new ConfigKey[]{
             NetBackupRestoreTimeout,
+            NetBackupPreparedRestorePathReadyTimeout,
             NetBackupUrl,
             NetBackupApiKey,
             NetBackupApiRequestTimeout

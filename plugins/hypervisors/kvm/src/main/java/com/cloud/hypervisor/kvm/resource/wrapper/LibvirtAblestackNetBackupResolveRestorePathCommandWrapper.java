@@ -40,6 +40,7 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         CommandWrapper<AblestackNetBackupResolveRestorePathCommand, Answer, LibvirtComputingResource> {
     private static final Pattern TIMESTAMP_DIR_PATTERN =
             Pattern.compile("^\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d{2}\\.\\d{2}\\.\\d{2}\\.\\d+$");
+    private static final long RESTORE_PATH_DISCOVERY_INTERVAL_MS = 5000L;
 
     @Override
     public Answer execute(final AblestackNetBackupResolveRestorePathCommand command,
@@ -52,23 +53,44 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                     "No candidate restore paths were provided for NetBackup backup ID [%s].", command.getBackupId()));
         }
 
-        logger.info("Resolving NetBackup restore path on KVM. backupId=[{}], candidatePaths={}",
-                command.getBackupId(), command.getCandidatePaths());
-        for (final String candidatePath : command.getCandidatePaths()) {
-            if (StringUtils.isBlank(candidatePath)) {
-                continue;
+        final long deadline = System.currentTimeMillis() + Math.max(0, command.getDiscoveryWindowSeconds()) * 1000L;
+        logger.info("Resolving NetBackup restore path on KVM. backupId=[{}], candidatePaths={}, discoveryWindowSeconds=[{}]",
+                command.getBackupId(), command.getCandidatePaths(), command.getDiscoveryWindowSeconds());
+        do {
+            for (final String candidatePath : command.getCandidatePaths()) {
+                if (StringUtils.isBlank(candidatePath)) {
+                    continue;
+                }
+                final Path path = Paths.get(candidatePath);
+                if (!isValidRestoreCandidate(path)) {
+                    continue;
+                }
+                logger.info("Selected NetBackup restore path for backupId [{}]: [{}]", command.getBackupId(), path);
+                return new BackupAnswer(command, true, path.toAbsolutePath().normalize().toString());
             }
-            final Path path = Paths.get(candidatePath);
-            if (!isValidRestoreCandidate(path)) {
-                continue;
+
+            if (System.currentTimeMillis() >= deadline) {
+                break;
             }
-            logger.info("Selected NetBackup restore path for backupId [{}]: [{}]", command.getBackupId(), path);
-            return new BackupAnswer(command, true, path.toAbsolutePath().normalize().toString());
-        }
+            if (!sleepBeforeNextDiscoveryAttempt(command.getBackupId())) {
+                break;
+            }
+        } while (true);
 
         return new BackupAnswer(command, false, String.format(
                 "Unable to resolve restored path for NetBackup backup ID [%s]. No candidate restore path contained the required files.",
                 command.getBackupId()));
+    }
+
+    private boolean sleepBeforeNextDiscoveryAttempt(final String backupId) {
+        try {
+            Thread.sleep(RESTORE_PATH_DISCOVERY_INTERVAL_MS);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for NetBackup restore path discovery. backupId=[{}]", backupId);
+            return false;
+        }
     }
 
     private boolean isValidRestoreCandidate(final Path path) {

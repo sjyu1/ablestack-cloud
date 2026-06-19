@@ -553,8 +553,8 @@ try {
 
     $jobId = [string]$jobIdValue
     Write-Log "RESTORE async-job-submitted pid=$ProcessId command=restoreNetBackup jobid=$jobId $RequestKey=$ExternalId operation=$Operation response=$response"
-    $finalResponse = Wait-MoldAsyncJob -JobId $jobId -OperationName 'restoreNetBackup' -RequestKey $RequestKey -RequestValue $ExternalId -ExternalId $ExternalId -Operation $Operation
-    Write-Log "RESTORE async-job-complete pid=$ProcessId command=restoreNetBackup jobid=$jobId $RequestKey=$ExternalId operation=$Operation response=$(Format-LogValue $finalResponse)"
+    Write-Log "RESTORE async-job-detached pid=$ProcessId command=restoreNetBackup jobid=$jobId $RequestKey=$ExternalId operation=$Operation"
+    exit 0
 } catch {
     $message = $_.Exception.Message
     if ($_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($_.ErrorDetails.Message)) {

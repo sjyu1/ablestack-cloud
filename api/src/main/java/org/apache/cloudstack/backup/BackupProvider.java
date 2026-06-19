@@ -111,6 +111,9 @@ public interface BackupProvider {
      */
     boolean restoreVMFromBackup(VirtualMachine vm, Backup backup);
 
+    default void cleanupPreparedRestore(VirtualMachine vm, Backup backup, String restoreHostName) {
+    }
+
     /**
      * Restore a volume from a backup
      */
