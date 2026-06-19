@@ -1806,6 +1806,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     vm.getInstanceName(), vm.getState());
             logger.info("NetBackup restore precheck skip by VM state. vm=[{}], vmId=[{}], requestIdentifier=[{}], state=[{}]",
                     vm.getInstanceName(), vm.getId(), resolution.requestIdentifier, vm.getState());
+            cleanupPreparedNetBackupRestoreOnFailure(backup, vm, resolution, new CloudRuntimeException(skipReason));
             return new NetBackupRestorePrecheckResult(false, skipReason, vm.getId(), vm.getInstanceName(),
                     backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
         }
