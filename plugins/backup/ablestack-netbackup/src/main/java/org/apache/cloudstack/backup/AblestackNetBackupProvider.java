@@ -149,6 +149,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             "backup.plugin.netbackup.request.timeout", "300",
             "NetBackup API request timeout in seconds.", true, ConfigKey.Scope.Zone);
 
+    private ConfigKey<Integer> NetBackupRecoveryJobTimeout = new ConfigKey<>("Advanced", Integer.class,
+            "backup.plugin.netbackup.recovery.job.timeout", "1800",
+            "Timeout in seconds to wait for NetBackup recovery jobs to complete.", true, ConfigKey.Scope.Zone);
+
     @Inject
     private BackupDao backupDao;
     @Inject
@@ -1164,7 +1168,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             NetBackupPreparedRestorePathReadyTimeout,
             NetBackupUrl,
             NetBackupApiKey,
-            NetBackupApiRequestTimeout
+            NetBackupApiRequestTimeout,
+            NetBackupRecoveryJobTimeout
         };
     }
 
@@ -1363,6 +1368,11 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 }
                 requiredFiles.add(String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath()));
             }
+            if (StringUtils.isNotBlank(chainBackup.getExternalId())) {
+                final String restorePath = StringUtils.removeEnd(chainBackup.getExternalId(), "/");
+                requiredFiles.add(String.format("%s/domain-config.xml", restorePath));
+                requiredFiles.add(String.format("%s/domblklist.xml", restorePath));
+            }
             if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(chainBackup, DETAIL_BACKUP_ENGINE))) {
                 requiredFiles.add(String.format("%s/rbd-backup.meta", StringUtils.removeEnd(chainBackup.getExternalId(), "/")));
             }
@@ -1524,7 +1534,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private AblestackNetBackupClient getClient(final Long zoneId) {
         try {
             return new AblestackNetBackupClient(NetBackupUrl.valueIn(zoneId), NetBackupApiKey.valueIn(zoneId),
-                    NetBackupApiRequestTimeout.valueIn(zoneId));
+                    NetBackupApiRequestTimeout.valueIn(zoneId), NetBackupRecoveryJobTimeout.valueIn(zoneId));
         } catch (URISyntaxException e) {
             throw new CloudRuntimeException("Failed to parse NetBackup API URL: " + e.getMessage());
         } catch (NoSuchAlgorithmException | KeyManagementException e) {

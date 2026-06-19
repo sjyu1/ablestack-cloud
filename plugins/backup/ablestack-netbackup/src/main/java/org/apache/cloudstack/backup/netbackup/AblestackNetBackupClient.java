@@ -80,7 +80,7 @@ public class AblestackNetBackupClient {
     private final URI apiUri;
     private final String apiKey;
     private final HttpClient httpClient;
-    private final int timeoutSeconds;
+    private final int recoveryJobTimeoutSeconds;
 
     public static final class ExpireImageResult {
         private final boolean completed;
@@ -102,14 +102,19 @@ public class AblestackNetBackupClient {
 
     public AblestackNetBackupClient(final String url, final String apiKey, final int timeout)
             throws URISyntaxException, NoSuchAlgorithmException, KeyManagementException {
+        this(url, apiKey, timeout, timeout);
+    }
+
+    public AblestackNetBackupClient(final String url, final String apiKey, final int requestTimeout, final int recoveryJobTimeout)
+            throws URISyntaxException, NoSuchAlgorithmException, KeyManagementException {
         this.apiUri = new URI(url);
         this.apiKey = apiKey;
-        this.timeoutSeconds = timeout;
+        this.recoveryJobTimeoutSeconds = recoveryJobTimeout;
 
         final RequestConfig config = RequestConfig.custom()
-                .setConnectTimeout(timeout * 1000)
-                .setConnectionRequestTimeout(timeout * 1000)
-                .setSocketTimeout(timeout * 1000)
+                .setConnectTimeout(requestTimeout * 1000)
+                .setConnectionRequestTimeout(requestTimeout * 1000)
+                .setSocketTimeout(requestTimeout * 1000)
                 .build();
 
         final SSLContext sslcontext = SSLUtils.getSSLContext();
@@ -194,7 +199,7 @@ public class AblestackNetBackupClient {
                     "NetBackup restore path set cannot be empty for client [%s]", clientName));
         }
 
-        final long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
+        final long deadline = System.currentTimeMillis() + recoveryJobTimeoutSeconds * 1000L;
         for (int attempt = 1; System.currentTimeMillis() < deadline; attempt++) {
             final String matchedJobId = findMatchingRestoreJobId(clientName, expectedPaths);
             if (StringUtils.isNotBlank(matchedJobId)) {
@@ -215,7 +220,7 @@ public class AblestackNetBackupClient {
 
         throw new CloudRuntimeException(String.format(
                 "Unable to find a NetBackup restore job for client [%s] and restore paths [%s] within [%s] seconds.",
-                clientName, expectedPaths, timeoutSeconds));
+                clientName, expectedPaths, recoveryJobTimeoutSeconds));
     }
 
     public String getRecoveryJobState(final String recoveryJobId) {
@@ -369,6 +374,14 @@ public class AblestackNetBackupClient {
                             backupTime);
                     selectedFileCount++;
                 }
+                if (selectedFileCount > 0 && StringUtils.isNotBlank(restoreBackup.getExternalId())) {
+                    addRestoreSelection(selections, selectedPaths,
+                            String.format("%s/domain-config.xml", StringUtils.removeEnd(restoreBackup.getExternalId(), "/")),
+                            backupTime);
+                    addRestoreSelection(selections, selectedPaths,
+                            String.format("%s/domblklist.xml", StringUtils.removeEnd(restoreBackup.getExternalId(), "/")),
+                            backupTime);
+                }
                 if (isRbdBackupSelection(backedUpVolumes) && StringUtils.isNotBlank(restoreBackup.getExternalId())) {
                     addRestoreSelection(selections, selectedPaths,
                             String.format("%s/rbd-backup.meta", StringUtils.removeEnd(restoreBackup.getExternalId(), "/")),
@@ -512,7 +525,7 @@ public class AblestackNetBackupClient {
     }
 
     private void waitForRecoveryJob(final String recoveryJobId) {
-        final long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
+        final long deadline = System.currentTimeMillis() + recoveryJobTimeoutSeconds * 1000L;
         while (System.currentTimeMillis() < deadline) {
             final JSONObject response = getRecoveryJob(recoveryJobId);
             final String jobState = normalizeJobState(extractJobState(response));
@@ -534,7 +547,7 @@ public class AblestackNetBackupClient {
         }
         throw new CloudRuntimeException(String.format(
                 "Timed out after [%s] seconds while waiting for NetBackup recovery job [%s].",
-                timeoutSeconds, recoveryJobId));
+                recoveryJobTimeoutSeconds, recoveryJobId));
     }
 
     private JSONObject getRecoveryJob(final String recoveryJobId) {
