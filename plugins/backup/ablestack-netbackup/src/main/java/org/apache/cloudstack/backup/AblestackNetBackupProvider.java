@@ -871,6 +871,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         LOG.info("NetBackup restore flow starting. vm=[{}], backup=[{}], restoreHost=[{}], preparedSourcesAlreadyPrepared=[{}], incrementalRestore=[{}], restoreChain={}",
                 vm.getInstanceName(), backup.getUuid(), host.getName(), restoreSourcesAlreadyPrepared, incrementalRestore,
                 restoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
+        final List<Backup> restoreSourcesToPrepare = incrementalRestore && !restoreSourcesAlreadyPrepared ? restoreChain : stagedRestoreChain;
         try {
             if (incrementalRestore) {
                 if (restoreSourcesAlreadyPrepared) {
@@ -878,20 +879,18 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                             vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
                     waitForPreparedRestorePathOnDestinationHost(host, backup.getExternalId());
                 } else {
-                    LOG.info("Waiting for NetBackup root restore job to finish before preparing incremental chain restore. vm=[{}], backup=[{}], restoreHost=[{}], rootPath=[{}]",
-                            vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
-                    final String restoreJobId = prepareRestoreJobGateOnDestinationHost(vm.getDataCenterId(), host.getName(), backup.getExternalId());
-                    if (StringUtils.isNotBlank(restoreJobId)) {
-                        backupDetailsDao.removeDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID);
-                        backupDetailsDao.addDetail(backup.getId(), DETAIL_RESTORE_ROOT_JOB_ID, restoreJobId, false);
-                    }
+                    LOG.info("Mold-initiated incremental restore will request the complete NetBackup restore chain. vm=[{}], backup=[{}], restoreHost=[{}], restoreSourcesToPrepare={}",
+                            vm.getInstanceName(), backup.getUuid(), host.getName(),
+                            restoreSourcesToPrepare.stream().map(Backup::getExternalId).collect(Collectors.toList()));
                 }
-                LOG.info("Incremental restore will skip the already-restored target path from staged sources. vm=[{}], backup=[{}], excludedPath=[{}], stagedRestoreChain={}",
-                        vm.getInstanceName(), backup.getUuid(), backup.getExternalId(),
-                        stagedRestoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
+                if (restoreSourcesAlreadyPrepared) {
+                    LOG.info("Prepared incremental restore will skip the already-restored target path from staged sources. vm=[{}], backup=[{}], excludedPath=[{}], stagedRestoreChain={}",
+                            vm.getInstanceName(), backup.getUuid(), backup.getExternalId(),
+                            stagedRestoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
+                }
             }
             if (!restoreSourcesAlreadyPrepared || incrementalRestore) {
-                prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), stagedRestoreChain);
+                prepareRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreSourcesToPrepare);
             }
 
             final List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
@@ -938,7 +937,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             }
             return new Pair<>(answer != null && answer.getResult(), answer != null ? answer.getDetails() : null);
         } finally {
-            cleanupRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), stagedRestoreChain);
+            cleanupRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreSourcesToPrepare);
         }
     }
 
