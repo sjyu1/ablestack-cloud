@@ -334,8 +334,7 @@ export default {
   computed: {
     kubernetesManagementPorts () {
       const sshPorts = this.virtualmachines
-        .map((vm, index) => Number(vm.port || vm.sshport || vm.sshPort || this.cksSshStartingPort + index))
-        .filter(port => Number.isInteger(port))
+        .map((vm, index) => this.cksSshStartingPort + index)
       return [...new Set([6443, ...sshPorts])]
     }
   },
