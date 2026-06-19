@@ -2879,9 +2879,13 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         logger.debug(String.format("Trying to restore volume using host private IP address: [%s].", host.getPrivateIpAddress()));
 
-        String[] hostPossibleValues = {host.getPrivateIpAddress(), host.getName()};
-        String[] datastoresPossibleValues = {datastore.getUuid(), datastore.getName()};
         final boolean netBackupRestore = isAblestackNetBackupOffering(offering);
+        String[] hostPossibleValues = netBackupRestore
+                ? new String[]{host.getPrivateIpAddress()}
+                : new String[]{host.getPrivateIpAddress(), host.getName()};
+        String[] datastoresPossibleValues = netBackupRestore
+                ? new String[]{datastore.getUuid()}
+                : new String[]{datastore.getUuid(), datastore.getName()};
         final String netBackupRestoreRequestIdentifier = netBackupRestore ? getMoldNetBackupRestoreRequestIdentifier(backup) : null;
         final VMInstanceVO netBackupRestoreMarkerVm = netBackupRestore ? getNetBackupRestoreMarkerVm(backup, vm) : null;
         if (netBackupRestore) {
@@ -2923,7 +2927,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     protected Pair<Boolean, String> restoreBackedUpVolume(final Backup.VolumeInfo backupVolumeInfo, final BackupVO backup,
             BackupProvider backupProvider, String[] hostPossibleValues, String[] datastoresPossibleValues, VMInstanceVO vm) {
-        Pair<Boolean, String> result = new  Pair<>(false, "");
+        Pair<Boolean, String> result = new Pair<>(false, "");
+        List<String> failureDetails = new ArrayList<>();
         for (String hostData : hostPossibleValues) {
             for (String datastoreData : datastoresPossibleValues) {
                 logger.debug(String.format("Trying to restore volume [UUID: %s], using host [%s] and datastore [%s].",
@@ -2931,19 +2936,24 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
                 try {
                     result = backupProvider.restoreBackedUpVolume(backup, backupVolumeInfo, hostData, datastoreData, new Pair<>(vm.getName(), vm.getState()));
+                    if (result != null && StringUtils.isNotBlank(result.second())) {
+                        failureDetails.add(String.format("host [%s], datastore [%s]: %s", hostData, datastoreData, result.second()));
+                    }
 
-                    if (BooleanUtils.isTrue(result.first())) {
+                    if (result != null && BooleanUtils.isTrue(result.first())) {
                         logger.info("Successfully restored volume [UUID: {}] using host [{}] and datastore [{}] through backup provider [{}]. Result details: [{}]",
                                 backupVolumeInfo.getUuid(), hostData, datastoreData, backupProvider.getName(), result.second());
                         return result;
                     }
                 } catch (Exception e) {
+                    failureDetails.add(String.format("host [%s], datastore [%s]: %s", hostData, datastoreData, e.getMessage()));
                     logger.debug(String.format("Failed to restore volume [UUID: %s], using host [%s] and datastore [%s] due to: [%s].",
                             backupVolumeInfo.getUuid(), hostData, datastoreData, e.getMessage()), e);
                 }
             }
         }
-        return result;
+        final String resultDetails = result != null ? result.second() : null;
+        return new Pair<>(false, CollectionUtils.isNotEmpty(failureDetails) ? StringUtils.join(failureDetails, "; ") : resultDetails);
     }
 
     private void runPostRestoreMaintenance(final BackupProvider backupProvider, final VirtualMachine vm, final Backup backup, final boolean volumeOnly) {
