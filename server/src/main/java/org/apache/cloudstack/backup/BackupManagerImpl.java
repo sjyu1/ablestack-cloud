@@ -1800,6 +1800,16 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
         accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
 
+        if (!VirtualMachine.State.Stopped.equals(vm.getState())) {
+            final String skipReason = String.format(
+                    "VM [%s] must be in Stopped state before NetBackup restore. Current state: [%s].",
+                    vm.getInstanceName(), vm.getState());
+            logger.info("NetBackup restore precheck skip by VM state. vm=[{}], vmId=[{}], requestIdentifier=[{}], state=[{}]",
+                    vm.getInstanceName(), vm.getId(), resolution.requestIdentifier, vm.getState());
+            return new NetBackupRestorePrecheckResult(false, skipReason, vm.getId(), vm.getInstanceName(),
+                    backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
+        }
+
         BackupVO activeRestoreBackup = findActiveNetBackupRestoreBackupForVm(vm);
         if (activeRestoreBackup != null && clearStaleNetBackupRestoreState(vm, activeRestoreBackup)) {
             activeRestoreBackup = null;
