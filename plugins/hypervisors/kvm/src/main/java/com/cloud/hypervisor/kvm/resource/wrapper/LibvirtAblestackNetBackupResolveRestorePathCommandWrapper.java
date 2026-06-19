@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -87,8 +88,9 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         } while (true);
 
         final String failureDetail = CollectionUtils.isNotEmpty(command.getRequiredFiles())
-                ? String.format("Required restore paths or files were not found. paths=%s, files=%s",
-                        command.getCandidatePaths(), command.getRequiredFiles())
+                ? String.format("Required restore paths or files were not found. paths=%s, files=%s, missingPaths=%s, missingFiles=%s",
+                        command.getCandidatePaths(), command.getRequiredFiles(),
+                        getMissingCandidatePaths(command.getCandidatePaths()), getMissingRequiredFiles(command.getRequiredFiles()))
                 : "No candidate restore path contained the required files.";
         return new BackupAnswer(command, false, String.format(
                 "Unable to resolve restored path for NetBackup backup ID [%s]. %s",
@@ -110,6 +112,32 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
             }
         }
         return true;
+    }
+
+    private List<String> getMissingCandidatePaths(final List<String> candidatePaths) {
+        final List<String> missingPaths = new ArrayList<>();
+        if (CollectionUtils.isEmpty(candidatePaths)) {
+            return missingPaths;
+        }
+        for (final String candidatePath : candidatePaths) {
+            if (StringUtils.isBlank(candidatePath) || !Files.isDirectory(Paths.get(candidatePath))) {
+                missingPaths.add(candidatePath);
+            }
+        }
+        return missingPaths;
+    }
+
+    private List<String> getMissingRequiredFiles(final List<String> requiredFiles) {
+        final List<String> missingFiles = new ArrayList<>();
+        if (CollectionUtils.isEmpty(requiredFiles)) {
+            return missingFiles;
+        }
+        for (final String requiredFile : requiredFiles) {
+            if (StringUtils.isBlank(requiredFile) || !Files.isRegularFile(Paths.get(requiredFile))) {
+                missingFiles.add(requiredFile);
+            }
+        }
+        return missingFiles;
     }
 
     private boolean sleepBeforeNextDiscoveryAttempt(final String backupId) {

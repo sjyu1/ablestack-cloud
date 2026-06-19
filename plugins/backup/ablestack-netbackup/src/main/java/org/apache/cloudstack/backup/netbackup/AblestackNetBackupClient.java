@@ -181,6 +181,7 @@ public class AblestackNetBackupClient {
             LOG.info("NetBackup restore API accepted. recoveryJobId=[{}], destinationClient=[{}], targetBackup=[{}]",
                     recoveryJobId, destinationClient, targetBackup.getExternalId());
             waitForRecoveryJob(recoveryJobId);
+            LOG.info("NetBackup restore job [{}] file list after completion: {}", recoveryJobId, getRestoreJobFileList(recoveryJobId));
             LOG.info("NetBackup restore request completed for destination client [{}] using target backup path [{}].",
                     destinationClient, targetBackup.getExternalId());
             return recoveryJobId;
