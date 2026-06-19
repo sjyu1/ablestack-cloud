@@ -333,6 +333,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private static final String DETAIL_NETBACKUP_RESTORE_UPDATED_AT = "netbackup.restore.updated.at";
     private static final String DETAIL_NETBACKUP_RESTORE_ROOT_JOB_ID = "netbackup.restore.root.job.id";
     private static final String DETAIL_NETBACKUP_RESTORE_CHAIN_JOB_ID = "netbackup.restore.chain.job.id";
+    private static final String ABLESTACK_NETBACKUP_PROVIDER_NAME = "ablestack-netbackup";
     private static final int NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS = 1800;
     private static final int NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS = 120;
     private List<BackupProvider> backupProviders;
@@ -1657,12 +1658,34 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException(errorMessage);
         }
         String backupDetailsInMessage = ReflectionToStringBuilderUtils.reflectOnlySelectedFields(backup, "uuid", "externalId", "vmId", "name");
-        tryRestoreVM(backup, vm, offering, backupDetailsInMessage);
-        updateVolumeState(vm, Volume.Event.RestoreSucceeded, Volume.State.Ready);
-        updateVmState(vm, VirtualMachine.Event.RestoringSuccess, VirtualMachine.State.Stopped);
+        final boolean netBackupRestore = isAblestackNetBackupOffering(offering);
+        final String netBackupRestoreRequestIdentifier = netBackupRestore ? getMoldNetBackupRestoreRequestIdentifier(backup) : null;
+        try {
+            if (netBackupRestore) {
+                blockIfNetBackupRestoreAlreadyActive(vm, netBackupRestoreRequestIdentifier);
+                final NetBackupRestorePhase phase = isNetBackupIncrementalBackup(backup)
+                        ? NetBackupRestorePhase.CHAIN_RESTORE_IN_PROGRESS
+                        : NetBackupRestorePhase.ROOT_RESTORE_IN_PROGRESS;
+                persistNetBackupRestoreState(backup, vm, netBackupRestoreRequestIdentifier, phase);
+            }
 
-        return importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
-                vm.getInstanceName(), vm.getHypervisorType(), backup);
+            tryRestoreVM(backup, vm, offering, backupDetailsInMessage);
+            updateVolumeState(vm, Volume.Event.RestoreSucceeded, Volume.State.Ready);
+            updateVmState(vm, VirtualMachine.Event.RestoringSuccess, VirtualMachine.State.Stopped);
+
+            final boolean imported = importRestoredVM(vm.getDataCenterId(), vm.getDomainId(), vm.getAccountId(), vm.getUserId(),
+                    vm.getInstanceName(), vm.getHypervisorType(), backup);
+            if (netBackupRestore) {
+                persistNetBackupRestoreState(backup, vm, netBackupRestoreRequestIdentifier,
+                        imported ? NetBackupRestorePhase.COMPLETED : NetBackupRestorePhase.FAILED);
+            }
+            return imported;
+        } catch (RuntimeException e) {
+            if (netBackupRestore) {
+                persistNetBackupRestoreState(backup, vm, netBackupRestoreRequestIdentifier, NetBackupRestorePhase.FAILED);
+            }
+            throw e;
+        }
     }
 
     @Override
@@ -2317,6 +2340,29 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private boolean isNetBackupIncrementalBackup(final Backup backup) {
         return StringUtils.equalsIgnoreCase(backup.getType(), "INCREMENTAL");
+    }
+
+    private boolean isAblestackNetBackupOffering(final BackupOffering offering) {
+        return offering != null && StringUtils.equalsIgnoreCase(ABLESTACK_NETBACKUP_PROVIDER_NAME, offering.getProvider());
+    }
+
+    private String getMoldNetBackupRestoreRequestIdentifier(final Backup backup) {
+        if (backup == null) {
+            return null;
+        }
+        return StringUtils.defaultIfBlank(backup.getExternalId(), backup.getUuid());
+    }
+
+    private void blockIfNetBackupRestoreAlreadyActive(final VMInstanceVO vm, final String requestIdentifier) {
+        final BackupVO activeRestoreBackup = findActiveNetBackupRestoreBackupForVm(vm);
+        if (activeRestoreBackup == null) {
+            return;
+        }
+        final String activePhase = activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_PHASE);
+        final String activeRequestId = activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_REQUEST_ID);
+        throw new CloudRuntimeException(String.format(
+                "NetBackup restore is already active for VM [%s] on backup [%s] in phase [%s] for request [%s]. Requested restore [%s] is blocked.",
+                vm.getInstanceName(), activeRestoreBackup.getUuid(), activePhase, activeRequestId, requestIdentifier));
     }
 
     private List<BackupVO> getNetBackupRestoreChain(final BackupVO backup) {
