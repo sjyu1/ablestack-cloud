@@ -199,8 +199,8 @@ public class AblestackNetBackupClient {
                     "NetBackup restore path set cannot be empty for client [%s]", clientName));
         }
 
-        final long deadline = System.currentTimeMillis() + recoveryJobTimeoutSeconds * 1000L;
-        for (int attempt = 1; System.currentTimeMillis() < deadline; attempt++) {
+        final long deadline = resolveRecoveryJobDeadline();
+        for (int attempt = 1; !isRecoveryJobDeadlineExceeded(deadline); attempt++) {
             final String matchedJobId = findMatchingRestoreJobId(clientName, expectedPaths);
             if (StringUtils.isNotBlank(matchedJobId)) {
                 LOG.info("Matched NetBackup restore job [{}] for client [{}] and restore paths [{}].",
@@ -220,7 +220,7 @@ public class AblestackNetBackupClient {
 
         throw new CloudRuntimeException(String.format(
                 "Unable to find a NetBackup restore job for client [%s] and restore paths [%s] within [%s] seconds.",
-                clientName, expectedPaths, recoveryJobTimeoutSeconds));
+                clientName, expectedPaths, formatRecoveryJobTimeout()));
     }
 
     public String getRecoveryJobState(final String recoveryJobId) {
@@ -525,8 +525,8 @@ public class AblestackNetBackupClient {
     }
 
     private void waitForRecoveryJob(final String recoveryJobId) {
-        final long deadline = System.currentTimeMillis() + recoveryJobTimeoutSeconds * 1000L;
-        while (System.currentTimeMillis() < deadline) {
+        final long deadline = resolveRecoveryJobDeadline();
+        while (!isRecoveryJobDeadlineExceeded(deadline)) {
             final JSONObject response = getRecoveryJob(recoveryJobId);
             final String jobState = normalizeJobState(extractJobState(response));
             final Integer jobStatusCode = extractJobStatusCode(response);
@@ -547,7 +547,22 @@ public class AblestackNetBackupClient {
         }
         throw new CloudRuntimeException(String.format(
                 "Timed out after [%s] seconds while waiting for NetBackup recovery job [%s].",
-                recoveryJobTimeoutSeconds, recoveryJobId));
+                formatRecoveryJobTimeout(), recoveryJobId));
+    }
+
+    private long resolveRecoveryJobDeadline() {
+        if (recoveryJobTimeoutSeconds <= 0) {
+            return Long.MAX_VALUE;
+        }
+        return System.currentTimeMillis() + recoveryJobTimeoutSeconds * 1000L;
+    }
+
+    private boolean isRecoveryJobDeadlineExceeded(final long deadline) {
+        return System.currentTimeMillis() >= deadline;
+    }
+
+    private String formatRecoveryJobTimeout() {
+        return recoveryJobTimeoutSeconds <= 0 ? "unlimited" : String.valueOf(recoveryJobTimeoutSeconds);
     }
 
     private JSONObject getRecoveryJob(final String recoveryJobId) {

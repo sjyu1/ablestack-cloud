@@ -150,8 +150,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             "NetBackup API request timeout in seconds.", true, ConfigKey.Scope.Zone);
 
     private ConfigKey<Integer> NetBackupRecoveryJobTimeout = new ConfigKey<>("Advanced", Integer.class,
-            "backup.plugin.netbackup.recovery.job.timeout", "1800",
-            "Timeout in seconds to wait for NetBackup recovery jobs to complete.", true, ConfigKey.Scope.Zone);
+            "backup.plugin.netbackup.recovery.job.timeout", "0",
+            "Timeout in seconds to wait for NetBackup recovery jobs to complete. Set to 0 to wait indefinitely.", true, ConfigKey.Scope.Zone);
 
     @Inject
     private BackupDao backupDao;
