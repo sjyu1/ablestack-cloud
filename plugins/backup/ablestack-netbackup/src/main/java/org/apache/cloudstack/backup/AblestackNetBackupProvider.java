@@ -968,8 +968,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
         final List<Backup> stagedRestoreChain = getStagedRestoreChainForBackup(backup);
+        final List<Backup> restoreSourcesToPrepare = StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup.getType()) ? restoreChain : stagedRestoreChain;
         try {
-            prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), stagedRestoreChain);
+            prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreSourcesToPrepare);
 
             final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
                     backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
@@ -1031,7 +1032,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
             return new Pair<>(false, answer != null ? answer.getDetails() : "NetBackup restore agent returned no response");
         } finally {
-            cleanupRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), stagedRestoreChain);
+            cleanupRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreSourcesToPrepare);
         }
     }
 
