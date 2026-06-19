@@ -1824,10 +1824,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
         accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
 
-        BackupVO activeRestoreBackup = findActiveNetBackupRestoreBackupForVm(vm);
-        if (activeRestoreBackup != null && clearStaleNetBackupRestoreState(vm, activeRestoreBackup)) {
-            activeRestoreBackup = null;
-        }
+        final BackupVO activeRestoreBackup = findActiveNetBackupRestoreBackupForVm(vm);
         if (activeRestoreBackup != null) {
             final String activePhase = activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_PHASE);
             final String activeRequestId = activeRestoreBackup.getDetail(DETAIL_NETBACKUP_RESTORE_REQUEST_ID);

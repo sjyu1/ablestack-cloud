@@ -970,7 +970,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final List<Backup> stagedRestoreChain = getStagedRestoreChainForBackup(backup);
         final List<Backup> restoreSourcesToPrepare = StringUtils.equalsIgnoreCase(BACKUP_TYPE_INCREMENTAL, backup.getType()) ? restoreChain : stagedRestoreChain;
         try {
-            prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreSourcesToPrepare);
+            prepareRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreSourcesToPrepare,
+                    Collections.singleton(matchingVolume.getUuid()));
 
             final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
                     backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
@@ -1290,6 +1291,11 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     private void prepareRestoreSourcesOnStageHosts(final Long zoneId, final String destinationHostName, final List<Backup> restoreChain) {
+        prepareRestoreSourcesOnStageHosts(zoneId, destinationHostName, restoreChain, null);
+    }
+
+    private void prepareRestoreSourcesOnStageHosts(final Long zoneId, final String destinationHostName, final List<Backup> restoreChain,
+            final Set<String> requiredVolumeUuids) {
         if (CollectionUtils.isEmpty(restoreChain)) {
             return;
         }
@@ -1315,11 +1321,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 backupDetailsDao.removeDetail(chainTarget.getId(), DETAIL_RESTORE_CHAIN_JOB_ID);
                 backupDetailsDao.addDetail(chainTarget.getId(), DETAIL_RESTORE_CHAIN_JOB_ID, chainJobId, false);
             }
-            waitForPreparedRestoreFilesOnDestinationHost(destinationHost, sourceHostChain);
+            waitForPreparedRestoreFilesOnDestinationHost(destinationHost, sourceHostChain, requiredVolumeUuids);
         }
     }
 
-    private void waitForPreparedRestoreFilesOnDestinationHost(final Host destinationHost, final List<Backup> restoreChain) {
+    private void waitForPreparedRestoreFilesOnDestinationHost(final Host destinationHost, final List<Backup> restoreChain,
+            final Set<String> requiredVolumeUuids) {
         if (destinationHost == null || CollectionUtils.isEmpty(restoreChain)) {
             return;
         }
@@ -1328,7 +1335,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 .filter(StringUtils::isNotBlank)
                 .distinct()
                 .collect(Collectors.toList());
-        final List<String> requiredFiles = getRequiredRestoreChainFiles(restoreChain);
+        final List<String> requiredFiles = getRequiredRestoreChainFiles(restoreChain, requiredVolumeUuids);
         if (CollectionUtils.isEmpty(restorePaths) || CollectionUtils.isEmpty(requiredFiles)) {
             return;
         }
@@ -1355,7 +1362,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     private List<String> getRequiredRestoreChainFiles(final List<Backup> restoreChain) {
+        return getRequiredRestoreChainFiles(restoreChain, null);
+    }
+
+    private List<String> getRequiredRestoreChainFiles(final List<Backup> restoreChain, final Set<String> requiredVolumeUuids) {
         final List<String> requiredFiles = new ArrayList<>();
+        final boolean volumeOnlyRestore = CollectionUtils.isNotEmpty(requiredVolumeUuids);
         for (final Backup chainBackup : restoreChain) {
             loadBackupDetailsIfNeeded(chainBackup);
             final List<Backup.VolumeInfo> backupVolumes = chainBackup.getBackedUpVolumes();
@@ -1363,12 +1375,15 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 continue;
             }
             for (final Backup.VolumeInfo volumeInfo : backupVolumes) {
+                if (volumeOnlyRestore && !requiredVolumeUuids.contains(volumeInfo.getUuid())) {
+                    continue;
+                }
                 if (StringUtils.isBlank(chainBackup.getExternalId()) || StringUtils.isBlank(volumeInfo.getPath())) {
                     continue;
                 }
                 requiredFiles.add(String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath()));
             }
-            if (StringUtils.isNotBlank(chainBackup.getExternalId())) {
+            if (!volumeOnlyRestore && StringUtils.isNotBlank(chainBackup.getExternalId())) {
                 final String restorePath = StringUtils.removeEnd(chainBackup.getExternalId(), "/");
                 requiredFiles.add(String.format("%s/domain-config.xml", restorePath));
                 requiredFiles.add(String.format("%s/domblklist.xml", restorePath));
