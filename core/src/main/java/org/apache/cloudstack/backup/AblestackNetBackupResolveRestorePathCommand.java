@@ -26,6 +26,7 @@ import java.util.List;
 public class AblestackNetBackupResolveRestorePathCommand extends Command {
     private String backupId;
     private List<String> candidatePaths;
+    private List<String> requiredFiles;
     private Integer discoveryWindowSeconds;
 
     protected AblestackNetBackupResolveRestorePathCommand() {
@@ -33,8 +34,14 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
     }
 
     public AblestackNetBackupResolveRestorePathCommand(final String backupId, final List<String> candidatePaths, final Integer discoveryWindowSeconds) {
+        this(backupId, candidatePaths, null, discoveryWindowSeconds);
+    }
+
+    public AblestackNetBackupResolveRestorePathCommand(final String backupId, final List<String> candidatePaths,
+            final List<String> requiredFiles, final Integer discoveryWindowSeconds) {
         this.backupId = backupId;
         this.candidatePaths = candidatePaths;
+        this.requiredFiles = requiredFiles;
         this.discoveryWindowSeconds = discoveryWindowSeconds;
     }
 
@@ -44,6 +51,10 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
 
     public List<String> getCandidatePaths() {
         return candidatePaths;
+    }
+
+    public List<String> getRequiredFiles() {
+        return requiredFiles;
     }
 
     public Integer getDiscoveryWindowSeconds() {

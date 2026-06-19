@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -54,19 +55,27 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         }
 
         final long deadline = System.currentTimeMillis() + Math.max(0, command.getDiscoveryWindowSeconds()) * 1000L;
-        logger.info("Resolving NetBackup restore path on KVM. backupId=[{}], candidatePaths={}, discoveryWindowSeconds=[{}]",
-                command.getBackupId(), command.getCandidatePaths(), command.getDiscoveryWindowSeconds());
+        logger.info("Resolving NetBackup restore path on KVM. backupId=[{}], candidatePaths={}, requiredFiles={}, discoveryWindowSeconds=[{}]",
+                command.getBackupId(), command.getCandidatePaths(), command.getRequiredFiles(), command.getDiscoveryWindowSeconds());
         do {
-            for (final String candidatePath : command.getCandidatePaths()) {
-                if (StringUtils.isBlank(candidatePath)) {
-                    continue;
+            if (CollectionUtils.isNotEmpty(command.getRequiredFiles())) {
+                if (areRequiredRestoreSourcesReady(command.getCandidatePaths(), command.getRequiredFiles())) {
+                    logger.info("Required NetBackup restore files are ready for backupId [{}]: paths={}, files={}",
+                            command.getBackupId(), command.getCandidatePaths(), command.getRequiredFiles());
+                    return new BackupAnswer(command, true, StringUtils.join(command.getCandidatePaths(), ","));
                 }
-                final Path path = Paths.get(candidatePath);
-                if (!isValidRestoreCandidate(path)) {
-                    continue;
+            } else {
+                for (final String candidatePath : command.getCandidatePaths()) {
+                    if (StringUtils.isBlank(candidatePath)) {
+                        continue;
+                    }
+                    final Path path = Paths.get(candidatePath);
+                    if (!isValidRestoreCandidate(path)) {
+                        continue;
+                    }
+                    logger.info("Selected NetBackup restore path for backupId [{}]: [{}]", command.getBackupId(), path);
+                    return new BackupAnswer(command, true, path.toAbsolutePath().normalize().toString());
                 }
-                logger.info("Selected NetBackup restore path for backupId [{}]: [{}]", command.getBackupId(), path);
-                return new BackupAnswer(command, true, path.toAbsolutePath().normalize().toString());
             }
 
             if (System.currentTimeMillis() >= deadline) {
@@ -77,9 +86,30 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
             }
         } while (true);
 
+        final String failureDetail = CollectionUtils.isNotEmpty(command.getRequiredFiles())
+                ? String.format("Required restore paths or files were not found. paths=%s, files=%s",
+                        command.getCandidatePaths(), command.getRequiredFiles())
+                : "No candidate restore path contained the required files.";
         return new BackupAnswer(command, false, String.format(
-                "Unable to resolve restored path for NetBackup backup ID [%s]. No candidate restore path contained the required files.",
-                command.getBackupId()));
+                "Unable to resolve restored path for NetBackup backup ID [%s]. %s",
+                command.getBackupId(), failureDetail));
+    }
+
+    private boolean areRequiredRestoreSourcesReady(final List<String> candidatePaths, final List<String> requiredFiles) {
+        if (CollectionUtils.isEmpty(candidatePaths) || CollectionUtils.isEmpty(requiredFiles)) {
+            return false;
+        }
+        for (final String candidatePath : candidatePaths) {
+            if (StringUtils.isBlank(candidatePath) || !Files.isDirectory(Paths.get(candidatePath))) {
+                return false;
+            }
+        }
+        for (final String requiredFile : requiredFiles) {
+            if (StringUtils.isBlank(requiredFile) || !Files.isRegularFile(Paths.get(requiredFile))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean sleepBeforeNextDiscoveryAttempt(final String backupId) {

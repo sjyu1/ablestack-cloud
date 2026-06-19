@@ -336,12 +336,7 @@ public class AblestackNetBackupClient {
                         .put("recoveryPoint", recoveryPoint)
                         .put("recoveryOptions", recoveryOptions)));
 
-        final JSONArray selections = new JSONArray();
-        for (final Backup restoreBackup : restoreChain) {
-            selections.put(new JSONObject()
-                    .put("path", ensureTrailingSlash(restoreBackup.getExternalId()))
-                    .put("backupTime", resolveCatalogBackupTime(restoreBackup)));
-        }
+        final JSONArray selections = buildRestoreSelections(restoreChain);
 
         if (LOG.isDebugEnabled()) {
             LOG.debug("NetBackup restore recoveryPoint=[{}]", recoveryPoint);
@@ -355,6 +350,44 @@ public class AblestackNetBackupClient {
         appendFormPart(builder, boundary, "selectionsFile", selections.toString(), NETBACKUP_PART_CONTENT_TYPE);
         builder.append("--").append(boundary).append("--").append("\r\n");
         return builder.toString();
+    }
+
+    private JSONArray buildRestoreSelections(final List<Backup> restoreChain) {
+        final JSONArray selections = new JSONArray();
+        final Set<String> selectedPaths = new LinkedHashSet<>();
+        for (final Backup restoreBackup : restoreChain) {
+            final String backupTime = resolveCatalogBackupTime(restoreBackup);
+            int selectedFileCount = 0;
+            final List<Backup.VolumeInfo> backedUpVolumes = restoreBackup.getBackedUpVolumes();
+            if (backedUpVolumes != null) {
+                for (final Backup.VolumeInfo volumeInfo : backedUpVolumes) {
+                    if (StringUtils.isBlank(restoreBackup.getExternalId()) || StringUtils.isBlank(volumeInfo.getPath())) {
+                        continue;
+                    }
+                    addRestoreSelection(selections, selectedPaths,
+                            String.format("%s/%s", StringUtils.removeEnd(restoreBackup.getExternalId(), "/"), volumeInfo.getPath()),
+                            backupTime);
+                    selectedFileCount++;
+                }
+            }
+            if (selectedFileCount == 0 && StringUtils.isNotBlank(restoreBackup.getExternalId())) {
+                addRestoreSelection(selections, selectedPaths, ensureTrailingSlash(restoreBackup.getExternalId()), backupTime);
+            }
+        }
+        return selections;
+    }
+
+    private void addRestoreSelection(final JSONArray selections, final Set<String> selectedPaths, final String path, final String backupTime) {
+        if (StringUtils.isBlank(path)) {
+            return;
+        }
+        final String selectionKey = String.format("%s|%s", path, backupTime);
+        if (!selectedPaths.add(selectionKey)) {
+            return;
+        }
+        selections.put(new JSONObject()
+                .put("path", path)
+                .put("backupTime", backupTime));
     }
 
     private void appendFormPart(final StringBuilder builder, final String boundary, final String name, final String content,

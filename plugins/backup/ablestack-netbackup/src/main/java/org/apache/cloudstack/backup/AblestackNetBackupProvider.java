@@ -1288,6 +1288,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         if (CollectionUtils.isEmpty(restoreChain)) {
             return;
         }
+        final HostVO destinationHost = findRestoreHost(destinationHostName);
+        if (destinationHost == null) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to find destination host [%s] while preparing NetBackup restore sources.",
+                    destinationHostName));
+        }
         final AblestackNetBackupClient client = getClient(zoneId);
         for (final Map.Entry<String, List<Backup>> entry : groupRestoreChainByStageHost(destinationHostName, restoreChain).entrySet()) {
             final String sourceHost = entry.getKey();
@@ -1304,7 +1310,64 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 backupDetailsDao.removeDetail(chainTarget.getId(), DETAIL_RESTORE_CHAIN_JOB_ID);
                 backupDetailsDao.addDetail(chainTarget.getId(), DETAIL_RESTORE_CHAIN_JOB_ID, chainJobId, false);
             }
+            waitForPreparedRestoreFilesOnDestinationHost(destinationHost, sourceHostChain);
         }
+    }
+
+    private void waitForPreparedRestoreFilesOnDestinationHost(final Host destinationHost, final List<Backup> restoreChain) {
+        if (destinationHost == null || CollectionUtils.isEmpty(restoreChain)) {
+            return;
+        }
+        final List<String> restorePaths = restoreChain.stream()
+                .map(Backup::getExternalId)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+        final List<String> requiredFiles = getRequiredRestoreChainFiles(restoreChain);
+        if (CollectionUtils.isEmpty(restorePaths) || CollectionUtils.isEmpty(requiredFiles)) {
+            return;
+        }
+        final AblestackNetBackupResolveRestorePathCommand command = new AblestackNetBackupResolveRestorePathCommand(
+                restorePaths.get(restorePaths.size() - 1), restorePaths, requiredFiles, NetBackupPreparedRestorePathReadyTimeout.value());
+        try {
+            final BackupAnswer answer = (BackupAnswer) agentManager.send(destinationHost.getId(), command);
+            if (answer == null || !answer.getResult()) {
+                throw new CloudRuntimeException(answer != null ? answer.getDetails() : String.format(
+                        "No response from destination host [%s] while waiting for NetBackup restore chain files [%s].",
+                        destinationHost.getName(), requiredFiles));
+            }
+            LOG.info("Prepared NetBackup restore chain files are ready on destination host [{}]. paths={}, files={}",
+                    destinationHost.getName(), restorePaths, requiredFiles);
+        } catch (AgentUnavailableException e) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to contact destination host [%s] while waiting for NetBackup restore chain files [%s].",
+                    destinationHost.getName(), requiredFiles), e);
+        } catch (OperationTimedoutException e) {
+            throw new CloudRuntimeException(String.format(
+                    "Timed out waiting for destination host [%s] to confirm NetBackup restore chain files [%s].",
+                    destinationHost.getName(), requiredFiles), e);
+        }
+    }
+
+    private List<String> getRequiredRestoreChainFiles(final List<Backup> restoreChain) {
+        final List<String> requiredFiles = new ArrayList<>();
+        for (final Backup chainBackup : restoreChain) {
+            loadBackupDetailsIfNeeded(chainBackup);
+            final List<Backup.VolumeInfo> backupVolumes = chainBackup.getBackedUpVolumes();
+            if (CollectionUtils.isEmpty(backupVolumes)) {
+                continue;
+            }
+            for (final Backup.VolumeInfo volumeInfo : backupVolumes) {
+                if (StringUtils.isBlank(chainBackup.getExternalId()) || StringUtils.isBlank(volumeInfo.getPath())) {
+                    continue;
+                }
+                requiredFiles.add(String.format("%s/%s", chainBackup.getExternalId(), volumeInfo.getPath()));
+            }
+        }
+        return requiredFiles.stream()
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     private void cleanupRestoreSourcesOnStageHosts(final Long zoneId, final String destinationHostName, final List<Backup> restoreChain) {
@@ -1339,6 +1402,11 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
         final Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
         for (final String backupPath : backupPaths) {
+            if (!isNetBackupRestoreCleanupPath(backupPath)) {
+                LOG.warn("Skipping NetBackup restore cleanup for path [{}] on host [{}] because it is outside [{}].",
+                        backupPath, hostName, BACKUP_ROOT);
+                continue;
+            }
             try {
                 executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort,
                         String.format("rm -rf %s", shellQuote(backupPath)));
@@ -1346,6 +1414,13 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 LOG.warn("Failed to cleanup NetBackup restore source path [{}] on host [{}]", backupPath, hostName, e);
             }
         }
+    }
+
+    private boolean isNetBackupRestoreCleanupPath(final String backupPath) {
+        final String normalizedPath = StringUtils.removeEnd(StringUtils.defaultString(backupPath).trim(), "/");
+        return StringUtils.isNotBlank(normalizedPath)
+                && !StringUtils.equals(normalizedPath, BACKUP_ROOT)
+                && StringUtils.startsWith(normalizedPath, BACKUP_ROOT + "/");
     }
 
     private HostVO findRestoreHost(final String restoreHostName) {
