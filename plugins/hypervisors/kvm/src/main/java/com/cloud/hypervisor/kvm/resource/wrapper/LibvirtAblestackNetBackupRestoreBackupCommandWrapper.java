@@ -291,20 +291,30 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
 
     private boolean replaceFileVolumeWithBackup(final String volumePath, final String backupPath, final int timeout) {
         QemuImgFile srcBackupFile = null;
-        QemuImgFile destVolumeFile = null;
+        Path temporaryVolumePath = null;
         try {
             final QemuImg qemu = new QemuImg(timeout * 1000, true, false);
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
-            destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
-            logger.info("Converting NetBackup file volume from backup [{}] format [{}] to target [{}] format [{}]",
-                    srcBackupFile.getFileName(), srcBackupFile.getFormat(), destVolumeFile.getFileName(), destVolumeFile.getFormat());
-            qemu.convert(srcBackupFile, destVolumeFile);
+            final QemuImg.PhysicalDiskFormat targetFormat = getFileVolumeFormat(volumePath);
+            temporaryVolumePath = Files.createTempFile("cs-netbackup-restore-volume-", "." + targetFormat.toString().toLowerCase(Locale.ROOT));
+            final QemuImgFile temporaryVolumeFile = new QemuImgFile(temporaryVolumePath.toString(), targetFormat);
+            logger.info("Converting NetBackup file volume from backup [{}] format [{}] to temporary target [{}] format [{}] before replacing final target [{}]",
+                    srcBackupFile.getFileName(), srcBackupFile.getFormat(), temporaryVolumeFile.getFileName(), temporaryVolumeFile.getFormat(), volumePath);
+            qemu.convert(srcBackupFile, temporaryVolumeFile);
+            Files.copy(temporaryVolumePath, Paths.get(volumePath), StandardCopyOption.REPLACE_EXISTING);
             return true;
-        } catch (final QemuImgException | LibvirtException e) {
+        } catch (final QemuImgException | LibvirtException | IOException e) {
             final String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
-            final String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
-            logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
+            logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, volumePath, e.getMessage());
             return false;
+        } finally {
+            if (temporaryVolumePath != null) {
+                try {
+                    Files.deleteIfExists(temporaryVolumePath);
+                } catch (final IOException e) {
+                    logger.warn("Failed to delete temporary NetBackup restored volume file {}", temporaryVolumePath, e);
+                }
+            }
         }
     }
 
