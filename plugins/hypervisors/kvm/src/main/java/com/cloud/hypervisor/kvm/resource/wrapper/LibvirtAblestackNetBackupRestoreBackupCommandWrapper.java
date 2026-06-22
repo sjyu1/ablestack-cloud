@@ -297,6 +297,7 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             final QemuImg.PhysicalDiskFormat targetFormat = getFileVolumeFormat(volumePath);
             temporaryVolumePath = Files.createTempFile("cs-netbackup-restore-volume-", "." + targetFormat.toString().toLowerCase(Locale.ROOT));
+            Files.deleteIfExists(temporaryVolumePath);
             final QemuImgFile temporaryVolumeFile = new QemuImgFile(temporaryVolumePath.toString(), targetFormat);
             logger.info("Converting NetBackup file volume from backup [{}] format [{}] to temporary target [{}] format [{}] before replacing final target [{}]",
                     srcBackupFile.getFileName(), srcBackupFile.getFormat(), temporaryVolumeFile.getFileName(), temporaryVolumeFile.getFormat(), volumePath);
