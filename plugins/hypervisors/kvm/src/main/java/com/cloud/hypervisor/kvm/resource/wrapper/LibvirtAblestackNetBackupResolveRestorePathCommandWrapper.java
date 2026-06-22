@@ -105,19 +105,22 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         if (CollectionUtils.isEmpty(candidatePaths) || CollectionUtils.isEmpty(requiredFiles)) {
             return false;
         }
+        boolean ready = true;
         for (final String candidatePath : candidatePaths) {
             if (StringUtils.isBlank(candidatePath) || !Files.isDirectory(Paths.get(candidatePath))) {
-                return false;
+                ready = false;
             }
         }
         for (final String requiredFile : requiredFiles) {
             if (StringUtils.isBlank(requiredFile)) {
-                return false;
+                ready = false;
+                continue;
             }
             final Path requiredFilePath = Paths.get(requiredFile);
             if (!Files.isRegularFile(requiredFilePath)) {
                 previousFileStates.remove(requiredFile);
-                return false;
+                ready = false;
+                continue;
             }
             try {
                 final RestoreFileState currentState = RestoreFileState.from(requiredFilePath);
@@ -125,15 +128,15 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                 if (currentState.size <= 0 || previousState == null || !currentState.equals(previousState)) {
                     logger.debug("Waiting for NetBackup restored file [{}] to become stable. previousState={}, currentState={}",
                             requiredFile, previousState, currentState);
-                    return false;
+                    ready = false;
                 }
             } catch (IOException e) {
                 logger.debug("Failed to inspect NetBackup restored file [{}] while waiting for stability.", requiredFile, e);
                 previousFileStates.remove(requiredFile);
-                return false;
+                ready = false;
             }
         }
-        return true;
+        return ready;
     }
 
     private static final class RestoreFileState {

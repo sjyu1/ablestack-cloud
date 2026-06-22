@@ -132,7 +132,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     private final ConfigKey<Integer> NetBackupPreparedRestorePathReadyTimeout = new ConfigKey<>("Advanced", Integer.class,
             "netbackup.prepared.restore.path.ready.timeout",
-            "120",
+            "300",
             "Timeout in seconds to wait for a NetBackup WebUI-prepared restore path to become visible on the KVM host.",
             true,
             BackupFrameworkEnabled.key());
