@@ -33,7 +33,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -56,11 +58,12 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         }
 
         final long deadline = System.currentTimeMillis() + Math.max(0, command.getDiscoveryWindowSeconds()) * 1000L;
+        final Map<String, RestoreFileState> previousRequiredFileStates = new HashMap<>();
         logger.info("Resolving NetBackup restore path on KVM. backupId=[{}], candidatePaths={}, requiredFiles={}, discoveryWindowSeconds=[{}]",
                 command.getBackupId(), command.getCandidatePaths(), command.getRequiredFiles(), command.getDiscoveryWindowSeconds());
         do {
             if (CollectionUtils.isNotEmpty(command.getRequiredFiles())) {
-                if (areRequiredRestoreSourcesReady(command.getCandidatePaths(), command.getRequiredFiles())) {
+                if (areRequiredRestoreSourcesReady(command.getCandidatePaths(), command.getRequiredFiles(), previousRequiredFileStates)) {
                     logger.info("Required NetBackup restore files are ready for backupId [{}]: paths={}, files={}",
                             command.getBackupId(), command.getCandidatePaths(), command.getRequiredFiles());
                     return new BackupAnswer(command, true, StringUtils.join(command.getCandidatePaths(), ","));
@@ -97,7 +100,8 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                 command.getBackupId(), failureDetail));
     }
 
-    private boolean areRequiredRestoreSourcesReady(final List<String> candidatePaths, final List<String> requiredFiles) {
+    private boolean areRequiredRestoreSourcesReady(final List<String> candidatePaths, final List<String> requiredFiles,
+            final Map<String, RestoreFileState> previousFileStates) {
         if (CollectionUtils.isEmpty(candidatePaths) || CollectionUtils.isEmpty(requiredFiles)) {
             return false;
         }
@@ -107,11 +111,67 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
             }
         }
         for (final String requiredFile : requiredFiles) {
-            if (StringUtils.isBlank(requiredFile) || !Files.isRegularFile(Paths.get(requiredFile))) {
+            if (StringUtils.isBlank(requiredFile)) {
+                return false;
+            }
+            final Path requiredFilePath = Paths.get(requiredFile);
+            if (!Files.isRegularFile(requiredFilePath)) {
+                previousFileStates.remove(requiredFile);
+                return false;
+            }
+            try {
+                final RestoreFileState currentState = RestoreFileState.from(requiredFilePath);
+                final RestoreFileState previousState = previousFileStates.put(requiredFile, currentState);
+                if (currentState.size <= 0 || previousState == null || !currentState.equals(previousState)) {
+                    logger.debug("Waiting for NetBackup restored file [{}] to become stable. previousState={}, currentState={}",
+                            requiredFile, previousState, currentState);
+                    return false;
+                }
+            } catch (IOException e) {
+                logger.debug("Failed to inspect NetBackup restored file [{}] while waiting for stability.", requiredFile, e);
+                previousFileStates.remove(requiredFile);
                 return false;
             }
         }
         return true;
+    }
+
+    private static final class RestoreFileState {
+        private final long size;
+        private final long modifiedTimeMillis;
+
+        private RestoreFileState(final long size, final long modifiedTimeMillis) {
+            this.size = size;
+            this.modifiedTimeMillis = modifiedTimeMillis;
+        }
+
+        private static RestoreFileState from(final Path path) throws IOException {
+            return new RestoreFileState(Files.size(path), Files.getLastModifiedTime(path).toMillis());
+        }
+
+        @Override
+        public boolean equals(final Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof RestoreFileState)) {
+                return false;
+            }
+            final RestoreFileState that = (RestoreFileState) other;
+            return size == that.size && modifiedTimeMillis == that.modifiedTimeMillis;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Long.hashCode(size);
+            result = 31 * result + Long.hashCode(modifiedTimeMillis);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("RestoreFileState{size=%d, modifiedTimeMillis=%d}", size, modifiedTimeMillis);
+        }
     }
 
     private List<String> getMissingCandidatePaths(final List<String> candidatePaths) {
