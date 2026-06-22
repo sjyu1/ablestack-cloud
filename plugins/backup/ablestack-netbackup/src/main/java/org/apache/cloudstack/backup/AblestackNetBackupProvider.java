@@ -965,6 +965,20 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             throw new CloudRuntimeException(String.format("Unable to find disk offering [%s] for restored volume",
                     backupVolumeInfo.getDiskOfferingId()));
         }
+        final VolumeVO volume = volumeDao.findByUuid(backupVolumeInfo.getUuid());
+        String cacheMode = null;
+        final VMInstanceVO vm = vmInstanceDao.findVMByInstanceName(vmNameAndState.first());
+        if (vm == null) {
+            throw new CloudRuntimeException(String.format("Unable to find VM [%s] for NetBackup volume restore", vmNameAndState.first()));
+        }
+        final List<VolumeVO> rootVolumes = volumeDao.findByInstanceAndType(vm.getId(), Volume.Type.ROOT);
+        if (CollectionUtils.isNotEmpty(rootVolumes)) {
+            final VolumeVO rootDisk = rootVolumes.get(0);
+            final DiskOffering baseDiskOffering = diskOfferingDao.findById(rootDisk.getDiskOfferingId());
+            if (baseDiskOffering != null && baseDiskOffering.getCacheMode() != null) {
+                cacheMode = baseDiskOffering.getCacheMode().toString();
+            }
+        }
 
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
         final List<Backup> stagedRestoreChain = getStagedRestoreChainForBackup(backup);
@@ -976,7 +990,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             final VolumeVO restoredVolume = new VolumeVO(Volume.Type.DATADISK, null, backup.getZoneId(),
                     backup.getDomainId(), backup.getAccountId(), 0, null, backup.getSize(), null, null, null);
             final String volumeUuid = UUID.randomUUID().toString();
-            restoredVolume.setName("RestoredVol-" + backupVolumeInfo.getUuid());
+            final String volumeName = volume != null ? volume.getName() : backupVolumeInfo.getUuid();
+            restoredVolume.setName("RestoredVol-" + volumeName);
             restoredVolume.setProvisioningType(diskOffering.getProvisioningType());
             restoredVolume.setUpdated(new Date());
             restoredVolume.setUuid(volumeUuid);
@@ -1010,8 +1025,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             restoreCommand.setVmExists(null);
             restoreCommand.setVmState(vmNameAndState.second());
             restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
-            restoreCommand.setRestorePlan(createRestorePlan(false));
+            restoreCommand.setRestorePlan(createRestorePlan(AblestackBackupFrameworkUtils.requiresRunningVmAttach(vmNameAndState.second())));
             restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
+            restoreCommand.setCacheMode(cacheMode);
 
             final BackupAnswer answer;
             try {
@@ -1128,6 +1144,28 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Override
     public boolean supportsRestorePlan() {
         return true;
+    }
+
+    @Override
+    public boolean supportsRestoreChainValidation() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsPostRestoreMaintenance() {
+        return true;
+    }
+
+    @Override
+    public void runPostRestoreMaintenance(final VirtualMachine vm, final Backup backup, final boolean volumeOnly) {
+        if (backup == null || CollectionUtils.isEmpty(backup.getBackedUpVolumes())) {
+            return;
+        }
+        loadBackupDetailsIfNeeded(backup);
+        final List<BackupVolumeChainState> chainStates = getVolumeChainStates(backup.getBackedUpVolumes(), backup);
+        AblestackBackupFrameworkUtils.validateVolumeChainStates(chainStates);
+        LOG.debug("Completed NetBackup post-restore maintenance for VM [{}], backup [{}], volumeOnly=[{}]",
+                vm != null ? vm.getInstanceName() : null, backup.getUuid(), volumeOnly);
     }
 
     @Override

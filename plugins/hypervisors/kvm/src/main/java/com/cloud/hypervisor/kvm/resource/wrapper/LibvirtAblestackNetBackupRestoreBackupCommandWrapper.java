@@ -29,6 +29,7 @@ import com.cloud.resource.ResourceWrapper;
 import com.cloud.storage.Storage;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.script.Script;
+import com.cloud.vm.VirtualMachine;
 import org.apache.cloudstack.backup.AblestackBackupFrameworkUtils;
 import org.apache.cloudstack.backup.AblestackNetBackupRestoreBackupCommand;
 import org.apache.cloudstack.backup.BackupAnswer;
@@ -61,6 +62,9 @@ import java.util.Objects;
 public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends CommandWrapper<AblestackNetBackupRestoreBackupCommand, Answer, LibvirtComputingResource> {
     private static final String FILE_PATH_PLACEHOLDER = "%s/%s";
     private static final String COMMAND_EXIT_MARKER = "__CS_COMMAND_EXIT__=";
+    private static final String ATTACH_QCOW2_DISK_COMMAND = " virsh attach-disk %s %s %s --driver qemu --subdriver qcow2 --cache none";
+    private static final String ATTACH_RBD_DISK_XML_COMMAND = " virsh attach-device %s /dev/stdin <<EOF%sEOF";
+    private static final String CURRENT_DEVICE = "virsh domblklist --domain %s | tail -n 3 | head -n 1 | awk '{print $1}'";
 
     @Override
     public Answer execute(final AblestackNetBackupRestoreBackupCommand command, final LibvirtComputingResource serverResource) {
@@ -76,6 +80,7 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
         final String restoreVolumeUuid = command.getRestoreVolumeUUID();
         final int timeout = command.getTimeout();
         final BackupRestorePlan restorePlan = command.getRestorePlan();
+        final String cacheMode = command.getCacheMode();
         final KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();
         String newVolumeId = null;
 
@@ -86,7 +91,7 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
                 final int lastIndex = restoreVolumePath.lastIndexOf("/");
                 newVolumeId = restoreVolumePath.substring(lastIndex + 1);
                 restoreVolume(storagePoolMgr, backupPath, restoreVolumePool, restoreVolumePath, diskType, restoreVolumeUuid,
-                        backupFiles, backupFileChains, volumeChainStates, timeout, restorePlan);
+                        backupFiles, backupFileChains, volumeChainStates, command.getVmName(), command.getVmState(), timeout, cacheMode, restorePlan);
             } else if (Boolean.TRUE.equals(vmExists)) {
                 restoreVolumesOfExistingVM(storagePoolMgr, restoreVolumePools, restoreVolumePaths, backedVolumeUUIDs,
                         backupPath, backupFiles, backupFileChains, volumeChainStates, timeout, restorePlan);
@@ -150,14 +155,20 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
 
     private void restoreVolume(final KVMStoragePoolManager storagePoolMgr, final String backupPath, final PrimaryDataStoreTO volumePool,
             final String volumePath, final String diskType, final String volumeUUID, final List<String> backupFiles,
-            final List<String> backupFileChains, final List<BackupVolumeChainState> volumeChainStates, final int timeout,
-            final BackupRestorePlan restorePlan) {
+            final List<String> backupFileChains, final List<BackupVolumeChainState> volumeChainStates, final String vmName,
+            final VirtualMachine.State vmState, final int timeout, final String cacheMode, final BackupRestorePlan restorePlan) {
         try {
             final List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, volumeChainStates, 0,
                     getLegacyBackupFileName(diskType, volumeUUID));
             validateResolvedChainPaths(localBackupPaths, volumePath);
             if (!replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, localBackupPaths, timeout, backupPath, 0, true)) {
                 throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", volumeUUID));
+            }
+            if (AblestackBackupFrameworkUtils.hasRestoreStage(restorePlan, BackupRestoreStage.ATTACH_VOLUME)
+                    && VirtualMachine.State.Running.equals(vmState)) {
+                if (!attachVolumeToVm(storagePoolMgr, vmName, volumePool, volumePath, cacheMode)) {
+                    throw new CloudRuntimeException(String.format("Failed to attach volume to VM: %s", vmName));
+                }
             }
         } finally {
             cleanupBackupDirectory(backupPath, restorePlan);
@@ -788,6 +799,74 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
 
     private String quote(final String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
+    }
+
+    private boolean attachVolumeToVm(final KVMStoragePoolManager storagePoolMgr, final String vmName, final PrimaryDataStoreTO volumePool,
+            final String volumePath, String cacheMode) {
+        final String deviceToAttachDiskTo = getDeviceToAttachDisk(vmName);
+        final int exitValue;
+        if (volumePool.getPoolType() != Storage.StoragePoolType.RBD) {
+            exitValue = Script.runSimpleBashScriptForExitValue(String.format(ATTACH_QCOW2_DISK_COMMAND, vmName, volumePath, deviceToAttachDiskTo));
+        } else {
+            final String xmlForRbdDisk = getXmlForRbdDisk(storagePoolMgr, volumePool, volumePath, deviceToAttachDiskTo, cacheMode);
+            logger.debug("RBD disk xml to attach: {}", xmlForRbdDisk);
+            exitValue = Script.runSimpleBashScriptForExitValue(String.format(ATTACH_RBD_DISK_XML_COMMAND, vmName, xmlForRbdDisk));
+        }
+        return exitValue == 0;
+    }
+
+    private String getDeviceToAttachDisk(final String vmName) {
+        final String currentDevice = Script.runSimpleBashScript(String.format(CURRENT_DEVICE, vmName));
+        if (StringUtils.isBlank(currentDevice)) {
+            throw new CloudRuntimeException(String.format("Unable to determine next disk target for VM [%s].", vmName));
+        }
+        final char lastChar = currentDevice.charAt(currentDevice.length() - 1);
+        final char incrementedChar = (char) (lastChar + 1);
+        return currentDevice.substring(0, currentDevice.length() - 1) + incrementedChar;
+    }
+
+    private String getXmlForRbdDisk(final KVMStoragePoolManager storagePoolMgr, final PrimaryDataStoreTO volumePool,
+            final String volumePath, final String deviceToAttachDiskTo, String cacheMode) {
+        final StringBuilder diskBuilder = new StringBuilder();
+        diskBuilder.append("\n<disk ");
+        diskBuilder.append(" device='disk'");
+        diskBuilder.append(" type='network'");
+        diskBuilder.append(">\n");
+
+        diskBuilder.append("<driver name='qemu' type='raw'");
+        if (StringUtils.isBlank(cacheMode)) {
+            cacheMode = "none";
+        }
+        diskBuilder.append(" cache='").append(cacheMode).append("'/> \n");
+
+        diskBuilder.append("<source ");
+        diskBuilder.append(" protocol='rbd'");
+        diskBuilder.append(" name='").append(volumePath).append("'");
+        diskBuilder.append(">\n");
+        if (StringUtils.isNotBlank(volumePool.getHost())) {
+            diskBuilder.append("<host name='").append(volumePool.getHost());
+            if (volumePool.getPort() != 0) {
+                diskBuilder.append("' port='");
+                diskBuilder.append(volumePool.getPort());
+            }
+            diskBuilder.append("'/>\n");
+        }
+        diskBuilder.append("</source>\n");
+        String authUserName = null;
+        final KVMStoragePool primaryPool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
+        if (primaryPool != null) {
+            authUserName = primaryPool.getAuthUserName();
+        }
+        if (StringUtils.isNotBlank(authUserName)) {
+            diskBuilder.append("<auth username='").append(authUserName).append("'>\n");
+            diskBuilder.append("<secret type='ceph' uuid='").append(volumePool.getUuid()).append("'/>\n");
+            diskBuilder.append("</auth>\n");
+        }
+        diskBuilder.append("<target dev='").append(deviceToAttachDiskTo).append("'");
+        diskBuilder.append(" bus='virtio'");
+        diskBuilder.append("/>\n");
+        diskBuilder.append("</disk>\n");
+        return diskBuilder.toString();
     }
 
     private static final class RbdImageSpec {
