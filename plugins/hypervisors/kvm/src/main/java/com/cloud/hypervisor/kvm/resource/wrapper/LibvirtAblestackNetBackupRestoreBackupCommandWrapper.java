@@ -119,6 +119,8 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
                 final String backupVolumeUuid = backedVolumesUUIDs.get(idx);
                 final List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, volumeChainStates, idx,
                         getLegacyBackupFileName(diskType, backupVolumeUuid));
+                logger.info("Resolved NetBackup local backup paths for existing VM volume [{}], target [{}]: {}",
+                        backupVolumeUuid, restoreVolumePath, localBackupPaths);
                 validateResolvedChainPaths(localBackupPaths, restoreVolumePath);
                 diskType = "datadisk";
                 if (!replaceVolumeWithBackup(storagePoolMgr, restoreVolumePool, restoreVolumePath, localBackupPaths, timeout, backupPath, idx)) {
@@ -160,6 +162,8 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
         try {
             final List<String> localBackupPaths = getLocalBackupPaths(backupPath, backupFiles, backupFileChains, volumeChainStates, 0,
                     getLegacyBackupFileName(diskType, volumeUUID));
+            logger.info("Resolved NetBackup local backup paths for restored volume [{}], target [{}]: {}",
+                    volumeUUID, volumePath, localBackupPaths);
             validateResolvedChainPaths(localBackupPaths, volumePath);
             if (!replaceVolumeWithBackup(storagePoolMgr, volumePool, volumePath, localBackupPaths, timeout, backupPath, 0, true)) {
                 throw new CloudRuntimeException(String.format("Unable to restore contents from the backup volume [%s].", volumeUUID));
@@ -292,6 +296,8 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
             final QemuImg qemu = new QemuImg(timeout * 1000, true, false);
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
+            logger.info("Converting NetBackup file volume from backup [{}] format [{}] to target [{}] format [{}]",
+                    srcBackupFile.getFileName(), srcBackupFile.getFormat(), destVolumeFile.getFileName(), destVolumeFile.getFormat());
             qemu.convert(srcBackupFile, destVolumeFile);
             return true;
         } catch (final QemuImgException | LibvirtException e) {
