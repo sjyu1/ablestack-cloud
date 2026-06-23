@@ -148,6 +148,11 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         if (!command.isRequireSingleRestorePathInVmRoot()) {
             return null;
         }
+        if (CollectionUtils.size(command.getCandidatePaths()) != 1) {
+            logger.debug("Skipping single NetBackup restore path validation for backup ID [{}] because candidate path count is [{}]. candidatePaths={}",
+                    command.getBackupId(), CollectionUtils.size(command.getCandidatePaths()), command.getCandidatePaths());
+            return null;
+        }
         final Path vmRestoreRoot = selectedRestorePath == null ? null : selectedRestorePath.toAbsolutePath().normalize().getParent();
         if (vmRestoreRoot == null || !Files.isDirectory(vmRestoreRoot)) {
             return String.format("Unable to validate NetBackup restore path uniqueness for backup ID [%s]. VM restore root was not found for selected path [%s].",
