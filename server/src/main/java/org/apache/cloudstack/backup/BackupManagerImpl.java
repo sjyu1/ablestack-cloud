@@ -1698,7 +1698,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException("NetBackup backup external ID or backup ID is required");
         }
         final NetBackupRestoreResolution resolution = resolveNetBackupRestoreRequest(
-                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS);
+                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, false);
         final BackupVO backup = resolution.backup;
         logger.info("NetBackup restore resolved. requestIdentifier=[{}], resolvedBackupUuid=[{}], resolvedExternalId=[{}], restoreHostName=[{}]",
                 resolution.requestIdentifier, backup.getUuid(), backup.getExternalId(), resolution.preparedRestoreHostName);
@@ -1816,7 +1816,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
 
         final NetBackupRestoreResolution resolution = resolveNetBackupRestoreRequest(
-                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS);
+                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, true);
         final BackupVO backup = resolution.backup;
         final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
         if (vm == null || VirtualMachine.State.Expunging.equals(vm.getState())) {
@@ -1920,12 +1920,23 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     }
 
     private NetBackupRestoreResolution resolveNetBackupRestoreRequest(final String externalId, final String backupId,
-            final int restorePathDiscoveryWindowSeconds) {
+            final int restorePathDiscoveryWindowSeconds, final boolean requireSingleRestorePathInVmRoot) {
         if (StringUtils.isNotBlank(externalId)) {
             try {
                 logger.debug("Resolving NetBackup restore by externalId [{}].", externalId);
+                final BackupVO backup = findNetBackupBackupByExternalId(externalId);
+                if (requireSingleRestorePathInVmRoot) {
+                    backupDao.loadDetails(backup);
+                    final String restoreHostName = resolveNetBackupRestoreHostName(Collections.singletonList(backup),
+                            StringUtils.defaultIfBlank(backup.getDetail(DETAIL_NETBACKUP_BACKUP_ID), externalId));
+                    final String resolvedExternalId = resolveNetBackupRestoredExternalIdOnHost(
+                            StringUtils.defaultIfBlank(backup.getDetail(DETAIL_NETBACKUP_BACKUP_ID), externalId),
+                            restoreHostName, Collections.singletonList(backup), restorePathDiscoveryWindowSeconds, true);
+                    return new NetBackupRestoreResolution(findNetBackupBackupByExternalId(resolvedExternalId),
+                            externalId, restoreHostName);
+                }
                 return new NetBackupRestoreResolution(
-                        findNetBackupBackupByExternalId(externalId), externalId, null);
+                        backup, externalId, null);
             } catch (CloudRuntimeException e) {
                 if (StringUtils.isBlank(backupId) && !looksLikeNetBackupBackupId(externalId)) {
                     throw e;
@@ -1945,7 +1956,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 resolvedBackupId, candidates.size(), summarizeNetBackupCandidates(candidates));
         final String restoreHostName = resolveNetBackupRestoreHostName(candidates, resolvedBackupId);
         final String resolvedExternalId = resolveNetBackupRestoredExternalIdOnHost(
-                resolvedBackupId, restoreHostName, candidates, restorePathDiscoveryWindowSeconds);
+                resolvedBackupId, restoreHostName, candidates, restorePathDiscoveryWindowSeconds, requireSingleRestorePathInVmRoot);
         logger.info("NetBackup backupId [{}] resolved to externalId [{}] on restoreHostName [{}].",
                 resolvedBackupId, resolvedExternalId, restoreHostName);
         return new NetBackupRestoreResolution(
@@ -2233,7 +2244,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     }
 
     private String resolveNetBackupRestoredExternalIdOnHost(final String backupId,
-            final String restoreHostName, final List<BackupVO> backups, final int restorePathDiscoveryWindowSeconds) {
+            final String restoreHostName, final List<BackupVO> backups, final int restorePathDiscoveryWindowSeconds,
+            final boolean requireSingleRestorePathInVmRoot) {
         final HostVO host = findRestoreHost(restoreHostName);
         if (host == null) {
             throw new CloudRuntimeException(String.format(
@@ -2256,7 +2268,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 restoreHostName, backupId, restoreCandidatePaths);
         final AblestackNetBackupResolveRestorePathCommand command =
                 new AblestackNetBackupResolveRestorePathCommand(
-                        backupId, restoreCandidatePaths, restorePathDiscoveryWindowSeconds);
+                        backupId, restoreCandidatePaths, null, restorePathDiscoveryWindowSeconds,
+                        requireSingleRestorePathInVmRoot);
         try {
             final BackupAnswer answer = (BackupAnswer) agentMgr.send(host.getId(), command);
             if (answer == null || !answer.getResult() || StringUtils.isBlank(answer.getDetails())) {

@@ -77,6 +77,10 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                     if (!isValidRestoreCandidate(path)) {
                         continue;
                     }
+                    final String singleRestorePathValidationError = validateSingleRestorePathInVmRootIfRequired(command, path);
+                    if (StringUtils.isNotBlank(singleRestorePathValidationError)) {
+                        return new BackupAnswer(command, false, singleRestorePathValidationError);
+                    }
                     logger.info("Selected NetBackup restore path for backupId [{}]: [{}]", command.getBackupId(), path);
                     return new BackupAnswer(command, true, path.toAbsolutePath().normalize().toString());
                 }
@@ -137,6 +141,42 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
             }
         }
         return ready;
+    }
+
+    private String validateSingleRestorePathInVmRootIfRequired(final AblestackNetBackupResolveRestorePathCommand command,
+            final Path selectedRestorePath) {
+        if (!command.isRequireSingleRestorePathInVmRoot()) {
+            return null;
+        }
+        final Path vmRestoreRoot = selectedRestorePath == null ? null : selectedRestorePath.toAbsolutePath().normalize().getParent();
+        if (vmRestoreRoot == null || !Files.isDirectory(vmRestoreRoot)) {
+            return String.format("Unable to validate NetBackup restore path uniqueness for backup ID [%s]. VM restore root was not found for selected path [%s].",
+                    command.getBackupId(), selectedRestorePath);
+        }
+
+        final List<String> timestampRestorePaths = listTimestampRestorePaths(vmRestoreRoot);
+        if (timestampRestorePaths.size() == 1) {
+            return null;
+        }
+        return String.format("Expected exactly one NetBackup restored timestamp path under VM restore root [%s] for backup ID [%s], but found [%s]: %s. "
+                        + "Mold did not cleanup these paths automatically because it cannot safely determine which path is stale. "
+                        + "Please cleanup stale NetBackup restore paths under [%s] before retrying.",
+                vmRestoreRoot, command.getBackupId(), timestampRestorePaths.size(), timestampRestorePaths, vmRestoreRoot);
+    }
+
+    private List<String> listTimestampRestorePaths(final Path vmRestoreRoot) {
+        final List<String> timestampRestorePaths = new ArrayList<>();
+        try (Stream<Path> children = Files.list(vmRestoreRoot)) {
+            children
+                    .filter(Files::isDirectory)
+                    .filter(child -> TIMESTAMP_DIR_PATTERN.matcher(child.getFileName().toString()).matches())
+                    .map(child -> child.toAbsolutePath().normalize().toString())
+                    .sorted()
+                    .forEach(timestampRestorePaths::add);
+        } catch (IOException e) {
+            logger.debug("Failed to list NetBackup restore timestamp paths under [{}].", vmRestoreRoot, e);
+        }
+        return timestampRestorePaths;
     }
 
     private static final class RestoreFileState {

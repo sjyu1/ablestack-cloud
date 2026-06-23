@@ -153,6 +153,7 @@ copy_restore_notify_files() {
     cp -f "${source}" "${RESTORE_SCRIPT_OUTPUT_DIR}/restore_notify"
   done
   chmod 755 "${RESTORE_SCRIPT_OUTPUT_DIR}/restore_notify"
+  rm -f "${RESTORE_SCRIPT_OUTPUT_DIR}/netbackup-server-restore-notify"
 }
 
 main() {
