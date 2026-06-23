@@ -381,8 +381,8 @@ main() {
   [[ -n "${job_id}" ]] || fail "Mold restoreNetBackup API did not return jobid for ${request_key}=${external_id}"
 
   log_line "RESTORE async-job-submitted command=restoreNetBackup jobid=${job_id} ${request_key}=${external_id} response=${response}"
-  final_response="$(wait_for_mold_async_job "restoreNetBackup" "${job_id}" "${request_key}" "${external_id}")"
-  log_line "RESTORE async-job-complete command=restoreNetBackup jobid=${job_id} ${request_key}=${external_id} response=${final_response}"
+  log_line "RESTORE async-job-detached command=restoreNetBackup jobid=${job_id} ${request_key}=${external_id}"
+  return 0
 }
 
 main "$@"
