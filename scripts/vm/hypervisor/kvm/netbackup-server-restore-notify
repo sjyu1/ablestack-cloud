@@ -219,16 +219,23 @@ invoke_mold_api() {
   local command_name="$2"
   local request_key="$3"
   local external_id="$4"
-  local api_params signed_url response
+  local api_params signed_url response http_body http_code curl_exit
 
   log_line "RESTORE api-call command=${command_name} method=${method} externalid=${external_id} operation=${5:-}"
   api_params="$(build_api_params "${command_name}" "${request_key}=$(urlencode_plus "${external_id}")")"
   signed_url="$(build_signed_url "${api_params}")"
-  response="$(curl -sS --fail -X "${method}" \
+  response="$(curl -sS -X "${method}" \
     -H 'Accept: application/json' \
     -H 'Content-type: application/x-www-form-urlencoded' \
-    "${signed_url}" 2>&1)" || fail "Mold API call failed: method=${method} command=${command_name} response=${response}"
-  printf '%s' "${response}"
+    -w '\n%{http_code}' \
+    "${signed_url}" 2>&1)"
+  curl_exit=$?
+  http_body="${response%$'\n'*}"
+  http_code="${response##*$'\n'}"
+  if [[ ${curl_exit} -ne 0 || ! "${http_code}" =~ ^2[0-9][0-9]$ ]]; then
+    fail "Mold API call failed: method=${method} command=${command_name} httpCode=${http_code} curlExit=${curl_exit} response=${http_body}"
+  fi
+  printf '%s' "${http_body}"
 }
 
 extract_json_value_by_key() {
