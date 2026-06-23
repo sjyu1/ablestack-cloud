@@ -50,6 +50,26 @@ fail() {
   exit 1
 }
 
+require_commands() {
+  local missing=()
+  local command_name
+  for command_name in "$@"; do
+    command -v "${command_name}" >/dev/null 2>&1 || missing+=("${command_name}")
+  done
+  [[ ${#missing[@]} -eq 0 ]] || fail "Required command(s) not found: ${missing[*]}"
+}
+
+raw_to_hex() {
+  od -An -tx1 -v | tr -d ' \n'
+}
+
+hex_to_raw() {
+  local hex
+  hex="$(printf '%s' "$1" | tr -d '[:space:]')"
+  [[ $(( ${#hex} % 2 )) -eq 0 ]] || fail "Invalid hex string length."
+  printf '%b' "$(printf '%s' "${hex}" | sed 's/../\\x&/g')"
+}
+
 looks_like_backup_id() {
   [[ "${1:-}" =~ ^[^/\\]+_[0-9]+$ ]]
 }
@@ -112,31 +132,27 @@ load_secret() {
 
   [[ -n "${iterations}" && -n "${salt_b64}" && -n "${iv_b64}" && -n "${ciphertext_b64}" && -n "${mac_b64}" ]] || fail "Invalid secret file format: ${MOLD_SECRET_FILE}"
 
-  salt_hex="$(printf '%s' "${salt_b64}" | base64 -d | xxd -p -c 256)"
-  iv_hex="$(printf '%s' "${iv_b64}" | base64 -d | xxd -p -c 256)"
-  ciphertext_hex="$(printf '%s' "${ciphertext_b64}" | base64 -d | xxd -p -c 256)"
-  mac_hex="$(printf '%s' "${mac_b64}" | base64 -d | xxd -p -c 256)"
+  salt_hex="$(printf '%s' "${salt_b64}" | base64 -d | raw_to_hex)"
+  iv_hex="$(printf '%s' "${iv_b64}" | base64 -d | raw_to_hex)"
+  ciphertext_hex="$(printf '%s' "${ciphertext_b64}" | base64 -d | raw_to_hex)"
+  mac_hex="$(printf '%s' "${mac_b64}" | base64 -d | raw_to_hex)"
 
   key_iv_lines="$(openssl enc -aes-256-cbc -pbkdf2 -iter "${iterations}" -md sha256 -S "${salt_hex}" -pass file:"${SECRET_KEY_FILE}" -P 2>/dev/null)" || fail "Failed to derive key material"
-  key_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^key=//p' | head -n1 | tr -d '[:space:]')"
-  derived_iv_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^iv *=//p' | head -n1 | tr -d '[:space:]')"
+  key_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^key=//p' | head -n1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  derived_iv_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^iv *=//p' | head -n1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
   [[ "${derived_iv_hex}" == "${iv_hex}" ]] || fail "Derived IV mismatch"
 
   mac_key_hex="$(
-    {
-      printf '%s%s' "${key_hex}" "${salt_hex}" | xxd -r -p
-    } | openssl dgst -sha256 -binary | xxd -p -c 256
+    hex_to_raw "${key_hex}${salt_hex}" | openssl dgst -sha256 -binary | raw_to_hex
   )"
   mac_input_hex="${iv_hex}${ciphertext_hex}"
   expected_mac_hex="$(
-    {
-      printf '%s' "${mac_input_hex}" | xxd -r -p
-    } | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${mac_key_hex}" -binary | xxd -p -c 256
+    hex_to_raw "${mac_input_hex}" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${mac_key_hex}" -binary | raw_to_hex
   )"
   [[ "${expected_mac_hex}" == "${mac_hex}" ]] || fail "Encrypted secret MAC validation failed"
 
   plaintext="$(
-    printf '%s' "${ciphertext_hex}" | xxd -r -p | openssl enc -aes-256-cbc -d -K "${key_hex}" -iv "${iv_hex}" -nosalt 2>/dev/null
+    hex_to_raw "${ciphertext_hex}" | openssl enc -aes-256-cbc -d -K "${key_hex}" -iv "${iv_hex}" -nosalt 2>/dev/null
   )" || fail "Failed to decrypt secret file"
   ADMIN_SECRETKEY="${plaintext%$'\r'}"
   ADMIN_SECRETKEY="${ADMIN_SECRETKEY%$'\n'}"
@@ -314,6 +330,7 @@ main() {
   local response
 
   log_line "START script=netbackup-server-restore-notify args=$*"
+  require_commands openssl base64 od sed tr curl date mkdir sleep
   load_config
   load_secret
   log_line "RESTORE config-loaded program=${program_name} externalid=${external_id} operation=${operation} mold_url=${MOLD_RESTORE_API_URL} log_file=${LOG_FILE}"

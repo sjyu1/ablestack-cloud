@@ -34,6 +34,15 @@ fail() {
   exit 1
 }
 
+require_commands() {
+  local missing=()
+  local command_name
+  for command_name in "$@"; do
+    command -v "${command_name}" >/dev/null 2>&1 || missing+=("${command_name}")
+  done
+  [[ ${#missing[@]} -eq 0 ]] || fail "Required command(s) not found: ${missing[*]}"
+}
+
 prompt_value() {
   local var_name="$1"
   local prompt_text="$2"
@@ -64,12 +73,23 @@ join_bytes_hex() {
   printf '%s%s' "${left_hex}" "${right_hex}"
 }
 
+raw_to_hex() {
+  od -An -tx1 -v | tr -d ' \n'
+}
+
+hex_to_raw() {
+  local hex
+  hex="$(printf '%s' "$1" | tr -d '[:space:]')"
+  [[ $(( ${#hex} % 2 )) -eq 0 ]] || fail "Invalid hex string length."
+  printf '%b' "$(printf '%s' "${hex}" | sed 's/../\\x&/g')"
+}
+
 hex_to_b64() {
-  printf '%s' "$1" | xxd -r -p | base64 | tr -d '\n'
+  hex_to_raw "$1" | base64 | tr -d '\n'
 }
 
 base64_to_hex() {
-  printf '%s' "$1" | base64 -d | xxd -p -c 256 | tr -d '\n'
+  printf '%s' "$1" | base64 -d | raw_to_hex
 }
 
 encrypt_secret() {
@@ -78,14 +98,14 @@ encrypt_secret() {
   local iterations=200000
   local salt_hex key_iv_lines key_hex iv_hex ciphertext_hex ciphertext_b64 mac_key_hex mac_hex
 
-  salt_hex="$(openssl rand -hex 16)"
+  salt_hex="$(openssl rand -hex 8)"
   key_iv_lines="$(openssl enc -aes-256-cbc -pbkdf2 -iter "${iterations}" -md sha256 -S "${salt_hex}" -pass file:"${secret_key_file}" -P)"
-  key_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^key=//p' | head -n1 | tr -d '[:space:]')"
-  iv_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^iv *=//p' | head -n1 | tr -d '[:space:]')"
+  key_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^key=//p' | head -n1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  iv_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^iv *=//p' | head -n1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
   ciphertext_b64="$(printf '%s' "${plaintext}" | openssl enc -aes-256-cbc -K "${key_hex}" -iv "${iv_hex}" -nosalt | base64 | tr -d '\n')"
   ciphertext_hex="$(base64_to_hex "${ciphertext_b64}")"
-  mac_key_hex="$(printf '%s%s' "${key_hex}" "${salt_hex}" | xxd -r -p | openssl dgst -sha256 -binary | xxd -p -c 256 | tr -d '\n')"
-  mac_hex="$(printf '%s' "$(join_bytes_hex "${iv_hex}" "${ciphertext_hex}")" | xxd -r -p | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${mac_key_hex}" -binary | xxd -p -c 256 | tr -d '\n')"
+  mac_key_hex="$(hex_to_raw "${key_hex}${salt_hex}" | openssl dgst -sha256 -binary | raw_to_hex)"
+  mac_hex="$(hex_to_raw "$(join_bytes_hex "${iv_hex}" "${ciphertext_hex}")" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${mac_key_hex}" -binary | raw_to_hex)"
 
   printf '{'
   printf '"version":1,'
@@ -127,6 +147,7 @@ copy_restore_notify_files() {
   local sources=(
     "${SCRIPT_DIR}/netbackup-server-restore-notify"
   )
+  mkdir -p "${RESTORE_SCRIPT_OUTPUT_DIR}"
   for source in "${sources[@]}"; do
     [[ -f "${source}" ]] || fail "Required restore notify source file not found: ${source}"
     cp -f "${source}" "${RESTORE_SCRIPT_OUTPUT_DIR}/$(basename "${source}")"
@@ -139,6 +160,7 @@ main() {
     usage
     exit 0
   fi
+  require_commands openssl base64 od sed tr cp chmod mkdir
 
   prompt_value MOLD_URL "MOLD_URL" "${MOLD_URL}"
   prompt_value ADMIN_APIKEY "ADMIN_APIKEY" "${ADMIN_APIKEY}"
