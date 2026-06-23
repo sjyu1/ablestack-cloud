@@ -150,9 +150,9 @@ copy_restore_notify_files() {
   mkdir -p "${RESTORE_SCRIPT_OUTPUT_DIR}"
   for source in "${sources[@]}"; do
     [[ -f "${source}" ]] || fail "Required restore notify source file not found: ${source}"
-    cp -f "${source}" "${RESTORE_SCRIPT_OUTPUT_DIR}/$(basename "${source}")"
+    cp -f "${source}" "${RESTORE_SCRIPT_OUTPUT_DIR}/restore_notify"
   done
-  chmod 755 "${RESTORE_SCRIPT_OUTPUT_DIR}/netbackup-server-restore-notify"
+  chmod 755 "${RESTORE_SCRIPT_OUTPUT_DIR}/restore_notify"
 }
 
 main() {
