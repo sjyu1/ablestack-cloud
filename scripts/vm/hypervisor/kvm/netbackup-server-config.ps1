@@ -21,11 +21,15 @@ Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $WindowsNetBackupBinCommonCandidates = @(
+    'C:\Program Files\Cohesity NetBackup\NetBackup\bin',
+    'C:\Program Files (x86)\Cohesity NetBackup\NetBackup\bin',
     'C:\Program Files\Veritas\NetBackup\bin',
     'C:\Program Files (x86)\Veritas\NetBackup\bin'
 )
 $WindowsNetBackupExecutableCandidates = @('bpclntcmd.exe', 'bplist.exe', 'bprd.exe')
 $WindowsNetBackupRegistryKeys = @(
+    'SOFTWARE\Cohesity NetBackup\NetBackup',
+    'SOFTWARE\WOW6432Node\Cohesity NetBackup\NetBackup',
     'SOFTWARE\Veritas\NetBackup',
     'SOFTWARE\WOW6432Node\Veritas\NetBackup'
 )
