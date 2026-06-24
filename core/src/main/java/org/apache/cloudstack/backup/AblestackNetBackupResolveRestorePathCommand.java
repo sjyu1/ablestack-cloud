@@ -29,6 +29,7 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
     private List<String> requiredFiles;
     private Integer discoveryWindowSeconds;
     private boolean requireSingleRestorePathInVmRoot;
+    private List<String> allowedRestorePathsInVmRoot;
 
     protected AblestackNetBackupResolveRestorePathCommand() {
         super();
@@ -45,11 +46,18 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
 
     public AblestackNetBackupResolveRestorePathCommand(final String backupId, final List<String> candidatePaths,
             final List<String> requiredFiles, final Integer discoveryWindowSeconds, final boolean requireSingleRestorePathInVmRoot) {
+        this(backupId, candidatePaths, requiredFiles, discoveryWindowSeconds, requireSingleRestorePathInVmRoot, null);
+    }
+
+    public AblestackNetBackupResolveRestorePathCommand(final String backupId, final List<String> candidatePaths,
+            final List<String> requiredFiles, final Integer discoveryWindowSeconds, final boolean requireSingleRestorePathInVmRoot,
+            final List<String> allowedRestorePathsInVmRoot) {
         this.backupId = backupId;
         this.candidatePaths = candidatePaths;
         this.requiredFiles = requiredFiles;
         this.discoveryWindowSeconds = discoveryWindowSeconds;
         this.requireSingleRestorePathInVmRoot = requireSingleRestorePathInVmRoot;
+        this.allowedRestorePathsInVmRoot = allowedRestorePathsInVmRoot;
     }
 
     public String getBackupId() {
@@ -70,6 +78,10 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
 
     public boolean isRequireSingleRestorePathInVmRoot() {
         return requireSingleRestorePathInVmRoot;
+    }
+
+    public List<String> getAllowedRestorePathsInVmRoot() {
+        return allowedRestorePathsInVmRoot;
     }
 
     @Override

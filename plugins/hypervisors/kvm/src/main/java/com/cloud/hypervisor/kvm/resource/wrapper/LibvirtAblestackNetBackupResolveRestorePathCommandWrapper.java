@@ -148,11 +148,6 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         if (!command.isRequireSingleRestorePathInVmRoot()) {
             return null;
         }
-        if (CollectionUtils.size(command.getCandidatePaths()) != 1) {
-            logger.debug("Skipping single NetBackup restore path validation for backup ID [{}] because candidate path count is [{}]. candidatePaths={}",
-                    command.getBackupId(), CollectionUtils.size(command.getCandidatePaths()), command.getCandidatePaths());
-            return null;
-        }
         final Path vmRestoreRoot = selectedRestorePath == null ? null : selectedRestorePath.toAbsolutePath().normalize().getParent();
         if (vmRestoreRoot == null || !Files.isDirectory(vmRestoreRoot)) {
             return String.format("Unable to validate NetBackup restore path uniqueness for backup ID [%s]. VM restore root was not found for selected path [%s].",
@@ -160,6 +155,19 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         }
 
         final List<String> timestampRestorePaths = listTimestampRestorePaths(vmRestoreRoot);
+        final List<String> allowedRestorePaths = normalizeRestorePaths(command.getAllowedRestorePathsInVmRoot());
+        if (CollectionUtils.isNotEmpty(allowedRestorePaths)) {
+            final List<String> unexpectedRestorePaths = timestampRestorePaths.stream()
+                    .filter(path -> !allowedRestorePaths.contains(path))
+                    .collect(java.util.stream.Collectors.toList());
+            if (unexpectedRestorePaths.isEmpty()) {
+                return null;
+            }
+            return String.format("Found unexpected NetBackup restored timestamp paths under VM restore root [%s] for backup ID [%s]: %s. "
+                            + "Allowed restore paths for this NetBackup restore notify are: %s. Mold did not cleanup these paths automatically because it cannot safely determine which path is stale. "
+                            + "Please cleanup stale NetBackup restore paths under [%s] before retrying.",
+                    vmRestoreRoot, command.getBackupId(), unexpectedRestorePaths, allowedRestorePaths, vmRestoreRoot);
+        }
         if (timestampRestorePaths.size() == 1) {
             return null;
         }
@@ -167,6 +175,17 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                         + "Mold did not cleanup these paths automatically because it cannot safely determine which path is stale. "
                         + "Please cleanup stale NetBackup restore paths under [%s] before retrying.",
                 vmRestoreRoot, command.getBackupId(), timestampRestorePaths.size(), timestampRestorePaths, vmRestoreRoot);
+    }
+
+    private List<String> normalizeRestorePaths(final List<String> restorePaths) {
+        if (CollectionUtils.isEmpty(restorePaths)) {
+            return new ArrayList<>();
+        }
+        return restorePaths.stream()
+                .filter(StringUtils::isNotBlank)
+                .map(path -> Paths.get(path).toAbsolutePath().normalize().toString())
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
     }
 
     private List<String> listTimestampRestorePaths(final Path vmRestoreRoot) {
