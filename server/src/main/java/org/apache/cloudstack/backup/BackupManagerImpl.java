@@ -2757,9 +2757,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             updateVolumeState(vm, Volume.Event.RestoreFailed, Volume.State.Ready);
             updateVmState(vm, VirtualMachine.Event.RestoringFailed, VirtualMachine.State.Stopped);
         }
-        ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, vm.getAccountId(), EventVO.LEVEL_ERROR, EventTypes.EVENT_VM_CREATE_FROM_BACKUP,
-                String.format("Failed to create Instance %s from backup %s", vm.getInstanceName(), backup.getUuid()),
-                vm.getId(), ApiCommandResourceType.VirtualMachine.toString(), eventId);
+        if (eventId != null) {
+            ActionEventUtils.onCompletedActionEvent(User.UID_SYSTEM, vm.getAccountId(), EventVO.LEVEL_ERROR, EventTypes.EVENT_VM_CREATE_FROM_BACKUP,
+                    String.format("Failed to create Instance %s from backup %s", vm.getInstanceName(), backup.getUuid()),
+                    vm.getId(), ApiCommandResourceType.VirtualMachine.toString(), eventId);
+        }
     }
 
     @Override
