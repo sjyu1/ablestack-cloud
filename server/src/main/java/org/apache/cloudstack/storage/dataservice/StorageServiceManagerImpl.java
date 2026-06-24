@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -713,25 +714,44 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     @Override
     public StorageSmbShareResponse createStorageSmbShare(final CreateStorageSmbShareCmd cmd) {
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+        validateSmbShareName(cmd.getName());
+        final String path = resolveSmbSharePath(cmd.getPath(), cmd.getName());
+        validateSmbSharePath(path, cmd.getName());
         validateStorageServiceBackingVolume(instance, cmd.getVolumeId(), "SMB share");
-        validateFileSharePath(cmd.getPath(), "SMB share");
-        StorageFileShareVO share = new StorageFileShareVO(instance.getId(), StorageServiceInstance.Protocol.SMB, cmd.getName(), cmd.getPath(),
+        validateFileSharePathAvailable(instance, path, null, cmd.getVolumeId(), "SMB share", Boolean.TRUE.equals(cmd.getCrossProtocol()));
+        validateFileShareFilesystem(cmd.getFilesystem(), cmd.getImportMode());
+        final String importMode = StringUtils.defaultIfBlank(cmd.getImportMode(), "MOUNT_EXISTING");
+        final VolumeVO backingVolume = cmd.getVolumeId() == null ? null : requireVolume(cmd.getVolumeId());
+        String configJson = buildSmbConfigJson(null, cmd.getReadOnly(), cmd.getBrowseable(), cmd.getGuestOk(),
+                cmd.getCreateDirectory(), cmd.getCrossProtocol(), cmd.getDirectoryMode());
+        configJson = buildFileShareDirectoryConfigJson(configJson, backingVolume, importMode, cmd.getCreateDirectory());
+        validateJsonObjectConfigOrThrow(configJson, "SMB share " + cmd.getName());
+        StorageFileShareVO share = new StorageFileShareVO(instance.getId(), StorageServiceInstance.Protocol.SMB, cmd.getName(), path,
                 cmd.getVolumeId(), cmd.getFilesystem(), cmd.getQuotaBytes(), StorageServiceInstance.ResourceState.Creating,
-                buildSmbConfigJson(null, cmd.getReadOnly(), cmd.getBrowseable(), cmd.getGuestOk()));
+                configJson);
         share = storageFileShareDao.persist(share);
-        if (StringUtils.isBlank(share.getPath())) {
-            share.setPath("/srv/ablestack-storage/smb/" + share.getUuid());
+        StorageAccessRuleVO initialAcl = null;
+        final String initialPrincipal = StringUtils.trimToNull(cmd.getAclPrincipal());
+        if (initialPrincipal != null) {
+            final StorageServiceInstance.PrincipalType principalType = parseSmbPrincipalType(cmd.getAclPrincipalType());
+            final StorageServiceInstance.Permission permission = parseSmbPermission(StringUtils.defaultIfBlank(cmd.getAclPermission(), StorageServiceInstance.Permission.READ_WRITE.name()));
+            initialAcl = new StorageAccessRuleVO(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId(),
+                    principalType, initialPrincipal, permission, StorageServiceInstance.ResourceState.Creating, buildSmbAclConfigJson(principalType, cmd.getAclPassword()));
+            initialAcl = storageAccessRuleDao.persist(initialAcl);
         }
         share.setState(StorageServiceInstance.ResourceState.Updating);
         storageFileShareDao.update(share.getId(), share);
         try {
-            prepareFileShareBackingVolume(instance, share, "MOUNT_EXISTING");
-            applySmbDesiredState(instance);
+            prepareFileShareBackingVolume(instance, share, importMode);
+            applySmbDesiredState(instance, initialAcl == null ? Collections.emptyMap() : buildSecretMap(initialAcl.getId(), cmd.getAclPassword()));
             share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
             storageFileShareDao.update(share.getId(), share);
+            if (initialAcl != null) {
+                initialAcl.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+                storageAccessRuleDao.update(initialAcl.getId(), initialAcl);
+            }
         } catch (final RuntimeException e) {
-            share.setState(StorageServiceInstance.ResourceState.Error);
-            storageFileShareDao.update(share.getId(), share);
+            cleanupFailedFileShareCreate(instance, share, Boolean.TRUE.equals(cmd.getCleanupVolumeOnFailure()));
             throw e;
         }
         return createSmbShareResponse(share);
@@ -742,27 +762,38 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final StorageFileShareVO share = requireSmbShare(cmd.getId());
         final StorageServiceInstanceVO instance = requireInstance(share.getInstanceId());
         if (cmd.getName() != null) {
+            validateSmbShareName(cmd.getName());
             share.setName(cmd.getName());
         }
         if (cmd.getPath() != null) {
-            validateFileSharePath(cmd.getPath(), "SMB share");
-            share.setPath(cmd.getPath());
+            final String path = resolveSmbSharePath(cmd.getPath(), StringUtils.defaultIfBlank(share.getName(), cmd.getName()));
+            validateSmbSharePath(path, StringUtils.defaultIfBlank(share.getName(), cmd.getName()));
+            validateFileSharePathAvailable(instance, path, share.getId(), cmd.getVolumeId() == null ? share.getVolumeId() : cmd.getVolumeId(),
+                    "SMB share", Boolean.TRUE.equals(cmd.getCrossProtocol()));
+            share.setPath(path);
         }
         if (cmd.getVolumeId() != null) {
             validateStorageServiceBackingVolume(instance, cmd.getVolumeId(), "SMB share");
             share.setVolumeId(cmd.getVolumeId());
         }
         if (cmd.getFilesystem() != null) {
+            validateFileShareFilesystem(cmd.getFilesystem(), cmd.getImportMode());
             share.setFilesystem(cmd.getFilesystem());
         }
         if (cmd.getQuotaBytes() != null) {
             share.setQuotaBytes(cmd.getQuotaBytes());
         }
-        share.setConfigJson(buildSmbConfigJson(share.getConfigJson(), cmd.getReadOnly(), cmd.getBrowseable(), cmd.getGuestOk()));
+        final String importMode = StringUtils.defaultIfBlank(cmd.getImportMode(), "MOUNT_EXISTING");
+        final VolumeVO backingVolume = share.getVolumeId() == null ? null : requireVolume(share.getVolumeId());
+        String configJson = buildSmbConfigJson(share.getConfigJson(), cmd.getReadOnly(), cmd.getBrowseable(), cmd.getGuestOk(),
+                cmd.getCreateDirectory(), cmd.getCrossProtocol(), cmd.getDirectoryMode());
+        configJson = buildFileShareDirectoryConfigJson(configJson, backingVolume, importMode, cmd.getCreateDirectory());
+        validateJsonObjectConfigOrThrow(configJson, "SMB share " + share.getUuid());
+        share.setConfigJson(configJson);
         share.setState(StorageServiceInstance.ResourceState.Updating);
         storageFileShareDao.update(share.getId(), share);
         try {
-            prepareFileShareBackingVolume(instance, share, "MOUNT_EXISTING");
+            prepareFileShareBackingVolume(instance, share, importMode);
             applySmbDesiredState(instance);
             share.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
             storageFileShareDao.update(share.getId(), share);
@@ -882,6 +913,11 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
         } else if (cmd.getShareId() != null) {
             rules.addAll(storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, cmd.getShareId()));
+        } else if (cmd.getInstanceId() != null) {
+            final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
+            for (final StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.SMB)) {
+                rules.addAll(storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId()));
+            }
         } else {
             rules.addAll(storageAccessRuleDao.listAll());
         }
@@ -889,6 +925,10 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final List<StorageAccessRuleResponse> responses = new ArrayList<>();
         for (final StorageAccessRuleVO rule : rules) {
             if (rule.getResourceType() != StorageServiceInstance.AccessResourceType.FILE_SHARE || !isSmbPrincipalType(rule.getPrincipalType())) {
+                continue;
+            }
+            final StorageFileShareVO share = storageFileShareDao.findById(rule.getResourceId());
+            if (share == null || share.getProtocol() != StorageServiceInstance.Protocol.SMB) {
                 continue;
             }
             responses.add(createAclResponse(rule));
@@ -905,7 +945,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         StorageIdentityDomainVO domain = storageIdentityDomainDao.findByInstanceId(instance.getId());
         if (domain == null) {
             domain = new StorageIdentityDomainVO(instance.getId(), cmd.getDomainName(), cmd.getOrganizationalUnit(), cmd.getDnsServers(),
-                    StorageServiceInstance.DomainJoinState.JOINING, "UNKNOWN", buildIdentityDomainConfigJson(cmd.getWorkgroup()));
+                    StorageServiceInstance.DomainJoinState.JOINING, "UNKNOWN", buildIdentityDomainConfigJson(cmd.getDomainName(), cmd.getWorkgroup()));
             domain = storageIdentityDomainDao.persist(domain);
         } else {
             domain.setDomainName(cmd.getDomainName());
@@ -913,7 +953,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             domain.setDnsServers(cmd.getDnsServers());
             domain.setJoinState(StorageServiceInstance.DomainJoinState.JOINING);
             domain.setHealthState("UNKNOWN");
-            domain.setConfigJson(buildIdentityDomainConfigJson(cmd.getWorkgroup()));
+            domain.setConfigJson(buildIdentityDomainConfigJson(cmd.getDomainName(), cmd.getWorkgroup()));
             storageIdentityDomainDao.update(domain.getId(), domain);
         }
 
@@ -1094,9 +1134,37 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             volumeApiService.attachVolumeToVM(instance.getVmId(), volume.getId(), null, true);
             volume = requireVolume(share.getVolumeId());
         }
+        if (canReuseManagedAttachedFileShareVolume(instance, share, volume, attachedVmId)) {
+            share.setConfigJson(buildManagedFileShareVolumeReuseConfigJson(share.getConfigJson(), importMode, volume, share.getPath()));
+            storageFileShareDao.update(share.getId(), share);
+            return;
+        }
         if (instance.getVmId() != null) {
             inspectAttachedFileShareVolume(instance, share, volume, importMode);
         }
+    }
+
+    protected boolean canReuseManagedAttachedFileShareVolume(final StorageServiceInstanceVO instance, final StorageFileShareVO share,
+            final VolumeVO volume, final Long attachedVmId) {
+        if (instance == null || instance.getVmId() == null || share == null || volume == null || attachedVmId == null ||
+                !attachedVmId.equals(instance.getVmId())) {
+            return false;
+        }
+        for (final StorageServiceInstance.Protocol protocol : Arrays.asList(StorageServiceInstance.Protocol.NFS, StorageServiceInstance.Protocol.SMB)) {
+            for (final StorageFileShareVO existingShare : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), protocol)) {
+                if (existingShare == null || existingShare.getVolumeId() == null || existingShare.getId() == share.getId()) {
+                    continue;
+                }
+                if (!existingShare.getVolumeId().equals(volume.getId())) {
+                    continue;
+                }
+                final String knownMountPath = resolveFileShareGuestMountPath(existingShare);
+                if (StringUtils.isNotBlank(knownMountPath)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     protected void cleanupFailedFileShareCreate(final StorageServiceInstanceVO instance, final StorageFileShareVO share, final boolean cleanupVolumeOnFailure) {
@@ -1686,6 +1754,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final JsonObject payload = new JsonObject();
         payload.addProperty("instanceUuid", instance.getUuid());
         payload.addProperty("instanceId", instance.getId());
+        payload.addProperty("netbiosName", buildSmbNetbiosName(instance));
         final StorageServiceProtocolVO protocol = storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.SMB);
         payload.addProperty("enabled", protocol == null || protocol.isEnabled());
         if (protocol != null) {
@@ -1713,7 +1782,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             smbShare.addProperty("id", share.getId());
             smbShare.addProperty("uuid", share.getUuid());
             smbShare.addProperty("name", share.getName());
-            smbShare.addProperty("path", share.getPath());
+            smbShare.addProperty("displayPath", share.getPath());
+            smbShare.addProperty("path", resolveSmbRuntimeBackingPath(instance, share));
             if (share.getVolumeId() != null) {
                 smbShare.addProperty("volumeId", share.getVolumeId());
             }
@@ -1754,6 +1824,26 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected String resolveSmbRuntimeBackingPath(final StorageServiceInstanceVO instance, final StorageFileShareVO share) {
+        final JsonObject config = parseJsonObject(share.getConfigJson());
+        final String backingPath = getJsonString(config, "backingPath");
+        if (StringUtils.isNotBlank(backingPath)) {
+            return backingPath;
+        }
+        final JsonObject inspection = getJsonObject(config, "lastInspection");
+        final String inspectedBackingPath = getJsonString(inspection, "backingPath");
+        if (StringUtils.isNotBlank(inspectedBackingPath)) {
+            return inspectedBackingPath;
+        }
+        final String volumeMountPath = getJsonString(config, "volumeMountPath");
+        final String root = StringUtils.isNotBlank(volumeMountPath) ? volumeMountPath : findKnownFileShareVolumeMountRoot(instance, share.getVolumeId());
+        if (StringUtils.isNotBlank(root)) {
+            final String relative = normalizeRelativeSharePath(share.getPath());
+            return root.replaceAll("/+$", "") + "/" + relative;
+        }
+        return share.getPath();
+    }
+
     protected void applyAdJoin(final StorageServiceInstanceVO instance, final StorageIdentityDomainVO domain,
             final String username, final String password) {
         if (instance.getVmId() == null) {
@@ -1762,6 +1852,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
         final JsonObject payload = new JsonObject();
         payload.addProperty("instanceUuid", instance.getUuid());
+        payload.addProperty("netbiosName", buildSmbNetbiosName(instance));
         payload.addProperty("domainName", domain.getDomainName());
         payload.addProperty("username", username);
         payload.addProperty("password", password);
@@ -2548,6 +2639,41 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected void validateSmbShareName(final String name) {
+        final String value = StringUtils.trim(name);
+        if (StringUtils.isBlank(value)) {
+            throw new InvalidParameterValueException("SMB share name is required");
+        }
+        if (".".equals(value) || "..".equals(value) || value.contains("/") || value.contains("\\") || value.contains(" ")) {
+            throw new InvalidParameterValueException("SMB share name must be a valid Linux directory name");
+        }
+        if (!value.matches("^[A-Za-z0-9._-]+$")) {
+            throw new InvalidParameterValueException("SMB share name may contain only letters, numbers, dot, underscore, and hyphen");
+        }
+    }
+
+    protected String resolveSmbSharePath(final String path, final String name) {
+        if (StringUtils.isNotBlank(path)) {
+            return normalizeFileSharePath(path);
+        }
+        validateSmbShareName(name);
+        return SharedFS.SharedFSPath + "/" + name.trim();
+    }
+
+    protected void validateSmbSharePath(final String path, final String name) {
+        final String normalized = normalizeFileSharePath(path);
+        validateFileSharePath(normalized, "SMB share");
+        if (!normalized.startsWith(SharedFS.SharedFSPath + "/")) {
+            throw new InvalidParameterValueException("SMB share internal backing path must be under " + SharedFS.SharedFSPath);
+        }
+        if (StringUtils.countMatches(normalized.substring(SharedFS.SharedFSPath.length()), "/") != 1) {
+            throw new InvalidParameterValueException("SMB share internal backing path must be a direct child of " + SharedFS.SharedFSPath);
+        }
+        if (StringUtils.isNotBlank(name) && !normalized.equals(SharedFS.SharedFSPath + "/" + name.trim())) {
+            throw new InvalidParameterValueException("SMB share internal backing path must be " + SharedFS.SharedFSPath + "/" + name.trim());
+        }
+    }
+
     protected String normalizeRelativeSharePath(final String relativePath) {
         final String normalized = StringUtils.defaultString(relativePath).trim().replace('\\', '/').replaceAll("/+", "/")
                 .replaceAll("^/+", "").replaceAll("/+$", "");
@@ -2584,6 +2710,11 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
 
     protected void validateFileSharePathAvailable(final StorageServiceInstanceVO instance, final String path, final Long currentShareId,
             final Long requestedVolumeId, final String resourceName) {
+        validateFileSharePathAvailable(instance, path, currentShareId, requestedVolumeId, resourceName, false);
+    }
+
+    protected void validateFileSharePathAvailable(final StorageServiceInstanceVO instance, final String path, final Long currentShareId,
+            final Long requestedVolumeId, final String resourceName, final boolean allowCrossProtocolReuse) {
         if (StringUtils.isBlank(path)) {
             return;
         }
@@ -2600,6 +2731,9 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
             final String existingPath = normalizeFileSharePath(existing.getPath());
             if (normalizedPath.equals(existingPath)) {
+                if (allowCrossProtocolReuse && existing.getProtocol() != StorageServiceInstance.Protocol.SMB) {
+                    continue;
+                }
                 throw new InvalidParameterValueException(resourceName + " path is already used by another Storage Service share: " + path);
             }
             if (requestedVolumeId != null && existing.getVolumeId() != null && !requestedVolumeId.equals(existing.getVolumeId()) &&
@@ -3406,7 +3540,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
-    protected String buildSmbConfigJson(final String currentConfig, final Boolean readOnly, final Boolean browseable, final Boolean guestOk) {
+    protected String buildSmbConfigJson(final String currentConfig, final Boolean readOnly, final Boolean browseable, final Boolean guestOk,
+            final Boolean createDirectory, final Boolean crossProtocol, final String directoryMode) {
         final JsonObject config = parseJsonObject(currentConfig);
         if (!config.has("readOnly")) {
             config.addProperty("readOnly", false);
@@ -3417,6 +3552,12 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         if (!config.has("guestOk")) {
             config.addProperty("guestOk", false);
         }
+        if (!config.has("createDirectory")) {
+            config.addProperty("createDirectory", true);
+        }
+        if (!config.has("crossProtocol")) {
+            config.addProperty("crossProtocol", false);
+        }
         if (readOnly != null) {
             config.addProperty("readOnly", readOnly);
         }
@@ -3425,6 +3566,21 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
         if (guestOk != null) {
             config.addProperty("guestOk", guestOk);
+        }
+        if (createDirectory != null) {
+            config.addProperty("createDirectory", createDirectory);
+        }
+        if (crossProtocol != null) {
+            config.addProperty("crossProtocol", crossProtocol);
+        }
+        if (StringUtils.isNotBlank(directoryMode)) {
+            final String value = directoryMode.trim();
+            if (!value.matches("^0?[0-7]{3,4}$")) {
+                throw new InvalidParameterValueException("SMB share directory mode must be an octal mode such as 0770");
+            }
+            config.addProperty("directoryMode", value.startsWith("0") ? value : "0" + value);
+        } else if (!config.has("directoryMode")) {
+            config.addProperty("directoryMode", "0770");
         }
         return GSON.toJson(config);
     }
@@ -3450,6 +3606,22 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return GSON.toJson(config);
     }
 
+    protected String buildManagedFileShareVolumeReuseConfigJson(final String currentConfig, final String importMode, final VolumeVO volume,
+            final String sharePath) {
+        final JsonObject config = parseJsonObject(currentConfig);
+        final String volumeMountPath = "/srv/ablestack-storage/volumes/" + volume.getUuid();
+        config.addProperty("volumeMode", "CURRENT_VOLUME");
+        config.addProperty("importMode", StringUtils.defaultIfBlank(importMode, "REUSE_ATTACHED").toUpperCase());
+        config.addProperty("attachedVolumeUuid", volume.getUuid());
+        config.addProperty("attachedVolumeName", volume.getName());
+        config.addProperty("volumeMountPath", volumeMountPath);
+        final String relativeSharePath = normalizeRelativeSharePath(sharePath);
+        if (StringUtils.isNotBlank(relativeSharePath)) {
+            config.addProperty("backingPath", volumeMountPath.replaceAll("/+$", "") + "/" + relativeSharePath.replaceAll("^/+", ""));
+        }
+        return GSON.toJson(config);
+    }
+
     protected String buildFileShareDirectoryConfigJson(final String currentConfig, final VolumeVO volume, final String importMode,
             final Boolean createDirectory) {
         final JsonObject config = parseJsonObject(currentConfig);
@@ -3458,7 +3630,9 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
         config.remove("relativeSharePath");
         config.remove("relativesharepath");
-        config.addProperty("createDirectory", createDirectory == null || Boolean.TRUE.equals(createDirectory));
+        if (createDirectory != null || !config.has("createDirectory")) {
+            config.addProperty("createDirectory", createDirectory == null || Boolean.TRUE.equals(createDirectory));
+        }
         return GSON.toJson(config);
     }
 
@@ -3495,11 +3669,32 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return GSON.toJson(config);
     }
 
-    protected String buildIdentityDomainConfigJson(final String workgroup) {
+    protected String buildIdentityDomainConfigJson(final String domainName, final String workgroup) {
         final JsonObject config = new JsonObject();
         config.addProperty("identityProvider", "active_directory");
-        config.addProperty("workgroup", StringUtils.isBlank(workgroup) ? "WORKGROUP" : workgroup);
+        config.addProperty("workgroup", resolveAdWorkgroup(domainName, workgroup));
         return GSON.toJson(config);
+    }
+
+    protected String resolveAdWorkgroup(final String domainName, final String workgroup) {
+        if (StringUtils.isNotBlank(workgroup) && !"WORKGROUP".equalsIgnoreCase(workgroup.trim())) {
+            return workgroup.trim().toUpperCase(Locale.ROOT);
+        }
+        final String normalizedDomain = StringUtils.trimToEmpty(domainName);
+        if (StringUtils.isNotBlank(normalizedDomain)) {
+            final String firstLabel = normalizedDomain.split("\\.", 2)[0];
+            if (StringUtils.isNotBlank(firstLabel)) {
+                return firstLabel.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+            }
+        }
+        return "WORKGROUP";
+    }
+
+    protected String buildSmbNetbiosName(final StorageServiceInstanceVO instance) {
+        final String uuid = instance == null ? "" : StringUtils.defaultString(instance.getUuid());
+        final String suffix = uuid.replaceAll("[^A-Fa-f0-9]", "");
+        final String value = "STOR" + (suffix.length() >= 10 ? suffix.substring(0, 10) : StringUtils.rightPad(suffix, 10, "0"));
+        return value.substring(0, Math.min(value.length(), 15)).toUpperCase(Locale.ROOT);
     }
 
     protected String buildIscsiTargetConfigJson(final String currentConfig, final String backingPath, final Long lunSizeBytes) {

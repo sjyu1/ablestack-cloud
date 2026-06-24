@@ -23,6 +23,7 @@ LOG_FILE="/var/log/ablestack-storagectl.log"
 MONITOR_CACHE_DIR="${ABLESTACK_STORAGE_MONITOR_CACHE_DIR:-/run/ablestack-storage/monitor}"
 DESIRED_STATE_DIR="${ABLESTACK_STORAGE_DESIRED_STATE_DIR:-/etc/ablestack-storage/desired-state}"
 NFS_DESIRED_STATE_FILE="${ABLESTACK_STORAGE_NFS_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/nfs-export-apply.json}"
+SMB_DESIRED_STATE_FILE="${ABLESTACK_STORAGE_SMB_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/smb-share-apply.json}"
 
 json_escape() {
   local value="${1:-}"
@@ -58,6 +59,34 @@ persist_nfs_desired_state() {
   cp "$payload_file" "$tmp"
   chmod 0600 "$tmp"
   mv "$tmp" "$NFS_DESIRED_STATE_FILE"
+}
+
+persist_smb_desired_state() {
+  local payload_file="$1"
+  local tmp
+  if [[ -z "$payload_file" || ! -r "$payload_file" ]]; then
+    return
+  fi
+  mkdir -p "$DESIRED_STATE_DIR"
+  tmp="$(mktemp "${DESIRED_STATE_DIR}/.smb-share-apply.XXXXXX")"
+  python3 - "$payload_file" "$tmp" <<'PY'
+import json
+import sys
+
+source, target = sys.argv[1], sys.argv[2]
+with open(source, "r", encoding="utf-8") as source_fp:
+    payload = json.load(source_fp)
+for share in payload.get("shares", []):
+    for acl in share.get("acls", []):
+        acl.pop("password", None)
+if "password" in payload:
+    payload.pop("password", None)
+with open(target, "w", encoding="utf-8") as target_fp:
+    json.dump(payload, target_fp, sort_keys=True, indent=2)
+    target_fp.write("\n")
+PY
+  chmod 0600 "$tmp"
+  mv "$tmp" "$SMB_DESIRED_STATE_FILE"
 }
 
 open_tcp_firewall_port() {
@@ -162,6 +191,7 @@ network_endpoint_apply() {
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -526,6 +556,16 @@ def load_state(name):
         return False
     return os.path.getsize(path) >= 0
 
+def load_json_state(name):
+    path = os.path.join("/etc/ablestack-storage", name)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            return json.load(fp)
+    except Exception as exc:
+        return {"state": "ERROR", "message": str(exc)}
+
 ganesha_runtime = collect_ganesha_runtime()
 
 services = {
@@ -550,6 +590,7 @@ desired_state = {
     "nfsQuotas": load_state("nfs-quotas.json"),
     "smbQuotas": load_state("smb-quotas.json"),
     "smbDomain": load_state("smb-domain.json"),
+    "smbDomainError": load_state("smb-domain-error.json"),
     "iscsiTargets": load_state("iscsi-targets.json"),
     "nvmeofSubsystems": load_state("nvmeof-subsystems.json"),
 }
@@ -566,6 +607,8 @@ if ganesha_runtime["configured"] and not ganesha_runtime["listening"]:
     status = "degraded"
 if desired_state["iscsiTargets"] and not listen_ports["iscsi"]:
     status = "degraded"
+if desired_state.get("smbDomainError"):
+    status = "degraded"
 
 print(json.dumps({
     "success": True,
@@ -576,6 +619,7 @@ print(json.dumps({
     "services": services,
     "commands": commands,
     "desiredState": desired_state,
+    "identity": {"smbDomain": load_json_state("smb-domain.json"), "smbDomainError": load_json_state("smb-domain-error.json")},
     "listenPorts": listen_ports,
     "nfsGanesha": ganesha_runtime,
     "capabilities": {
@@ -927,6 +971,7 @@ print(json.dumps({
     "smbShares": smb_shares,
     "smbQuotas": load_json("/etc/ablestack-storage/smb-quotas.json", {}),
     "smbDomain": load_json("/etc/ablestack-storage/smb-domain.json", {}),
+    "smbDomainError": load_json("/etc/ablestack-storage/smb-domain-error.json", {}),
     "iscsiTargets": iscsi_targets,
     "iscsiRuntime": {"listening": port_listening(3260), "port": 3260},
     "nvmeofSubsystems": redact_sensitive(load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})),
@@ -942,9 +987,11 @@ runtime_sessions() {
   local payload_file="${1:-}"
   emit_cached_runtime "sessions" "$payload_file" && return 0
   python3 - "$payload_file" <<'PY'
+import glob
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -964,8 +1011,29 @@ def endpoint_host(value):
     if not value:
         return ""
     if value.startswith("[") and "]:" in value:
-        return value[1:value.index("]:")]
-    return value.rsplit(":", 1)[0]
+        value = value[1:value.index("]:")]
+    else:
+        value = value.rsplit(":", 1)[0]
+    return normalize_ip(value)
+
+def normalize_ip(value):
+    value = str(value or "").strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    if value.lower().startswith("::ffff:"):
+        return value.split(":", 3)[-1]
+    return value
+
+def endpoint_port(value):
+    value = str(value or "").strip()
+    if value.startswith("[") and "]:" in value:
+        value = value.rsplit(":", 1)[-1]
+    elif ":" in value:
+        value = value.rsplit(":", 1)[-1]
+    try:
+        return int(value)
+    except Exception:
+        return None
 
 def load_json(path, default):
     try:
@@ -981,6 +1049,67 @@ def store_json(path, value):
         json.dump(value, handle, sort_keys=True)
         handle.write("\n")
     os.replace(tmp, path)
+
+def nfs_protocol_mode_from_content(content):
+    protocols = re.findall(r"Protocols\s*=\s*([^;\n]+)", content or "")
+    joined = ",".join(protocols)
+    return "V3V4_DUAL" if "3" in joined and "4" in joined else "V4_ONLY"
+
+def nfs_export_name_from_pseudo(pseudo):
+    name = str(pseudo or "").strip().strip("/")
+    return name or ""
+
+def configured_nfs_listener_exports():
+    listeners = {}
+    for path in sorted(glob.glob("/etc/ganesha/ablestack-storage/*.conf")):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                content = handle.read()
+        except Exception:
+            continue
+        bind_match = re.search(r"Bind_addr\s*=\s*\"?([^\";\n]+)\"?", content)
+        port_match = re.search(r"NFS_Port\s*=\s*(\d+)", content)
+        listen_ip = normalize_ip(bind_match.group(1).strip() if bind_match else "0.0.0.0")
+        port = int(port_match.group(1)) if port_match else 2049
+        key = (listen_ip, port)
+        entries = listeners.setdefault(key, [])
+        for export_block in re.findall(r"EXPORT\s*\{(.*?)\n\}", content, re.S):
+            pseudo_match = re.search(r"Pseudo\s*=\s*\"?([^\";\n]+)\"?", export_block)
+            path_match = re.search(r"Path\s*=\s*\"?([^\";\n]+)\"?", export_block)
+            pseudo = pseudo_match.group(1).strip() if pseudo_match else ""
+            name = nfs_export_name_from_pseudo(pseudo)
+            if not name:
+                continue
+            entries.append({
+                "resourceName": name,
+                "exportName": name,
+                "clientPath": f"/{name}",
+                "backingPath": path_match.group(1).strip() if path_match else "",
+                "protocolMode": nfs_protocol_mode_from_content(export_block),
+            })
+    return listeners
+
+def nfs_listener_ports():
+    ports = {2049}
+    for key, entries in configured_nfs_listener_exports().items():
+        if entries:
+            ports.add(key[1])
+    return ports
+
+def nfs_export_hint_for_session(local):
+    listeners = configured_nfs_listener_exports()
+    local_ip = endpoint_host(local)
+    local_port = endpoint_port(local)
+    if not local_port:
+        return {}
+    entries = list(listeners.get((local_ip, local_port), []))
+    if not entries:
+        entries = list(listeners.get(("0.0.0.0", local_port), []))
+    if not entries:
+        return {}
+    if len(entries) == 1:
+        return dict(entries[0])
+    return {"possibleExports": entries, "resourceName": "", "exportName": ""}
 
 def active_nvme_subsystems():
     state = load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})
@@ -1009,10 +1138,60 @@ def nvme_subsystem_hint(filters):
         return subsystems[0]
     return {}
 
-def ss_sessions(filters):
+def smbstatus_sessions():
+    if not shutil.which("smbstatus"):
+        return []
+    result = subprocess.run(["smbstatus", "--json"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    try:
+        data = json.loads(result.stdout)
+    except Exception:
+        return []
+    sessions = data.get("sessions") if isinstance(data, dict) else {}
+    tcons = data.get("tcons") if isinstance(data, dict) else {}
+    if not isinstance(sessions, dict) or not isinstance(tcons, dict):
+        return []
+    rows = []
+    for tree_id, tree in tcons.items():
+        if not isinstance(tree, dict):
+            continue
+        service = str(tree.get("service") or "")
+        if not service or service == "IPC$":
+            continue
+        session_id = str(tree.get("session_id") or "")
+        session = sessions.get(session_id, {}) if session_id else {}
+        if not isinstance(session, dict):
+            session = {}
+        hostname = str(session.get("hostname") or "")
+        remote_machine = str(session.get("remote_machine") or tree.get("machine") or "")
+        peer = hostname.replace("ipv4:", "").replace("ipv6:", "") if hostname else remote_machine
+        dialect = session.get("session_dialect")
+        row = {
+            "sessionId": f"smb-{session_id}-{tree_id}" if session_id else f"smb-{tree_id}",
+            "sambaSessionId": session_id,
+            "treeId": str(tree_id),
+            "protocol": "SMB",
+            "state": "ESTAB",
+            "peer": peer,
+            "client": remote_machine or endpoint_host(peer),
+            "user": session.get("username"),
+            "username": session.get("username"),
+            "group": session.get("groupname"),
+            "resourceName": service,
+            "shareName": service,
+            "dialect": dialect,
+            "protocolVersion": dialect,
+            "connectedAt": tree.get("connected_at"),
+        }
+        rows.append({k: v for k, v in row.items() if v not in (None, "")})
+    return rows
+
+def tcp_sessions(filters):
     if not shutil.which("ss"):
         return []
     result = subprocess.run(["ss", "-H", "-tn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    nfs_ports = nfs_listener_ports()
     sessions = []
     for line in result.stdout.splitlines():
         parts = line.split()
@@ -1020,8 +1199,9 @@ def ss_sessions(filters):
             continue
         local = parts[3]
         peer = parts[4] if len(parts) > 4 else ""
+        local_port = endpoint_port(local)
         protocol = None
-        if local.endswith(":2049"):
+        if local_port in nfs_ports:
             protocol = "NFS"
         elif local.endswith(":445") or local.endswith(":139"):
             protocol = "SMB"
@@ -1032,6 +1212,10 @@ def ss_sessions(filters):
         if protocol:
             session_id = hashlib.sha256(f"{protocol}|{parts[0]}|{local}|{peer}".encode("utf-8")).hexdigest()[:20]
             session = {"sessionId": session_id, "protocol": protocol, "state": parts[0], "local": local, "peer": peer, "client": endpoint_host(peer)}
+            if protocol == "NFS":
+                hint = nfs_export_hint_for_session(local)
+                if hint:
+                    session.update(hint)
             if protocol == "NVME_OF":
                 hint = nvme_subsystem_hint(filters)
                 if hint:
@@ -1040,6 +1224,23 @@ def ss_sessions(filters):
                     session["subsystemNqn"] = hint.get("name")
             sessions.append(session)
     return sessions
+
+def ss_sessions(filters):
+    tcp_rows = tcp_sessions(filters)
+    smb_rows = smbstatus_sessions()
+    if not smb_rows:
+        return tcp_rows
+    result = [session for session in tcp_rows if session.get("protocol") != "SMB"]
+    smb_tcp_rows = [session for session in tcp_rows if session.get("protocol") == "SMB"]
+    for smb in smb_rows:
+        client = smb.get("client") or endpoint_host(smb.get("peer"))
+        match = next((tcp for tcp in smb_tcp_rows if client and client == tcp.get("client")), None)
+        if match:
+            smb.setdefault("local", match.get("local"))
+            smb.setdefault("peer", match.get("peer"))
+            smb.setdefault("state", match.get("state"))
+        result.append(smb)
+    return result
 
 payload = load_payload(sys.argv[1] if len(sys.argv) > 1 else "")
 protocol_filter = str(payload.get("protocol", "")).upper()
@@ -1058,7 +1259,7 @@ for session in ss_sessions(payload):
     if state_filter and session.get("state", "").upper() != state_filter:
         continue
     saved = session_state.get(session["sessionId"], {}) if isinstance(session_state, dict) else {}
-    session["connectedAt"] = saved.get("connectedAt") or now
+    session["connectedAt"] = saved.get("connectedAt") or session.get("connectedAt") or now
     session["lastSeen"] = now
     next_state[session["sessionId"]] = {
         "connectedAt": session["connectedAt"],
@@ -1066,8 +1267,17 @@ for session in ss_sessions(payload):
         "protocol": session.get("protocol"),
         "peer": session.get("peer"),
         "local": session.get("local"),
+        "client": session.get("client"),
+        "user": session.get("user"),
+        "username": session.get("username"),
+        "group": session.get("group"),
         "resourceId": session.get("resourceId"),
         "resourceName": session.get("resourceName"),
+        "shareName": session.get("shareName"),
+        "dialect": session.get("dialect"),
+        "protocolVersion": session.get("protocolVersion"),
+        "sambaSessionId": session.get("sambaSessionId"),
+        "treeId": session.get("treeId"),
         "subsystemNqn": session.get("subsystemNqn"),
     }
     sessions.append(session)
@@ -1645,11 +1855,14 @@ quota_dir = "/etc/ablestack-storage"
 alias_state_path = os.path.join(quota_dir, "nfs-export-aliases.json")
 ganesha_conf_dir = "/etc/ganesha/ablestack-storage"
 ganesha_run_dir = "/run/ablestack-storage/ganesha"
+ganesha_default_run_dir = "/run/ganesha"
+ganesha_default_pid_path = os.path.join(ganesha_default_run_dir, "ganesha.pid")
 nfs_probe_root = "/run/ablestack-storage/nfs-probe"
 os.makedirs(exports_dir, exist_ok=True)
 os.makedirs(quota_dir, exist_ok=True)
 os.makedirs(ganesha_conf_dir, exist_ok=True)
 os.makedirs(ganesha_run_dir, exist_ok=True)
+os.makedirs(ganesha_default_run_dir, exist_ok=True)
 os.makedirs(nfs_probe_root, exist_ok=True)
 
 def remove_legacy_root_export():
@@ -1938,6 +2151,49 @@ def tail_file(path, limit=20):
         return ""
 
 
+
+def cleanup_default_ganesha_pid(stale_only=True):
+    try:
+        with open(ganesha_default_pid_path, "r", encoding="utf-8") as pid_fp:
+            pid = int(pid_fp.read().strip())
+    except FileNotFoundError:
+        return
+    except Exception:
+        try:
+            os.unlink(ganesha_default_pid_path)
+        except Exception:
+            pass
+        return
+    if process_exists(pid):
+        if stale_only:
+            return
+        cmdline = process_cmdline(pid)
+        if "ganesha.nfsd" in cmdline and ganesha_conf_dir not in cmdline:
+            try:
+                os.kill(pid, 15)
+            except Exception:
+                return
+        else:
+            return
+    deadline = time.time() + 5
+    while process_exists(pid) and time.time() < deadline:
+        time.sleep(0.2)
+    if not process_exists(pid):
+        try:
+            os.unlink(ganesha_default_pid_path)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
+
+def ensure_ganesha_runtime_dirs():
+    os.makedirs(ganesha_conf_dir, exist_ok=True)
+    os.makedirs(ganesha_run_dir, exist_ok=True)
+    os.makedirs(ganesha_default_run_dir, exist_ok=True)
+    cleanup_default_ganesha_pid(stale_only=True)
+
+
 def terminate_pid(pid):
     try:
         pid = int(pid)
@@ -1967,17 +2223,14 @@ def stop_default_ganesha_service():
         for unit in ("nfs-ganesha.service",):
             subprocess.run(["systemctl", "disable", "--now", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=20)
             subprocess.run(["systemctl", "reset-failed", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=20)
-    default_pid_path = "/var/run/ganesha/ganesha.pid"
     try:
-        with open(default_pid_path, "r", encoding="utf-8") as pid_fp:
+        with open(ganesha_default_pid_path, "r", encoding="utf-8") as pid_fp:
             pid = int(pid_fp.read().strip())
         cmdline = process_cmdline(pid)
         if "ganesha.nfsd" in cmdline and ganesha_conf_dir not in cmdline:
-            os.kill(pid, 15)
-    except ProcessLookupError:
-        pass
+            cleanup_default_ganesha_pid(stale_only=False)
     except Exception:
-        pass
+        cleanup_default_ganesha_pid(stale_only=True)
 
 
 
@@ -2104,6 +2357,7 @@ def start_ganesha_endpoints(configs):
     if not configs:
         stop_ganesha_endpoints()
         return []
+    ensure_ganesha_runtime_dirs()
     ganesha = shutil.which("ganesha.nfsd")
     if not ganesha:
         raise RuntimeError("nfs-ganesha is required for Storage Service NFS endpoint isolation")
@@ -2113,6 +2367,7 @@ def start_ganesha_endpoints(configs):
     if shutil.which("systemctl") and os.path.isdir("/run/systemd/system"):
         subprocess.run(["systemctl", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=30)
     stop_ganesha_endpoints(active_keys=active_keys)
+    ensure_ganesha_runtime_dirs()
     started = []
     for key, conf_path, ip, port, mode in configs:
         log_path = os.path.join(ganesha_run_dir, f"{key}.log")
@@ -2820,6 +3075,7 @@ import grp
 import os
 import pwd
 import re
+import shutil
 import subprocess
 import sys
 
@@ -2829,6 +3085,15 @@ with open(payload_path, "r", encoding="utf-8") as payload_fp:
 
 state_dir = "/etc/ablestack-storage"
 os.makedirs(state_dir, exist_ok=True)
+
+def run(command, **kwargs):
+    return subprocess.run(command, check=True, **kwargs)
+
+def run_optional(command, **kwargs):
+    try:
+        return subprocess.run(command, check=True, **kwargs)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
 
 def truth(config, key, default):
     value = config.get(key, default) if isinstance(config, dict) else default
@@ -2840,6 +3105,17 @@ def safe_share_name(value):
         raise ValueError(f"invalid SMB share name: {value}")
     return value
 
+def derive_ad_workgroup(domain_name, workgroup):
+    value = str(workgroup or "").strip()
+    if value and value.upper() != "WORKGROUP":
+        return re.sub(r"[^A-Za-z0-9]", "", value)[:15].upper() or "WORKGROUP"
+    domain = str(domain_name or "").strip()
+    if domain:
+        derived = re.sub(r"[^A-Za-z0-9]", "", domain.split(".", 1)[0])[:15].upper()
+        if derived:
+            return derived
+    return "WORKGROUP"
+
 def smb_identity(value):
     value = str(value or "")
     if not value:
@@ -2848,9 +3124,29 @@ def smb_identity(value):
         return value
     return value.replace("/", "\\")
 
+def smb_conf_quote(value):
+    return chr(34) + str(value or '').replace(chr(34), "\\" + chr(34)) + chr(34)
+
+
 def smb_group(value):
     value = smb_identity(value)
-    return value if value.startswith("@") else f"@{value}"
+    if value.startswith('@'):
+        value = value[1:]
+    return '@' + smb_conf_quote(value)
+
+
+def smb_user(value):
+    return smb_conf_quote(smb_identity(value))
+
+def ensure_local_group(group):
+    if not group:
+        return
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", group):
+        raise ValueError(f"Invalid local SMB group name: {group}")
+    try:
+        grp.getgrnam(group)
+    except KeyError:
+        run(["groupadd", group])
 
 def ensure_local_smb_user(user, password):
     if not user or not password:
@@ -2867,20 +3163,119 @@ def ensure_local_smb_user(user, password):
         except KeyError:
             pass
         command.append(user)
-        subprocess.run(command, check=True)
-    subprocess.run(["smbpasswd", "-s", "-a", user], input=f"{password}\n{password}\n", text=True, check=True)
-    subprocess.run(["smbpasswd", "-e", user], check=True)
+        run(command)
+    run(["smbpasswd", "-s", "-a", user], input=f"{password}\n{password}\n", text=True)
+    run(["smbpasswd", "-e", user])
+
+def safe_netbios_name(value, instance_uuid):
+    raw = re.sub(r"[^A-Za-z0-9]", "", str(value or ""))
+    if not raw:
+        suffix = re.sub(r"[^A-Fa-f0-9]", "", str(instance_uuid or ""))[:10].ljust(10, "0")
+        raw = f"STOR{suffix}"
+    return raw[:15].upper()
+
+def local_or_ad_name(principal_type, principal, workgroup, netbios_name):
+    value = smb_identity(principal)
+    if not value or "\\" in value:
+        return value
+    if principal_type in ("AD_USER", "AD_GROUP") and workgroup:
+        return f"{workgroup}\\{value}"
+    if principal_type in ("LOCAL_USER", "LOCAL_GROUP") and netbios_name:
+        return f"{netbios_name}\\{value}"
+    return value
+
+def samba_principal(principal_type, principal, workgroup, netbios_name):
+    name = local_or_ad_name(principal_type, principal, workgroup, netbios_name)
+    return smb_group(name) if principal_type in ("LOCAL_GROUP", "AD_GROUP") else smb_user(name)
+
+def identity_candidates(principal_type, principal):
+    value = smb_identity(principal)
+    candidates = []
+    if value:
+        candidates.append(value)
+    if principal_type in ("AD_USER", "AD_GROUP") and value and "\\" not in value and workgroup:
+        candidates.append(f"{workgroup}\\{value}")
+    if principal_type in ("LOCAL_USER", "LOCAL_GROUP") and value and "\\" not in value and netbios_name:
+        candidates.append(f"{netbios_name}\\{value}")
+    seen = set()
+    result = []
+    for item in candidates:
+        if item and item not in seen:
+            result.append(item)
+            seen.add(item)
+    return result
+
+
+def resolve_account_id(principal_type, principal):
+    if principal_type == "LOCAL_USER":
+        return "u", str(pwd.getpwnam(principal).pw_uid)
+    if principal_type == "LOCAL_GROUP":
+        return "g", str(grp.getgrnam(principal).gr_gid)
+    if principal_type == "AD_USER":
+        for candidate in identity_candidates(principal_type, principal):
+            result = run_optional(["wbinfo", "--user-info", candidate], stdout=subprocess.PIPE, text=True)
+            if result and result.stdout:
+                parts = result.stdout.strip().split(":")
+                if len(parts) > 2 and parts[2].isdigit():
+                    return "u", parts[2]
+            try:
+                return "u", str(pwd.getpwnam(candidate).pw_uid)
+            except KeyError:
+                pass
+    if principal_type == "AD_GROUP":
+        for candidate in identity_candidates(principal_type, principal):
+            result = run_optional(["wbinfo", "--group-info", candidate], stdout=subprocess.PIPE, text=True)
+            if result and result.stdout:
+                parts = result.stdout.strip().split(":")
+                if len(parts) > 2 and parts[2].isdigit():
+                    return "g", parts[2]
+            try:
+                return "g", str(grp.getgrnam(candidate).gr_gid)
+            except KeyError:
+                pass
+    return None, None
+
+def apply_posix_acl(path, principal_type, principal, permission):
+    if not shutil.which("setfacl") or not principal:
+        return False
+    kind, account_id = resolve_account_id(principal_type, principal)
+    if not kind or not account_id:
+        return False
+    bits = "r-x" if permission == "READ_ONLY" else "rwx"
+    run_optional(["setfacl", "-m", f"{kind}:{account_id}:{bits}", path])
+    run_optional(["setfacl", "-d", "-m", f"{kind}:{account_id}:{bits}", path])
+    return True
+
+def reset_directory_acl(path):
+    if shutil.which("setfacl"):
+        run_optional(["setfacl", "-b", path])
+        run_optional(["setfacl", "-k", path])
+
+def apply_directory_policy(path, config, cross_protocol):
+    mode = str(config.get("directoryMode") or "0770")
+    try:
+        parsed_mode = int(mode, 8)
+    except ValueError:
+        parsed_mode = 0o770
+    if not cross_protocol:
+        reset_directory_acl(path)
+        os.chmod(path, parsed_mode)
+    return parsed_mode
 
 identity = payload.get("identityDomain") or {}
 identity_config = identity.get("config") or {}
 domain_name = identity.get("domainName")
 join_state = identity.get("joinState")
-workgroup = identity_config.get("workgroup") or "WORKGROUP"
+workgroup = derive_ad_workgroup(domain_name, identity_config.get("workgroup"))
 ad_joined = bool(domain_name and join_state == "JOINED")
+netbios_name = safe_netbios_name(payload.get("netbiosName") or identity_config.get("netbiosName"), payload.get("instanceUuid"))
+listen_port = int(payload.get("port") or 445)
 
 lines = [
     "[global]",
     "   server string = ABLESTACK Storage Service",
+    f"   netbios name = {netbios_name}",
+    f"   smb ports = {listen_port}",
     "   load printers = no",
     "   printing = bsd",
     "   disable spoolss = yes",
@@ -2896,6 +3291,8 @@ if ad_joined:
         "   winbind use default domain = yes",
         "   winbind enum users = yes",
         "   winbind enum groups = yes",
+        "   idmap config * : backend = tdb",
+        "   idmap config * : range = 10000-999999",
     ])
 else:
     lines.extend([
@@ -2904,34 +3301,76 @@ else:
     ])
 
 quota_state = {}
+access_state = {}
 enabled = bool(payload.get("enabled", True))
 for share in payload.get("shares", []):
     name = safe_share_name(share.get("name") or share.get("uuid"))
-    path = share.get("path")
+    display_path = share.get("displayPath") or share.get("display_path") or share.get("path")
+    config = share.get("config") or {}
+    path = share.get("path") or config.get("backingPath")
+    if path and str(path).startswith("/export/") and config.get("backingPath"):
+        path = config.get("backingPath")
     state = share.get("state", "Ready")
     if not enabled or not path or state in ("Disabled", "Destroyed", "Error"):
         continue
-    os.makedirs(path, exist_ok=True)
-    config = share.get("config") or {}
+    if str(path).startswith("/export/"):
+        raise RuntimeError(f"Refusing to render SMB share {name} on root export path {path}; expected a backing volume path")
+    create_directory = truth(config, "createDirectory", True)
+    cross_protocol = truth(config, "crossProtocol", False)
+    if not os.path.isdir(path):
+        if not create_directory:
+            raise FileNotFoundError(f"SMB share backing directory does not exist: {path}")
+        os.makedirs(path, exist_ok=True)
+    directory_mode = apply_directory_policy(path, config, cross_protocol)
     valid_users = []
     write_list = []
     admin_users = []
+    applied_acl_count = 0
+    configured_acl_count = 0
     for acl in share.get("acls", []):
         if acl.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
             continue
         principal = acl.get("principal")
         if not principal:
             continue
+        configured_acl_count += 1
         principal_type = acl.get("principalType")
-        if principal_type == "LOCAL_USER" and acl.get("password"):
+        if principal_type == "LOCAL_USER":
             ensure_local_smb_user(principal, acl.get("password"))
-        smb_principal = smb_group(principal) if principal_type in ("LOCAL_GROUP", "AD_GROUP") else smb_identity(principal)
+        elif principal_type == "LOCAL_GROUP":
+            ensure_local_group(principal)
+        smb_principal = samba_principal(principal_type, principal, workgroup, netbios_name)
         permission = acl.get("permission", "READ_ONLY")
         valid_users.append(smb_principal)
         if permission in ("READ_WRITE", "ADMIN"):
             write_list.append(smb_principal)
         if permission == "ADMIN":
             admin_users.append(smb_principal)
+        if apply_posix_acl(path, principal_type, principal, permission):
+            applied_acl_count += 1
+
+    guest_ok = truth(config, 'guestOk', False)
+    if guest_ok and not cross_protocol:
+        os.chmod(path, 0o777 if not truth(config, 'readOnly', False) else 0o755)
+    access_state[str(share.get("uuid") or name)] = {
+        "shareName": name,
+        "path": path,
+        "configuredAclCount": configured_acl_count,
+        "appliedAclCount": applied_acl_count,
+        "guestOk": guest_ok,
+        "accessState": "open" if guest_ok else ("acl_applied" if applied_acl_count > 0 else "no_acl"),
+        "directoryMode": oct(directory_mode),
+        "aclSummary": [
+            {
+                "principalType": acl.get("principalType"),
+                "principal": acl.get("principal"),
+                "permission": acl.get("permission", "READ_ONLY"),
+                "state": acl.get("state", "Ready"),
+            }
+            for acl in share.get("acls", [])
+            if acl.get("state", "Ready") not in ("Disabled", "Destroyed", "Error") and acl.get("principal")
+        ],
+    }
 
     lines.extend([
         "",
@@ -2939,7 +3378,7 @@ for share in payload.get("shares", []):
         f"   path = {path}",
         f"   read only = {'yes' if truth(config, 'readOnly', False) else 'no'}",
         f"   browseable = {'yes' if truth(config, 'browseable', True) else 'no'}",
-        f"   guest ok = {'yes' if truth(config, 'guestOk', False) else 'no'}",
+        f"   guest ok = {'yes' if guest_ok else 'no'}",
         "   create mask = 0660",
         "   directory mask = 0770",
     ])
@@ -2952,6 +3391,7 @@ for share in payload.get("shares", []):
     if share.get("quotaBytes") is not None:
         quota_state[str(share.get("uuid"))] = {
             "path": path,
+            "displayPath": display_path,
             "quotaBytes": share.get("quotaBytes"),
             "filesystem": share.get("filesystem"),
         }
@@ -2962,8 +3402,11 @@ with open("/etc/samba/smb.conf", "w", encoding="utf-8") as smb_fp:
 with open(os.path.join(state_dir, "smb-quotas.json"), "w", encoding="utf-8") as quota_fp:
     json.dump(quota_state, quota_fp, sort_keys=True, indent=2)
 
-subprocess.run(["testparm", "-s"], stdout=subprocess.DEVNULL, check=True)
-print(json.dumps({"success": True, "shares": len(payload.get("shares", [])), "quotas": len(quota_state), "adJoined": ad_joined}))
+with open(os.path.join(state_dir, "smb-access.json"), "w", encoding="utf-8") as access_fp:
+    json.dump(access_state, access_fp, sort_keys=True, indent=2)
+
+run(["testparm", "-s"], stdout=subprocess.DEVNULL)
+print(json.dumps({"success": True, "shares": len(payload.get("shares", [])), "quotas": len(quota_state), "adJoined": ad_joined, "netbiosName": netbios_name, "access": access_state}))
 PY
 
   if command -v systemctl >/dev/null 2>&1; then
@@ -2973,6 +3416,9 @@ PY
     systemctl restart nmbd >/dev/null 2>&1 || true
     systemctl restart winbind >/dev/null 2>&1 || true
   fi
+  open_tcp_firewall_port "445"
+  open_tcp_firewall_port "139"
+  persist_smb_desired_state "$payload_file"
 }
 
 smb_domain_join() {
@@ -2981,8 +3427,10 @@ smb_domain_join() {
   python3 - "$payload_file" <<'PY'
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -2990,6 +3438,84 @@ with open(payload_path, "r", encoding="utf-8") as payload_fp:
 
 state_dir = "/etc/ablestack-storage"
 os.makedirs(state_dir, exist_ok=True)
+state_path = os.path.join(state_dir, "smb-domain.json")
+error_path = os.path.join(state_dir, "smb-domain-error.json")
+
+def write_join_error(phase, message):
+    with open(error_path, "w", encoding="utf-8") as error_fp:
+        json.dump({
+            "state": "JOIN_FAILED",
+            "phase": phase,
+            "message": str(message),
+            "domainName": payload.get("domainName"),
+            "workgroup": payload.get("workgroup") or (payload.get("config") or {}).get("workgroup"),
+            "updatedAt": int(time.time()),
+        }, error_fp, sort_keys=True, indent=2)
+
+def command_label(args):
+    cleaned = []
+    for item in args:
+        value = str(item)
+        if "%" in value and "-U" not in value:
+            value = value.split("%", 1)[0] + "%<redacted>"
+        cleaned.append(value)
+    return " ".join(cleaned)
+
+def run_checked(phase, args, input_text=None):
+    result = subprocess.run(args, input=input_text, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "command failed").strip()
+        if input_text:
+            detail = detail.replace(input_text.strip(), "<redacted>")
+        if not detail:
+            detail = command_label(args) + " failed"
+        write_join_error(phase, detail)
+        raise SystemExit(detail)
+    return result
+
+def derive_ad_workgroup(domain_name, workgroup):
+    value = str(workgroup or "").strip()
+    if value and value.upper() != "WORKGROUP":
+        return re.sub(r"[^A-Za-z0-9]", "", value)[:15].upper() or "WORKGROUP"
+    domain_value = str(domain_name or "").strip()
+    if domain_value:
+        derived = re.sub(r"[^A-Za-z0-9]", "", domain_value.split(".", 1)[0])[:15].upper()
+        if derived:
+            return derived
+    return "WORKGROUP"
+
+def normalize_realm(domain_name):
+    return str(domain_name or "").strip().upper()
+
+def kerberos_principal(username, realm):
+    value = str(username or "").strip()
+    if "@" in value:
+        return value
+    if "\\" in value:
+        value = value.split("\\", 1)[1]
+    return f"{value}@{realm}"
+
+def write_smb_conf(workgroup_name):
+    lines = [
+        "[global]",
+        "   server string = ABLESTACK Storage Service",
+        f"   netbios name = {netbios_name}",
+        f"   workgroup = {workgroup_name}",
+        f"   realm = {realm}",
+        "   security = ADS",
+        "   kerberos method = secrets and keytab",
+        "   winbind use default domain = yes",
+        "   winbind enum users = yes",
+        "   winbind enum groups = yes",
+        "   idmap config * : backend = tdb",
+        "   idmap config * : range = 10000-999999",
+        "   load printers = no",
+        "   printing = bsd",
+        "   disable spoolss = yes",
+        "   map to guest = Bad User",
+    ]
+    with open("/etc/samba/smb.conf", "w", encoding="utf-8") as smb_fp:
+        smb_fp.write("\n".join(lines) + "\n")
 
 domain = payload.get("domainName")
 username = payload.get("username")
@@ -2997,50 +3523,158 @@ password = payload.get("password")
 ou = payload.get("organizationalUnit")
 dns_servers = payload.get("dnsServers")
 config = payload.get("config") or {}
-workgroup = config.get("workgroup") or "WORKGROUP"
+realm = normalize_realm(domain)
+workgroup = derive_ad_workgroup(domain, config.get("workgroup"))
+netbios_name = re.sub(r"[^A-Za-z0-9]", "", str(payload.get("netbiosName") or config.get("netbiosName") or ""))[:15].upper()
+if not netbios_name:
+    netbios_name = "STORAGEVM"
 
 if not domain or not username or not password:
+    write_join_error("validate", "domainName, username, and password are required for SMB domain join")
     raise SystemExit("domainName, username, and password are required for SMB domain join")
 
-lines = [
-    "[global]",
-    "   server string = ABLESTACK Storage Service",
-    f"   workgroup = {workgroup}",
-    f"   realm = {domain.upper()}",
-    "   security = ADS",
-    "   kerberos method = secrets and keytab",
-    "   winbind use default domain = yes",
-    "   winbind enum users = yes",
-    "   winbind enum groups = yes",
-    "   load printers = no",
-    "   printing = bsd",
-    "   disable spoolss = yes",
-    "   map to guest = Bad User",
-]
-with open("/etc/samba/smb.conf", "w", encoding="utf-8") as smb_fp:
-    smb_fp.write("\n".join(lines) + "\n")
+if os.path.exists(error_path):
+    os.remove(error_path)
 
 if dns_servers:
     with open(os.path.join(state_dir, "smb-dns-servers"), "w", encoding="utf-8") as dns_fp:
         dns_fp.write(str(dns_servers) + "\n")
+    backup_path = os.path.join(state_dir, "resolv.conf.storage-backup")
+    if os.path.exists("/etc/resolv.conf") and not os.path.exists(backup_path):
+        with open("/etc/resolv.conf", "r", encoding="utf-8", errors="ignore") as source_fp, open(backup_path, "w", encoding="utf-8") as backup_fp:
+            backup_fp.write(source_fp.read())
+    with open("/etc/resolv.conf", "w", encoding="utf-8") as resolv_fp:
+        resolv_fp.write(f"search {domain}\n")
+        for server in re.split(r"[,\\s]+", str(dns_servers)):
+            if server:
+                resolv_fp.write(f"nameserver {server}\n")
 
-cmd = ["net", "ads", "join", "-U", f"{username}%{password}"]
+with open("/etc/krb5.conf", "w", encoding="utf-8") as krb_fp:
+    krb_fp.write("[libdefaults]\n")
+    krb_fp.write(f" default_realm = {realm}\n")
+    krb_fp.write(" dns_lookup_realm = false\n dns_lookup_kdc = true\n rdns = false\n")
+
+write_smb_conf(workgroup)
+run_checked("testparm", ["testparm", "-s"])
+lookup = subprocess.run(["net", "ads", "lookup", "-S", domain], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+if lookup.returncode == 0:
+    for line in lookup.stdout.splitlines():
+        if "Pre-Win2k Domain:" in line:
+            discovered = line.split(":", 1)[1].strip()
+            if discovered:
+                workgroup = derive_ad_workgroup(domain, discovered)
+                write_smb_conf(workgroup)
+            break
+
+kinit_principal = kerberos_principal(username, realm)
+run_checked("kinit", ["kinit", kinit_principal], input_text=f"{password}\n")
+
+cmd = ["net", "ads", "join", "-k"]
 if ou:
     cmd.append(f"createcomputer={ou}")
-subprocess.run(cmd, check=True)
+try:
+    run_checked("join", cmd)
+finally:
+    subprocess.run(["kdestroy"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-with open(os.path.join(state_dir, "smb-domain.json"), "w", encoding="utf-8") as state_fp:
-    json.dump({"domainName": domain, "organizationalUnit": ou, "dnsServers": dns_servers, "workgroup": workgroup}, state_fp, sort_keys=True, indent=2)
+with open(state_path, "w", encoding="utf-8") as state_fp:
+    json.dump({
+        "domainName": domain,
+        "organizationalUnit": ou,
+        "dnsServers": dns_servers,
+        "workgroup": workgroup,
+        "realm": realm,
+        "netbiosName": netbios_name,
+        "state": "JOINED",
+        "trustVerified": False,
+    }, state_fp, sort_keys=True, indent=2)
 
 print(json.dumps({"success": True, "domainName": domain}))
 PY
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable --now smbd >/dev/null 2>&1 || true
+    systemctl enable --now nmbd >/dev/null 2>&1 || true
     systemctl enable --now winbind >/dev/null 2>&1 || true
     systemctl restart smbd >/dev/null 2>&1 || true
+    systemctl restart nmbd >/dev/null 2>&1 || true
     systemctl restart winbind >/dev/null 2>&1 || true
   fi
+  net cache flush >/dev/null 2>&1 || true
+
+  local verify_error=""
+  if ! verify_error="$(net ads testjoin 2>&1)"; then
+    python3 - "$verify_error" <<'PY'
+import json
+import os
+import sys
+import time
+state_dir = "/etc/ablestack-storage"
+with open(os.path.join(state_dir, "smb-domain-error.json"), "w", encoding="utf-8") as fp:
+    json.dump({"state": "JOIN_FAILED", "phase": "testjoin", "message": sys.argv[1], "updatedAt": int(time.time())}, fp, sort_keys=True, indent=2)
+PY
+    echo "$verify_error" >&2
+    return 1
+  fi
+  local verify_workgroup
+  verify_workgroup="$(python3 - <<'PY'
+import json
+import os
+state_path = "/etc/ablestack-storage/smb-domain.json"
+try:
+    with open(state_path, "r", encoding="utf-8") as fp:
+        data = json.load(fp)
+    print(data.get("workgroup") or "")
+except Exception:
+    print("")
+PY
+)"
+  if [[ -z "$verify_workgroup" ]]; then
+    verify_error="Unable to determine AD workgroup for winbind verification"
+    python3 - "$verify_error" <<'PY'
+import json
+import os
+import sys
+import time
+state_dir = "/etc/ablestack-storage"
+with open(os.path.join(state_dir, "smb-domain-error.json"), "w", encoding="utf-8") as fp:
+    json.dump({"state": "JOIN_FAILED", "phase": "wbinfo", "message": sys.argv[1], "updatedAt": int(time.time())}, fp, sort_keys=True, indent=2)
+PY
+    echo "$verify_error" >&2
+    return 1
+  fi
+  if ! verify_error="$(wbinfo --domain="$verify_workgroup" -t 2>&1)"; then
+    python3 - "$verify_error" <<'PY'
+import json
+import os
+import sys
+import time
+state_dir = "/etc/ablestack-storage"
+with open(os.path.join(state_dir, "smb-domain-error.json"), "w", encoding="utf-8") as fp:
+    json.dump({"state": "JOIN_FAILED", "phase": "wbinfo", "message": sys.argv[1], "updatedAt": int(time.time())}, fp, sort_keys=True, indent=2)
+PY
+    echo "$verify_error" >&2
+    return 1
+  fi
+  python3 - <<'PY'
+import json
+import os
+import time
+state_dir = "/etc/ablestack-storage"
+state_path = os.path.join(state_dir, "smb-domain.json")
+error_path = os.path.join(state_dir, "smb-domain-error.json")
+data = {}
+if os.path.exists(state_path):
+    with open(state_path, "r", encoding="utf-8") as fp:
+        data = json.load(fp)
+data["state"] = "JOINED"
+data["trustVerified"] = True
+data["verifiedAt"] = int(time.time())
+with open(state_path, "w", encoding="utf-8") as fp:
+    json.dump(data, fp, sort_keys=True, indent=2)
+if os.path.exists(error_path):
+    os.remove(error_path)
+PY
 }
 
 smb_domain_leave() {

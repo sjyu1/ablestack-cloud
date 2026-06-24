@@ -286,9 +286,13 @@
                 <template #icon><PlusOutlined /></template>
                 {{ $t('label.storage.service.create.smb.share') }}
               </a-button>
-              <a-button @click="openActionModal('adJoin')">
+              <a-button v-if="!isSmbAdConfigured" @click="openActionModal('adJoin')">
                 <template #icon><LinkOutlined /></template>
                 {{ $t('label.storage.service.join.ad.domain') }}
+              </a-button>
+              <a-button v-else :loading="actionLoading.adStatus" @click="checkAdDomainStatus">
+                <template #icon><SafetyCertificateOutlined /></template>
+                {{ $t('label.storage.service.check.ad.domain.status') }}
               </a-button>
               <a-button :loading="storageService.refreshing" @click="fetchStorageServiceData">
                 <template #icon><ReloadOutlined /></template>
@@ -320,6 +324,14 @@
                   <dd><ellipsis-text :value="smbIdentityMode" /></dd>
                   <dt>{{ $t('label.storage.service.domain.join.state') }}</dt>
                   <dd><ellipsis-text :value="smbDomainState" /></dd>
+                  <dt>{{ $t('label.storage.service.domain.health.state') }}</dt>
+                  <dd><ellipsis-text :value="smbDomainHealthState" /></dd>
+                  <dt>{{ $t('label.storage.service.domain.trust.state') }}</dt>
+                  <dd><ellipsis-text :value="smbTrustVerifiedLabel" /></dd>
+                  <dt v-if="smbDomainErrorSummary">{{ $t('label.storage.service.domain.join.error') }}</dt>
+                  <dd v-if="smbDomainErrorSummary">
+                    <a-tag color="red"><ellipsis-text :value="smbDomainErrorSummary" /></a-tag>
+                  </dd>
                   <dt>{{ $t('label.storage.service.daemon.state') }}</dt>
                   <dd><ellipsis-text :value="smbDaemonState" /></dd>
                   <dt>{{ $t('label.storage.service.monitor.cache') }}</dt>
@@ -346,17 +358,29 @@
                 :columns="smbShareColumns"
                 :dataSource="smbShareRows"
                 :pagination="false"
-                :scroll="{ x: 1540 }"
+                :scroll="{ x: 1720 }"
                 :locale="storageTableLocale('message.storage.service.no.smb.shares')">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'state'">
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" @click="openActionModal('resizeShare', { id: record.id })">
-                      <template #icon><ExpandAltOutlined /></template>
-                      {{ $t('label.storage.service.resize.file.share') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-space class="storage-table-actions__space">
+                        <a-button size="small" @click="openActionModal('editSmbShare', record)">
+                        <template #icon><EditOutlined /></template>
+                        {{ $t('label.edit') }}
+                      </a-button>
+                      <a-button size="small" @click="openActionModal('resizeShare', { id: record.id })">
+                        <template #icon><ExpandAltOutlined /></template>
+                        {{ $t('label.storage.service.resize.file.share') }}
+                      </a-button>
+                      <a-button size="small" danger @click="openDeleteModal('smbShare', record)">
+                          <template #icon><DeleteOutlined /></template>
+                          {{ $t('label.delete') }}
+                        </a-button>
+                      </a-space>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -391,6 +415,20 @@
                   <template v-if="column.key === 'state'">
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-space class="storage-table-actions__space">
+                        <a-button size="small" @click="openActionModal('editSmbAcl', record)">
+                        <template #icon><EditOutlined /></template>
+                        {{ $t('label.edit') }}
+                      </a-button>
+                      <a-button size="small" danger @click="openDeleteModal('smbAcl', record)">
+                          <template #icon><DeleteOutlined /></template>
+                          {{ $t('label.delete') }}
+                        </a-button>
+                      </a-space>
+                    </div>
+                  </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
                   </template>
@@ -404,6 +442,24 @@
                   <h4>{{ $t('label.storage.service.smb.identity') }}</h4>
                   <p>{{ $t('message.storage.service.smb.identity.table') }}</p>
                 </div>
+                <a-space class="storage-section-actions" wrap>
+                  <a-button v-if="!isSmbAdConfigured" size="small" @click="openActionModal('adJoin')">
+                    <template #icon><LinkOutlined /></template>
+                    {{ $t('label.storage.service.join.ad.domain') }}
+                  </a-button>
+                  <a-button v-if="isSmbAdConfigured" size="small" :loading="actionLoading.adStatus" @click="checkAdDomainStatus">
+                    <template #icon><SafetyCertificateOutlined /></template>
+                    {{ $t('label.storage.service.check.ad.domain.status') }}
+                  </a-button>
+                  <a-button v-if="isSmbAdConfigured" size="small" @click="openActionModal('adRejoin')">
+                    <template #icon><ReloadOutlined /></template>
+                    {{ $t('label.storage.service.rejoin.ad.domain') }}
+                  </a-button>
+                  <a-button v-if="isSmbAdConfigured" size="small" danger @click="openActionModal('adLeave')">
+                    <template #icon><DisconnectOutlined /></template>
+                    {{ $t('label.storage.service.leave.ad.domain') }}
+                  </a-button>
+                </a-space>
               </div>
               <dl class="storage-detail-list">
                 <div class="storage-detail-list__row">
@@ -421,6 +477,34 @@
                 <div class="storage-detail-list__row">
                   <dt>{{ $t('label.storage.service.domain.join.state') }}</dt>
                   <dd><ellipsis-text :value="smbDomainState" /></dd>
+                </div>
+                <div class="storage-detail-list__row">
+                  <dt>{{ $t('label.storage.service.domain.health.state') }}</dt>
+                  <dd><ellipsis-text :value="smbDomainHealthState" /></dd>
+                </div>
+                <div class="storage-detail-list__row">
+                  <dt>{{ $t('label.storage.service.domain.trust.state') }}</dt>
+                  <dd><ellipsis-text :value="smbTrustVerifiedLabel" /></dd>
+                </div>
+                <div class="storage-detail-list__row">
+                  <dt>{{ $t('label.storage.service.dns.servers') }}</dt>
+                  <dd><ellipsis-text :value="smbDnsServers" /></dd>
+                </div>
+                <div class="storage-detail-list__row">
+                  <dt>{{ $t('label.storage.service.smb.realm') }}</dt>
+                  <dd><ellipsis-text :value="smbRealm" /></dd>
+                </div>
+                <div class="storage-detail-list__row">
+                  <dt>{{ $t('label.storage.service.smb.netbios.name') }}</dt>
+                  <dd><ellipsis-text :value="smbNetbiosName" /></dd>
+                </div>
+                <div class="storage-detail-list__row">
+                  <dt>{{ $t('label.storage.service.organizational.unit') }}</dt>
+                  <dd><ellipsis-text :value="smbOrganizationalUnit" /></dd>
+                </div>
+                <div v-if="smbDomainErrorSummary" class="storage-detail-list__row">
+                  <dt>{{ $t('label.storage.service.domain.join.error') }}</dt>
+                  <dd><ellipsis-text :value="smbDomainErrorSummary" /></dd>
                 </div>
               </dl>
             </section>
@@ -446,10 +530,12 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" @click="openActionModal('resizeVolume', { id: record.shareId, volumeid: record.id })">
-                      <template #icon><ExpandAltOutlined /></template>
-                      {{ $t('label.storage.service.resize.volume') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-button size="small" @click="openActionModal('resizeVolume', { id: record.shareId, volumeid: record.id })">
+                        <template #icon><ExpandAltOutlined /></template>
+                        {{ $t('label.storage.service.resize.volume') }}
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -479,10 +565,12 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
-                      <template #icon><DisconnectOutlined /></template>
-                      {{ $t('label.storage.service.disconnect.session') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
+                        <template #icon><DisconnectOutlined /></template>
+                        {{ $t('label.storage.service.disconnect.session') }}
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -623,10 +711,12 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" @click="openActionModal('resizeVolume', { id: record.targetId, volumeid: record.id })">
-                      <template #icon><ExpandAltOutlined /></template>
-                      {{ $t('label.storage.service.resize.volume') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-button size="small" @click="openActionModal('resizeVolume', { id: record.targetId, volumeid: record.id })">
+                        <template #icon><ExpandAltOutlined /></template>
+                        {{ $t('label.storage.service.resize.volume') }}
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -656,10 +746,12 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
-                      <template #icon><DisconnectOutlined /></template>
-                      {{ $t('label.storage.service.disconnect.session') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
+                        <template #icon><DisconnectOutlined /></template>
+                        {{ $t('label.storage.service.disconnect.session') }}
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -812,10 +904,12 @@
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
-                    <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
-                      <template #icon><DisconnectOutlined /></template>
-                      {{ $t('label.storage.service.disconnect.session') }}
-                    </a-button>
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
+                        <template #icon><DisconnectOutlined /></template>
+                        {{ $t('label.storage.service.disconnect.session') }}
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -1215,31 +1309,175 @@ wrapClassName="storage-service-action-modal"
             <a-input v-model:value="forms.deleteEndpoint.confirmation" :placeholder="forms.deleteEndpoint.listenip || ''" />
           </a-form-item>
         </div>
-        <div v-if="actionModal.type === 'smbShare'" class="storage-action-form storage-action-form--vertical">
+        <div v-if="actionModal.type === 'smbShare' || actionModal.type === 'editSmbShare'" class="storage-action-form storage-action-form--vertical">
+          <a-form-item>
+            <template #label><tooltip-label :title="$t('label.name')" :tooltip="$t('message.storage.service.smb.name.autogenerated')" /></template>
+            <a-input v-model:value="forms.smbShare.name" />
+          </a-form-item>
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.internal.path')" :tooltip="$t('message.storage.service.smb.internal.path.help')" /></template>
+            <a-input v-model:value="forms.smbShare.path" placeholder="/export/smb01" />
+          </a-form-item>
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.backing.volume') }}</div>
+            <a-form-item required>
+              <template #label>
+                <tooltip-label :title="$t('label.storage.service.volume.mode')" :tooltip="$t('message.storage.service.volume.mode.help')" />
+              </template>
+              <a-radio-group v-model:value="forms.smbShare.volumemode">
+                <a-radio value="CURRENT">{{ $t('label.storage.service.current.volume') }}</a-radio>
+                <a-radio value="EXISTING">{{ $t('label.storage.service.existing.volume.select') }}</a-radio>
+                <a-radio v-if="actionModal.type === 'smbShare'" value="NEW">{{ $t('label.storage.service.new.volume') }}</a-radio>
+              </a-radio-group>
+            </a-form-item>
+            <a-form-item
+              v-if="forms.smbShare.volumemode === 'CURRENT'"
+              required>
+              <template #label>
+                <tooltip-label :title="$t('label.storage.service.current.backing.volume')" :tooltip="$t('message.storage.service.current.volume.select.help')" />
+              </template>
+              <a-select
+                v-model:value="forms.smbShare.volumeid"
+                :loading="volumeLoading"
+                show-search
+                optionFilterProp="label">
+                <a-select-option v-for="volume in currentBackingVolumes" :key="volume.id" :value="volume.id" :label="formatCurrentBackingVolumeOption(volume)">
+                  {{ formatCurrentBackingVolumeOption(volume) }}
+                </a-select-option>
+              </a-select>
+              <div v-if="selectedSmbCurrentBackingVolume" class="storage-action-summary-box storage-action-summary-box--compact">
+                <div class="storage-action-summary-row">
+                  <span>{{ $t('label.storage.service.mount.path') }}</span>
+                  <code>{{ currentBackingVolumeMountPath(selectedSmbCurrentBackingVolume) || '-' }}</code>
+                </div>
+                <div class="storage-action-summary-row">
+                  <span>{{ $t('label.storage.service.attached.export') }}</span>
+                  <code>{{ currentBackingVolumeExportSummary(selectedSmbCurrentBackingVolume) }}</code>
+                </div>
+              </div>
+            </a-form-item>
+            <volume-select
+              v-if="forms.smbShare.volumemode === 'EXISTING'"
+              v-model:value="forms.smbShare.volumeid"
+              :volumes="availableVolumes"
+              :loading="volumeLoading"
+              :formatter="formatVolumeOption"
+              required
+              :tooltip="$t('message.storage.service.existing.volume.select.help')" />
+            <a-form-item>
+              <a-checkbox v-model:checked="forms.smbShare.createdirectory">
+                {{ $t('label.storage.service.create.directory.if.missing') }}
+              </a-checkbox>
+            </a-form-item>
+            <template v-if="forms.smbShare.volumemode === 'NEW'">
+              <a-form-item required>
+                <template #label>
+                  <tooltip-label :title="$t('label.storage.service.new.volume.name')" :tooltip="$t('message.storage.service.new.volume.name.help')" />
+                </template>
+                <a-input v-model:value="forms.smbShare.newvolumename" />
+              </a-form-item>
+              <a-form-item required>
+                <template #label>
+                  <tooltip-label :title="$t('label.diskoffering')" :tooltip="$t('message.storage.service.new.volume.diskoffering.help')" />
+                </template>
+                <a-select v-model:value="forms.smbShare.diskofferingid" :loading="diskOfferingLoading" show-search optionFilterProp="label" @change="reconcileSmbNewVolumeStorage">
+                  <a-select-option v-for="offering in diskOfferings" :key="offering.id" :value="offering.id" :label="offering.displaytext || offering.name">
+                    {{ offering.displaytext || offering.name }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+              <a-form-item required>
+                <template #label>
+                  <tooltip-label :title="$t('label.primary.storage')" :tooltip="$t('message.storage.service.new.volume.storage.help')" />
+                </template>
+                <a-select v-model:value="forms.smbShare.storageid" :loading="storagePoolLoading" show-search optionFilterProp="label">
+                  <a-select-option v-for="pool in filteredSmbNewVolumeStoragePools" :key="pool.id" :value="pool.id" :label="storagePoolLabel(pool)">
+                    {{ storagePoolLabel(pool) }}
+                  </a-select-option>
+                </a-select>
+                <div v-if="selectedSmbDiskOfferingTags.length" class="storage-field-hint">
+                  {{ $t('message.storage.service.primary.storage.tag.filtered', { tags: selectedSmbDiskOfferingTags.join(', ') }) }}
+                </div>
+              </a-form-item>
+              <a-form-item required>
+                <template #label>
+                  <tooltip-label :title="$t('label.storage.service.volume.size.gib')" :tooltip="$t('message.storage.service.volume.size.help')" />
+                </template>
+                <a-input-number v-model:value="forms.smbShare.newvolumesize" class="storage-input-number" :min="1" />
+              </a-form-item>
+              <a-form-item required>
+                <template #label>
+                  <tooltip-label :title="$t('label.filesystem')" :tooltip="$t('message.storage.service.new.volume.filesystem.help')" />
+                </template>
+                <a-select v-model:value="forms.smbShare.filesystem">
+                  <a-select-option value="xfs">XFS</a-select-option>
+                  <a-select-option value="ext4">EXT4</a-select-option>
+                </a-select>
+              </a-form-item>
+            </template>
+          </section>
+          <capacity-input :label="$t('label.storage.service.smb.share.capacity.limit')" :tooltip="$t('message.storage.service.smb.quota.help')" v-model:amount="forms.smbShare.quotaamount" v-model:unit="forms.smbShare.quotaunit" :units="capacityUnits" />
+          <a-form-item>
+            <template #label><tooltip-label :title="$t('label.storage.service.cross.protocol.share')" :tooltip="$t('message.storage.service.cross.protocol.share.help')" /></template>
+            <a-switch v-model:checked="forms.smbShare.crossprotocol" />
+          </a-form-item>
+          <a-form-item>
+            <template #label><tooltip-label :title="$t('label.storage.service.directory.mode')" :tooltip="$t('message.storage.service.directory.mode.help')" /></template>
+            <a-input v-model:value="forms.smbShare.directorymode" placeholder="0770" />
+          </a-form-item>
+          <a-space wrap>
+            <a-checkbox v-model:checked="forms.smbShare.readonly">{{ $t('label.storage.service.permission.readonly') }}</a-checkbox>
+            <a-checkbox v-model:checked="forms.smbShare.browseable">{{ $t('label.storage.service.browseable') }}</a-checkbox>
+            <a-checkbox v-model:checked="forms.smbShare.guestok">{{ $t('label.storage.service.guest.access') }}</a-checkbox>
+          </a-space>
+        </div>
+        <div v-if="actionModal.type === 'smbAcl' || actionModal.type === 'editSmbAcl'" class="storage-action-form storage-action-form--vertical">
           <a-row :gutter="16">
-            <a-col :xs="24" :md="12"><a-form-item><template #label><tooltip-label :title="$t('label.name')" :tooltip="$t('message.storage.service.smb.name.autogenerated')" /></template><a-input v-model:value="forms.smbShare.name" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.internal.path')" :tooltip="$t('message.storage.service.smb.internal.path.help')" /></template><a-input v-model:value="forms.smbShare.path" placeholder="/export/smb01" /><div class="field-hint">{{ $t('message.storage.service.smb.internal.path.help') }}</div></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><volume-select v-model:value="forms.smbShare.volumeid" :volumes="availableVolumes" :loading="volumeLoading" :formatter="formatVolumeOption" :tooltip="$t('message.storage.service.existing.volume.select.help')" /></a-col>
-            <a-col :xs="24" :md="12"><capacity-input :label="$t('label.storage.service.smb.share.capacity.limit')" :tooltip="$t('message.storage.service.smb.quota.help')" v-model:amount="forms.smbShare.quotaamount" v-model:unit="forms.smbShare.quotaunit" :units="capacityUnits" /></a-col>
-            <a-col :xs="24"><a-space wrap><a-checkbox v-model:checked="forms.smbShare.readonly">{{ $t('label.storage.service.permission.readonly') }}</a-checkbox><a-checkbox v-model:checked="forms.smbShare.browseable">{{ $t('label.storage.service.browseable') }}</a-checkbox><a-checkbox v-model:checked="forms.smbShare.guestok">{{ $t('label.storage.service.guest.access') }}</a-checkbox></a-space></a-col>
+            <a-col :xs="24" :md="24"><a-form-item required><template #label><tooltip-label :title="$t('label.share')" :tooltip="$t('message.storage.service.share.help')" /></template><a-select v-model:value="forms.smbAcl.shareid" show-search optionFilterProp="label"><a-select-option v-for="share in storageService.smbShares" :key="share.id" :value="share.id" :label="shareLabel(share)">{{ shareLabel(share) }}</a-select-option></a-select></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.principal')" :tooltip="$t('message.storage.service.smb.principal.help')" /></template><a-input v-model:value="forms.smbAcl.principal" /></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.principal.type')" :tooltip="$t('message.storage.service.principal.type.help')" /></template><a-select v-model:value="forms.smbAcl.principaltype"><a-select-option value="LOCAL_USER">{{ $t('label.storage.service.local.user') }}</a-select-option><a-select-option value="LOCAL_GROUP">{{ $t('label.storage.service.local.group') }}</a-select-option><a-select-option value="AD_USER">{{ $t('label.storage.service.ad.user') }}</a-select-option><a-select-option value="AD_GROUP">{{ $t('label.storage.service.ad.group') }}</a-select-option></a-select></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.permission')" :tooltip="$t('message.storage.service.permission.help')" /></template><a-select v-model:value="forms.smbAcl.permission"><a-select-option value="READ_ONLY">{{ $t('label.storage.service.permission.readonly') }}</a-select-option><a-select-option value="READ_WRITE">{{ $t('label.storage.service.permission.readwrite') }}</a-select-option><a-select-option value="ADMIN">{{ $t('label.admin') }}</a-select-option></a-select></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.local.user.password')" :tooltip="$t('message.storage.service.smb.local.password.help')" /></template><a-input-password v-model:value="forms.smbAcl.password" autocomplete="new-password" /></a-form-item></a-col>
           </a-row>
         </div>
-        <div v-if="actionModal.type === 'smbAcl'" class="storage-action-form storage-action-form--vertical">
+        <div v-if="actionModal.type === 'adJoin' || actionModal.type === 'adRejoin'" class="storage-action-form storage-action-form--vertical">
+          <a-alert
+            class="storage-service__alert"
+            type="info"
+            show-icon
+            :message="actionModal.type === 'adRejoin' ? $t('message.storage.service.ad.rejoin.help') : $t('message.storage.service.smb.password.sensitive')" />
           <a-row :gutter="16">
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.share')" :tooltip="$t('message.storage.service.share.help')" /></template><a-select v-model:value="forms.smbAcl.shareid" show-search optionFilterProp="label"><a-select-option v-for="share in storageService.smbShares" :key="share.id" :value="share.id" :label="shareLabel(share)">{{ shareLabel(share) }}</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.principal')" :tooltip="$t('message.storage.service.smb.principal.help')" /></template><a-input v-model:value="forms.smbAcl.principal" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.principal.type')" :tooltip="$t('message.storage.service.principal.type.help')" /></template><a-select v-model:value="forms.smbAcl.principaltype"><a-select-option value="LOCAL_USER">{{ $t('label.storage.service.local.user') }}</a-select-option><a-select-option value="LOCAL_GROUP">{{ $t('label.storage.service.local.group') }}</a-select-option><a-select-option value="AD_USER">{{ $t('label.storage.service.ad.user') }}</a-select-option><a-select-option value="AD_GROUP">{{ $t('label.storage.service.ad.group') }}</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.permission')" :tooltip="$t('message.storage.service.permission.help')" /></template><a-select v-model:value="forms.smbAcl.permission"><a-select-option value="READ_ONLY">{{ $t('label.storage.service.permission.readonly') }}</a-select-option><a-select-option value="READ_WRITE">{{ $t('label.storage.service.permission.readwrite') }}</a-select-option><a-select-option value="ADMIN">{{ $t('label.admin') }}</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.local.user.password')" :tooltip="$t('message.storage.service.smb.local.password.help')" /></template><a-input-password v-model:value="forms.smbAcl.password" autocomplete="new-password" /></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.ad.domain')" :tooltip="$t('message.storage.service.ad.domain.help')" /></template><a-input v-model:value="forms.adJoin.domainname" /></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item required><template #label><tooltip-label :title="$t('label.username')" :tooltip="$t('message.storage.service.ad.username.help')" /></template><a-input v-model:value="forms.adJoin.username" /></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item required><template #label><tooltip-label :title="$t('label.password')" :tooltip="$t('message.storage.service.ad.password.help')" /></template><a-input-password v-model:value="forms.adJoin.password" autocomplete="new-password" /></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.dns.servers')" :tooltip="$t('message.storage.service.dns.servers.help')" /></template><a-input v-model:value="forms.adJoin.dnsservers" /></a-form-item></a-col>
           </a-row>
         </div>
-        <div v-if="actionModal.type === 'adJoin'" class="storage-action-form storage-action-form--vertical">
-          <a-alert class="storage-service__alert" type="info" show-icon :message="$t('message.storage.service.smb.password.sensitive')" />
+        <div v-if="actionModal.type === 'adLeave'" class="storage-action-form storage-action-form--vertical">
+          <a-alert
+            class="storage-service__alert"
+            type="warning"
+            show-icon
+            :message="$t('message.storage.service.ad.leave.warning')" />
           <a-row :gutter="16">
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.ad.domain')" :tooltip="$t('message.storage.service.ad.domain.help')" /></template><a-input v-model:value="forms.adJoin.domainname" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.username')" :tooltip="$t('message.storage.service.ad.username.help')" /></template><a-input v-model:value="forms.adJoin.username" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.password')" :tooltip="$t('message.storage.service.ad.password.help')" /></template><a-input-password v-model:value="forms.adJoin.password" autocomplete="new-password" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.dns.servers')" :tooltip="$t('message.storage.service.dns.servers.help')" /></template><a-input v-model:value="forms.adJoin.dnsservers" /></a-form-item></a-col>
+            <a-col :xs="24" :md="24">
+              <a-form-item required>
+                <template #label>
+                  <tooltip-label :title="$t('label.storage.service.ad.domain')" :tooltip="$t('message.storage.service.ad.leave.confirm.help')" />
+                </template>
+                <a-input :value="currentSmbDomainConfirmation" disabled />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :md="24">
+              <a-form-item required>
+                <template #label>
+                  <tooltip-label :title="$t('label.confirmation')" :tooltip="$t('message.storage.service.ad.leave.confirm.help')" />
+                </template>
+                <a-input v-model:value="forms.adLeave.confirmation" :placeholder="currentSmbDomainConfirmation" />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :md="24"><a-form-item><template #label><tooltip-label :title="$t('label.username')" :tooltip="$t('message.storage.service.ad.leave.username.help')" /></template><a-input v-model:value="forms.adLeave.username" /></a-form-item></a-col>
+            <a-col :xs="24" :md="24"><a-form-item><template #label><tooltip-label :title="$t('label.password')" :tooltip="$t('message.storage.service.ad.leave.password.help')" /></template><a-input-password v-model:value="forms.adLeave.password" autocomplete="new-password" /></a-form-item></a-col>
           </a-row>
         </div>
         <div v-if="actionModal.type === 'iscsiTarget'" class="storage-action-form storage-action-form--vertical">
@@ -1707,14 +1945,23 @@ export default {
           name: '',
           path: '',
           volumeid: '',
+          volumemode: 'CURRENT',
+          newvolumename: '',
+          diskofferingid: '',
+          storageid: '',
+          newvolumesize: null,
           filesystem: 'xfs',
           quotaamount: null,
           quotaunit: 'GiB',
           readonly: false,
           browseable: true,
-          guestok: false
+          guestok: false,
+          createdirectory: true,
+          crossprotocol: false,
+          directorymode: '0770'
         },
         smbAcl: {
+          id: '',
           shareid: '',
           principaltype: 'LOCAL_USER',
           principal: '',
@@ -1728,6 +1975,11 @@ export default {
           organizationalunit: '',
           dnsservers: '',
           workgroup: ''
+        },
+        adLeave: {
+          confirmation: '',
+          username: '',
+          password: ''
         },
         iscsiTarget: {
           targetname: '',
@@ -1847,6 +2099,13 @@ export default {
       }
       return this.currentBackingVolumes.find(volume => String(volume.id) === selected || String(volume.uuid) === selected) || null
     },
+    selectedSmbCurrentBackingVolume () {
+      const selected = String(this.forms.smbShare.volumeid || '')
+      if (!selected) {
+        return null
+      }
+      return this.currentBackingVolumes.find(volume => String(volume.id) === selected || String(volume.uuid) === selected) || null
+    },
     selectedNfsDiskOffering () {
       return this.diskOfferings.find(offering => offering.id === this.forms.nfsExport.diskofferingid)
     },
@@ -1855,6 +2114,22 @@ export default {
     },
     filteredNfsNewVolumeStoragePools () {
       const requiredTags = this.selectedNfsDiskOfferingTags.map(tag => tag.toLowerCase())
+      if (!requiredTags.length) {
+        return this.storagePools
+      }
+      return this.storagePools.filter(pool => {
+        const poolTags = this.extractStorageTags(pool).map(tag => tag.toLowerCase())
+        return requiredTags.every(tag => poolTags.includes(tag))
+      })
+    },
+    selectedSmbDiskOffering () {
+      return this.diskOfferings.find(offering => offering.id === this.forms.smbShare.diskofferingid)
+    },
+    selectedSmbDiskOfferingTags () {
+      return this.extractStorageTags(this.selectedSmbDiskOffering)
+    },
+    filteredSmbNewVolumeStoragePools () {
+      const requiredTags = this.selectedSmbDiskOfferingTags.map(tag => tag.toLowerCase())
       if (!requiredTags.length) {
         return this.storagePools
       }
@@ -2082,14 +2357,73 @@ export default {
       }
       return commands
     },
+    smbProtocolRows () {
+      return (this.storageService.protocols || []).filter(protocol => {
+        const name = String(protocol.protocol || protocol.name || protocol.type || '').toUpperCase()
+        return name === 'SMB' && protocol.enabled !== false && protocol.state !== 'Disabled'
+      })
+    },
+    smbEffectivePorts () {
+      const ports = []
+      const add = value => {
+        const port = Number(value)
+        if (Number.isFinite(port) && port > 0 && !ports.includes(port)) {
+          ports.push(port)
+        }
+      }
+      this.smbProtocolRows.forEach(protocol => {
+        add(protocol.port || protocol.listenPort || protocol.listenport || protocol.endpointPort)
+        const config = this.parseStorageConfig(protocol.config || protocol.configjson || protocol.configJson)
+        add(config.port || config.listenPort || config.listenport || config.endpointPort)
+      })
+      if (!ports.length && (this.isProtocolEnabled('SMB') || this.storageService.smbShares.length > 0)) {
+        add(this.defaultProtocolPort('SMB'))
+      }
+      return ports.length ? ports : [this.defaultProtocolPort('SMB')]
+    },
+    smbEffectiveEndpointPairs () {
+      const ips = []
+      const addIp = value => {
+        const ip = String(value || '').trim()
+        if (!ip || this.isWildcardListenIp(ip) || ips.includes(ip)) return
+        ips.push(ip)
+      }
+      this.smbProtocolRows.forEach(protocol => {
+        addIp(protocol.listenip || protocol.listenIp || protocol.ipaddress || protocol.ipAddress)
+        const config = this.parseStorageConfig(protocol.config || protocol.configjson || protocol.configJson)
+        addIp(config.listenIp || config.listenip || config.ipaddress || config.ipAddress)
+      })
+      if (this.isProtocolEnabled('SMB') || this.smbProtocolRows.length || this.storageService.smbShares.length) {
+        this.serviceEndpoints.forEach(addIp)
+      }
+      if (!ips.length) addIp(this.serviceEndpoint)
+      const pairs = []
+      ips.forEach(ip => {
+        this.smbEffectivePorts.forEach(port => {
+          const key = `${ip}:${port}`
+          if (!pairs.some(pair => pair.key === key)) {
+            pairs.push({ key, ip, port })
+          }
+        })
+      })
+      return pairs
+    },
+    smbEndpointPairSummary () {
+      return this.smbEffectiveEndpointPairs.map(pair => `${pair.ip}:${pair.port}`).join(', ')
+    },
     smbConnectionCommands () {
-      const endpoint = this.serviceEndpoint || '<service-ip>'
       const share = `<${this.$t('label.storage.service.share.name.placeholder')}>`
       const user = `<${this.$t('label.username')}>`
-      return [`\\\\${endpoint}\\${share}`, `net use * \\\\${endpoint}\\${share} /user:${user}`, `smbclient //${endpoint}/${share} -U ${user}`]
+      const pairs = this.smbEffectiveEndpointPairs.length ? this.smbEffectiveEndpointPairs : [{ ip: '<service-ip>' }]
+      const commands = []
+      pairs.forEach(pair => commands.push(`\\\\${pair.ip}\\${share}`))
+      const first = pairs[0]
+      commands.push(`net use * \\\\${first.ip}\\${share} /user:${user}`)
+      commands.push(`smbclient //${first.ip}/${share} -U ${user}`)
+      return commands
     },
     smbEndpoint () {
-      return `\\\\${this.serviceEndpoint || '<service-ip>'}\\<${this.$t('label.storage.service.share.name.placeholder')}>`
+      return this.smbClientPathForShare()
     },
     smbDomainStatus () {
       return this.storageService.domains.find(domain => {
@@ -2097,14 +2431,33 @@ export default {
         return protocol === 'SMB'
       }) || {}
     },
+    normalizedSmbDomainState () {
+      return String(this.smbDomainState || '').trim().toUpperCase()
+    },
+    isSmbAdConfigured () {
+      const domainName = String(this.smbDomainName || '').trim()
+      const mode = String(this.smbIdentityMode || '').trim()
+      return !!this.smbDomainStatus.id ||
+        this.storageService.domains.length > 0 ||
+        (!!domainName && domainName !== '-') ||
+        mode === this.$t('label.storage.service.smb.identity.ad')
+    },
+    isSmbAdJoined () {
+      return ['JOINED', 'OK', 'READY'].includes(this.normalizedSmbDomainState)
+    },
+    currentSmbDomainConfirmation () {
+      const domainName = String(this.smbDomainName || '').trim()
+      return domainName && domainName !== '-' ? domainName : 'LEAVE'
+    },
     smbRuntime () {
       const inventory = this.parsedInventory || {}
       const health = this.parsedHealth || {}
-      return inventory.smb || health.smb || inventory.samba || health.samba || {}
+      const identity = health.identity || {}
+      return inventory.smbDomain || identity.smbDomain || inventory.smb || health.smb || inventory.samba || health.samba || {}
     },
     smbIdentityMode () {
-      const mode = this.smbDomainStatus.identitymode || this.smbDomainStatus.identityMode || this.smbDomainStatus.mode || this.smbRuntime.identityMode || this.smbRuntime.identitymode
-      if (String(mode || '').toUpperCase() === 'AD') {
+      const mode = this.smbDomainStatus.identitymode || this.smbDomainStatus.identityMode || this.smbDomainStatus.mode || this.smbRuntime.identityMode || this.smbRuntime.identitymode || this.smbRuntime.identityProvider || this.smbRuntime.identityprovider
+      if (['AD', 'ACTIVE_DIRECTORY', 'ACTIVE DIRECTORY'].includes(String(mode || '').toUpperCase())) {
         return this.$t('label.storage.service.smb.identity.ad')
       }
       if (mode) {
@@ -2118,8 +2471,44 @@ export default {
     smbWorkgroup () {
       return this.smbDomainStatus.workgroup || this.smbRuntime.workgroup || '-'
     },
+    smbDomainError () {
+      const inventory = this.parsedInventory || {}
+      const health = this.parsedHealth || {}
+      const identity = health.identity || {}
+      return inventory.smbDomainError || identity.smbDomainError || this.smbRuntime.smbDomainError || {}
+    },
+    smbDomainErrorSummary () {
+      const error = this.smbDomainError || {}
+      const message = error.message || error.details || ''
+      const phase = error.phase || ''
+      if (!message && !phase) {
+        return ''
+      }
+      return [phase, message].filter(Boolean).join(': ')
+    },
     smbDomainState () {
-      return this.smbDomainStatus.state || this.smbDomainStatus.status || this.smbRuntime.domainState || this.smbRuntime.joinState || '-'
+      const error = this.smbDomainError || {}
+      return this.firstDefined(error.state, this.smbDomainStatus.joinstate, this.smbDomainStatus.joinState, this.smbDomainStatus.state, this.smbDomainStatus.status, this.smbRuntime.joinstate, this.smbRuntime.joinState, this.smbRuntime.state, this.smbRuntime.status, this.smbRuntime.domainState, '-')
+    },
+    smbDomainHealthState () {
+      return this.firstDefined(this.smbDomainStatus.healthstate, this.smbDomainStatus.healthState, this.smbRuntime.healthstate, this.smbRuntime.healthState, this.smbRuntime.health, this.smbRuntime.status, '-')
+    },
+    smbTrustVerifiedLabel () {
+      const value = this.firstDefined(this.smbDomainStatus.trustverified, this.smbDomainStatus.trustVerified, this.smbRuntime.trustverified, this.smbRuntime.trustVerified)
+      if (value === undefined) return '-'
+      return this.boolValue(value) ? this.$t('label.storage.service.domain.trust.verified') : this.$t('label.storage.service.domain.trust.unverified')
+    },
+    smbDnsServers () {
+      return this.firstDefined(this.smbDomainStatus.dnsservers, this.smbDomainStatus.dnsServers, this.smbRuntime.dnsservers, this.smbRuntime.dnsServers, '-')
+    },
+    smbRealm () {
+      return this.firstDefined(this.smbDomainStatus.realm, this.smbRuntime.realm, '-')
+    },
+    smbNetbiosName () {
+      return this.firstDefined(this.smbDomainStatus.netbiosname, this.smbDomainStatus.netbiosName, this.smbRuntime.netbiosname, this.smbRuntime.netbiosName, '-')
+    },
+    smbOrganizationalUnit () {
+      return this.firstDefined(this.smbDomainStatus.organizationalunit, this.smbDomainStatus.organizationalUnit, this.smbRuntime.organizationalunit, this.smbRuntime.organizationalUnit, '-')
     },
     smbDaemonState () {
       const services = this.smbRuntime.services || this.smbRuntime.daemons || this.parsedHealth.services || {}
@@ -2180,7 +2569,7 @@ export default {
         { title: this.$t('label.storage.service.client.mount.root'), dataIndex: 'clientPath', key: 'clientPath', width: 240, code: true },
         { title: this.$t('label.storage.service.internal.path'), dataIndex: 'path', key: 'path', width: 220, code: true },
         { title: this.$t('label.storage.service.nfs.protocol.mode'), dataIndex: 'protocolMode', key: 'protocolMode', width: 150 },
-        { title: this.$t('label.storage.service.ip.port'), dataIndex: 'endpoint', key: 'endpoint', width: 170, code: true },
+        { title: this.$t('label.storage.service.ip.port'), dataIndex: 'endpoint', key: 'endpoint', width: 260, code: true },
         { title: this.$t('label.storage.service.permission'), dataIndex: 'permission', key: 'permission', width: 130 },
         { title: this.$t('label.storage.service.root.squash'), dataIndex: 'rootSquash', key: 'rootSquash', width: 130 },
         { title: this.$t('label.storage.service.posix.permission'), dataIndex: 'posixPermission', key: 'posixPermission', width: 220, code: true },
@@ -2232,16 +2621,16 @@ export default {
     smbShareColumns () {
       return [
         { title: this.$t('label.storage.service.smb.share.name'), dataIndex: 'name', key: 'name', fixed: 'left', width: 190, code: true },
-        { title: this.$t('label.storage.service.client.unc.root'), dataIndex: 'clientPath', key: 'clientPath', width: 260, code: true },
+        { title: this.$t('label.storage.service.client.unc.root'), dataIndex: 'clientPath', key: 'clientPath', width: 340, code: true },
         { title: this.$t('label.storage.service.internal.path'), dataIndex: 'path', key: 'path', width: 220, code: true },
-        { title: this.$t('label.storage.service.ip.port'), dataIndex: 'endpoint', key: 'endpoint', width: 170, code: true },
+        { title: this.$t('label.storage.service.ip.port'), dataIndex: 'endpoint', key: 'endpoint', width: 260, code: true },
         { title: this.$t('label.storage.service.browseable'), dataIndex: 'browseable', key: 'browseable', width: 120 },
         { title: this.$t('label.storage.service.guest.access'), dataIndex: 'guestOk', key: 'guestOk', width: 130 },
         { title: this.$t('label.storage.service.permission'), dataIndex: 'permission', key: 'permission', width: 140 },
         { title: this.$t('label.storage.service.capacity'), dataIndex: 'capacity', key: 'capacity', width: 150 },
         { title: this.$t('label.storage.service.backing.volume'), dataIndex: 'volumeName', key: 'volumeName', width: 210 },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 110 },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 190 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 260, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     smbAclColumns () {
@@ -2251,7 +2640,8 @@ export default {
         { title: this.$t('label.storage.service.principal'), dataIndex: 'principal', key: 'principal', width: 220, code: true },
         { title: this.$t('label.storage.service.permission'), dataIndex: 'permission', key: 'permission', width: 140 },
         { title: this.$t('label.storage.service.smb.identity.mode'), dataIndex: 'identityMode', key: 'identityMode', width: 190 },
-        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 }
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 160, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     smbVolumeColumns () {
@@ -2265,7 +2655,7 @@ export default {
         { title: this.$t('label.filesystem'), dataIndex: 'filesystem', key: 'filesystem', width: 130 },
         { title: this.$t('label.storage.service.attached.share'), dataIndex: 'shareName', key: 'shareName', width: 200, code: true },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     smbSessionColumns () {
@@ -2278,7 +2668,7 @@ export default {
         { title: this.$t('label.storage.service.connected.at'), dataIndex: 'connectedAt', key: 'connectedAt', width: 190 },
         { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 220, code: true },
         { title: this.$t('label.storage.service.tree.session.id'), dataIndex: 'sessionId', key: 'sessionId', width: 190, code: true },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     nfsExportRows () {
@@ -2390,11 +2780,11 @@ export default {
       return this.protocolSessions('NFS').map((session, index) => ({
         key: session.sessionId || session.id || `${session.peer || 'session'}-${index}`,
         protocol: session.protocol || 'NFS',
-        peer: session.peer || session.client || session.clientIp || '-',
+        peer: this.formatSessionEndpoint(session.peer || session.client || session.clientIp || '-'),
         state: session.state || session.status || '-',
         connectedAt: session.connectedAt || session.since || session.age || '-',
-        resourceName: session.resourceName || session.exportName || session.share || '-',
-        local: session.local || session.endpoint || '-',
+        resourceName: this.nfsSessionResourceName(session),
+        local: this.formatSessionEndpoint(session.local || session.endpoint || '-'),
         sessionId: session.sessionId || session.id || '',
         raw: session
       }))
@@ -2408,9 +2798,9 @@ export default {
           key: share.id || `smb-share-${index}`,
           id: share.id,
           name,
-          clientPath: `\\\\${this.serviceEndpoint || '<service-ip>'}\\${name}`,
+          clientPath: this.smbClientPathForShare(name),
           path: share.path || share.mountpath || share.backingpath || '-',
-          endpoint: `${share.listenip || this.serviceEndpoint || '-'}:${share.port || 445}`,
+          endpoint: this.smbEndpointPairSummary || `${share.listenip || this.serviceEndpoint || '-'}:${share.port || 445}`,
           browseable: this.booleanLabel(share.browseable ?? config.browseable),
           guestOk: this.booleanLabel(share.guestok ?? share.guestOk ?? config.guestOk),
           permission: this.permissionLabel(share.permission || (share.readonly || config.readOnly ? 'READ_ONLY' : 'READ_WRITE')),
@@ -2454,7 +2844,7 @@ export default {
           used: this.formatCapacityValue(share.usedbytes || share.usedBytes || volume.usedfsbytes || volume.usedphysicalsize || volume.physicalsize || share.physicalsize),
           diskOffering: share.diskofferingname || share.diskOfferingName || volume.diskofferingname || this.volume.diskofferingname || this.resource.diskofferingname || '-',
           storagePool: share.storage || share.storagepool || share.storagePoolName || volume.storage || this.volume.storage || this.resource.storage || '-',
-          filesystem: share.filesystem || share.fsType || this.resource.filesystem || '-',
+          filesystem: this.displayBackingVolumeFilesystem(volume, share),
           shareName: this.clientVisibleName(share.name || share.sharename, '-'),
           state: share.volumestate || share.volumeState || volume.state || this.volume.state || '-',
           raw: share
@@ -2467,13 +2857,14 @@ export default {
         key: session.sessionId || session.id || `${session.peer || 'session'}-${index}`,
         protocol: session.protocol || 'SMB',
         peer: session.peer || session.client || session.clientIp || '-',
-        user: session.user || session.username || '-',
-        resourceName: session.resourceName || session.shareName || session.share || '-',
-        dialect: session.dialect || session.version || session.protocolVersion || '-',
+        user: session.user || session.username || session.userName || '-',
+        group: session.group || session.groupname || session.groupName || '-',
+        resourceName: session.resourceName || session.shareName || session.service || session.share || '-',
+        dialect: session.dialect || session.sessionDialect || session.smbVersion || session.version || session.protocolVersion || '-',
         state: session.state || session.status || '-',
         connectedAt: session.connectedAt || session.since || session.age || '-',
         local: session.local || session.endpoint || '-',
-        sessionId: session.sessionId || session.treeId || session.id || '',
+        sessionId: session.treeId || session.sambaSessionId || session.sessionId || session.id || '',
         raw: session
       }))
     },
@@ -2511,7 +2902,7 @@ export default {
         { title: this.$t('label.storagepool'), dataIndex: 'storagePool', key: 'storagePool', width: 220 },
         { title: this.$t('label.storage.service.iscsi.target'), dataIndex: 'targetName', key: 'targetName', width: 300, code: true },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     iscsiSessionColumns () {
@@ -2521,7 +2912,7 @@ export default {
         { title: this.$t('label.storage.service.connected.at'), dataIndex: 'connectedAt', key: 'connectedAt', width: 190 },
         { title: this.$t('label.storage.service.target.iqn'), dataIndex: 'resourceName', key: 'resourceName', width: 300, code: true },
         { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 220, code: true },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     nvmeSubsystemColumns () {
@@ -2550,7 +2941,7 @@ export default {
         { title: this.$t('label.storage.service.connected.at'), dataIndex: 'connectedAt', key: 'connectedAt', width: 190 },
         { title: this.$t('label.storage.service.subsystem.nqn'), dataIndex: 'resourceName', key: 'resourceName', width: 320, code: true },
         { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 220, code: true },
-        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170 }
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     iscsiTargetRows () {
@@ -2689,8 +3080,12 @@ export default {
         editNfsAcl: 'label.storage.service.update.nfs.acl',
         deleteConfirm: 'label.storage.service.delete.confirm',
         smbShare: 'label.storage.service.create.smb.share',
+        editSmbShare: 'label.storage.service.update.smb.share',
         smbAcl: 'label.storage.service.create.smb.acl',
+        editSmbAcl: 'label.storage.service.update.smb.acl',
         adJoin: 'label.storage.service.join.ad.domain',
+        adRejoin: 'label.storage.service.rejoin.ad.domain',
+        adLeave: 'label.storage.service.leave.ad.domain',
         iscsiTarget: 'label.storage.service.create.iscsi.target',
         iscsiAcl: 'label.storage.service.create.iscsi.acl',
         nvmePrepare: 'label.storage.service.prepare.nvmeof',
@@ -2706,15 +3101,16 @@ export default {
       return this.$t(titles[this.actionModal.type] || 'label.action')
     },
     actionModalOkText () {
-      return ['deleteConfirm', 'deleteEndpoint', 'detachBackingVolume'].includes(this.actionModal.type) ? this.$t('label.ok') : this.$t('label.ok')
+      return ['deleteConfirm', 'deleteEndpoint', 'detachBackingVolume', 'adLeave'].includes(this.actionModal.type) ? this.$t('label.ok') : this.$t('label.ok')
     },
     actionModalOkButtonProps () {
       const deleteEndpointBlocked = this.actionModal.type === 'deleteEndpoint' && !this.deleteEndpointConfirmationMatched
       return {
-        danger: ['deleteConfirm', 'deleteEndpoint', 'detachBackingVolume'].includes(this.actionModal.type),
+        danger: ['deleteConfirm', 'deleteEndpoint', 'detachBackingVolume', 'adLeave'].includes(this.actionModal.type),
         disabled: (this.actionModal.type === 'deleteConfirm' && !this.deleteConfirmationMatched) ||
           deleteEndpointBlocked ||
-          (this.actionModal.type === 'detachBackingVolume' && !this.forms.detachBackingVolume.confirmation)
+          (this.actionModal.type === 'detachBackingVolume' && !this.forms.detachBackingVolume.confirmation) ||
+          (this.actionModal.type === 'adLeave' && !this.adLeaveConfirmationMatched)
       }
     },
     isNfsRuntimeDualMode () {
@@ -2758,6 +3154,12 @@ export default {
       }
       return !!this.forms.deleteEndpoint.listenip &&
         String(this.forms.deleteEndpoint.confirmation || '') === String(this.forms.deleteEndpoint.listenip || '')
+    },
+    adLeaveConfirmationMatched () {
+      if (this.actionModal.type !== 'adLeave') {
+        return true
+      }
+      return String(this.forms.adLeave.confirmation || '') === String(this.currentSmbDomainConfirmation || '')
     },
     deleteTargetTypeLabel () {
       const labels = {
@@ -2803,6 +3205,20 @@ export default {
       }
       this.syncNfsExportPathToCurrentVolume()
     },
+    'forms.smbShare.volumemode': function (mode) {
+      if (mode === 'CURRENT' && !this.forms.smbShare.volumeid) {
+        this.forms.smbShare.volumeid = this.defaultCurrentBackingVolumeId()
+      }
+    },
+    'forms.smbShare.name': function (name, previousName) {
+      if (!this.actionModal.visible || !['smbShare', 'editSmbShare'].includes(this.actionModal.type)) {
+        return
+      }
+      const previousPath = previousName ? this.defaultSmbSharePath(previousName) : ''
+      if (!this.forms.smbShare.path || this.forms.smbShare.path === previousPath) {
+        this.forms.smbShare.path = this.defaultSmbSharePath(name)
+      }
+    },
     'forms.nfsExport.volumeid': function () {
       this.syncNfsExportPathToCurrentVolume()
     },
@@ -2838,6 +3254,11 @@ export default {
     this.$emit('wide-layout-change', false)
   },
   methods: {
+    smbClientPathForShare (shareName) {
+      const name = shareName || `<${this.$t('label.storage.service.share.name.placeholder')}>`
+      const pairs = this.smbEffectiveEndpointPairs.length ? this.smbEffectiveEndpointPairs : [{ ip: this.serviceEndpoint || '<service-ip>' }]
+      return pairs.map(pair => `\\\\${String(pair.ip || '').trim() || '<service-ip>'}\\${name}`).join(', ')
+    },
     setCurrentTab () {
       const tab = this.$route.query.tab ? this.$route.query.tab : 'details'
       this.currentTab = tab
@@ -2955,6 +3376,7 @@ export default {
       getAPI('listDiskOfferings', params).then(json => {
         this.diskOfferings = json.listdiskofferingsresponse.diskoffering || []
         this.reconcileNfsNewVolumeStorage()
+        this.reconcileSmbNewVolumeStorage()
       }).finally(() => {
         this.diskOfferingLoading = false
       })
@@ -2976,6 +3398,10 @@ export default {
           this.forms.nfsExport.storageid = this.defaultNewVolumeStorageId()
         }
         this.reconcileNfsNewVolumeStorage()
+        if (!this.forms.smbShare.storageid) {
+          this.forms.smbShare.storageid = this.defaultSmbNewVolumeStorageId()
+        }
+        this.reconcileSmbNewVolumeStorage()
       }).finally(() => {
         this.storagePoolLoading = false
       })
@@ -3307,7 +3733,7 @@ export default {
           await this.fetchCollection('listStorageNfsExports', 'nfsExports', 'storagenfsexport')
           await this.fetchAccessRules()
           await this.fetchBackingVolumes()
-        } else if (['smbShare', 'smbAcl', 'adJoin'].includes(key)) {
+        } else if (['smbShare', 'editSmbShare', 'smbAcl', 'editSmbAcl', 'adJoin', 'adRejoin', 'adLeave'].includes(key)) {
           await Promise.all([
             this.fetchCollection('listStorageServiceDomainStatus', 'domains', 'storageidentitydomain'),
             this.fetchCollection('listStorageSmbShares', 'smbShares', 'storagesmbshare')
@@ -3516,6 +3942,17 @@ export default {
       const config = this.currentBackingVolumeConfig(volume)
       const inspection = config.lastInspection || config.lastinspection || {}
       return inspection.filesystem || inspection.fsType || inspection.fstype || this.nfsExportsForVolume(volume)[0]?.filesystem || volume?.filesystem || ''
+    },
+    displayBackingVolumeFilesystem (volume, share = {}) {
+      const value = this.currentBackingVolumeFilesystem(volume) ||
+        share.filesystem ||
+        share.fsType ||
+        share.fstype ||
+        volume?.filesystem ||
+        volume?.fsType ||
+        this.resource.filesystem ||
+        ''
+      return value ? String(value).toLowerCase() : '-'
     },
     currentBackingVolumeExportSummary (volume) {
       const shares = this.nfsExportsForVolume(volume)
@@ -3734,6 +4171,14 @@ export default {
         this.forms.nfsExport.storageid = this.filteredNfsNewVolumeStoragePools[0]?.id || ''
       }
     },
+    reconcileSmbNewVolumeStorage () {
+      if (this.forms.smbShare.volumemode !== 'NEW') {
+        return
+      }
+      if (!this.filteredSmbNewVolumeStoragePools.some(pool => pool.id === this.forms.smbShare.storageid)) {
+        this.forms.smbShare.storageid = this.filteredSmbNewVolumeStoragePools[0]?.id || ''
+      }
+    },
     defaultCurrentBackingVolumeId () {
       if (this.currentBackingVolumes.length === 1) {
         return this.currentBackingVolumes[0].id
@@ -3750,6 +4195,13 @@ export default {
         return preferred
       }
       return this.filteredNfsNewVolumeStoragePools[0]?.id || preferred || ''
+    },
+    defaultSmbNewVolumeStorageId () {
+      const preferred = this.volume.storageid || this.resource.storageid || this.storageService.backingVolumes?.[0]?.storageid
+      if (preferred && this.filteredSmbNewVolumeStoragePools.some(pool => pool.id === preferred)) {
+        return preferred
+      }
+      return this.filteredSmbNewVolumeStoragePools[0]?.id || preferred || ''
     },
     formatProtocolEndpoints (port, preferredIp = null) {
       const ips = preferredIp ? [preferredIp] : this.serviceEndpoints
@@ -3985,6 +4437,15 @@ export default {
       }
       return 'FORMAT_IF_EMPTY'
     },
+    smbShareImportMode () {
+      if (this.forms.smbShare.volumemode === 'NEW') {
+        return 'FORMAT_EMPTY'
+      }
+      if (this.forms.smbShare.volumemode === 'EXISTING') {
+        return 'MOUNT_EXISTING'
+      }
+      return 'FORMAT_IF_EMPTY'
+    },
     nextNfsExportName () {
       let index = this.storageService.nfsExports.length + 1
       const used = new Set(this.storageService.nfsExports.map(share => this.clientVisibleName(share.name || share.exportname, '').toLowerCase()).filter(Boolean))
@@ -4085,6 +4546,89 @@ export default {
         anongid: null,
         sync: true,
         secure: false
+      })
+    },
+    nextSmbShareName () {
+      let index = this.storageService.smbShares.length + 1
+      const used = new Set(this.storageService.smbShares.map(share => this.clientVisibleName(share.name || share.sharename, '').toLowerCase()).filter(Boolean))
+      let name = `smb${String(index).padStart(2, '0')}`
+      while (used.has(name.toLowerCase())) {
+        index += 1
+        name = `smb${String(index).padStart(2, '0')}`
+      }
+      return name
+    },
+    defaultSmbSharePath (name) {
+      const safeName = String(name || 'smb01').trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'smb01'
+      return `/export/${safeName}`
+    },
+    resetSmbShareForm () {
+      const name = this.nextSmbShareName()
+      Object.assign(this.forms.smbShare, {
+        name,
+        path: this.defaultSmbSharePath(name),
+        volumeid: this.defaultCurrentBackingVolumeId(),
+        volumemode: 'CURRENT',
+        newvolumename: '',
+        diskofferingid: '',
+        storageid: this.defaultSmbNewVolumeStorageId(),
+        newvolumesize: null,
+        filesystem: 'xfs',
+        quotaamount: null,
+        quotaunit: 'GiB',
+        readonly: false,
+        browseable: true,
+        guestok: false,
+        createdirectory: true,
+        crossprotocol: false,
+        directorymode: '0770'
+      })
+    },
+    populateSmbShareForm (record) {
+      const share = record?.raw || record || {}
+      const config = this.parseStorageConfig(share.config || share.configjson || share.configJson)
+      const quota = this.capacityBytesToInput(share.quotabytes || share.quotaBytes || share.capacitybytes || share.sizebytes)
+      const volumeId = share.volumeid || share.volumeId || ''
+      const currentVolume = this.currentBackingVolumes.find(volume => String(volume.id) === String(volumeId))
+      Object.assign(this.forms.smbShare, {
+        name: this.clientVisibleName(share.name || share.sharename, ''),
+        path: share.path || share.mountpath || share.backingpath || '',
+        volumeid: volumeId,
+        volumemode: currentVolume || !volumeId ? 'CURRENT' : 'EXISTING',
+        newvolumename: '',
+        diskofferingid: '',
+        storageid: this.defaultSmbNewVolumeStorageId(),
+        newvolumesize: null,
+        filesystem: share.filesystem || share.fsType || 'xfs',
+        quotaamount: quota.amount,
+        quotaunit: quota.unit,
+        readonly: this.boolValue(share.readonly ?? share.readOnly ?? config.readOnly),
+        browseable: this.boolValue(share.browseable ?? config.browseable),
+        guestok: this.boolValue(share.guestok ?? share.guestOk ?? config.guestOk),
+        createdirectory: config.createDirectory === undefined && config.createdirectory === undefined ? true : this.boolValue(config.createDirectory ?? config.createdirectory),
+        crossprotocol: this.boolValue(config.crossProtocol ?? config.crossprotocol),
+        directorymode: config.directoryMode || config.directorymode || '0770'
+      })
+    },
+    resetSmbAclForm () {
+      Object.assign(this.forms.smbAcl, {
+        id: '',
+        shareid: this.storageService.smbShares[0]?.id || '',
+        principaltype: String(this.smbDomainState || '').toUpperCase() === 'JOINED' ? 'AD_USER' : 'LOCAL_USER',
+        principal: '',
+        permission: 'READ_WRITE',
+        password: ''
+      })
+    },
+    populateSmbAclForm (record) {
+      const acl = record?.raw || record || {}
+      Object.assign(this.forms.smbAcl, {
+        id: acl.id || '',
+        shareid: acl.resourceid || acl.resourceId || acl.shareid || acl.shareId || this.smbShareForAcl(acl)?.id || '',
+        principaltype: acl.principaltype || acl.principalType || 'LOCAL_USER',
+        principal: acl.principal || acl.username || acl.account || '',
+        permission: acl.permission || acl.access || 'READ_WRITE',
+        password: ''
       })
     },
     populateNfsExportForm (record) {
@@ -4202,6 +4746,42 @@ export default {
       if (type === 'editNfsAcl') {
         this.populateNfsAclForm(context)
       }
+      if (type === 'smbShare') {
+        this.resetSmbShareForm()
+        this.fetchDiskOfferings()
+        this.fetchStoragePools()
+      }
+      if (type === 'editSmbShare') {
+        this.populateSmbShareForm(context)
+        this.fetchDiskOfferings()
+        this.fetchStoragePools()
+      }
+      if (type === 'smbAcl') {
+        this.resetSmbAclForm()
+        if (context?.shareid) {
+          this.forms.smbAcl.shareid = context.shareid
+        }
+      }
+      if (type === 'editSmbAcl') {
+        this.populateSmbAclForm(context)
+      }
+      if (type === 'adJoin' || type === 'adRejoin') {
+        this.forms.adJoin = {
+          domainname: this.smbDomainName !== '-' ? this.smbDomainName : '',
+          username: '',
+          password: '',
+          organizationalunit: this.smbOrganizationalUnit !== '-' ? this.smbOrganizationalUnit : '',
+          dnsservers: this.smbDnsServers !== '-' ? this.smbDnsServers : '',
+          workgroup: this.smbWorkgroup !== '-' ? this.smbWorkgroup : ''
+        }
+      }
+      if (type === 'adLeave') {
+        this.forms.adLeave = {
+          confirmation: '',
+          username: '',
+          password: ''
+        }
+      }
       if (type === 'resizeShare' && context?.id) {
         this.forms.resizeShare.id = context.id
       }
@@ -4238,12 +4818,16 @@ export default {
       const names = {
         protocol: record?.name || record?.protocol,
         nfsExport: record?.name || this.clientVisibleName(raw.name || raw.exportname, ''),
-        nfsAcl: record?.principal || raw.principal || raw.cidr || raw.client
+        nfsAcl: record?.principal || raw.principal || raw.cidr || raw.client,
+        smbShare: record?.name || this.clientVisibleName(raw.name || raw.sharename, ''),
+        smbAcl: record?.principal || raw.principal || raw.username || raw.account
       }
       const commands = {
         protocol: 'deleteStorageServiceProtocol',
         nfsExport: 'deleteStorageNfsExport',
-        nfsAcl: 'deleteStorageNfsAcl'
+        nfsAcl: 'deleteStorageNfsAcl',
+        smbShare: 'deleteStorageSmbShare',
+        smbAcl: 'deleteStorageSmbAcl'
       }
       this.forms.deleteConfirm = {
         resourceType,
@@ -4276,8 +4860,12 @@ export default {
         deleteConfirm: this.deleteStorageResource,
         deleteEndpoint: this.deleteStorageEndpoint,
         smbShare: this.createSmbShare,
+        editSmbShare: this.updateSmbShare,
         smbAcl: this.createSmbAcl,
+        editSmbAcl: this.updateSmbAcl,
         adJoin: this.joinAdDomain,
+        adRejoin: this.joinAdDomain,
+        adLeave: this.leaveAdDomain,
         iscsiTarget: this.createIscsiTarget,
         iscsiAcl: this.createIscsiAcl,
         nvmePrepare: this.prepareNvmeOf,
@@ -4500,31 +5088,145 @@ export default {
         listenip: this.forms.deleteEndpoint.listenip
       }, this.$t('label.storage.service.delete.endpoint'))
     },
-    createSmbShare () {
+    async prepareSmbShareVolume () {
+      if (this.forms.smbShare.volumemode === 'CURRENT') {
+        if (!this.forms.smbShare.volumeid) {
+          this.$message.error(this.$t('message.storage.service.current.volume.required'))
+          return false
+        }
+        return this.forms.smbShare.volumeid
+      }
+      if (this.forms.smbShare.volumemode === 'EXISTING') {
+        if (!this.forms.smbShare.volumeid) {
+          this.$message.error(this.$t('message.storage.service.existing.volume.required'))
+          return false
+        }
+        return this.forms.smbShare.volumeid
+      }
+      if (!this.forms.smbShare.storageid) {
+        this.forms.smbShare.storageid = this.defaultSmbNewVolumeStorageId()
+      }
+      if (!this.forms.smbShare.diskofferingid || !this.forms.smbShare.storageid || !this.forms.smbShare.newvolumesize) {
+        this.$message.error(this.$t('message.storage.service.new.volume.required'))
+        return false
+      }
+      const params = {
+        name: this.forms.smbShare.newvolumename || `${this.forms.smbShare.name}-volume`,
+        zoneid: this.resource.zoneid,
+        diskofferingid: this.forms.smbShare.diskofferingid,
+        storageid: this.forms.smbShare.storageid,
+        size: this.forms.smbShare.newvolumesize
+      }
+      const json = await postAPI('createVolume', this.cleanParams(params))
+      const response = json.createvolumeresponse || {}
+      const jobResult = response.jobid ? await this.waitStorageServiceJob(response.jobid, 'createVolume', 180) : null
+      const jobVolume = jobResult?.jobresult?.volume || jobResult?.volume || {}
+      const id = jobVolume.id || response.id || response.volume?.id
+      if (!id) {
+        this.$message.error(this.$t('message.storage.service.new.volume.create.failed'))
+        return false
+      }
+      await this.waitVolumeAttachable(id)
+      return id
+    },
+    async createSmbShare () {
+      const volumeId = await this.prepareSmbShareVolume()
+      if (volumeId === false) {
+        return Promise.resolve()
+      }
       return this.runStorageAction('smbShare', 'createStorageSmbShare', {
         instanceid: this.storageService.instance.id,
         name: this.forms.smbShare.name,
         path: this.forms.smbShare.path,
-        volumeid: this.forms.smbShare.volumeid,
+        volumeid: volumeId,
         filesystem: this.forms.smbShare.filesystem,
+        importmode: this.smbShareImportMode(),
         quotabytes: this.toCapacityBytes(this.forms.smbShare.quotaamount, this.forms.smbShare.quotaunit),
         readonly: this.forms.smbShare.readonly,
         browseable: this.forms.smbShare.browseable,
-        guestok: this.forms.smbShare.guestok
+        guestok: this.forms.smbShare.guestok,
+        createdirectory: this.forms.smbShare.createdirectory,
+        crossprotocol: this.forms.smbShare.crossprotocol,
+        directorymode: this.forms.smbShare.directorymode,
+        cleanupvolumeonfailure: this.forms.smbShare.volumemode === 'NEW' && !!volumeId
       }, this.$t('label.storage.service.create.smb.share'))
+    },
+    updateSmbShare () {
+      const context = this.actionModal.context?.raw || this.actionModal.context || {}
+      return this.runStorageAction('editSmbShare', 'updateStorageSmbShare', {
+        id: context.id || this.actionModal.context?.id,
+        name: this.forms.smbShare.name,
+        path: this.forms.smbShare.path,
+        volumeid: this.forms.smbShare.volumeid,
+        filesystem: this.forms.smbShare.filesystem,
+        importmode: this.smbShareImportMode(),
+        quotabytes: this.toCapacityBytes(this.forms.smbShare.quotaamount, this.forms.smbShare.quotaunit),
+        readonly: this.forms.smbShare.readonly,
+        browseable: this.forms.smbShare.browseable,
+        guestok: this.forms.smbShare.guestok,
+        createdirectory: this.forms.smbShare.createdirectory,
+        crossprotocol: this.forms.smbShare.crossprotocol,
+        directorymode: this.forms.smbShare.directorymode
+      }, this.$t('label.storage.service.update.smb.share'))
     },
     createSmbAcl () {
       const result = this.runStorageAction('smbAcl', 'createStorageSmbAcl', this.forms.smbAcl, this.$t('label.storage.service.create.smb.acl'))
       this.forms.smbAcl.password = ''
       return result
     },
+    updateSmbAcl () {
+      const context = this.actionModal.context?.raw || this.actionModal.context || {}
+      const result = this.runStorageAction('editSmbAcl', 'updateStorageSmbAcl', {
+        id: context.id || this.forms.smbAcl.id,
+        principal: this.forms.smbAcl.principal,
+        permission: this.forms.smbAcl.permission,
+        password: this.forms.smbAcl.password
+      }, this.$t('label.storage.service.update.smb.acl'))
+      this.forms.smbAcl.password = ''
+      return result
+    },
     joinAdDomain () {
-      const result = this.runStorageAction('adJoin', 'joinStorageServiceToAdDomain', {
+      const key = this.actionModal.type === 'adRejoin' ? 'adRejoin' : 'adJoin'
+      const result = this.runStorageAction(key, 'joinStorageServiceToAdDomain', {
         instanceid: this.storageService.instance.id,
         ...this.forms.adJoin
-      }, this.$t('label.storage.service.join.ad.domain'))
+      }, this.$t(key === 'adRejoin' ? 'label.storage.service.rejoin.ad.domain' : 'label.storage.service.join.ad.domain'))
       this.forms.adJoin.password = ''
       return result
+    },
+    leaveAdDomain () {
+      if (!this.adLeaveConfirmationMatched) {
+        this.$message.error(this.$t('message.storage.service.ad.leave.confirm.input'))
+        return Promise.resolve()
+      }
+      const result = this.runStorageAction('adLeave', 'leaveStorageServiceFromAdDomain', {
+        instanceid: this.storageService.instance.id,
+        username: this.forms.adLeave.username,
+        password: this.forms.adLeave.password
+      }, this.$t('label.storage.service.leave.ad.domain'))
+      this.forms.adLeave.password = ''
+      return result
+    },
+    async checkAdDomainStatus () {
+      if (!this.storageService.instance || this.actionLoading.adStatus) {
+        return
+      }
+      this.actionLoading.adStatus = true
+      this.storageService.refreshing = true
+      try {
+        await Promise.all([
+          this.fetchCollection('listStorageServiceDomainStatus', 'domains', 'storageidentitydomain'),
+          this.fetchRuntime('listStorageServiceHealth', 'health'),
+          this.fetchRuntime('listStorageServiceInventory', 'inventory'),
+          this.fetchRuntime('listStorageServiceSessions', 'sessions')
+        ])
+        this.$message.success(this.$t('message.storage.service.ad.status.refreshed'))
+      } catch (error) {
+        this.$notifyError(error)
+      } finally {
+        this.storageService.refreshing = false
+        this.actionLoading.adStatus = false
+      }
     },
     createIscsiTarget () {
       return this.runStorageAction('iscsiTarget', 'createStorageIscsiTarget', {
@@ -4635,6 +5337,39 @@ export default {
         const sessionProtocol = (session.protocol || session.service || '').toUpperCase()
         return sessionProtocol === protocol
       })
+    },
+    normalizeSessionAddress (value) {
+      const text = String(value || '').trim()
+      if (!text || text === '-') {
+        return text || '-'
+      }
+      if (text.startsWith('[::ffff:') && text.includes(']:')) {
+        return text.replace('[::ffff:', '').replace(']', '')
+      }
+      if (text.startsWith('::ffff:')) {
+        return text.replace('::ffff:', '')
+      }
+      return text
+    },
+    formatSessionEndpoint (value) {
+      return this.normalizeSessionAddress(value)
+    },
+    nfsSessionResourceName (session) {
+      const direct = session.resourceName || session.exportName || session.share
+      if (direct) {
+        return this.clientVisibleName(direct, '-')
+      }
+      const candidates = Array.isArray(session.possibleExports) ? session.possibleExports : []
+      const names = candidates
+        .map(item => this.clientVisibleName(item.resourceName || item.exportName || item.name || item.clientPath, ''))
+        .filter(Boolean)
+      if (names.length === 1) {
+        return names[0]
+      }
+      if (names.length > 1) {
+        return `${this.$t('label.storage.service.possible.exports')} (${names.join(', ')})`
+      }
+      return '-'
     },
     runtimeColor (item) {
       const status = String(item.status || '').toUpperCase()
@@ -4964,7 +5699,19 @@ export default {
 
     :deep(.storage-table-actions-column) {
       text-align: right;
-      box-shadow: -8px 0 12px -12px rgba(0, 0, 0, 0.45);
+      white-space: nowrap;
+      background-clip: padding-box;
+      box-shadow: -10px 0 14px -14px rgba(0, 0, 0, 0.55);
+    }
+
+    :deep(.ant-table-cell-scrollbar) {
+      background: transparent;
+      box-shadow: none;
+    }
+
+    :deep(.storage-table-actions-column .ant-table-column-title) {
+      display: block;
+      text-align: right;
     }
 
     :deep(.ant-empty-normal) {
@@ -5003,7 +5750,9 @@ export default {
     white-space: nowrap;
   }
   .storage-table-actions__space {
+    display: flex;
     justify-content: flex-end;
+    width: 100%;
     white-space: nowrap;
   }
   .storage-table-actions__empty {
@@ -5037,7 +5786,11 @@ export default {
   .storage-input-number {
     width: 100%;
   }
+  :global(.storage-service-action-modal) {
+    overflow: hidden;
+  }
   :global(.storage-service-action-modal .ant-modal) {
+    top: 0;
     max-width: calc(100vw - 32px);
     padding-bottom: 0;
   }
@@ -5053,15 +5806,37 @@ export default {
   }
   :global(.storage-service-action-modal .ant-modal-body) {
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
-    overflow: hidden;
+    overflow: hidden !important;
+    overflow-x: hidden !important;
+    overflow-y: hidden !important;
   }
   .storage-modal-body {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
     max-height: calc(100vh - 172px);
+    overflow-x: hidden;
     overflow-y: auto;
-    padding: 0 4px 20px 0;
+    padding: 0 8px 20px 0;
     scrollbar-width: thin;
     scrollbar-color: rgba(127, 127, 127, 0.45) transparent;
+  }
+  .storage-modal-body :deep(.ant-form),
+  .storage-modal-body :deep(.ant-form-item),
+  .storage-modal-body :deep(.ant-form-item-control),
+  .storage-modal-body :deep(.ant-form-item-control-input),
+  .storage-modal-body :deep(.ant-form-item-control-input-content),
+  .storage-modal-body :deep(.ant-input),
+  .storage-modal-body :deep(.ant-input-number),
+  .storage-modal-body :deep(.ant-select),
+  .storage-modal-body :deep(.ant-alert),
+  .storage-modal-body :deep(.ant-radio-group),
+  .storage-modal-body :deep(.ant-checkbox-group) {
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
   }
   .storage-modal-body::-webkit-scrollbar {
     width: 6px;
@@ -5078,6 +5853,10 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: visible;
 
     :deep(.tooltip-icon) {
       margin-left: 4px;
@@ -5091,6 +5870,10 @@ export default {
     }
   }
   .storage-action-section {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 12px 14px;
     border: 1px solid rgba(127, 127, 127, 0.22);
     border-radius: 6px;
@@ -5269,7 +6052,8 @@ export default {
       }
 
       :deep(.ant-table-cell-fix-left),
-      :deep(.ant-table-cell-fix-right) {
+      :deep(.ant-table-cell-fix-right),
+      :deep(.storage-table-actions-column) {
         color: rgba(229, 236, 246, 0.9);
         background: #1f272f;
       }
