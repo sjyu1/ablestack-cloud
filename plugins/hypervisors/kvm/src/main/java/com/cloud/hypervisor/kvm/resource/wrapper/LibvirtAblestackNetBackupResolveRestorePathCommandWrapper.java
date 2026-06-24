@@ -69,14 +69,16 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
                     return new BackupAnswer(command, true, StringUtils.join(command.getCandidatePaths(), ","));
                 }
             } else {
-                for (final String candidatePath : command.getCandidatePaths()) {
-                    if (StringUtils.isBlank(candidatePath)) {
-                        continue;
+                final List<Path> validCandidatePaths = findValidRestoreCandidates(command.getCandidatePaths());
+                if (CollectionUtils.isNotEmpty(validCandidatePaths)) {
+                    if (command.isRequireSingleCandidateRestorePath() && validCandidatePaths.size() != 1) {
+                        return new BackupAnswer(command, false, String.format(
+                                "Expected exactly one valid NetBackup restored candidate path for backup ID [%s], but found [%s]: %s. "
+                                        + "Mold cannot safely determine which VM restore path belongs to this NetBackup restore notify. "
+                                        + "Please cleanup stale NetBackup restore paths before retrying.",
+                                command.getBackupId(), validCandidatePaths.size(), validCandidatePaths));
                     }
-                    final Path path = Paths.get(candidatePath);
-                    if (!isValidRestoreCandidate(path)) {
-                        continue;
-                    }
+                    final Path path = validCandidatePaths.get(0);
                     final String singleRestorePathValidationError = validateSingleRestorePathInVmRootIfRequired(command, path);
                     if (StringUtils.isNotBlank(singleRestorePathValidationError)) {
                         return new BackupAnswer(command, false, singleRestorePathValidationError);
@@ -102,6 +104,23 @@ public class LibvirtAblestackNetBackupResolveRestorePathCommandWrapper extends
         return new BackupAnswer(command, false, String.format(
                 "Unable to resolve restored path for NetBackup backup ID [%s]. %s",
                 command.getBackupId(), failureDetail));
+    }
+
+    private List<Path> findValidRestoreCandidates(final List<String> candidatePaths) {
+        final List<Path> validCandidatePaths = new ArrayList<>();
+        if (CollectionUtils.isEmpty(candidatePaths)) {
+            return validCandidatePaths;
+        }
+        for (final String candidatePath : candidatePaths) {
+            if (StringUtils.isBlank(candidatePath)) {
+                continue;
+            }
+            final Path path = Paths.get(candidatePath);
+            if (isValidRestoreCandidate(path)) {
+                validCandidatePaths.add(path.toAbsolutePath().normalize());
+            }
+        }
+        return validCandidatePaths;
     }
 
     private boolean areRequiredRestoreSourcesReady(final List<String> candidatePaths, final List<String> requiredFiles,

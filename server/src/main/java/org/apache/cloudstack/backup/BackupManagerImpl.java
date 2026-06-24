@@ -1817,7 +1817,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
 
         final NetBackupRestoreResolution resolution = resolveNetBackupRestoreRequest(
-                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, true);
+                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, false, true);
         final BackupVO backup = resolution.backup;
         final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
         if (vm == null || VirtualMachine.State.Expunging.equals(vm.getState())) {
@@ -1839,6 +1839,16 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
         }
 
+        final NetBackupRestoreSession existingSession = findNetBackupRestoreSession(vm.getId());
+        if (existingSession != null) {
+            final String skipReason = String.format("NetBackup restore session for VM [%s] is already active for request [%s] in phase [%s]",
+                    vm.getInstanceName(), existingSession.requestIdentifier, existingSession.getPhase());
+            logger.info("NetBackup restore precheck skip by active session. vm=[{}], vmId=[{}], requestIdentifier=[{}], activeRequestIdentifier=[{}], phase=[{}]",
+                    vm.getInstanceName(), vm.getId(), resolution.requestIdentifier, existingSession.requestIdentifier, existingSession.getPhase());
+            return new NetBackupRestorePrecheckResult(false, skipReason, vm.getId(), vm.getInstanceName(),
+                    backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
+        }
+
         if (!VirtualMachine.State.Stopped.equals(vm.getState())) {
             final String skipReason = String.format(
                     "VM [%s] must be in Stopped state before NetBackup restore. Current state: [%s].",
@@ -1849,6 +1859,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             return new NetBackupRestorePrecheckResult(false, skipReason, vm.getId(), vm.getInstanceName(),
                     backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
         }
+
+        validatePreparedNetBackupRestorePath(backup, resolution);
 
         final NetBackupRestoreSession session = claimNetBackupRestoreSession(vm, resolution.requestIdentifier, backup);
         if (session == null) {
@@ -1869,6 +1881,16 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 vm.getInstanceName(), vm.getId(), resolution.requestIdentifier, backup.getUuid(), backup.getExternalId());
         return new NetBackupRestorePrecheckResult(true, null, vm.getId(), vm.getInstanceName(),
                 backup.getId(), backup.getUuid(), resolution.requestIdentifier, backup.getExternalId());
+    }
+
+    private void validatePreparedNetBackupRestorePath(final BackupVO backup, final NetBackupRestoreResolution resolution) {
+        backupDao.loadDetails(backup);
+        final String backupId = StringUtils.defaultIfBlank(backup.getDetail(DETAIL_NETBACKUP_BACKUP_ID), resolution.requestIdentifier);
+        final String restoreHostName = StringUtils.defaultIfBlank(resolution.preparedRestoreHostName,
+                resolveNetBackupRestoreHostName(Collections.singletonList(backup), backupId));
+        resolveNetBackupRestoredExternalIdOnHost(
+                backupId, restoreHostName, Collections.singletonList(backup), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, true,
+                getNetBackupExternalIds(Collections.singletonList(backup)));
     }
 
     private String acquireNetBackupRestoreGuard(final VMInstanceVO vm, final String requestIdentifier) {
@@ -1922,6 +1944,13 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private NetBackupRestoreResolution resolveNetBackupRestoreRequest(final String externalId, final String backupId,
             final int restorePathDiscoveryWindowSeconds, final boolean requireSingleRestorePathInVmRoot) {
+        return resolveNetBackupRestoreRequest(externalId, backupId, restorePathDiscoveryWindowSeconds,
+                requireSingleRestorePathInVmRoot, false);
+    }
+
+    private NetBackupRestoreResolution resolveNetBackupRestoreRequest(final String externalId, final String backupId,
+            final int restorePathDiscoveryWindowSeconds, final boolean requireSingleRestorePathInVmRoot,
+            final boolean requireSingleCandidateRestorePath) {
         if (StringUtils.isNotBlank(externalId)) {
             try {
                 logger.debug("Resolving NetBackup restore by externalId [{}].", externalId);
@@ -1963,7 +1992,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 : Collections.emptyList();
         final String resolvedExternalId = resolveNetBackupRestoredExternalIdOnHost(
                 resolvedBackupId, restoreHostName, candidates, restorePathDiscoveryWindowSeconds, requireSingleRestorePathInVmRoot,
-                allowedRestorePaths);
+                requireSingleCandidateRestorePath, allowedRestorePaths);
         logger.info("NetBackup backupId [{}] resolved to externalId [{}] on restoreHostName [{}].",
                 resolvedBackupId, resolvedExternalId, restoreHostName);
         return new NetBackupRestoreResolution(
@@ -2253,6 +2282,14 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private String resolveNetBackupRestoredExternalIdOnHost(final String backupId,
             final String restoreHostName, final List<BackupVO> backups, final int restorePathDiscoveryWindowSeconds,
             final boolean requireSingleRestorePathInVmRoot, final List<String> allowedRestorePathsInVmRoot) {
+        return resolveNetBackupRestoredExternalIdOnHost(backupId, restoreHostName, backups, restorePathDiscoveryWindowSeconds,
+                requireSingleRestorePathInVmRoot, false, allowedRestorePathsInVmRoot);
+    }
+
+    private String resolveNetBackupRestoredExternalIdOnHost(final String backupId,
+            final String restoreHostName, final List<BackupVO> backups, final int restorePathDiscoveryWindowSeconds,
+            final boolean requireSingleRestorePathInVmRoot, final boolean requireSingleCandidateRestorePath,
+            final List<String> allowedRestorePathsInVmRoot) {
         final HostVO host = findRestoreHost(restoreHostName);
         if (host == null) {
             throw new CloudRuntimeException(String.format(
@@ -2276,7 +2313,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         final AblestackNetBackupResolveRestorePathCommand command =
                 new AblestackNetBackupResolveRestorePathCommand(
                         backupId, restoreCandidatePaths, null, restorePathDiscoveryWindowSeconds,
-                        requireSingleRestorePathInVmRoot, allowedRestorePathsInVmRoot);
+                        requireSingleRestorePathInVmRoot, requireSingleCandidateRestorePath, allowedRestorePathsInVmRoot);
         try {
             final BackupAnswer answer = (BackupAnswer) agentMgr.send(host.getId(), command);
             if (answer == null || !answer.getResult() || StringUtils.isBlank(answer.getDetails())) {

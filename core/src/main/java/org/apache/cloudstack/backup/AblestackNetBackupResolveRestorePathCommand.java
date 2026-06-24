@@ -29,6 +29,7 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
     private List<String> requiredFiles;
     private Integer discoveryWindowSeconds;
     private boolean requireSingleRestorePathInVmRoot;
+    private boolean requireSingleCandidateRestorePath;
     private List<String> allowedRestorePathsInVmRoot;
 
     protected AblestackNetBackupResolveRestorePathCommand() {
@@ -52,11 +53,19 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
     public AblestackNetBackupResolveRestorePathCommand(final String backupId, final List<String> candidatePaths,
             final List<String> requiredFiles, final Integer discoveryWindowSeconds, final boolean requireSingleRestorePathInVmRoot,
             final List<String> allowedRestorePathsInVmRoot) {
+        this(backupId, candidatePaths, requiredFiles, discoveryWindowSeconds, requireSingleRestorePathInVmRoot, false,
+                allowedRestorePathsInVmRoot);
+    }
+
+    public AblestackNetBackupResolveRestorePathCommand(final String backupId, final List<String> candidatePaths,
+            final List<String> requiredFiles, final Integer discoveryWindowSeconds, final boolean requireSingleRestorePathInVmRoot,
+            final boolean requireSingleCandidateRestorePath, final List<String> allowedRestorePathsInVmRoot) {
         this.backupId = backupId;
         this.candidatePaths = candidatePaths;
         this.requiredFiles = requiredFiles;
         this.discoveryWindowSeconds = discoveryWindowSeconds;
         this.requireSingleRestorePathInVmRoot = requireSingleRestorePathInVmRoot;
+        this.requireSingleCandidateRestorePath = requireSingleCandidateRestorePath;
         this.allowedRestorePathsInVmRoot = allowedRestorePathsInVmRoot;
     }
 
@@ -78,6 +87,10 @@ public class AblestackNetBackupResolveRestorePathCommand extends Command {
 
     public boolean isRequireSingleRestorePathInVmRoot() {
         return requireSingleRestorePathInVmRoot;
+    }
+
+    public boolean isRequireSingleCandidateRestorePath() {
+        return requireSingleCandidateRestorePath;
     }
 
     public List<String> getAllowedRestorePathsInVmRoot() {
