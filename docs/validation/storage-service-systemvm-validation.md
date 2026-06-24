@@ -158,6 +158,7 @@ Create one row per validation pass.
 | P03-REBUILD-20260531-03 | 2026-05-31 18:56:00 +09:00 | `codex/europa-storage-service` | working tree with TC-03D-02 NVMe-oF DH-HMAC-CHAP enforcement, runtime secret redaction, and session attribution fixes | 22.x target, WSL template build host, 10.10.22.10 registration host | Zone-22 | `SystemVM Template Storage Service (KVM) 202605311826` | Codex | Pass |
 | P03-REBUILD-20260531-04 | 2026-05-31 23:31:00 +09:00 | `codex/europa-storage-service` | working tree with verified NVMe-oF session connected-time and subsystem attribution fix | 22.x target, WSL template build host, 10.10.22.10 registration host | Zone-22 | `systemvm-template-storage-service-kvm-202605312252` | Codex | Pass |
 | P03-REBUILD-20260602-01 | 2026-06-02 19:12:30 +09:00 | `codex/europa-storage-service` | working tree with TC-04A NFS monitor-cache, NFS ACL instance filtering, and action-modal fixes | 22.x target, WSL template build host, 10.10.22.10 registration host | Zone-22 | `SystemVM Template Storage Service (KVM) 202606021910` | Codex | Pass |
+| P03-REBUILD-20260618-01 | 2026-06-18 16:58:00 +09:00 | `codex/europa-storage-service` | working tree with NFS session endpoint normalization and Ganesha listener/export attribution | 22.x target, WSL template build host, 10.10.22.10 HTTP template host | Zone-22 | `systemvmtemplate-4.22.0.0-x86_64-kvm-202606181623.qcow2.bz2` | Codex | Build/Upload Pass |
 
 ## Current Static Verification Result
 
@@ -1538,3 +1539,300 @@ The feature is ready for the next integration step only when:
 | TC04A-20260611-05 | 2026-06-11 | NFSv4-only multi-port Ganesha auxiliary RPC collision and failed export rollback | Critical | SystemVM/API / NFSv4-only listener group runtime / create rollback | Creating the third export `nfs03` on SharedFS `90d09bba-83d1-48c8-a096-87b09bee2c49` failed while applying the NFS desired state. Guest inspection of `i-2-530-VM` showed `nfs01` on `2049` and `nfs02` on `2050` were running and locally mount/write capable, but `nfs03` was left in DB state `Error`, its new volume was expunged, `/export/nfs03` remained on the root filesystem, and the Ganesha log showed `RQUOTA tcp6 socket ... Address already in use` followed by `Error binding to V6 interface`. | The V4-only per-port Ganesha renderer set the NFS port but did not disable auxiliary RPC services that are unnecessary for NFSv4-only exports. Multiple managed Ganesha processes can therefore collide on shared RQUOTA/NLM/UDP/IPv6 bindings. The NFS export create failure path also preserved an operational Error row instead of rolling back the just-created export and guest mount state. | Implemented and built: V4-only Ganesha configs render TCP-only NFSv4 with `Enable_NLM=false` and `Enable_RQUOTA=false`, while Dual Mode remains unchanged. NFS export create now removes the newly-created export/ACL rows on apply failure and, when cleanup is requested for a newly-created backing volume, runs guest `volume detach prepare` before detaching/destroying the volume. Backend/UI were deployed to `10.10.22.10`; SystemVM template build completed as `systemvmtemplate-4.22.0.0-x86_64-kvm-202606112245.qcow2.bz2` and is downloadable from `http://10.10.22.10:8000/systemvmtemplate-4.22.0.0-x86_64-kvm-202606112245.qcow2.bz2` with SHA256 `5a545b5c515ef1bdeece314891f9d26234c9641b3abdca38dc34467792c8724b`. Runtime retest still requires a new Storage Service VM created from this template. | Ready for Retest |
 
 | TC04A-20260612-01 | 2026-06-12 | NFS runtime does not recover after Storage Service SystemVM reboot | Critical | SystemVM / boot reconcile / NFS managed Ganesha runtime | `bd09b9f1-d2cb-4a8c-81ce-cea82c25030b` on `i-2-532-VM` was healthy with managed Ganesha processes listening on `2049`, `2050`, and `2051`, and local NFSv4 mount/write probes passed for `nfs01`, `nfs02`, and `nfs03`. `5608dca4-95a6-4fd1-a7c1-f90544ccf3d3` on rebooted `i-2-531-VM` had the backing volume and `/export/nfs01` bind mount restored from fstab, but no managed Ganesha process, no NFS listener, and local mount probe failed. | `ablestack-storage-monitor.service` is enabled and active after reboot, but it only collects runtime cache and reconciles network endpoints. No boot-time path reapplies the last successful NFS desired state, so DB `Ready` can drift from runtime `degraded`. | Implemented and built: successful NFS apply persists the last good payload to `/etc/ablestack-storage/desired-state/nfs-export-apply.json`. New `ablestack-storage-reconcile.service` runs before the monitor service at boot, performs `mount -a`, reconciles network endpoints, reapplies the saved NFS payload through `ablestack-storagectl nfs export apply`, retries during boot settle, and refreshes monitor cache on success. Validation evidence: `bash -n` and `git diff --check` passed. SystemVM template build completed as `systemvmtemplate-4.22.0.0-x86_64-kvm-202606120125.qcow2.bz2`; bzip2 integrity passed; downloadable URL is `http://10.10.22.10:8000/systemvmtemplate-4.22.0.0-x86_64-kvm-202606120125.qcow2.bz2`; SHA256 is `3e6d1a64e0d3f30142cf0069f99c61933363cf57bfe0dfd4c7345b7ca17f9234`. Retest requires creating a fresh Storage Service VM from the new template, verifying mount/write, rebooting the SystemVM, then confirming listeners and mount/write recover without manual QGA apply. | Download Ready / Ready for Retest |
+## SMB Empirical Validation - 2026-06-12
+
+### SMB-20260612-01 - Local SMB Coexistence Baseline
+
+- Date: 2026-06-12
+- Target: running Storage Service System VM `i-2-536-VM` on host `10.10.22.1`
+- Existing service state before test:
+  - NFS Ganesha was already running with managed listeners on `*:2049` and `*:2050`.
+  - Storage monitor cache was active.
+  - Samba binaries were present in the System VM: `smbd`, `smbpasswd`, `pdbedit`, and `smbclient`.
+- Test scope:
+  - AD domain authentication was intentionally excluded.
+  - A temporary local SMB user `smbcodex` and temporary test share `/export/smb-codex-test` were created only for this validation.
+  - A standalone temporary Samba config `/tmp/ablestack-smb-test.conf` was used so the existing Storage Service state was not overwritten.
+- Results:
+  - Samba `smbd` started successfully while NFS Ganesha remained active.
+  - SMB listened on `0.0.0.0:445` and `[::]:445`; NFS listeners on `2049` and `2050` remained active.
+  - `smbclient -L //127.0.0.1 -U smbcodex%... -m SMB3` listed the temporary share successfully.
+  - Initial SMB write failed with `NT_STATUS_ACCESS_DENIED` while the share directory was `root` owned with mode `0775`.
+  - After changing the directory owner/group to the SMB local user and applying mode `0770`, SMB write/read succeeded through `smbclient`.
+  - NFSv4 mount checks through the actual service IP `10.10.254.225` still succeeded for `nfs01` on port `2049` and `nfs02` on port `2050`.
+  - Samba also accepted `smb ports = 445 1445`; both ports listened, and `smbclient -p 1445` could access the share.
+  - Test artifacts were cleaned up after validation: temporary smbd process stopped, `smbcodex` removed from Samba/Linux user databases, and the temporary share/config files deleted. NFS listeners remained active after cleanup.
+- Design conclusions:
+  - SMB can coexist with the current NFS Ganesha runtime in the same Storage Service System VM.
+  - Local SMB mode requires both Samba account state and POSIX directory ownership/permission management; share creation must not rely on root-owned backing directories.
+  - SMB share create/update workflows must include owner UID/GID or named local user/group mapping, directory mode, and create-directory behavior, similar to the NFS POSIX permission section but centered on SMB users/groups.
+  - SMB protocol activation can support additional ports at the Samba level, but the operator UI should treat port customization as an advanced endpoint/service option because normal Windows UNC access does not express a port in `\\host\share`.
+  - SMB monitoring must read managed Storage Service SMB config/state, not only distro-default Samba shares such as `homes`, `printers`, or `print$`.
+  - The initial implementation should use standalone/local-user SMB first; AD domain join should be added as a separate authentication mode after local mode is stable.
+
+### SMB-AD-20260613-01 - AD Member Server Join And SMB Access Probe
+
+- Date: 2026-06-13
+- Target: running Storage Service System VM `i-2-536-VM` on host `10.10.22.1`
+- AD test inputs:
+  - Domain FQDN: `ablestack.local`
+  - NetBIOS domain: `ABLESTACK`
+  - AD DNS/DC IP: `10.10.254.227`
+  - SRV-discovered DC name: `adsvr.ablestack.local`
+  - Requested test user/group: `ablecloud`, `Domain Users`
+- Existing service state before test:
+  - NFS Ganesha was active on ports `2049` and `2050`.
+  - AD-related tools were present in the System VM: `net`, `wbinfo`, `winbindd`, `realm`, `adcli`, `kinit`, `host`, `dig`, and `nslookup`.
+- Connectivity results:
+  - Direct DNS queries against `10.10.254.227` resolved `ablestack.local` and SRV records for LDAP/Kerberos.
+  - The provided `adsvr.ablecloud.local` name resolved to an external address, so the correct AD DC name for implementation is the SRV-discovered `adsvr.ablestack.local`.
+  - TCP probes to the DC succeeded for DNS `53`, Kerberos `88/464`, RPC `135`, LDAP `389`, SMB `445`, and Global Catalog `3268`.
+  - Time offset reported by Samba AD lookup was about `-2` seconds, which is acceptable for Kerberos.
+- Join results:
+  - Initial join failed because the System VM hostname exceeded the NetBIOS 15-character limit.
+  - A short managed NetBIOS name `STOR536TST` allowed the AD join to proceed.
+  - Kerberos `kinit` for the join account succeeded.
+  - `net ads join` succeeded after temporarily using the AD DNS server as the resolver.
+  - `net ads testjoin` returned `Join is OK`.
+  - `wbinfo --ping-dc` and `wbinfo -t` succeeded after applying the AD member config as the active Samba config for the probe.
+  - `wbinfo -u` found `ablecloud`; `wbinfo -g` found `domain users`; `wbinfo --user-info=ablecloud` and `wbinfo --group-info="Domain Users"` returned Unix ID mappings.
+- SMB access results:
+  - Authentication for `ABLESTACK\ablecloud` succeeded with both plaintext and challenge/response checks after the test user's password was supplied at runtime.
+  - `wbinfo --user-info=ablecloud` mapped the user to UID `11104` and primary GID `10513`.
+  - `wbinfo --group-info="Domain Users"` mapped the group to GID `10513`.
+  - A share limited to `@"ABLESTACK\Domain Users"` was writable by `ablecloud` after the share directory was owned by `root:10513` with mode `0770`.
+  - `smbclient //127.0.0.1/smbadtest -U ABLESTACK\ablecloud%... -m SMB3` uploaded and downloaded `remote-ablecloud.txt` successfully.
+  - An intermediate attempt with fully isolated temporary Samba `private/lock/state/cache/pid` directories joined the domain and resolved identities, but `smbd` did not open TCP `445`; using Samba's normal persistent state directories allowed `smbd` to listen on `0.0.0.0:445` and `[::]:445`. The implementation must therefore manage persistent Samba state deliberately rather than treating AD member state as throwaway per-command state.
+- NFS coexistence:
+  - After the AD member Samba probe, NFSv4 mount checks still succeeded for `10.10.254.225:/nfs01` on port `2049` and `10.10.254.225:/nfs02` on port `2050`.
+- Cleanup:
+  - The temporary AD computer account `STOR536TST` was removed with `net ads leave`.
+  - Temporary Samba/winbind processes, temporary AD Samba/Kerberos config, and the temporary share directory were removed.
+  - `/etc/resolv.conf` and `/etc/samba/smb.conf` were restored.
+  - Post-cleanup listener state showed only the original NFS listeners on `2049` and `2050`.
+- Design conclusions:
+  - AD support is feasible in the current System VM package set, but the implementation must explicitly manage AD DNS resolver behavior during join and runtime.
+  - The Storage Service must generate a stable NetBIOS name no longer than 15 characters rather than using the long System VM hostname.
+  - AD member mode should use Samba/winbind with explicit idmap ranges and managed keytab/private state.
+  - UI/API must separate AD join credentials from SMB share user credentials; join credentials do not prove application-user access.
+  - Domain group authorization is viable when the Samba ACL and POSIX group ownership are aligned to the winbind idmap result.
+  - AD join/leave and SMB desired-state application can coexist with the existing NFS runtime when applied through isolated Samba/winbind state.
+
+### SMB-AD-20260613-02 - Local And AD SMB Share Coexistence Probe
+
+- Date: 2026-06-13
+- Target: running Storage Service System VM `i-2-536-VM` on host `10.10.22.1`
+- Purpose:
+  - Verify whether local-account SMB shares and AD-authenticated SMB shares can be served by the same Samba runtime.
+  - Confirm the operator-visible constraints before implementing the SMB UI/API model.
+- Test setup:
+  - Samba was configured as an AD member server with managed NetBIOS name `STOR536MIX`.
+  - A temporary local Samba/Linux user `smbmixlocal` was created.
+  - Temporary local share: `smbmixlocal`, backed by `/export/smb-matrix-local`.
+  - Temporary AD shares used variants of AD group/user authorization, backed by `/export/smb-matrix-ad`.
+  - `winbindd` and `smbd` were started while existing NFS Ganesha listeners stayed active.
+- Results:
+  - AD join, `net ads testjoin`, winbind DC ping, trust check, AD user lookup, AD group lookup, and AD user password authentication all succeeded.
+  - `smbd` listened on TCP `445` while NFS Ganesha remained active on `2049` and `2050`.
+  - Local SMB access with an unqualified username failed: `smbmixlocal` returned `NT_STATUS_LOGON_FAILURE`.
+  - Local SMB access succeeded when the local account was qualified with the Samba server NetBIOS name: `STOR536MIX\smbmixlocal`.
+  - AD SMB access succeeded for `ABLESTACK\ablecloud` when the share allowed either `@"ABLESTACK\Domain Users"`, `@"domain users"`, or the explicit AD user.
+  - AD share writes landed with winbind-mapped ownership `ablecloud:domain users`.
+  - Local share writes landed with local ownership `smbmixlocal:smbmixlocal`.
+  - The local account was denied access to the AD-only share, which confirms that local and AD authorization boundaries can be preserved in one Samba runtime.
+- Cleanup:
+  - The temporary AD computer account was removed with `net ads leave`.
+  - Temporary Samba/winbind processes, local test user, test shares, resolver changes, and Samba private/config state were restored.
+  - Post-cleanup listener state showed only the original NFS listeners on `2049` and `2050`.
+- Design conclusions:
+  - Local SMB and AD SMB shares can coexist in one Storage Service VM and one Samba runtime.
+  - In AD member mode, local SMB users are still usable, but client access must qualify the local account with the managed server NetBIOS name.
+  - The UI must show the local-login form as `<server-netbios>\<user>` in AD member mode and should not imply that bare local usernames will authenticate.
+  - SMB share ACLs must distinguish local principals from AD principals and render them differently in generated `smb.conf`.
+  - Directory ownership and mode must be applied per share according to the selected principal type: local Linux/Samba user or winbind-mapped AD UID/GID.
+
+### SMB-NFS-20260613-01 - Reuse Existing NFS Export Directory As SMB Share
+
+- Date: 2026-06-13
+- Target: running Storage Service System VM `i-2-536-VM` on host `10.10.22.1`
+- Purpose:
+  - Verify whether a directory already exposed as an NFS export can also be exposed as an SMB share.
+  - Confirm the permission model required for cross-protocol access to the same backing directory.
+- Existing service state before test:
+  - NFS Ganesha was active on ports `2049` and `2050`.
+  - Existing NFS export directory `/export/nfs01` was mounted from the data volume as `xfs`.
+  - `/export/nfs01` was owned by `nobody:nogroup` with mode `0775`.
+- First probe:
+  - A temporary SMB share was pointed at `/export/nfs01` with `force user = nobody` and `force group = nogroup`.
+  - SMB tree connect failed with `NT_STATUS_INVALID_SID`.
+  - This confirms that forcing an SMB session to a system account that is not a managed Samba principal is not a valid implementation strategy.
+- Successful probe:
+  - A temporary local Samba/Linux user `smbnfsreuse` was created.
+  - A temporary POSIX ACL granting `smbnfsreuse` write access to `/export/nfs01` was applied.
+  - Temporary SMB share `nfs01reuse` was exposed with `path = /export/nfs01`.
+  - SMB write to the reused NFS export directory succeeded.
+  - The SMB-created file was visible directly on `/export/nfs01`.
+  - The same NFS export was mounted through the service IP as `10.10.254.225:/nfs01`, and the SMB-created file was visible through the NFS mount.
+  - A file written through the NFS mount was visible on `/export/nfs01` and readable through the SMB share.
+  - Existing NFS listeners on `2049` and `2050` remained active while the temporary SMB share was running.
+- Cleanup:
+  - The temporary SMB process, local test user, POSIX ACL, test files, and temporary Samba config were removed.
+  - Post-cleanup listener state showed only the original NFS listeners on `2049` and `2050`.
+- Design conclusions:
+  - Reusing an NFS export directory as an SMB share is technically feasible.
+  - The Storage Service must treat this as an explicit cross-protocol share mode, not as an accidental path collision.
+  - SMB must authenticate as a managed local or AD principal and the backend directory must grant that principal POSIX access through ownership, mode, or POSIX ACLs.
+  - The implementation must not use `force user = nobody` as the default cross-protocol mapping strategy.
+  - UI/API should warn that NFS and SMB clients will see the same files and that ownership/permission behavior is governed by the selected cross-protocol POSIX mapping.
+  - Monitoring should show that the same backing path is exported by multiple protocols so operators can understand cross-protocol data visibility.
+
+### SMB-AD-20260613-03 - Create-Time AD Join Failure And Owner Dark-Mode Defect
+
+- Test target:
+  - SharedFS UI: `/sharedfs/9a8a3d8d-8c31-45a5-95d2-51b77734100e?tab=nfs` and `?tab=smb`
+  - Storage Service VM: `i-2-539-VM` on `10.10.22.1`
+  - Selected services: NFS and SMB with AD authentication
+- Observed result:
+  - SharedFS row reached `Ready` and the Storage Service instance reached `Running`.
+  - NFS protocol, SMB protocol, initial NFS export, and initial SMB share rows were present and `Ready` in DB.
+  - VM runtime had Ganesha listening on TCP 2049 and Samba `smbd` listening on TCP 445.
+  - Samba remained in local `WORKGROUP` / `security = user` mode.
+  - `net ads testjoin` and `wbinfo -t` failed because the AD join never completed.
+  - Management log reported `NameError: name 're' is not defined` from the AD join command.
+  - The create modal owner selector had a dark-mode visual mismatch against the rest of the Storage Service modal.
+- Root cause:
+  - `smb_domain_join()` uses an embedded Python block that calls `re.sub` and `re.split` but does not import `re`.
+  - AD join failure is currently surfaced as a partial initial-service failure, while the SMB protocol/share rows can still appear healthy.
+- Required fix:
+  - Add the missing `import re` and add a syntax/import validation gate for embedded Python snippets used by `ablestack-storagectl`.
+  - Make AD join phase-oriented and verify `testparm -s`, `net ads testjoin`, and `wbinfo -t` before persisting a successful AD state.
+  - Expose failed AD trust as an SMB identity warning or failed identity state in the SMB tab and monitor cache.
+  - Keep AD join retryable from the SMB tab without deleting the SharedFS or SMB share.
+  - Align `.sharedfs-create-owner` dark-mode styles with the main Storage Service collapse section palette.
+- Retest requirements:
+  - Create a fresh NFS+SMB AD SharedFS from the UI.
+  - Confirm no partial-service toast appears after create when AD credentials and DNS are valid.
+  - Confirm `/etc/samba/smb.conf` contains `security = ADS`, expected realm/workgroup, and managed NetBIOS name.
+  - Confirm `smbd` and `winbind` are active, TCP 445 is listening, `net ads testjoin` succeeds, and `wbinfo -t` succeeds.
+  - Confirm AD user or AD group access can read/write the created SMB share according to the configured ACL.
+  - Confirm the owner selector and SMB AD fields remain readable in Korean dark mode.
+
+### SMB-AD-STOP-20260613-04 - AD NetBIOS Derivation And SharedFS Stop SQL Guard
+
+- Test target:
+  - SharedFS UI: `/sharedfs/60d87642-da40-4819-8549-d6c4e340abad?tab=nfs` and `?tab=smb`
+  - Storage Service VM: `i-2-540-VM` on `10.10.22.2`
+  - Selected services: NFS and SMB with AD authentication
+- Observed result:
+  - SharedFS reached `Ready` and the Storage Service instance reached `Running`.
+  - NFS Ganesha listened on TCP 2049; Samba `smbd`, `nmbd`, and `winbind` were active and TCP 445 was listening.
+  - Kerberos credential validation for the AD join account succeeded and AD DNS SRV lookup resolved the domain controller.
+  - Manual `net ads join` failed because Samba had `workgroup = WORKGROUP`, while the AD domain requires the NetBIOS domain `ABLESTACK`.
+  - `testparm` also reported an invalid idmap configuration because the default idmap range was missing.
+  - Stopping SharedFS from the UI produced an invalid SQL query ending in `shared_filesystem_view.id IN )`.
+- Root cause:
+  - The backend stored `WORKGROUP` when the operator did not explicitly provide a NetBIOS workgroup, even for AD mode.
+  - The SystemVM trusted that value and rendered AD Samba config without a default idmap range.
+  - The SharedFS response DAO did not guard empty ID lists before building an `IN` query.
+- Required fix:
+  - Derive AD NetBIOS workgroup from the AD FQDN first label when the workgroup is blank or still `WORKGROUP`; for example `ablestack.local` becomes `ABLESTACK`.
+  - Let the SystemVM re-check `net ads lookup` after AD DNS is applied and prefer the discovered Pre-Windows 2000 domain name before `net ads join`.
+  - Render `idmap config * : backend = tdb` and `idmap config * : range = 10000-999999` for AD member mode.
+  - Write a minimal Kerberos config before joining.
+  - Return an empty response list instead of creating invalid SQL when a SharedFS response lookup receives no IDs.
+  - Pass the operator's forced-stop flag through the Storage VM lifecycle stop path.
+- Retest requirements:
+  - Create a fresh NFS+SMB AD SharedFS with the AD FQDN and no manually edited NetBIOS value.
+  - Confirm `smb.conf` contains `workgroup = ABLESTACK`, `realm = ABLESTACK.LOCAL`, and the idmap range.
+  - Confirm `net ads testjoin` and `wbinfo -t` succeed.
+  - Confirm SMB AD user or group access works.
+  - Stop the SharedFS from the UI and confirm no `IN )` SQL error appears.
+
+### SMB-AD-20260613-05 - Kerberos-first AD join and domain-scoped winbind verification
+
+- Test target:
+  - SharedFS UI: `/sharedfs/66c51f5a-3b47-42c4-8504-87f9542b072e`
+  - Storage Service VM: `i-2-541-VM` on `10.10.22.1`
+  - Selected services: NFS and SMB with AD authentication
+- Observed result:
+  - QGA was available and the VM had `10.10.254.192/16`.
+  - `/etc/resolv.conf` pointed to AD DNS `10.10.254.227`.
+  - `_ldap._tcp.ablestack.local` resolved to `adsvr.ablestack.local`.
+  - `adsvr.ablecloud.local` resolved to an external address and must not be
+    treated as the canonical AD DC hostname for this environment.
+  - `kinit Administrator@ABLESTACK.LOCAL` succeeded, proving the supplied AD
+    join password was valid.
+  - Manual `net ads join -U Administrator%<password>` succeeded on the same
+    VM, proving the DC, DNS, and account were usable.
+  - After joining and restarting winbind, `net ads testjoin` succeeded and
+    `wbinfo --domain=ABLESTACK -t` succeeded.
+  - Plain `wbinfo -t` may test the wrong local workgroup context and can report
+    a false trust failure.
+  - `/etc/ablestack-storage/smb-domain-error.json` can remain stale after a
+    manual or partially successful join unless the product command removes it.
+- Root cause:
+  - The SystemVM AD join path attempted `net ads join` directly without a
+    Kerberos credential preflight, so credential, DNS, and join failures were
+    not separated.
+  - The post-join trust check used unscoped `wbinfo -t`, which can check the
+    wrong workgroup context.
+  - Success and failure state files were not managed as an atomic identity
+    operation.
+- Required fix:
+  - Normalize username to UPN form before Kerberos validation.
+  - Run `kinit <user>@<REALM>` first and report `phase=kinit` on failure.
+  - Join with `net ads join -k` after Kerberos validation.
+  - Restart Samba/winbind and verify with `net ads testjoin` and
+    `wbinfo --domain=<WORKGROUP> -t`.
+  - Remove stale `smb-domain-error.json` only after final trust verification
+    succeeds.
+  - Keep AD join retryable from the SMB tab and never store the password.
+- Retest requirements:
+  - Create a fresh NFS+SMB AD SharedFS from the UI.
+  - Confirm no partial-service toast appears when AD credentials are valid.
+  - Confirm `smb-domain.json` contains `state=JOINED`, `trustVerified=true`,
+    `realm=ABLESTACK.LOCAL`, and `workgroup=ABLESTACK`.
+  - Confirm `smb-domain-error.json` is absent after success.
+  - Confirm `net ads testjoin`, `wbinfo --domain=ABLESTACK -t`, AD user
+    enumeration, and AD user SMB access work.
+
+### SMB ACL/AD 접근 검증 보강
+
+- SMB AD 생성 시 초기 ACL 기본값(`AD_GROUP / Domain Users / READ_WRITE`)이 API 요청에 포함되는지 확인한다.
+- SystemVM에서 `/etc/ablestack-storage/smb-access.json`의 `accessState`가 `acl_applied`로 기록되는지 확인한다.
+- AD 사용자로 `smbclient` 또는 CIFS 마운트를 수행해 공유 목록 조회, 파일 생성, 읽기, 삭제가 가능한지 확인한다.
+- ACL 삭제 후 재적용 시 같은 사용자가 접근 거부되는지 확인해 POSIX ACL 잔류 여부를 검증한다.
+- 게스트 접근이 꺼지고 ACL이 없는 공유는 생성 가능하지만 `no_acl` 상태와 접근 실패가 동시에 확인되어야 한다.
+
+### SMB AD User Principal Regression
+
+- Purpose: verify that SMB AD join credentials are not reused as SMB share ACLs
+  and that an operator-selected AD user remains an `AD_USER` rule end to end.
+- Setup: create or update an SMB share with AD identity mode, AD join account
+  credentials, initial access principal type `AD_USER`, principal `ablecloud`,
+  and read/write permission.
+- Expected API/desired state: the SMB ACL row and SystemVM desired-state JSON
+  contain `principalType: AD_USER` and `principal: ablecloud`; `Domain Users`
+  appears only when the operator explicitly selected `AD_GROUP`.
+- Expected SystemVM runtime: `smb.conf` renders user principals as quoted users
+  and group principals as `@` plus a quoted group body, for example
+  `valid users = "ABLESTACK\ablecloud"` for a user or
+  `valid users = @"ABLESTACK\Domain Users"` for a group.
+- Expected client result: an AD user granted by `AD_USER` can list, write, read,
+  and delete files on the SMB share. A group ACL is accepted only when the user
+  is a member of that group and the ACL type is `AD_GROUP`.
+
+### SMB post-validation checks
+
+- Create an SMB share on a currently attached managed backing volume. PASS requires the backend to reuse the existing managed mount path without attempting unsafe block-device discovery.
+- Create SMB shares with an existing detached volume and with a new volume. PASS requires volume attach, mount persistence, Samba share rendering, and no accidental open access when ACLs are absent.
+- Mount an ACL-enabled SMB share from the WSL client and keep it mounted while checking the SMB tab. PASS requires the session table to show the authenticated user, share name, SMB dialect, client endpoint, state, and connection time from the monitoring cache.
+
+### NFS Ganesha endpoint runtime regression check
+
+- Create a fresh SharedFS with NFS enabled and confirm no partial service configuration error is shown.
+- In the Storage Service VM, confirm `/run/ganesha`, `/run/ablestack-storage/ganesha`, and `/etc/ganesha/ablestack-storage` exist after NFS apply.
+- Confirm `systemctl status ablestack-storage-ganesha@<endpoint>.service` is active for every rendered endpoint.
+- Confirm `ss -lntp` shows the configured NFS listener port and `ganesha.nfsd` owns the socket.
+- Confirm `/run/ablestack-storage/ganesha/<endpoint>.log` does not contain `open(/var/run/ganesha/ganesha.pid` or other fatal pid-file errors.
+- Reboot or stop/start the Storage Service VM and confirm boot reconcile restores the same Ganesha endpoint units without manual directory creation.

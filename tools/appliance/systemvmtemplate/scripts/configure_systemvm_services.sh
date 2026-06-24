@@ -106,6 +106,10 @@ function install_cloud_scripts() {
     echo "Storage Service Ganesha unit missing foreground managed runtime" >&2
     exit 1
   fi
+  if ! grep -q "/run/ganesha" /etc/systemd/system/ablestack-storage-ganesha@.service; then
+    echo "Storage Service Ganesha unit missing default runtime directory preparation" >&2
+    exit 1
+  fi
   if ! grep -q "ablestack-storage-ganesha@.*.service" /usr/local/bin/ablestack-storagectl; then
     echo "Stale /usr/local/bin/ablestack-storagectl missing Ganesha endpoint unit naming" >&2
     exit 1

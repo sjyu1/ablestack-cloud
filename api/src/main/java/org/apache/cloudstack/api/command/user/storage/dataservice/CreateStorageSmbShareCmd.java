@@ -35,7 +35,7 @@ import org.apache.cloudstack.storage.dataservice.StorageService;
 @APICommand(name = "createStorageSmbShare",
         responseObject = StorageSmbShareResponse.class,
         description = "Creates an SMB share on a Storage Service instance.",
-        requestHasSensitiveInfo = false,
+        requestHasSensitiveInfo = true,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
@@ -58,6 +58,12 @@ public class CreateStorageSmbShareCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = ApiConstants.FILESYSTEM, type = CommandType.STRING, description = "filesystem type")
     private String filesystem;
 
+    @Parameter(name = "importmode", type = CommandType.STRING, description = "backing volume import mode: MOUNT_EXISTING, FORMAT_EMPTY, FORMAT_IF_EMPTY, or INSPECT_ONLY")
+    private String importMode;
+
+    @Parameter(name = "cleanupvolumeonfailure", type = CommandType.BOOLEAN, description = "delete the newly created backing volume if SMB share creation fails before it becomes usable")
+    private Boolean cleanupVolumeOnFailure;
+
     @Parameter(name = "quotabytes", type = CommandType.LONG, description = "share capacity limit in bytes")
     private Long quotaBytes;
 
@@ -69,6 +75,27 @@ public class CreateStorageSmbShareCmd extends BaseAsyncCmd implements UserCmd {
 
     @Parameter(name = "guestok", type = CommandType.BOOLEAN, description = "whether guest access is allowed")
     private Boolean guestOk;
+
+    @Parameter(name = "createdirectory", type = CommandType.BOOLEAN, description = "create the SMB backing directory when it does not exist")
+    private Boolean createDirectory;
+
+    @Parameter(name = "crossprotocol", type = CommandType.BOOLEAN, description = "allow sharing an existing NFS backing directory with SMB")
+    private Boolean crossProtocol;
+
+    @Parameter(name = "directorymode", type = CommandType.STRING, description = "POSIX mode to apply to a new SMB backing directory")
+    private String directoryMode;
+
+    @Parameter(name = "aclprincipaltype", type = CommandType.STRING, description = "optional initial SMB ACL principal type: LOCAL_USER, LOCAL_GROUP, AD_USER, or AD_GROUP")
+    private String aclPrincipalType;
+
+    @Parameter(name = "aclprincipal", type = CommandType.STRING, description = "optional initial SMB ACL user or group name")
+    private String aclPrincipal;
+
+    @Parameter(name = "aclpermission", type = CommandType.STRING, description = "optional initial SMB ACL permission: READ_ONLY, READ_WRITE, or ADMIN")
+    private String aclPermission;
+
+    @Parameter(name = "aclpassword", type = CommandType.STRING, description = "optional initial local SMB user password. Used only for LOCAL_USER creation and not stored.")
+    private String aclPassword;
 
     public Long getInstanceId() {
         return instanceId;
@@ -90,6 +117,14 @@ public class CreateStorageSmbShareCmd extends BaseAsyncCmd implements UserCmd {
         return filesystem;
     }
 
+    public String getImportMode() {
+        return importMode;
+    }
+
+    public Boolean getCleanupVolumeOnFailure() {
+        return cleanupVolumeOnFailure;
+    }
+
     public Long getQuotaBytes() {
         return quotaBytes;
     }
@@ -104,6 +139,34 @@ public class CreateStorageSmbShareCmd extends BaseAsyncCmd implements UserCmd {
 
     public Boolean getGuestOk() {
         return guestOk;
+    }
+
+    public Boolean getCreateDirectory() {
+        return createDirectory;
+    }
+
+    public Boolean getCrossProtocol() {
+        return crossProtocol;
+    }
+
+    public String getDirectoryMode() {
+        return directoryMode;
+    }
+
+    public String getAclPrincipalType() {
+        return aclPrincipalType;
+    }
+
+    public String getAclPrincipal() {
+        return aclPrincipal;
+    }
+
+    public String getAclPermission() {
+        return aclPermission;
+    }
+
+    public String getAclPassword() {
+        return aclPassword;
     }
 
     @Override

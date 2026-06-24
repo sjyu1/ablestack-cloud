@@ -931,6 +931,41 @@ The Storage Service must support exposing an existing ABLESTACK volume through
 NFS or SMB. This is required for data migration, recovery, and converting an
 existing data disk into a managed file service without copying data.
 
+SMB share creation and update must use the same backing volume model as NFS
+export creation. The UI must not expose a reduced "existing volume only"
+workflow for SMB. For both NFS and SMB, operators choose one of the following
+backing modes:
+
+- Current backing volume
+  - Selects one of the data volumes already attached to the Storage Service
+    System VM and managed by the Storage Service.
+  - Reuses the existing managed mount metadata and must not run the new-device
+    safe-candidate discovery path that is used for freshly attached volumes.
+    Already managed volumes can be mounted and bound into more than one share
+    path, so the backend must resolve `volumeMountPath` or the last inspection
+    result first and only call guest inspection when that metadata is missing.
+  - Uses a non-destructive reuse mode. It must not format or require the volume
+    to look empty. If a managed volume is already mounted, the operation creates
+    or validates only the requested share directory below that volume.
+- Existing volume
+  - Selects a detached ABLESTACK data volume from the volume list.
+  - Uses non-destructive `MOUNT_EXISTING`; if no supported filesystem exists,
+    the operation fails with a clear message instead of formatting data.
+- New volume
+  - Creates a new ABLESTACK volume from an explicit disk offering and primary
+    storage, waits for the async job and attachable state, then calls the
+    Storage Service share API with `FORMAT_EMPTY`.
+  - On apply failure, the UI-created volume is marked with
+    `cleanupvolumeonfailure=true` so the backend can remove incomplete share
+    records and clean up the unused newly created volume.
+
+The SMB share API therefore accepts `volumeid`, `filesystem`, `importmode`,
+`createdirectory`, and `cleanupvolumeonfailure` in the same lifecycle role that
+the NFS export API uses. The backend must pass these values to the common
+`prepareFileShareBackingVolume` flow before applying SMB desired state through
+QGA. This keeps SMB/NFS volume handling, fstab persistence, filesystem probing,
+mount path selection, and failure cleanup consistent.
+
 Supported attachment modes:
 
 - New volume mode
@@ -1104,9 +1139,108 @@ AD join requirements:
 - winbind or sssd configuration
 - NSS/PAM integration only where required
 - no plaintext persistence of join credentials
+- The NetBIOS domain/workgroup is mandatory for Samba AD membership. If the
+  operator leaves it blank, the UI and backend derive it from the AD FQDN first
+  label, for example `ablestack.local` becomes `ABLESTACK`; `WORKGROUP` must
+  not be used as the AD join default.
+- The SystemVM must render `smb.conf` before joining with `security = ADS`,
+  the derived or supplied `workgroup`, uppercase `realm`, `kerberos method =
+  secrets and keytab`, and an explicit default idmap range such as `idmap
+  config * : range = 10000-999999`.
+- After AD DNS is applied, the SystemVM should run `net ads lookup` where
+  possible and prefer the discovered Pre-Windows 2000 domain name over a
+  guessed value before executing `net ads join`.
+- AD join success is not just command submission. It requires `net ads
+  testjoin` and the domain status cache to report `JOINED`; otherwise the SMB
+  tab must show the join phase and error message while keeping the partially
+  created service manageable.
+- The SMB UI treats AD as a single domain membership state for one Storage
+  Service instance, not as a multi-domain list. Before a domain is configured,
+  the visible action is `AD domain join`. After a domain record exists, the UI
+  must replace that action with state management actions: `check AD status`,
+  `rejoin AD domain`, and `leave AD domain`. Rejoin reuses the same join API
+  and pre-fills non-secret domain fields from the current domain status. Leave
+  requires an explicit confirmation using the current domain name and warns
+  that AD user/group ACLs may become invalid.
 
 Sensitive fields, such as AD join passwords, must be accepted as runtime
 secrets and masked in logs, events, QGA payload traces, and async job details.
+
+SMB share path and ACL rules:
+
+- The client-visible SMB share name is independent from the guest runtime
+  directory. UI and API responses may show the operator-facing path such as
+  `/export/<share-name>` as display context, but the Samba runtime `path` must
+  be the mounted backing-volume path resolved inside the SystemVM.
+- The backend must resolve the runtime path from share config in this order:
+  `backingPath`, `lastInspection.backingPath`, known attached volume mount root
+  plus normalized share path. It must not ask the SystemVM to render an SMB
+  share directly on the root filesystem `/export/<share-name>` when the share is
+  volume-backed.
+- The SystemVM must reject SMB desired-state entries that would render a Samba
+  share on the root `/export` tree. This prevents accidental data placement on
+  the system disk and makes NFS/SMB cross-protocol shares use the same backing
+  volume model.
+- SMB ACL list APIs must be scoped by Storage Service instance and SMB share.
+  They must not return stale NFS or unrelated file-share access rules from other
+  instances.
+- SMB ACL application must resolve both local and AD principals, apply Samba
+  access controls, and align POSIX ACLs on the resolved backing directory. AD
+  and local password values are runtime-only and are never stored in UI state,
+  database config JSON, monitoring cache, or logs.
+- AD domain join credentials and SMB share access principals are separate
+  concepts. The UI, API, backend, and SystemVM desired state must never derive
+  a share ACL from the AD join account unless the operator explicitly selects
+  that user as the SMB access principal.
+- Initial AD-backed SMB access must not default to `Domain Users`. The default
+  principal type is `AD_USER` with an empty principal field, forcing the
+  operator to choose the exact user or group to grant. Group access is allowed
+  only when the operator selects `AD_GROUP`.
+- Samba share-level principals must be rendered with principal-type aware
+  quoting. AD/local users are rendered as quoted user names such as
+  `"ABLESTACK\\ablecloud"`; AD/local groups are rendered as group tokens
+  with a quoted group body such as `@"ABLESTACK\\Domain Users"`. This is
+  required for groups whose names contain spaces and prevents `valid users` or
+  `write list` token splitting.
+- POSIX ACL application must remain principal-type aware: user ACLs are applied
+  as user entries and group ACLs as group entries. The runtime access cache must
+  include `principalType`, `principal`, `permission`, and access state so the UI
+  can distinguish an AD user ACL from an AD group ACL.
+- SMB shares with no explicit access rule are not open shares. Unless the
+  operator explicitly enables guest access, an SMB share without a local or AD
+  ACL must remain inaccessible to normal clients. This is a security policy, not
+  an error. The UI should communicate that share creation prepares the backing
+  volume and Samba share, while client read/write access requires an explicit
+  ACL.
+- Guest access is the only operator-visible exception to the explicit ACL rule.
+  When guest access is disabled, the SystemVM must not loosen POSIX permissions
+  merely because no ACL exists.
+- Failed share creation must clean up all layers that were partially prepared:
+  file-share rows, desired-state entries, fstab markers, temporary bind aliases,
+  and newly created volumes when `cleanupvolumeonfailure=true`. Reusing an
+  already managed current backing volume must not leave duplicate fstab entries.
+
+SMB modal layout rules:
+
+- SMB share, SMB ACL, and SMB AD join action dialogs use the same vertical
+  single-column modal standard as the NFS action dialogs.
+- In dark mode, SMB dialogs must use the Storage Service field, section, alert,
+  scrollbar, and footer styles already defined for NFS. Two-column desktop form
+  layouts are not used for SMB action dialogs because long domain, principal,
+  share, and backing-volume values reduce readability.
+- Storage Service action dialogs must have exactly one vertical scroll owner:
+  the fixed modal header/footer stay outside the scroll area and the modal body
+  scrolls through the shared `.storage-modal-body` container. Nested form,
+  section, or panel scrollbars are not allowed because they create double
+  scrollbars and make dark-mode modal interaction confusing.
+- NFS and SMB backing-volume tables must display filesystem, used capacity, and
+  mount information from the same runtime inspection source. UI display priority
+  is SystemVM inspection/cache, current backing-volume mapping, Cloud volume
+  metadata, then the SharedFS default filesystem fallback. A volume shared by
+  NFS and SMB must therefore show the same filesystem value in both tabs.
+- Table action columns are fixed to the right and right-aligned. Horizontal
+  scrolling must not overlay the action column; fixed-column backgrounds and
+  empty-state foreground colors must remain readable in dark mode.
 
 ## iSCSI Design
 
@@ -1195,6 +1329,23 @@ in its local runtime cache. NVMe-oF sessions should include the subsystem NQN
 when it can be unambiguously derived from the active subsystem state; when it
 cannot be derived, the UI must show an unknown value rather than implying that
 no subsystem is attached.
+
+For NFS-Ganesha sessions, the TCP connection only proves that a client is
+connected to an NFS listener. It does not reliably identify the exact export
+used by that client. The collector must therefore enrich NFS rows from the
+rendered Ganesha configuration in `/etc/ganesha/ablestack-storage/*.conf`:
+
+- normalize IPv4-mapped IPv6 addresses such as `::ffff:10.10.21.102` before
+  storing or displaying them;
+- derive active NFS listener ports from `NFS_Port` values instead of assuming
+  only TCP 2049;
+- map a session's local listener to configured `Pseudo` and `Path` entries;
+- if exactly one export exists on that listener, set the session
+  `resourceName`, `exportName`, client-visible path, and backing path from that
+  export;
+- if more than one export exists on the listener, return `possibleExports`
+  and let the UI show that the exact export is ambiguous instead of selecting
+  an arbitrary export.
 
 For NVMe-oF TCP sessions, the monitor may derive the live connection set from
 `ss` because kenel target sessions are transport-level connections. The
@@ -1517,6 +1668,10 @@ Dialog usability rules:
   `SharedFS was created, but SMB access rule application failed`. The detail
   page must remain reachable so the operator can inspect the partially created
   service and retry management actions.
+- SharedFS stop responses must be safe even when a response lookup receives an
+  empty ID list after a state transition. DAO response builders must return an
+  empty result instead of emitting an invalid `IN ()` SQL clause, and lifecycle
+  stop must pass the operator's forced-stop flag through to the VM stop layer.
 - The UI must guarantee that selected service follow-up APIs are attempted after
   SharedFS creation: `enableStorageServiceProtocol` first, then the selected
   export/share/target and ACL/account/domain operations. A response parsing
@@ -1946,8 +2101,18 @@ keeping common service state in the first details tab.
     `smbclient //<service-ip>/<share-name> -U <user>`, using the actual service
     IP and placeholder share/user values because multiple shares and identity
     modes can exist.
-  - `SMB shares` table: share name, client-visible UNC root, intenal path,
-    service IP/port, browseable flag, guest access flag, read-only flag,
+  - SMB effective endpoint display rule: Samba normally listens on
+    `0.0.0.0:445` inside the Storage Service VM. When SMB is enabled, every
+    non-wildcard service IP assigned to the VM is therefore a client-accessible
+    SMB endpoint unless the backend later introduces explicit per-IP Samba bind
+    control. The UI must compute `effective SMB endpoints` from the SMB protocol
+    rows, the monitor-cache network addresses, and the default SMB port 445,
+    then display all resulting `IP:port` and UNC roots. It must not show only
+    the primary service IP when secondary IPs have been added through protocol
+    activation.
+  - `SMB shares` table: share name, client-visible UNC root, internal
+    display path, resolved SystemVM backing path, service IP/port, browseable
+    flag, guest access flag, read-only flag,
     quota/capacity, backing volume, runtime state, and actions.
     Share row actions should include share edit, share disable/delete when
     supported, and share capacity expansion. Do not duplicate the same action in
@@ -1961,6 +2126,14 @@ keeping common service state in the first details tab.
     hints, target OU, join state, winbind state, and last join/apply result.
     AD join, AD leave, and domain connectivity test actions belong here and
     must open modals. These controls must not be mixed into the share table.
+  - `SMB sessions` table: client endpoint, username, SMB share name, SMB
+    dialect/version, state, connected time, service endpoint, Samba session ID,
+    tree ID, and terminate action. The SystemVM session collector must enrich
+    TCP session data with `smbstatus --json`; plain `ss -tn` output is not
+    sufficient because it cannot provide username, share name, dialect, or tree
+    connection IDs. The collector should join `sessions` and `tcons` by
+    `session_id`, then keep `ss` data only to supplement local/peer endpoint and
+    TCP state.
   - `Backing volumes` table: volume name, volume ID, size, used/free when
     available, disk offering, storage pool, filesystem, attached SMB share, and
     ABLESTACK volume state. Physical backing volume expansion remains a
@@ -3148,3 +3321,608 @@ NFS service tables use a common action-column standard: the final action column
 is fixed to the right, action buttons are right-aligned, and the fixed column has
 an explicit light/dark background so horizontal table scrolling does not overlay
 or visually corrupt the buttons.
+## SMB Local Mode Direction From Empirical Test - 2026-06-12
+
+The first SMB implementation phase must target non-AD local-user mode and
+reuse the Storage Service lifecycle pattern proven by NFS: protocol activation,
+share management, access policy, backing volume management, session/status
+monitoring, and QGA-driven System VM desired-state application.
+
+Empirical validation on a running NFS Storage Service VM confirmed that Samba
+can run alongside managed NFS Ganesha listeners. A temporary standalone Samba
+configuration successfully exposed a local SMB share while NFS listeners on
+ports 2049 and 2050 stayed active. SMB share listing worked immediately, but
+write access failed until the share directory ownership and mode were changed
+from root-owned `0775` to the SMB local user/group with `0770`. This makes POSIX
+ownership and directory mode first-class SMB share settings, not optional
+implementation details.
+
+The SMB local-user design is therefore:
+
+- Manage Samba users and Linux backing users together through QGA; passwords
+  are transient API inputs and are not stored in UI state.
+- Create/update shares from a desired-state model that renders managed Samba
+  config, validates the backing path, applies POSIX owner/group/mode, and then
+  reloads or restarts Samba.
+- Keep the client-visible name as `\\<service-ip>\<share-name>` while the
+  internal backing path follows the Storage Service `/export/<share-name>`
+  convention backed by mounted data volumes.
+- Treat SMB port customization as an advanced service endpoint option. Samba
+  supports multiple `smb ports`, but normal Windows UNC access does not encode a
+  port, so the default operator path remains TCP 445.
+- Extend the monitor cache to read managed SMB config and runtime state instead
+  of distro-default shares such as `homes`, `printers`, and `print$`.
+- Add AD domain join as a later authentication mode over the same share and
+  backing-volume model, not as part of the first local-mode implementation.
+
+AD member mode was also validated against `ablestack.local` on 2026-06-13.
+That test confirms the following implementation rules:
+
+- The System VM must temporarily or persistently use AD DNS for join and domain
+  lookup. Normal external resolvers are not enough for Samba DC discovery.
+- The generated NetBIOS name must be stable and no longer than 15 characters;
+  the long System VM hostname cannot be used directly.
+- Samba AD member state must be persistent and managed. A fully throwaway
+  `private/lock/state/cache/pid` directory layout allowed domain join and
+  identity lookup, but `smbd` did not open TCP 445. Using Samba's normal
+  persistent state directories allowed `smbd`, `winbindd`, domain identity
+  lookup, and AD-authenticated SMB access to work.
+- Share authorization must align Samba ACL entries with POSIX ownership or ACLs
+  derived from winbind idmap. In the validation, `ABLESTACK\Domain Users`
+  mapped to GID `10513`; setting the share directory to `root:10513` with mode
+  `0770` allowed the domain user `ablecloud` to write through the SMB share.
+- AD join credentials and SMB application-user credentials are different
+  concerns. The UI/API must collect join credentials only for join/leave and
+  must test share access with the selected domain users or groups separately.
+
+Local and AD SMB shares can coexist in the same Samba runtime. In AD member
+mode, Samba still accepts local passdb users, but local clients must qualify
+the user with the managed server NetBIOS name, for example
+`STOR536MIX\local-user`; a bare local username can be interpreted as a domain
+login and fail with `NT_STATUS_LOGON_FAILURE`. AD clients continue to use the
+domain form, for example `ABLESTACK\domain-user`, and share ACLs can target
+either explicit AD users or AD groups such as `ABLESTACK\Domain Users`.
+
+The implementation must therefore model SMB share principals as typed entries:
+
+- `LOCAL_USER` / `LOCAL_GROUP`: created and managed inside the Storage Service
+  VM, shown to clients as `<server-netbios>\<name>` when the service is joined
+  to AD, and backed by local POSIX ownership or ACLs.
+- `AD_USER` / `AD_GROUP`: resolved through winbind, stored as domain-qualified
+  names, and backed by winbind UID/GID ownership or POSIX ACLs.
+
+Generated Samba share configuration must not flatten these identities into a
+single string list. It must render local and AD principals with the correct
+Samba syntax, apply matching filesystem ownership/mode, and keep local and AD
+authorization boundaries separate even when both share types are active in the
+same `smbd` process.
+
+NFS export directories may be reused as SMB shares, but only through an
+explicit cross-protocol sharing model. Empirical validation showed that pointing
+an SMB share at `/export/nfs01` while the same directory was already exported
+through NFS works when the SMB principal has POSIX access to that directory. SMB
+writes were visible through the NFS mount, and NFS writes were readable through
+SMB. The implementation must therefore support a "share existing backing path"
+workflow, but it must also make the permission mapping explicit.
+
+The cross-protocol rules are:
+
+- Do not silently create an SMB share on a path already used by NFS; the UI must
+  identify the existing protocol use and require the operator to confirm shared
+  visibility.
+- Do not force SMB access to `nobody` or another unmanaged system account. That
+  can fail with invalid Samba SID mappings and hides the actual ownership model.
+- Require a managed SMB principal, either local or AD, and apply matching POSIX
+  ownership, mode, or POSIX ACLs to the reused directory.
+- Show the reused backing path in both NFS and SMB tabs and mark it as
+  cross-protocol so operators know both protocols expose the same files.
+- Preserve protocol-specific ACLs separately: NFS client CIDR rules still govern
+  NFS clients, while SMB local/AD users and groups govern SMB clients.
+
+### SMB AD Join Runtime Hardening - 2026-06-13
+
+Fresh NFS+SMB creation with AD authentication exposed a System VM runtime
+defect: `smb_domain_join()` failed before `net ads join` because the embedded
+Python join helper used `re.sub` and `re.split` without importing `re`. The
+resulting partial state is misleading: the SharedFS, Storage Service instance,
+NFS protocol, SMB protocol, and SMB share rows can remain `Ready`, while Samba
+is still configured as a local `WORKGROUP` server and the AD trust is absent.
+
+The implementation must harden AD join as follows:
+
+- Every embedded Python block in `ablestack-storagectl` must be syntax checked
+  and must import all modules it uses. For AD join, `json`, `os`, `re`,
+  `subprocess`, and `sys` are required.
+- `smb_domain_join()` must be idempotent and phase-oriented:
+  1. validate payload fields and generated NetBIOS name
+  2. apply AD DNS resolver state
+  3. render Samba AD member global configuration
+  4. run `testparm -s`
+  5. execute `net ads join`
+  6. restart or enable `smbd`, `nmbd` when needed, and `winbind`
+  7. verify `net ads testjoin` and `wbinfo -t`
+  8. persist AD state only after trust verification succeeds
+- A failed join must not be reported as a healthy AD-authenticated SMB service.
+  The management layer and monitor cache must surface an identity state such as
+  `JOIN_FAILED` or an equivalent warning while preserving the already-created
+  SMB share rows for retry.
+- SMB desired-state application and AD join must remain separate retryable
+  operations. Operators should be able to retry AD join from the SMB tab without
+  deleting the SharedFS or recreating the SMB share.
+- The monitor cache must distinguish:
+  - `smbd`/`nmbd`/`winbind` daemon state
+  - Samba security mode (`user` vs `ADS`)
+  - configured workgroup/realm/netbios name
+  - AD trust result from `net ads testjoin`
+  - winbind trust result from `wbinfo -t`
+- Sensitive join inputs, especially the AD join password, must remain transient
+  QGA/API payload data and must never be written to `smb-domain.json`, monitor
+  cache files, logs, review panels, or UI state.
+
+Runtime acceptance for AD mode requires all of the following:
+
+- `/etc/samba/smb.conf` contains `security = ADS`, the expected `realm`,
+  `workgroup`, and managed `netbios name`.
+- `smbd` and `winbind` are active.
+- TCP 445 is listening.
+- `net ads testjoin` succeeds.
+- `wbinfo -t` succeeds.
+- At least one selected AD user or group can access the configured share with
+  the expected read/write behavior.
+
+### SharedFS Create Modal Owner Dark-Mode Alignment - 2026-06-13
+
+The create modal owner section is a collapsible block above the main Storage
+Service sections. It currently uses a separate low-level gray `rgba` palette,
+which makes the owner block visually inconsistent with the rest of the dark
+mode modal. The owner selector is functionally correct but must follow the same
+visual standard as the Storage Service creation sections.
+
+UI design rules:
+
+- Keep the owner selector in the current top position and keep the collapsed
+  summary format `Owner Type (type / domain / account-or-project)`.
+- Use the same dark-mode background, border, header, and content color tokens
+  as the other Storage Service collapse sections.
+- Avoid bright outer borders that create a white-box effect in dark mode.
+- Ensure labels, selected values, dropdown arrows, required marks, and disabled
+  states remain readable in normal and dark modes.
+- The owner block must not introduce a separate visual hierarchy from the rest
+  of the modal; it is an advanced ownership section, not a separate dialog.
+- Retest with Korean UI, dark mode, and the current two-pane create modal
+  layout before marking the create dialog look-and-feel as passed.
+
+## SMB Storage Service Integrated Implementation Design - 2026-06-13
+
+### Implementation baseline update - 2026-06-13
+
+- SMB shares use the same client-root rule as NFS: the exposed share name is the client root, while the backing directory is a direct child of `/export`.
+- SMB backing paths default to `/export/<share-name>`. Reusing an NFS backing path is allowed only when the caller explicitly enables cross-protocol sharing.
+- SMB desired state is persisted separately from NFS desired state and replayed independently during SystemVM boot reconcile.
+- AD-joined SMB keeps a deterministic NetBIOS name for the Storage Service VM so local and AD principals can coexist predictably.
+- SMB share ACL application includes Samba `valid users`/`write list`/`admin users` rendering and POSIX ACL updates for local or AD users/groups when the SystemVM can resolve them.
+- The SMB UI follows the NFS tab pattern: vertical dark-mode dialogs, row-level edit/delete actions, explicit directory creation, cross-protocol sharing, and backing directory permission controls.
+
+This section turns the SMB empirical validations into the implementation plan
+for SystemVM, backend engine, API, and UI. SMB must follow the same Storage
+Service rules already established by the NFS work:
+
+- The Cloud UI submits asynchronous API requests only.
+- The backend engine persists desired state and sends commands to the Mold host
+  Agent that owns the Storage Service System VM.
+- The host Agent delivers all in-guest storage operations through QGA.
+- SystemVM boot-time cloud-init must not own service configuration. Runtime
+  service state is rendered and reconciled through Storage Service QGA commands.
+- Successful desired state is persisted inside the SystemVM and replayed by the
+  boot reconcile service.
+- Monitor data is read from a SystemVM-side cache file produced by the storage
+  monitor service, not from expensive on-demand service probes for every UI
+  refresh.
+- Backing data paths remain under `/export/<share-name>` unless the operator
+  explicitly chooses an existing cross-protocol backing path.
+- UI layout, modal behavior, table scrolling, fixed action columns, dark mode,
+  and i18n behavior must match the NFS tab standard.
+
+### SystemVM design
+
+The Storage Service SystemVM template must include and validate the SMB runtime
+packages before it is published:
+
+- `samba`, `samba-client`, `samba-common-tools`
+- `winbind`, `krb5-workstation`, `oddjob-mkhomedir` if required by the
+  distribution package set
+- `bind-utils` or equivalent DNS diagnostic tools
+- `acl` for POSIX ACL management
+- Existing QGA and Storage Service utilities
+
+The SystemVM storage command surface extends `ablestack-storagectl` with SMB
+operations:
+
+- `smb desired-state apply`
+- `smb share apply`
+- `smb share delete`
+- `smb principal apply`
+- `smb principal delete`
+- `smb ad join`
+- `smb ad leave`
+- `smb ad status`
+- `smb sessions list`
+- `smb session close`
+- `smb monitor collect`
+
+SMB desired state is rendered from one managed source file, for example
+`/etc/ablestack-storage/desired-state/smb.json`, and one generated Samba config
+tree under `/etc/ablestack-storage/smb/`. The implementation may either render a
+full managed `smb.conf` or include a generated Storage Service section from the
+distribution `smb.conf`, but it must not mix unmanaged distro shares such as
+`homes`, `printers`, or `print$` into the Storage Service monitor response.
+
+The SMB apply flow is:
+
+1. Validate the desired state schema and reject unknown share/principal/auth
+   modes.
+2. Ensure backing volumes are attached, formatted or mounted according to the
+   existing NFS backing-volume rules, and persisted in `/etc/fstab` by UUID.
+3. Validate every backing path. New SMB-only shares use `/export/<share-name>`.
+   Cross-protocol shares may reuse an existing NFS backing path only when the
+   desired state explicitly marks it as cross-protocol.
+4. Apply POSIX owner/group/mode or POSIX ACLs for the selected SMB principal
+   model.
+5. Create/update local Linux users and Samba passdb users for local mode.
+   Passwords are accepted only as transient command inputs and must not be
+   written into desired-state JSON, monitor cache, logs, or UI state.
+6. For AD mode, ensure the managed NetBIOS name is stable and no longer than 15
+   characters, ensure AD DNS resolver behavior is applied for join/runtime
+   lookup, and maintain persistent Samba/winbind private state.
+7. Render the managed Samba config and validate it with `testparm`.
+8. Start or reload `smbd` and `winbindd` as required.
+9. Verify runtime by checking process state, TCP listeners, `smbclient`
+   loopback access for configured shares where a non-secret probe is possible,
+   and AD join health when the instance is domain joined.
+10. Persist the last successful desired state for boot reconcile.
+11. Refresh the SMB section of the monitor cache.
+
+The boot reconcile service must replay SMB desired state after `mount -a` and
+network endpoint reconciliation, in the same lifecycle family as NFS reconcile.
+SMB reconcile must not destroy AD membership or passdb state. It should repair
+rendered config, restart `smbd`/`winbindd`, and refresh monitor cache.
+
+The monitor cache must include at least:
+
+- SMB runtime status: `ok`, `degraded`, `error`
+- active authentication mode: local, AD member, or mixed
+- AD join state and DC reachability when joined
+- server NetBIOS name
+- service IP and SMB port list
+- shares, backing paths, cross-protocol flags, and volume IDs
+- principal ACL summaries
+- sessions from `smbstatus` with client address, user, share, opened files when
+  available, and session age when available
+- last refresh time and last error text
+
+### Backend engine design
+
+The backend must reuse the NFS service-instance lifecycle and avoid creating a
+parallel SMB-only orchestration path. SMB is a protocol capability attached to
+the same Storage Service instance.
+
+Core engine rules:
+
+- All create/update/delete operations are asynchronous jobs.
+- DB changes and SystemVM apply must be transactional from the operator point of
+  view. If SystemVM apply fails during a create operation, newly-created rows
+  must be rolled back or marked as failed with a clear retry/delete path; stale
+  successful-looking rows must not remain.
+- Update operations must preserve the current tab and refresh only changed data
+  in the UI, following the NFS fix for avoiding full detail-page reload.
+- Desired state sent to the SystemVM must be built from DB rows, not from UI
+  request fragments.
+- Password and AD join secrets are command-only values. They are not persisted
+  in DB, response objects, async job details, or monitor cache.
+
+Data model additions should be separate from the existing open-source
+CloudStack SharedFS API path and should follow the Storage Service independent
+API namespace used by the NFS extension. The preferred model is:
+
+- `storage_service_smb_share`
+  - Storage Service instance ID
+  - share name
+  - description
+  - backing volume ID
+  - backing path
+  - cross-protocol source protocol/path reference when reused from NFS
+  - capacity limit
+  - browseable, read-only, guest-access flags
+  - create-directory behavior
+  - status and last apply error
+- `storage_service_smb_principal`
+  - share ID
+  - principal type: `LOCAL_USER`, `LOCAL_GROUP`, `AD_USER`, `AD_GROUP`
+  - principal name and optional domain
+  - permission: read-only, read-write, admin/full-control if supported
+  - POSIX UID/GID or resolved winbind UID/GID cache
+  - status and last resolve/apply error
+- `storage_service_smb_account`
+  - local managed account metadata only
+  - username, enabled/disabled state, description
+  - no password material
+- `storage_service_smb_ad_domain`
+  - Storage Service instance ID
+  - domain FQDN, NetBIOS domain, DNS servers, DC preference
+  - managed server NetBIOS name
+  - join state, last join/check timestamp, last error
+  - no join password material
+- `storage_service_smb_session`
+  - optional cached runtime rows if the engine stores monitor snapshots;
+    otherwise list from monitor cache on demand
+
+The engine must generate a stable SystemVM NetBIOS name no longer than 15
+characters. It should be deterministic from the Storage Service instance or VM
+ID so AD rejoin/reconcile does not create a new computer identity after reboot.
+
+Cross-protocol path reuse is allowed only when the chosen backing path is
+already known in Storage Service metadata. If an operator enters an arbitrary
+path that overlaps another protocol without declaring reuse, the backend must
+reject the request.
+
+### API design
+
+The SMB APIs should mirror the NFS management style and remain independent of
+the legacy SharedFS API path. Suggested commands:
+
+- `enableStorageServiceProtocol`
+  - protocol: `SMB`
+  - service IP mode, endpoint selection, and port remain protocol-level fields.
+  - SMB defaults to TCP `445`; non-default port is an advanced option and must
+    be surfaced as such because normal UNC paths do not carry a port.
+- `createStorageSmbShare`
+- `updateStorageSmbShare`
+- `deleteStorageSmbShare`
+- `listStorageSmbShares`
+- `createStorageSmbAcl`
+- `updateStorageSmbAcl`
+- `deleteStorageSmbAcl`
+- `listStorageSmbAcls`
+- `createStorageSmbLocalAccount`
+- `updateStorageSmbLocalAccount`
+- `resetStorageSmbLocalAccountPassword`
+- `deleteStorageSmbLocalAccount`
+- `joinStorageSmbAdDomain`
+- `leaveStorageSmbAdDomain`
+- `listStorageSmbAdDomain`
+- `listStorageSmbSessions`
+- `terminateStorageSmbSession`
+
+API responses must include:
+
+- share ID, name, backing path, backing volume, capacity limit, cross-protocol
+  flag, status, and last error
+- client connection string examples such as `\\<service-ip>\<share-name>`
+- authentication mode and NetBIOS guidance
+- AD domain state when joined
+- principal type and display name
+- runtime status from monitor cache when available
+
+Validation rules:
+
+- Share names follow the same safe naming discipline as NFS export names:
+  directory/share safe characters only, no path separators, no traversal, and no
+  reserved hidden administrative names.
+- Default backing path for new SMB shares is `/export/<share-name>`.
+- Cross-protocol shares must reference an existing NFS export/share path and
+  require explicit confirmation.
+- Local account passwords are required only for create/reset password
+  operations and are never returned.
+- AD join credentials are required only for join/leave when needed and are never
+  persisted.
+- In AD member mode, local account connection help must use
+  `<server-netbios>\<local-user>`.
+
+### UI design
+
+SMB UI must be implemented as a first-class protocol tab under the existing
+SharedFS detail view, matching the NFS tab instead of introducing a separate
+navigation model.
+
+SharedFS create modal:
+
+- Keep the existing two-column large modal style established for Storage
+  Service creation.
+- Add an SMB section next to NFS/iSCSI/NVMe-oF sections.
+- Allow initial SMB share creation when SMB is selected.
+- Authentication mode options:
+  - local account
+  - AD domain member
+  - mixed, only when AD is joined and local accounts are also enabled
+- Local mode fields:
+  - share name
+  - backing volume selection using the NFS backing-volume component
+  - backing path `/export/<share-name>` with validation
+  - local account create/select
+  - permission and directory mode
+- AD mode fields:
+  - domain FQDN, NetBIOS domain, DNS server, optional DC
+  - join account/password as transient fields
+  - AD user/group principal selection or manual entry
+  - share permission
+- Cross-protocol option:
+  - visible only when existing NFS exports/backing paths exist
+  - shows the existing NFS export name, backing path, NFS ACL summary, and a
+    warning that both protocols expose the same files
+  - requires explicit confirmation before submit
+
+SMB tab layout follows NFS:
+
+- Status summary card
+  - endpoint(s), port(s), authentication mode, AD join state, monitor cache
+    state, last refresh
+- Connection information card
+  - local mode: `\\<service-ip>\<share-name>` and username guidance
+  - AD mode: `ABLESTACK\user` or `ABLESTACK\group`
+  - AD member with local user: `<server-netbios>\<local-user>`
+- Shares table
+  - share name, UNC path, backing path, cross-protocol flag, capacity, auth
+    mode, read/write state, status, action column
+- Access/principal table
+  - share name, principal type, principal name, permission, resolved UID/GID,
+    status, action column
+- Local accounts table
+  - username, enabled state, used-by shares, action column
+- AD domain panel/table
+  - domain, NetBIOS domain, DNS/DC, join state, last check, action column
+- Backing volumes table
+  - same visual and behavior standard as NFS, including detach disabled when a
+    share still uses the volume
+- Sessions table
+  - client, user, share, connected time when available, opened files when
+    available, terminate action
+
+All SMB modals must use the NFS modal standard:
+
+- vertical layout, centered in the browser viewport
+- fixed header and footer, scrollable content body
+- required-field marks and tooltip icons
+- no duplicated long helper text below every input; show inline validation only
+  when needed
+- dark-mode friendly colors matching the NFS modal palette
+- Korean i18n coverage so label keys are never shown in the UI
+- fixed right action column in tables and compact dark-mode scrollbars
+
+SMB action placement:
+
+- Protocol-level actions stay in the tab toolbar or status card:
+  enable SMB, edit endpoint/port, join AD, leave AD.
+- Share actions stay on share rows:
+  edit share, delete share, expand share capacity.
+- ACL/principal actions stay on ACL rows:
+  edit principal, delete principal.
+- Account actions stay on account rows:
+  disable, reset password, delete.
+- Session actions stay on session rows:
+  terminate session.
+
+### Implementation phases
+
+1. SystemVM SMB foundation
+   - package verification, storagectl commands, local Samba desired-state apply,
+     monitor cache, boot reconcile.
+2. Backend/API local SMB
+   - share/account/principal CRUD, QGA command dispatch, rollback semantics,
+     monitor cache response mapping.
+3. UI local SMB
+   - create modal SMB section, SMB tab, local accounts, shares, ACLs, backing
+     volumes, sessions, dark mode/i18n.
+4. AD member mode
+   - join/leave/status API, persistent Samba/winbind state, NetBIOS generation,
+     AD DNS handling, AD principal resolution.
+5. Cross-protocol NFS/SMB reuse
+   - explicit reuse workflow, permission mapping, UI warnings, monitor markers.
+6. Regression and lifecycle tests
+   - create/update/delete, reboot reconcile, local/AD/mixed access, session
+     listing/termination, NFS coexistence, and dark-mode visual checks.
+
+The implementation should begin with local SMB because the local-mode test
+established the base Samba lifecycle and because the AD member mode builds on
+the same share/principal/backing-volume model. AD support must not be bolted on
+as a separate SMB implementation.
+
+### SMB AD join reliability model
+
+SMB AD domain join is a retryable identity operation, not a one-time side
+effect of SharedFS creation. The UI and API must keep the password ephemeral:
+the join password is accepted only for the async API request, passed to the
+Storage Service VM through QGA, and never stored in DB, UI state, monitor cache,
+or SystemVM state files.
+
+The SystemVM join flow is:
+
+1. Render DNS and Kerberos configuration from the requested AD domain.
+2. Derive the Kerberos realm from the FQDN, for example `ablestack.local` to
+   `ABLESTACK.LOCAL`.
+3. Derive the NetBIOS workgroup from the explicit workgroup when provided, or
+   from the FQDN first label, for example `ABLESTACK`.
+4. Validate Samba syntax with `testparm -s`.
+5. Validate credentials with `kinit <user>@<REALM>` before attempting the domain
+   join. If the supplied username has no `@` or `\`, the SystemVM converts it to
+   UPN form. If a `DOMAIN\user` value is provided, the user part is used with
+   the resolved realm.
+6. Join the domain with Kerberos credentials using `net ads join -k`. This keeps
+   the password out of the process list and separates credential failures from
+   Samba join failures.
+7. Clear Samba cache, restart `winbind`, `smbd`, and `nmbd`, then verify with
+   `net ads testjoin` and `wbinfo --domain=<WORKGROUP> -t`.
+8. Persist `/etc/ablestack-storage/smb-domain.json` only after join has
+   completed. Remove `/etc/ablestack-storage/smb-domain-error.json` after final
+   trust verification succeeds.
+
+Failures are written as structured phase data:
+
+- `validate`: missing required inputs
+- `testparm`: invalid Samba configuration
+- `kinit`: invalid AD credentials or Kerberos/DNS configuration
+- `join`: domain join command failure
+- `testjoin`: Samba machine trust failure after join
+- `wbinfo`: winbind trust verification failure
+
+The SMB tab must surface this phase and message and provide an AD domain join
+retry action. Retrying must reuse the stored domain/workgroup/DNS metadata but
+ask the operator for the password again. This preserves the existing SMB shares
+and NFS exports while allowing identity repair.
+
+### SMB AD status UI normalization
+
+The SMB tab must not depend on a single backend field name when displaying AD
+domain membership. A Storage Service VM can be correctly joined even when the
+API status object, monitor inventory, and monitor health cache expose the same
+fact with different field names. The UI must normalize these sources in this
+priority order:
+
+1. `listStorageServiceDomainStatus` / `storageService.domains` for persisted
+   operator intent and DB state.
+2. `inventory.smbDomain` for the latest monitor inventory snapshot.
+3. `health.identity.smbDomain` for the latest health snapshot and trust check.
+
+The normalized SMB identity panel must display identity mode, AD domain,
+workgroup, join state, health state, trust verification, DNS servers, realm,
+NetBIOS name, organizational unit, and any structured join error. Missing UI
+fields must be treated as an unknown display value only; they must not be used
+to infer that the VM is not joined when monitor cache reports `JOINED` and
+trust verification reports success.
+
+Field aliases are part of the UI contract. The UI must accept both camelCase
+and lower-case variants such as `joinState`/`joinstate`,
+`healthState`/`healthstate`, `trustVerified`/`trustverified`,
+`dnsServers`/`dnsservers`, and `netbiosName`/`netbiosname`. This avoids false
+negative status displays when the monitor cache, JSON serializer, or API
+response uses a different naming style.
+
+### SMB 초기 접근 권한 및 POSIX ACL 적용 보강
+
+- SMB 공유 생성 API는 선택적 초기 ACL(`aclprincipaltype`, `aclprincipal`, `aclpermission`, `aclpassword`)을 함께 받을 수 있다. `aclpassword`는 로컬 사용자 생성에만 런타임으로 전달하고 DB/UI에는 저장하지 않는다.
+- 공유 파일 시스템 생성 UI의 SMB AD 모드는 초기 접근 주체 기본값을 `AD_GROUP / Domain Users / READ_WRITE`로 제공한다. 운영자가 값을 비우면 공유는 생성되지만 게스트 접근이 꺼진 상태에서는 `no_acl` 상태로 남아 명시적 ACL 생성 전까지 접근을 허용하지 않는다.
+- SystemVM의 SMB 적용기는 매 재적용 시 공유 디렉터리의 확장 POSIX ACL을 초기화한 뒤 현재 DB ACL만 다시 적용한다. 이로써 ACL 수정/삭제 후에도 과거 ACL이 파일시스템에 잔류하지 않도록 한다.
+- AD/로컬 ACL은 Samba `valid users`, `write list`, `admin users`와 POSIX ACL(`setfacl`)을 함께 적용한다. AD 그룹/사용자는 winbind를 통해 UID/GID를 확인하고, 확인되지 않는 항목은 Samba 설정에는 남기되 `appliedAclCount`가 증가하지 않아 운영 화면에서 접근 상태를 구분할 수 있게 한다.
+- `guest ok`가 켜진 공유는 게스트 접근 정책에 맞춰 디렉터리 권한을 열고, 게스트 접근이 꺼지고 ACL도 없는 공유는 닫힌 공유로 유지한다.
+- SystemVM은 `/etc/ablestack-storage/smb-access.json`에 공유별 `accessState`, `configuredAclCount`, `appliedAclCount`, `guestOk`, `directoryMode`를 기록해 모니터링/상태 UI가 빠르게 참조할 수 있게 한다.
+
+### SMB post-validation implementation gates
+
+- Current backing volume reuse must not run the new-device safe-candidate detector. When a selected volume is already attached to the Storage Service VM and is already managed by an existing NFS or SMB share, the backend must reuse the stored managed mount metadata and derive the new share backing path under that mounted volume.
+- SMB shares are closed by default when no ACL exists. Read/write access is granted only by an explicit SMB ACL entry or by explicitly enabled guest access. The runtime must not make no-ACL shares broadly writable as a fallback.
+- SMB session data shown in the UI must come from `smbstatus --json` when Samba is available. The monitoring cache should merge Samba session and tree-connection data so the UI can display client, user, share name, dialect, state, and connected time instead of TCP-only placeholders.
+
+### UI ?? ??
+
+- Storage Service? NFS/SMB/iSCSI/NVMe-oF ?? ??? ??? ?? ??? ????. ?? ? ?? ?? ??? ?? ??, ?? ??, `storage-table-actions-column` ???? `storage-table-actions` wrapper? ????. ? ????? ?? ???? ?????? ?? ??? ????? ??? ?? ??? ??? ?? ???? ??.
+- ?? ???? ??/?? ?? ?? ?? ??? ????, ??/??/??/?? ?? ?? ? ?? ??? ??? ?? ???? ????. ?? ??? ??? ?? ?? ???? ???.
+- Storage Service ?? ??? ???? ???? ??, ?? ???? ?? ???? ??? ??? ??. ??? ?? ?? ??? ?? ???? ????, ?? ??/??/??/??/?? ??? `max-width: 100%`, `min-width: 0` ???? ?? ?? ?? ??? ??.
+- ?? ????? ?? ?? ??, ????, No Data, ??, ?? ?? ??? ?? ?? ?? ?? ???? ??, ?? ?? ??? ??? ???? ???? ????? ??.
+
+### NFS Ganesha endpoint runtime directory guard
+
+- Storage Service NFS uses managed `ablestack-storage-ganesha@<endpoint>.service` units, not the package default `nfs-ganesha.service`.
+- Because the package default unit is disabled by Storage Service, the managed endpoint unit and `ablestack-storagectl` must prepare every runtime directory that Ganesha itself may use.
+- Required directories are `/run/ablestack-storage/ganesha`, `/etc/ganesha/ablestack-storage`, and `/run/ganesha` (`/var/run/ganesha`).
+- The managed unit must remove only stale default `ganesha.pid` files before start. The Storage Service-owned pid remains under `/run/ablestack-storage/ganesha/<endpoint>.pid`.
+- `ablestack-storagectl start_ganesha_endpoints()` must call the same runtime preflight before stopping old endpoint units and again before starting new endpoint units.
+- Runtime error reporting must keep the endpoint log tail so a Ganesha fatal startup error is surfaced instead of a generic `Connection refused` message.

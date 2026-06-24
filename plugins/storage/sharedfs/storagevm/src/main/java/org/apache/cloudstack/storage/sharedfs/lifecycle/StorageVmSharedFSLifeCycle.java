@@ -260,6 +260,10 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
         return new Pair<>(dataVol.getId(), vm.getId());
     }
 
+    public Pair<Long, Long> deploySharedFS(SharedFS sharedFS, Long networkId, Long diskOfferingId, Long size, Long minIops, Long maxIops) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException, OperationTimedoutException {
+        return deploySharedFS(sharedFS, networkId, diskOfferingId, null, size, minIops, maxIops);
+    }
+
     @Override
     public void startSharedFS(SharedFS sharedFS) throws OperationTimedoutException, ResourceUnavailableException, InsufficientCapacityException {
         UserVmVO vm = userVmDao.findById(sharedFS.getVmId());
@@ -268,7 +272,7 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
 
     @Override
     public boolean stopSharedFS(SharedFS sharedFS, Boolean forced) {
-        userVmManager.stopVirtualMachine(sharedFS.getVmId(), false);
+        userVmManager.stopVirtualMachine(sharedFS.getVmId(), Boolean.TRUE.equals(forced));
         return true;
     }
 

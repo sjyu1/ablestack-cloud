@@ -108,6 +108,10 @@
                 <dd>{{ form.smbidentitymode === 'LOCAL' ? storagePermissionLabel(form.smblocalpermission) : '-' }}</dd>
                 <dt>{{ $t('label.storage.service.ad.domain') }}</dt>
                 <dd>{{ form.smbidentitymode === 'AD' ? (form.smbaddomain || '-') : '-' }}</dd>
+                <dt>{{ $t('label.storage.service.initial.smb.acl.type') }}</dt>
+                <dd>{{ smbInitialAclTypeLabel }}</dd>
+                <dt>{{ $t('label.storage.service.initial.smb.acl.principal') }}</dt>
+                <dd>{{ smbInitialAclPrincipalLabel }}</dd>
                 <dt>{{ $t('label.storage.service.smb.share.capacity.limit') }}</dt>
                 <dd>{{ smbQuotaLabel }}</dd>
               </dl>
@@ -640,6 +644,37 @@
                     <a-input v-model:value="form.smbadworkgroup" />
                   </a-form-item>
                 </a-col>
+                <a-col :xs="24" :md="12">
+                  <a-form-item name="smbadprincipaltype">
+                    <template #label>
+                      <tooltip-label :title="$t('label.storage.service.initial.smb.acl.type')" :tooltip="$t('message.storage.service.initial.smb.acl.help')" />
+                    </template>
+                    <a-select v-model:value="form.smbadprincipaltype">
+                      <a-select-option value="AD_USER">{{ $t('label.storage.service.ad.user') }}</a-select-option>
+                      <a-select-option value="AD_GROUP">{{ $t('label.storage.service.ad.group') }}</a-select-option>
+                    </a-select>
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :md="12">
+                  <a-form-item name="smbadprincipal">
+                    <template #label>
+                      <tooltip-label :title="$t('label.storage.service.initial.smb.acl.principal')" :tooltip="$t('message.storage.service.initial.smb.acl.help')" />
+                    </template>
+                    <a-input v-model:value="form.smbadprincipal" :placeholder="form.smbadprincipaltype === 'AD_GROUP' ? 'Domain Users' : 'ablecloud'" />
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :md="12">
+                  <a-form-item name="smbadpermission">
+                    <template #label>
+                      <tooltip-label :title="$t('label.storage.service.permission')" :tooltip="$t('message.storage.service.permission.help')" />
+                    </template>
+                    <a-select v-model:value="form.smbadpermission">
+                      <a-select-option value="READ_ONLY">{{ $t('label.storage.service.permission.readonly') }}</a-select-option>
+                      <a-select-option value="READ_WRITE">{{ $t('label.storage.service.permission.readwrite') }}</a-select-option>
+                      <a-select-option value="ADMIN">{{ $t('label.admin') }}</a-select-option>
+                    </a-select>
+                  </a-form-item>
+                </a-col>
               </a-row>
             </div>
           </section>
@@ -1097,6 +1132,24 @@ export default {
         ? this.$t('label.storage.service.smb.identity.ad')
         : this.$t('label.storage.service.smb.identity.local')
     },
+    smbInitialAclTypeLabel () {
+      if (this.form.smbguestok) {
+        return this.$t('label.storage.service.guest.access')
+      }
+      if (this.form.smbidentitymode === 'LOCAL') {
+        return this.$t('label.storage.service.local.user')
+      }
+      return this.principalTypeLabel(this.form.smbadprincipaltype || 'AD_USER')
+    },
+    smbInitialAclPrincipalLabel () {
+      if (this.form.smbguestok) {
+        return this.$t('label.storage.service.guest.access')
+      }
+      if (this.form.smbidentitymode === 'LOCAL') {
+        return this.form.smblocalusername || '-'
+      }
+      return this.form.smbadprincipal || '-'
+    },
     effectiveNfsName () {
       return this.form.nfsname || (this.form.name ? this.form.name + '-nfs' : '-')
     },
@@ -1108,6 +1161,18 @@ export default {
     },
     nvmeTransportLabel () {
       return (this.form.nvmetransport || 'tcp').toUpperCase()
+    },
+    principalTypeLabel () {
+      return value => {
+        const type = String(value || '').toUpperCase()
+        const labels = {
+          LOCAL_USER: 'label.storage.service.local.user',
+          LOCAL_GROUP: 'label.storage.service.local.group',
+          AD_USER: 'label.storage.service.ad.user',
+          AD_GROUP: 'label.storage.service.ad.group'
+        }
+        return labels[type] ? this.$t(labels[type]) : (value || '-')
+      }
     },
     nvmeDhChapCreateSupported () {
       return false
@@ -1142,6 +1207,12 @@ export default {
     },
     'form.nfsname' (name, previousName) {
       this.syncInitialNfsPath(previousName)
+    },
+    'form.smbaddomain' (domainName, previousDomainName) {
+      const previousDerived = this.deriveAdWorkgroup(previousDomainName)
+      if (this.form?.smbidentitymode === 'AD' && (!this.form.smbadworkgroup || this.form.smbadworkgroup === previousDerived)) {
+        this.form.smbadworkgroup = this.deriveAdWorkgroup(domainName)
+      }
     }
   },
   methods: {
@@ -1178,6 +1249,9 @@ export default {
         smbaddns: '',
         smbadou: '',
         smbadworkgroup: '',
+        smbadprincipaltype: 'AD_USER',
+        smbadprincipal: '',
+        smbadpermission: 'READ_WRITE',
         iscsitargetname: '',
         iscsilun: '0',
         iscsilunsizeamount: null,
@@ -1290,6 +1364,17 @@ export default {
             return Promise.resolve()
           }
         }],
+        smbadprincipal: [{
+          validator: async (rule, value) => {
+            if (!this.isServiceSelected('SMB') || this.form.smbidentitymode !== 'AD' || this.form.smbguestok) {
+              return Promise.resolve()
+            }
+            if (!String(value || '').trim()) {
+              return Promise.reject(this.$t('message.storage.service.smb.ad.principal.required'))
+            }
+            return Promise.resolve()
+          }
+        }],
         miniops: [{
           validator: async (rule, value) => {
             if (value && (isNaN(value) || value <= 0)) {
@@ -1355,6 +1440,10 @@ export default {
       }
       const exportName = this.effectiveNfsName
       this.form.nfspath = exportName && exportName !== '-' ? `/export/${exportName}` : ''
+    },
+    deriveAdWorkgroup (domainName) {
+      const firstLabel = String(domainName || '').trim().split('.')[0] || ''
+      return firstLabel.replace(/[^A-Za-z0-9]/g, '').slice(0, 15).toUpperCase()
     },
     arrayHasItems (array) {
       return array !== null && array !== undefined && Array.isArray(array) && array.length > 0
@@ -1829,6 +1918,29 @@ export default {
       }
       return null
     },
+    initialSmbAclParams (snapshot = this.form) {
+      if (snapshot.smbguestok) {
+        return {}
+      }
+      if (snapshot.smbidentitymode === 'LOCAL') {
+        const principal = String(snapshot.smblocalusername || '').trim()
+        return principal ? {
+          aclprincipaltype: 'LOCAL_USER',
+          aclprincipal: principal,
+          aclpermission: snapshot.smblocalpermission || 'READ_WRITE',
+          aclpassword: snapshot.smblocalpassword
+        } : {}
+      }
+      if (snapshot.smbidentitymode === 'AD') {
+        const principal = String(snapshot.smbadprincipal || '').trim()
+        return principal ? {
+          aclprincipaltype: snapshot.smbadprincipaltype || 'AD_USER',
+          aclprincipal: principal,
+          aclpermission: snapshot.smbadpermission || 'READ_WRITE'
+        } : {}
+      }
+      return {}
+    },
     async enableSelectedProtocols (instance, setup = this.form) {
       const listenIp = ''
       for (const service of setup.services) {
@@ -1891,6 +2003,7 @@ export default {
         }
       }
       if (this.isSetupServiceSelected(snapshot, 'SMB')) {
+        const initialSmbAcl = this.initialSmbAclParams(snapshot)
         const shareResponse = await this.runStorageServiceSetup('createStorageSmbShare', {
           instanceid: instance.id,
           name: snapshot.smbname || snapshot.name + '-smb',
@@ -1900,21 +2013,12 @@ export default {
           quotabytes: this.toCapacityBytes(snapshot.smbquotaamount, snapshot.smbquotaunit),
           readonly: snapshot.smbreadonly,
           browseable: snapshot.smbbrowseable,
-          guestok: snapshot.smbguestok
+          guestok: snapshot.smbguestok,
+          ...initialSmbAcl
         })
         setup.smbShareId = this.extractCreatedId(shareResponse, 'storagesmbshare')
         if (!setup.smbShareId) {
           throw new Error(this.$t('message.storage.service.setup.verify.smb.missing'))
-        }
-        if (snapshot.smbidentitymode === 'LOCAL') {
-          const aclResponse = await this.runStorageServiceSetup('createStorageSmbAcl', {
-            shareid: setup.smbShareId,
-            principaltype: 'LOCAL_USER',
-            principal: snapshot.smblocalusername,
-            permission: snapshot.smblocalpermission || 'READ_WRITE',
-            password: snapshot.smblocalpassword
-          })
-          setup.smbAclId = this.extractCreatedId(aclResponse, 'storageaccessrule')
         }
         if (snapshot.smbidentitymode === 'AD') {
           await this.runStorageServiceSetup('joinStorageServiceToAdDomain', {
@@ -1924,7 +2028,7 @@ export default {
             password: snapshot.smbadpassword,
             dnsservers: snapshot.smbaddns,
             organizationalunit: snapshot.smbadou,
-            workgroup: snapshot.smbadworkgroup
+            workgroup: snapshot.smbadworkgroup || this.deriveAdWorkgroup(snapshot.smbaddomain)
           })
         }
         if (snapshot.useexistingvolume && snapshot.existingvolumeid) {
@@ -2059,7 +2163,7 @@ export default {
       if (this.isSetupServiceSelected(setup, 'SMB')) {
         required.add('createStorageSmbShare')
         required.add('listStorageSmbShares')
-        if (setup.smbidentitymode === 'LOCAL') {
+        if (!setup.smbguestok) {
           required.add('createStorageSmbAcl')
           required.add('listStorageSmbAcls')
         }
@@ -2120,7 +2224,7 @@ export default {
         if (shares.length === 0) {
           throw new Error(this.$t('message.storage.service.setup.verify.smb.missing'))
         }
-        if (snapshot.smbidentitymode === 'LOCAL') {
+        if (!snapshot.smbguestok) {
           const acls = await this.fetchStorageServiceItems('listStorageSmbAcls', 'storageaccessrule', { shareid: setup.smbShareId || shares[0].id })
           if (acls.length === 0) {
             throw new Error(this.$t('message.storage.service.setup.verify.smb.acl.missing'))
@@ -2297,7 +2401,7 @@ export default {
   color: inherit;
   border: 1px solid rgba(127, 127, 127, 0.24);
   border-radius: 6px;
-  background: rgba(127, 127, 127, 0.06);
+  background: transparent;
 
   :deep(.ant-collapse-item) {
     border-bottom: 0;
@@ -2306,16 +2410,24 @@ export default {
   :deep(.ant-collapse-header) {
     color: inherit;
     font-weight: 600;
+    background: rgba(127, 127, 127, 0.06);
   }
 
   :deep(.ant-collapse-content) {
     color: inherit;
-    border-top-color: rgba(127, 127, 127, 0.18);
-    background: transparent;
+    border-top-color: rgba(127, 127, 127, 0.24);
+    background: rgba(127, 127, 127, 0.025);
   }
 
   :deep(.ant-collapse-content-box) {
     padding: 12px 16px 16px;
+  }
+
+  :deep(.ant-form-item-label > label),
+  :deep(.ant-select),
+  :deep(.ant-select-selection-item),
+  :deep(.ant-select-arrow) {
+    color: inherit;
   }
 }
 

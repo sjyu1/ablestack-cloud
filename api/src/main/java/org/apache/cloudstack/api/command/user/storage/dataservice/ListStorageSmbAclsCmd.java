@@ -27,6 +27,7 @@ import org.apache.cloudstack.api.Parameter;
 import org.apache.cloudstack.api.command.user.UserCmd;
 import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
+import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageSmbShareResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
@@ -47,12 +48,19 @@ public class ListStorageSmbAclsCmd extends BaseListCmd implements UserCmd {
     @Parameter(name = "shareid", type = CommandType.UUID, entityType = StorageSmbShareResponse.class, description = "SMB share ID")
     private Long shareId;
 
+    @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, description = "Storage Service instance ID")
+    private Long instanceId;
+
     public Long getId() {
         return id;
     }
 
     public Long getShareId() {
         return shareId;
+    }
+
+    public Long getInstanceId() {
+        return instanceId;
     }
 
     @Override
