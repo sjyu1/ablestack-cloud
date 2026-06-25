@@ -69,10 +69,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.w3c.dom.Document;
+import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
 
 import javax.inject.Inject;
 import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
@@ -678,14 +680,14 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         try {
             final Document checkpointDocument = ParserUtils.getSaferDocumentBuilderFactory().newDocumentBuilder()
                     .parse(new InputSource(new StringReader(checkpointXml)));
-            final var parentNode = XPathFactory.newInstance().newXPath()
+            final Node parentNode = (Node) XPathFactory.newInstance().newXPath()
                     .compile("/domaincheckpoint/parent")
                     .evaluate(checkpointDocument, XPathConstants.NODE);
             if (parentNode == null) {
                 return checkpointXml;
             }
             parentNode.getParentNode().removeChild(parentNode);
-            final var transformer = TransformerFactory.newInstance().newTransformer();
+            final Transformer transformer = TransformerFactory.newInstance().newTransformer();
             transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
             final StringWriter writer = new StringWriter();
             transformer.transform(new DOMSource(checkpointDocument), new StreamResult(writer));
