@@ -1665,6 +1665,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
 
         final List<Long> removedIds = new ArrayList<>();
+        final List<Backup> backupsToRemove = backupIdsToRemove.stream()
+                .map(backupDao::findByIdIncludingRemoved)
+                .filter(Objects::nonNull)
+                .filter(this::isNetBackupBackup)
+                .collect(Collectors.toList());
+        cleanupExpiredBackupArtifacts(backupsToRemove, backupIdsToRemove);
         for (final Long backupIdToRemove : backupIdsToRemove) {
             final Backup backup = backupDao.findByIdIncludingRemoved(backupIdToRemove);
             if (backup == null) {
@@ -1678,6 +1684,92 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             removedIds.add(backupIdToRemove);
         }
         return removedIds;
+    }
+
+    private boolean isNetBackupBackup(final Backup backup) {
+        if (backup == null) {
+            return false;
+        }
+        final BackupOfferingVO backupOffering = backupOfferingDao.findById(backup.getBackupOfferingId());
+        return backupOffering != null && StringUtils.equalsIgnoreCase(getName(), backupOffering.getProvider());
+    }
+
+    private void cleanupExpiredBackupArtifacts(final List<Backup> backupsToRemove, final Set<Long> backupIdsToRemove) {
+        if (CollectionUtils.isEmpty(backupsToRemove)) {
+            return;
+        }
+        for (final Backup backup : backupsToRemove) {
+            try {
+                cleanupExpiredBackupArtifact(backup, backupIdsToRemove);
+            } catch (final Exception e) {
+                LOG.warn("Failed to cleanup expired NetBackup artifact for backup [{}]. Mold metadata will still be removed. Cause: {}",
+                        backup.getUuid(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private void cleanupExpiredBackupArtifact(final Backup backup, final Set<Long> backupIdsToRemove) {
+        loadBackupDetailsIfNeeded(backup);
+        if (hasDependentBackupOutsideRemoval(backup, backupIdsToRemove)) {
+            LOG.info("Skipping NetBackup artifact cleanup for backup [{}] because a remaining backup still depends on checkpoint [{}].",
+                    backup.getUuid(), getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+            return;
+        }
+
+        final String checkpointName = getBackupDetail(backup, DETAIL_CHECKPOINT_NAME);
+        if (StringUtils.isBlank(checkpointName) || StringUtils.isBlank(backup.getExternalId())) {
+            return;
+        }
+
+        final Host cleanupHost = resolveBackupCleanupHost(backup);
+        if (cleanupHost == null) {
+            LOG.warn("Skipping NetBackup artifact cleanup for backup [{}] because no available KVM cleanup host was found.", backup.getUuid());
+            return;
+        }
+
+        final AblestackDeleteBackupCommand command = new AblestackDeleteBackupCommand(backup.getExternalId(), null, null, null, true);
+        command.setBackupProvider(getName());
+        command.setCheckpointName(checkpointName);
+        if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            command.setDiskPaths(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+        }
+
+        try {
+            final BackupAnswer answer = (BackupAnswer) agentManager.send(cleanupHost.getId(), command);
+            if (answer == null || !answer.getResult()) {
+                LOG.warn("NetBackup artifact cleanup failed for backup [{}] on host [{}]: {}",
+                        backup.getUuid(), cleanupHost.getName(), answer != null ? answer.getDetails() : "no answer received");
+            }
+        } catch (final AgentUnavailableException | OperationTimedoutException e) {
+            LOG.warn("Unable to cleanup expired NetBackup artifact for backup [{}] on host [{}]: {}",
+                    backup.getUuid(), cleanupHost.getName(), e.getMessage(), e);
+        }
+    }
+
+    private boolean hasDependentBackupOutsideRemoval(final Backup backup, final Set<Long> backupIdsToRemove) {
+        if (backup == null || StringUtils.isBlank(backup.getUuid())) {
+            return false;
+        }
+        return backupDetailsDao.findDetails(DETAIL_PARENT_BACKUP_UUID, backup.getUuid(), false).stream()
+                .map(BackupDetailVO::getResourceId)
+                .filter(childBackupId -> !backupIdsToRemove.contains(childBackupId))
+                .map(backupDao::findById)
+                .filter(Objects::nonNull)
+                .anyMatch(childBackup -> Backup.Status.BackedUp.equals(childBackup.getStatus()));
+    }
+
+    private Host resolveBackupCleanupHost(final Backup backup) {
+        final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
+        if (vm != null) {
+            final Long hostId = vm.getHostId() != null ? vm.getHostId() : vm.getLastHostId();
+            if (hostId != null) {
+                final Host host = hostDao.findById(hostId);
+                if (host != null && Status.Up.equals(host.getStatus()) && Hypervisor.HypervisorType.KVM.equals(host.getHypervisorType())) {
+                    return host;
+                }
+            }
+        }
+        return resourceManager.findOneRandomRunningHostByHypervisor(Hypervisor.HypervisorType.KVM, backup.getZoneId());
     }
 
     @Override

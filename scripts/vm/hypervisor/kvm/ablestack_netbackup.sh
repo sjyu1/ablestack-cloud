@@ -475,6 +475,38 @@ delete_rbd_snapshot_if_unreferenced() {
   done < <(split_csv "$disk_paths")
 }
 
+has_child_checkpoint() {
+  local checkpoint_name="$1"
+  [[ -z "$checkpoint_name" ]] && return 1
+  find "$(dirname "$dest")" -path "$(dirname "$dest")/$(basename "$dest")" -prune -o -type f -name "*.xml" -print 2>/dev/null \
+    | xargs grep -F -l "<parent>" 2>/dev/null \
+    | xargs grep -F -l "<name>$checkpoint_name</name>" 2>/dev/null \
+    | grep -q .
+}
+
+delete_libvirt_checkpoint_if_unreferenced() {
+  local checkpoint_name="$1"
+  local vm_name
+
+  [[ -z "$checkpoint_name" ]] && return 0
+
+  if has_child_checkpoint "$checkpoint_name"; then
+    log -ne "Skip libvirt checkpoint delete [$checkpoint_name] (child exists)"
+    return 0
+  fi
+
+  vm_name="$(basename "$(dirname "$dest")")"
+  if [[ -z "$vm_name" ]]; then
+    return 0
+  fi
+
+  if virsh -c qemu:///system dominfo "$vm_name" > /dev/null 2>&1 \
+      && virsh -c qemu:///system checkpoint-info --domain "$vm_name" --checkpointname "$checkpoint_name" > /dev/null 2>&1; then
+    log -ne "Deleting libvirt checkpoint metadata [$checkpoint_name] from VM [$vm_name]"
+    virsh -c qemu:///system checkpoint-delete --domain "$vm_name" --checkpointname "$checkpoint_name" --metadata >> "$logFile" 2>&1 || true
+  fi
+}
+
 delete_backup() {
   if [[ -f "$dest/rbd-backup.meta" ]]; then
     source "$dest/rbd-backup.meta"
@@ -490,6 +522,9 @@ delete_backup() {
   elif [[ -n "$CHECKPOINT_NAME" && -n "$DISK_PATHS" ]]; then
     log -ne "Deleting backup using command metadata [$dest]"
     delete_rbd_snapshot_if_unreferenced "$DISK_PATHS" "$CHECKPOINT_NAME"
+  elif [[ -n "$CHECKPOINT_NAME" ]]; then
+    log -ne "Deleting file-backed backup using command metadata [$dest]"
+    delete_libvirt_checkpoint_if_unreferenced "$CHECKPOINT_NAME"
   fi
 
   rm -frv "$dest"
