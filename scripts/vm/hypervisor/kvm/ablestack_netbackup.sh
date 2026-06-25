@@ -137,11 +137,69 @@ redefine_checkpoint_if_needed() {
   if [[ -z "$PARENT_CHECKPOINT_NAME" || -z "$checkpoint_file" || ! -f "$checkpoint_file" ]]; then
     return
   fi
-  if virsh -c qemu:///system checkpoint-info --domain "$vm_name" --checkpointname "$PARENT_CHECKPOINT_NAME" > /dev/null 2>&1; then
+  redefine_checkpoint_chain_if_needed "$vm_name" "$checkpoint_file" ""
+}
+
+get_checkpoint_name_from_file() {
+  local checkpoint_file="$1"
+  basename "$checkpoint_file" .xml
+}
+
+get_parent_checkpoint_name_from_file() {
+  local checkpoint_file="$1"
+  awk '
+    /<parent>/ { in_parent=1 }
+    in_parent && /<name>/ {
+      value=$0
+      sub(/^.*<name>/, "", value)
+      sub(/<\/name>.*$/, "", value)
+      print value
+      exit
+    }
+    /<\/parent>/ { in_parent=0 }
+  ' "$checkpoint_file"
+}
+
+find_checkpoint_file() {
+  local checkpoint_dir="$1"
+  local checkpoint_name="$2"
+  find "$checkpoint_dir" -maxdepth 1 -type f -name "${checkpoint_name}.xml" -print -quit
+}
+
+redefine_checkpoint_chain_if_needed() {
+  local vm_name="$1"
+  local checkpoint_file="$2"
+  local visited="$3"
+  local checkpoint_name
+  local parent_checkpoint_name
+  local parent_checkpoint_file
+
+  if [[ -z "$checkpoint_file" || ! -f "$checkpoint_file" ]]; then
+    return
+  fi
+
+  checkpoint_name="$(get_checkpoint_name_from_file "$checkpoint_file")"
+  if [[ ",$visited," == *",$checkpoint_name,"* ]]; then
+    return
+  fi
+  visited="${visited:+$visited,}$checkpoint_name"
+
+  parent_checkpoint_name="$(get_parent_checkpoint_name_from_file "$checkpoint_file")"
+  if [[ -n "$parent_checkpoint_name" ]]; then
+    parent_checkpoint_file="$(find_checkpoint_file "$(dirname "$checkpoint_file")" "$parent_checkpoint_name")"
+    if [[ -z "$parent_checkpoint_file" ]]; then
+      echo "Missing parent checkpoint file $parent_checkpoint_name for checkpoint $checkpoint_name"
+      cleanup
+      exit 1
+    fi
+    redefine_checkpoint_chain_if_needed "$vm_name" "$parent_checkpoint_file" "$visited"
+  fi
+
+  if virsh -c qemu:///system checkpoint-info --domain "$vm_name" --checkpointname "$checkpoint_name" > /dev/null 2>&1; then
     return
   fi
   if ! virsh -c qemu:///system checkpoint-create --domain "$vm_name" --xmlfile "$checkpoint_file" --redefine > /dev/null 2>&1; then
-    echo "Failed to redefine checkpoint $PARENT_CHECKPOINT_NAME on domain $vm_name"
+    echo "Failed to redefine checkpoint $checkpoint_name on domain $vm_name"
     cleanup
     exit 1
   fi
