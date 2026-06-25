@@ -5104,7 +5104,6 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
                 try {
                     result = dm.qemuAgentCommand(QemuCommand.buildQemuCommand(QemuCommand.AGENT_NETWORK_GET_INTERFACES, null), 2, 0);
                     if (StringUtils.isNotBlank(result) && !(result.startsWith("error"))) {
-                        LOGGER.debug(dm.getName() + " >>  " + result);
                         JsonArray arrData = (JsonArray) new JsonParser().parse(result).getAsJsonObject().get("return");
                         for (JsonElement je : arrData) {
                             JsonElement nicName = je.getAsJsonObject().get("name") == null ? null : je.getAsJsonObject().get("name");

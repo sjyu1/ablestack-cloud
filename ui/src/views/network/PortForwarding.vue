@@ -525,8 +525,7 @@ export default {
         const virtualMachines = cluster.virtualmachines || []
         const nodeCount = virtualMachines.length || (Number(cluster.controlnodes || 1) + Number(cluster.size || 0))
         const sshPorts = Array.from({ length: nodeCount }, (item, index) => {
-          const vm = virtualMachines[index] || {}
-          return Number(vm.port || vm.sshport || vm.sshPort || 2222 + index)
+          return 2222 + index
         }).filter(port => Number.isInteger(port))
         this.kubernetesManagementPorts = [...new Set([6443, ...sshPorts])]
       }).catch(() => {
@@ -623,14 +622,7 @@ export default {
       }
       return (this.rangeIncludesProtectedPort(rule.publicport, rule.publicendport) &&
         (this.rangeIncludesPort(rule.privateport, rule.privateendport, 22) ||
-          this.rangeIncludesPort(rule.privateport, rule.privateendport, 6443))) ||
-        this.isKubernetesNodeSshRule(rule)
-    },
-    isKubernetesNodeSshRule (rule) {
-      const vmName = rule.virtualmachinename || ''
-      return /-(control|node)-/.test(vmName) &&
-        this.rangeIncludesPort(rule.privateport, rule.privateendport, 22) &&
-        Number(rule.publicport) >= 2222
+          this.rangeIncludesPort(rule.privateport, rule.privateendport, 6443)))
     },
     resetSelection () {
       this.setSelection([])
