@@ -63,12 +63,18 @@ import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
+import org.apache.cloudstack.utils.security.ParserUtils;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.w3c.dom.Document;
+import org.xml.sax.InputSource;
 
 import javax.inject.Inject;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
+import java.io.StringReader;
 import java.net.URISyntaxException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -597,20 +603,62 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final Map<String, String> checkpointXmlChain = new LinkedHashMap<>();
         Backup current = latestBackup;
         final Set<String> visitedBackupUuids = new HashSet<>();
+        final Set<String> visitedCheckpointNames = new HashSet<>();
         while (current != null && StringUtils.isNotBlank(current.getUuid()) && visitedBackupUuids.add(current.getUuid())) {
             loadBackupDetailsIfNeeded(current);
             final String checkpointPath = getBackupDetail(current, DETAIL_CHECKPOINT_PATH);
             final String checkpointXml = getBackupDetail(current, DETAIL_CHECKPOINT_XML);
+            final String checkpointName = getBackupDetail(current, DETAIL_CHECKPOINT_NAME);
+            if (StringUtils.isNotBlank(checkpointName)) {
+                visitedCheckpointNames.add(checkpointName);
+            }
             if (StringUtils.isNotBlank(checkpointPath) && StringUtils.isNotBlank(checkpointXml)) {
                 checkpointXmlChain.putIfAbsent(checkpointPath, checkpointXml);
             }
             final String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
-            if (StringUtils.isBlank(parentBackupUuid)) {
+            if (StringUtils.isNotBlank(parentBackupUuid)) {
+                current = backupDao.findByUuid(parentBackupUuid);
+                continue;
+            }
+            final String parentCheckpointName = getParentCheckpointNameFromXml(checkpointXml);
+            if (StringUtils.isBlank(parentCheckpointName) || !visitedCheckpointNames.add(parentCheckpointName)) {
                 break;
             }
-            current = backupDao.findByUuid(parentBackupUuid);
+            current = findBackedUpBackupByCheckpointName(latestBackup, parentCheckpointName);
         }
         return checkpointXmlChain;
+    }
+
+    private Backup findBackedUpBackupByCheckpointName(final Backup referenceBackup, final String checkpointName) {
+        if (referenceBackup == null || StringUtils.isBlank(checkpointName)) {
+            return null;
+        }
+        return backupDetailsDao.findDetails(DETAIL_CHECKPOINT_NAME, checkpointName, false).stream()
+                .map(BackupDetailVO::getResourceId)
+                .map(backupDao::findById)
+                .filter(Objects::nonNull)
+                .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
+                .filter(backup -> Objects.equals(referenceBackup.getVmId(), backup.getVmId()))
+                .filter(backup -> Objects.equals(referenceBackup.getBackupOfferingId(), backup.getBackupOfferingId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String getParentCheckpointNameFromXml(final String checkpointXml) {
+        if (StringUtils.isBlank(checkpointXml)) {
+            return null;
+        }
+        try {
+            final Document checkpointDocument = ParserUtils.getSaferDocumentBuilderFactory().newDocumentBuilder()
+                    .parse(new InputSource(new StringReader(checkpointXml)));
+            final String parentName = (String) XPathFactory.newInstance().newXPath()
+                    .compile("/domaincheckpoint/parent/name/text()")
+                    .evaluate(checkpointDocument, XPathConstants.STRING);
+            return StringUtils.trimToNull(parentName);
+        } catch (final Exception e) {
+            LOG.warn("Failed to parse NetBackup checkpoint XML parent name. Incremental checkpoint chain may be incomplete.", e);
+            return null;
+        }
     }
 
     private void loadBackupDetailsIfNeeded(final Backup backup) {
