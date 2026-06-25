@@ -72,9 +72,14 @@ import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
 
 import javax.inject.Inject;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.net.URISyntaxException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -279,7 +284,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                     latestBackup.getExternalId()));
             command.setParentCheckpointName(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
             command.setParentCheckpointPath(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
-            command.setParentCheckpointXml(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_XML));
+            final String parentCheckpointXml = getBackupDetail(latestBackup, DETAIL_CHECKPOINT_XML);
+            command.setParentCheckpointXml(BACKUP_TYPE_FULL.equalsIgnoreCase(latestBackup.getType())
+                    ? removeParentFromCheckpointXml(parentCheckpointXml)
+                    : parentCheckpointXml);
             command.setParentCheckpointXmlChain(getParentCheckpointXmlChain(latestBackup));
         }
 
@@ -294,9 +302,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                         final String checkpointXml = readFileContentsOnHost(vmHostVO, credentials.first(), credentials.second(), sshPort,
                                 getCheckpointPath(backupPath, checkpointName, backupEngine));
                         if (StringUtils.isNotBlank(checkpointXml)) {
-                            backupDetails.put(DETAIL_CHECKPOINT_XML, checkpointXml);
+                            final String checkpointXmlToStore = incrementalBackup ? checkpointXml : removeParentFromCheckpointXml(checkpointXml);
+                            backupDetails.put(DETAIL_CHECKPOINT_XML, checkpointXmlToStore);
                             backupDetailsDao.removeDetail(backupVO.getId(), DETAIL_CHECKPOINT_XML);
-                            backupDetailsDao.addDetail(backupVO.getId(), DETAIL_CHECKPOINT_XML, checkpointXml, false);
+                            backupDetailsDao.addDetail(backupVO.getId(), DETAIL_CHECKPOINT_XML, checkpointXmlToStore, false);
                         }
                     }
                 }
@@ -608,19 +617,20 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             loadBackupDetailsIfNeeded(current);
             final String checkpointPath = getBackupDetail(current, DETAIL_CHECKPOINT_PATH);
             final String checkpointXml = getBackupDetail(current, DETAIL_CHECKPOINT_XML);
+            final String checkpointXmlForChain = BACKUP_TYPE_FULL.equalsIgnoreCase(current.getType()) ? removeParentFromCheckpointXml(checkpointXml) : checkpointXml;
             final String checkpointName = getBackupDetail(current, DETAIL_CHECKPOINT_NAME);
             if (StringUtils.isNotBlank(checkpointName)) {
                 visitedCheckpointNames.add(checkpointName);
             }
-            if (StringUtils.isNotBlank(checkpointPath) && StringUtils.isNotBlank(checkpointXml)) {
-                checkpointXmlChain.putIfAbsent(checkpointPath, checkpointXml);
+            if (StringUtils.isNotBlank(checkpointPath) && StringUtils.isNotBlank(checkpointXmlForChain)) {
+                checkpointXmlChain.putIfAbsent(checkpointPath, checkpointXmlForChain);
             }
             final String parentBackupUuid = getBackupDetail(current, DETAIL_PARENT_BACKUP_UUID);
             if (StringUtils.isNotBlank(parentBackupUuid)) {
                 current = backupDao.findByUuid(parentBackupUuid);
                 continue;
             }
-            final String parentCheckpointName = getParentCheckpointNameFromXml(checkpointXml);
+            final String parentCheckpointName = getParentCheckpointNameFromXml(checkpointXmlForChain);
             if (StringUtils.isBlank(parentCheckpointName) || !visitedCheckpointNames.add(parentCheckpointName)) {
                 break;
             }
@@ -633,7 +643,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         if (referenceBackup == null || StringUtils.isBlank(checkpointName)) {
             return null;
         }
-        return backupDetailsDao.findDetails(DETAIL_CHECKPOINT_NAME, checkpointName, false).stream()
+        return backupDetailsDao.findDetails(DETAIL_CHECKPOINT_NAME, checkpointName, null).stream()
                 .map(BackupDetailVO::getResourceId)
                 .map(backupDao::findById)
                 .filter(Objects::nonNull)
@@ -658,6 +668,31 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         } catch (final Exception e) {
             LOG.warn("Failed to parse NetBackup checkpoint XML parent name. Incremental checkpoint chain may be incomplete.", e);
             return null;
+        }
+    }
+
+    private String removeParentFromCheckpointXml(final String checkpointXml) {
+        if (StringUtils.isBlank(checkpointXml)) {
+            return checkpointXml;
+        }
+        try {
+            final Document checkpointDocument = ParserUtils.getSaferDocumentBuilderFactory().newDocumentBuilder()
+                    .parse(new InputSource(new StringReader(checkpointXml)));
+            final var parentNode = XPathFactory.newInstance().newXPath()
+                    .compile("/domaincheckpoint/parent")
+                    .evaluate(checkpointDocument, XPathConstants.NODE);
+            if (parentNode == null) {
+                return checkpointXml;
+            }
+            parentNode.getParentNode().removeChild(parentNode);
+            final var transformer = TransformerFactory.newInstance().newTransformer();
+            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+            final StringWriter writer = new StringWriter();
+            transformer.transform(new DOMSource(checkpointDocument), new StreamResult(writer));
+            return writer.toString();
+        } catch (final Exception e) {
+            LOG.warn("Failed to remove parent from NetBackup FULL checkpoint XML. Keeping original XML.", e);
+            return checkpointXml;
         }
     }
 
