@@ -443,7 +443,7 @@
         <router-link :to="{ path: '/computeoffering/' + record.serviceofferingid }">{{ text }}</router-link>
       </template>
       <template v-if="column.key === 'backupofferingname'">
-        <router-link v-if="record.backupofferingid" :to="{ path: '/backupoffering/' + record.backupofferingid }">{{ text }}</router-link>
+        <router-link :to="{ path: '/backupoffering/' + record.backupofferingid }">{{ text }}</router-link>
       </template>
       <template v-if="column.key === 'hypervisor'">
         <span v-if="$route.name === 'hypervisorcapability'">
