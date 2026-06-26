@@ -46,7 +46,7 @@ export default {
         return filters
       },
       columns: () => {
-        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', { field: 'resources', customTitle: 'compute.resources' }, 'qemuagentversion', 'ipaddress', 'templatetype']
+        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', { field: 'resources', customTitle: 'compute.resources' }, 'qemuagentversion', 'ipaddress', 'templatetype', 'backupofferingname']
         const metricsFields = ['cpunumber', 'cputotal', 'cpuused', 'memorytotal',
           {
             memoryused: (record) => {
