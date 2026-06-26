@@ -26,7 +26,6 @@ import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpRequestBase;
@@ -63,9 +62,6 @@ public class AblestackNetBackupClient {
     private static final String NETBACKUP_EXPIRE_IMAGES_PATH = "/catalog/expire-images";
     private static final String NETBACKUP_CATALOG_IMAGES_PATH = "/catalog/images";
     private static final String NETBACKUP_JOBS_PATH = "/admin/jobs/";
-    private static final int NETBACKUP_RESTORE_JOB_LIST_LIMIT = 50;
-    private static final int NETBACKUP_RESTORE_JOB_MATCH_RETRY_COUNT = 12;
-    private static final int NETBACKUP_RESTORE_JOB_MATCH_RETRY_INTERVAL_MS = 5000;
     private static final String NETBACKUP_PART_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=12.0";
     private static final String NETBACKUP_RECOVER_CONTENT_TYPE = "multipart/vnd.netbackup+form-data;version=12.0";
     private static final String NETBACKUP_EXPIRE_PART_CONTENT_TYPE = "application/vnd.netbackup+json;version=12.0";
@@ -188,40 +184,6 @@ public class AblestackNetBackupClient {
         } catch (IOException e) {
             throw new CloudRuntimeException("Failed to request NetBackup restore API: " + e.getMessage(), e);
         }
-    }
-
-    public String waitForRestoreJobCompletionForPaths(final String clientName, final List<String> restorePaths) {
-        if (StringUtils.isBlank(clientName)) {
-            throw new CloudRuntimeException("NetBackup client name cannot be empty when waiting for restore job completion");
-        }
-        final Set<String> expectedPaths = normalizePaths(restorePaths);
-        if (expectedPaths.isEmpty()) {
-            throw new CloudRuntimeException(String.format(
-                    "NetBackup restore path set cannot be empty for client [%s]", clientName));
-        }
-
-        final long deadline = resolveRecoveryJobDeadline();
-        for (int attempt = 1; !isRecoveryJobDeadlineExceeded(deadline); attempt++) {
-            final String matchedJobId = findMatchingRestoreJobId(clientName, expectedPaths);
-            if (StringUtils.isNotBlank(matchedJobId)) {
-                LOG.info("Matched NetBackup restore job [{}] for client [{}] and restore paths [{}].",
-                        matchedJobId, clientName, expectedPaths);
-                waitForRecoveryJob(matchedJobId);
-                return matchedJobId;
-            }
-
-            if (attempt >= NETBACKUP_RESTORE_JOB_MATCH_RETRY_COUNT) {
-                break;
-            }
-
-            LOG.debug("No matching NetBackup restore job found yet for client [{}] and restore paths [{}] on attempt [{}/{}]. Retrying after [{}] ms.",
-                    clientName, expectedPaths, attempt, NETBACKUP_RESTORE_JOB_MATCH_RETRY_COUNT, NETBACKUP_RESTORE_JOB_MATCH_RETRY_INTERVAL_MS);
-            sleepBeforeRestoreJobMatchRetry(clientName);
-        }
-
-        throw new CloudRuntimeException(String.format(
-                "Unable to find a NetBackup restore job for client [%s] and restore paths [%s] within [%s] seconds.",
-                clientName, expectedPaths, formatRecoveryJobTimeout()));
     }
 
     public String getRecoveryJobState(final String recoveryJobId) {
@@ -563,65 +525,6 @@ public class AblestackNetBackupClient {
                 recoveryJobId, NETBACKUP_JOB_RETRY_COUNT));
     }
 
-    private String findMatchingRestoreJobId(final String clientName, final Set<String> expectedPaths) {
-        final JSONArray jobs = listRestoreJobs(clientName);
-        if (jobs == null || jobs.isEmpty()) {
-            return null;
-        }
-
-        for (int i = 0; i < jobs.length(); i++) {
-            final JSONObject job = jobs.optJSONObject(i);
-            if (job == null) {
-                continue;
-            }
-            final String jobId = extractString(job, "id");
-            if (StringUtils.isBlank(jobId)) {
-                continue;
-            }
-
-            final Set<String> actualPaths = getRestoreJobFileList(jobId);
-            if (actualPaths == null || actualPaths.isEmpty()) {
-                continue;
-            }
-
-            if (expectedPaths.equals(actualPaths)) {
-                LOG.info("Found matching NetBackup restore job [{}] for client [{}] with file list [{}].",
-                        jobId, clientName, actualPaths);
-                return jobId;
-            }
-        }
-
-        return null;
-    }
-
-    private JSONArray listRestoreJobs(final String clientName) {
-        final String filter = String.format("jobType eq 'RESTORE' and clientName eq '%s' and parentJobId eq 0",
-                clientName);
-        final HttpGet request = new HttpGet(buildJobsUri(filter, NETBACKUP_RESTORE_JOB_LIST_LIMIT));
-        request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
-        applyAuthenticationHeaders(request);
-
-        try {
-            final HttpResponse response = httpClient.execute(request);
-            final int statusCode = response.getStatusLine().getStatusCode();
-            final String responseBody = response.getEntity() != null ? EntityUtils.toString(response.getEntity(), "UTF-8") : "";
-            if (statusCode != HttpStatus.SC_OK) {
-                LOG.warn("NetBackup restore job list query returned status [{}] for client [{}]. response=[{}]",
-                        statusCode, clientName, responseBody);
-                return new JSONArray();
-            }
-
-            if (StringUtils.isBlank(responseBody)) {
-                return new JSONArray();
-            }
-
-            final JSONObject responseJson = new JSONObject(responseBody);
-            return responseJson.optJSONArray("data") != null ? responseJson.optJSONArray("data") : new JSONArray();
-        } catch (IOException e) {
-            throw new CloudRuntimeException("Failed to query NetBackup restore job list: " + e.getMessage(), e);
-        }
-    }
-
     private Set<String> getRestoreJobFileList(final String jobId) {
         final HttpGet request = new HttpGet(resolvePath(NETBACKUP_JOBS_PATH + jobId + "/file-lists"));
         request.setHeader(HttpHeaders.ACCEPT, NETBACKUP_JSON_V12_CONTENT_TYPE);
@@ -672,30 +575,6 @@ public class AblestackNetBackupClient {
             return null;
         }
         return attributes.optJSONArray("fileList");
-    }
-
-    private Set<String> normalizePaths(final List<String> restorePaths) {
-        if (restorePaths == null || restorePaths.isEmpty()) {
-            return new LinkedHashSet<>();
-        }
-        return restorePaths.stream()
-                .filter(StringUtils::isNotBlank)
-                .map(this::ensureTrailingSlash)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-    }
-
-    private URI buildJobsUri(final String filter, final int limit) {
-        try {
-            final URIBuilder builder = new URIBuilder(apiUri);
-            final String basePath = StringUtils.removeEnd(StringUtils.defaultString(apiUri.getPath()), "/");
-            builder.setPath(basePath + StringUtils.removeEnd(NETBACKUP_JOBS_PATH, "/"));
-            builder.addParameter("page[limit]", String.valueOf(limit));
-            builder.addParameter("sort", "-startTime,jobId");
-            builder.addParameter("filter", filter);
-            return builder.build();
-        } catch (URISyntaxException e) {
-            throw new CloudRuntimeException("Failed to build NetBackup jobs URI", e);
-        }
     }
 
     private void applyAuthenticationHeaders(final HttpRequestBase request) {
@@ -804,16 +683,6 @@ public class AblestackNetBackupClient {
         return statusCode == HttpStatus.SC_NOT_FOUND
                 || statusCode == HttpStatus.SC_INTERNAL_SERVER_ERROR
                 || statusCode == HttpStatus.SC_SERVICE_UNAVAILABLE;
-    }
-
-    private void sleepBeforeRestoreJobMatchRetry(final String clientName) {
-        try {
-            Thread.sleep(NETBACKUP_RESTORE_JOB_MATCH_RETRY_INTERVAL_MS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new CloudRuntimeException(String.format(
-                    "Interrupted while matching NetBackup restore job for client [%s].", clientName), e);
-        }
     }
 
     private URI resolvePath(final String path) {

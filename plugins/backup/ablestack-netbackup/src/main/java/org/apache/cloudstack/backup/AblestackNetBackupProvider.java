@@ -138,7 +138,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     private final ConfigKey<Integer> NetBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
             "netbackup.restore.timeout",
-            "1800",
+            "7200",
             "Timeout in seconds after which NetBackup restore operations fail.",
             true,
             BackupFrameworkEnabled.key());
@@ -1136,22 +1136,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         } finally {
             cleanupRestoreSourcesOnStageHosts(backup.getZoneId(), restoreHost.getName(), restoreSourcesToPrepare);
         }
-    }
-
-    private String prepareRestoreJobGateOnDestinationHost(final Long zoneId, final String destinationHostName, final String restorePath) {
-        if (zoneId == null || StringUtils.isBlank(destinationHostName) || StringUtils.isBlank(restorePath)) {
-            return null;
-        }
-        final HostVO destinationHost = findRestoreHost(destinationHostName);
-        if (destinationHost == null) {
-            throw new CloudRuntimeException(String.format(
-                    "Unable to find destination host [%s] while waiting for prepared NetBackup restore path [%s].",
-                    destinationHostName, restorePath));
-        }
-        final AblestackNetBackupClient client = getClient(zoneId);
-        final String restoreJobId = client.waitForRestoreJobCompletionForPaths(destinationHostName, Collections.singletonList(restorePath));
-        waitForPreparedRestorePathOnDestinationHost(destinationHost, restorePath);
-        return restoreJobId;
     }
 
     private void waitForPreparedRestorePathOnDestinationHost(final Host destinationHost, final String restorePath) {
