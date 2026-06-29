@@ -324,6 +324,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
             final String details = answer != null ? answer.getDetails() : "No answer received";
             LOG.error("Failed to take NetBackup backup for VM {}: {}", vm.getInstanceName(), details);
+            cleanupFailedBackupArtifacts(vmHost, backupVO);
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.update(backupVO.getId(), backupVO);
             return BackupExecutionResult.failure(details, backupVO);
@@ -448,13 +449,39 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             return;
         }
 
-        final String failedBackupPath = backup.getExternalId();
-        if (StringUtils.isNotBlank(failedBackupPath)) {
-            cleanupBackupPathsOnHost(backup.getZoneId(), host.getName(), List.of(failedBackupPath));
-        }
+        cleanupFailedBackupArtifacts(host, backup);
 
         LOG.info("Removed failed NetBackup backup path [{}] before full retry for backup [{}].",
-                failedBackupPath, backup.getUuid());
+                backup.getExternalId(), backup.getUuid());
+    }
+
+    private void cleanupFailedBackupArtifacts(final Host host, final Backup backup) {
+        if (backup == null || host == null || StringUtils.isBlank(backup.getExternalId())) {
+            return;
+        }
+        loadBackupDetailsIfNeeded(backup);
+
+        if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))
+                && StringUtils.isNotBlank(getBackupDetail(backup, DETAIL_CHECKPOINT_NAME))
+                && StringUtils.isNotBlank(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS))) {
+            final AblestackDeleteBackupCommand command = new AblestackDeleteBackupCommand(backup.getExternalId(), null, null, null, true);
+            command.setBackupProvider(getName());
+            command.setCheckpointName(getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+            command.setDiskPaths(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+            try {
+                final BackupAnswer answer = (BackupAnswer) agentManager.send(host.getId(), command);
+                if (answer == null || !answer.getResult()) {
+                    LOG.warn("Failed to cleanup RBD snapshots for failed NetBackup backup [{}] on host [{}]: {}",
+                            backup.getUuid(), host.getName(), answer != null ? answer.getDetails() : "no answer received");
+                }
+            } catch (final AgentUnavailableException | OperationTimedoutException e) {
+                LOG.warn("Unable to cleanup RBD snapshots for failed NetBackup backup [{}] on host [{}]: {}",
+                        backup.getUuid(), host.getName(), e.getMessage(), e);
+            }
+            return;
+        }
+
+        cleanupBackupPathsOnHost(backup.getZoneId(), host.getName(), List.of(backup.getExternalId()));
     }
 
     private void removeFailedBackupAfterSuccessfulFullRetry(final Backup backup) {

@@ -38,6 +38,7 @@ PARENT_CHECKPOINT_PATH=""
 BACKUP_FILES=""
 FORCED="false"
 logFile="/var/log/cloudstack/agent/agent.log"
+CREATED_RBD_SNAPSHOTS=()
 
 EXIT_CLEANUP_FAILED=20
 
@@ -260,6 +261,32 @@ build_rbd_cmd() {
   fi
 }
 
+record_created_rbd_snapshot() {
+  local disk_path="$1"
+  local checkpoint_name="$2"
+  [[ -z "$disk_path" || -z "$checkpoint_name" ]] && return
+  CREATED_RBD_SNAPSHOTS+=("${disk_path}|${checkpoint_name}")
+}
+
+cleanup_created_rbd_snapshots() {
+  [[ "${#CREATED_RBD_SNAPSHOTS[@]}" -eq 0 ]] && return
+
+  local snapshot_entry
+  for snapshot_entry in "${CREATED_RBD_SNAPSHOTS[@]}"; do
+    local disk_path="${snapshot_entry%%|*}"
+    local checkpoint_name="${snapshot_entry#*|}"
+    [[ -z "$disk_path" || -z "$checkpoint_name" ]] && continue
+
+    parse_rbd_uri "$disk_path"
+    build_rbd_cmd
+    if timeout 30s "${RBD_CMD[@]}" snap ls "$RBD_IMAGE" 2>/dev/null | awk 'NR>1 {print $2}' | grep -Fxq "$checkpoint_name"; then
+      log -ne "Cleaning failed RBD backup snapshot [${RBD_IMAGE}@${checkpoint_name}]"
+      "${RBD_CMD[@]}" snap rm "${RBD_IMAGE}@${checkpoint_name}" >> "$logFile" 2>&1 || true
+    fi
+  done
+  CREATED_RBD_SNAPSHOTS=()
+}
+
 write_rbd_backup_metadata() {
   local backup_type="$1"
   local checkpoint_name="$2"
@@ -394,10 +421,11 @@ backup_running_vm() {
 backup_rbd_volumes() {
   mkdir -p "$dest/checkpoints" || { echo "Failed to create backup directory $dest"; exit 1; }
   backup_domain_information "$VM"
+  trap cleanup_created_rbd_snapshots ERR
+  trap 'cleanup_created_rbd_snapshots; exit 1' INT TERM
   local index=0
   while IFS= read -r disk_path; do
     [[ -z "$disk_path" ]] && continue
-    local created_snapshot=""
     log -ne "Loop disk raw value=[$disk_path]"
     parse_rbd_uri "$disk_path"
     build_rbd_cmd
@@ -408,32 +436,35 @@ backup_rbd_volumes() {
 
   if ! timeout 30s "${RBD_CMD[@]}" info "$RBD_IMAGE" >> "$logFile" 2>&1; then
     echo "Failed to access RBD image $RBD_IMAGE"
+    cleanup_created_rbd_snapshots
     cleanup
   fi
 
   if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
     if ! timeout 30s "${RBD_CMD[@]}" snap ls "$RBD_IMAGE" 2>>"$logFile" | awk 'NR>1 {print $2}' | grep -Fxq "$PARENT_CHECKPOINT_NAME"; then
       echo "Parent RBD snapshot ${RBD_IMAGE}@${PARENT_CHECKPOINT_NAME} not found for incremental backup"
+      cleanup_created_rbd_snapshots
       cleanup
     fi
   fi
 
   if ! timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${CHECKPOINT_NAME}" >> "$logFile" 2>&1; then
     echo "Failed to create RBD snapshot ${RBD_IMAGE}@${CHECKPOINT_NAME}"
+    cleanup_created_rbd_snapshots
     cleanup
   fi
-    created_snapshot="${RBD_IMAGE}@${CHECKPOINT_NAME}"
+    record_created_rbd_snapshot "$disk_path" "$CHECKPOINT_NAME"
 
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
       if ! timeout 6h "${RBD_CMD[@]}" export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${CHECKPOINT_NAME}" "$output_file" >> "$logFile" 2>&1; then
         echo "Failed to export incremental RBD diff for ${RBD_IMAGE}@${CHECKPOINT_NAME}"
-        [[ -n "$created_snapshot" ]] && "${RBD_CMD[@]}" snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
+        cleanup_created_rbd_snapshots
         cleanup
       fi
     else
       if ! timeout 6h "${RBD_CMD[@]}" export "${RBD_IMAGE}@${CHECKPOINT_NAME}" "$output_file" >> "$logFile" 2>&1; then
         echo "Failed to export full RBD snapshot ${RBD_IMAGE}@${CHECKPOINT_NAME}"
-        [[ -n "$created_snapshot" ]] && "${RBD_CMD[@]}" snap rm "$created_snapshot" >> "$logFile" 2>&1 || true
+        cleanup_created_rbd_snapshots
         cleanup
       fi
     fi
@@ -444,6 +475,9 @@ backup_rbd_volumes() {
 
   write_rbd_backup_metadata "$BACKUP_TYPE" "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
   write_rbd_checkpoint_metadata "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
+  trap - ERR
+  trap - INT TERM
+  CREATED_RBD_SNAPSHOTS=()
 }
 
 has_child_backup() {
