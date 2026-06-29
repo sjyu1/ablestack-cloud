@@ -112,19 +112,21 @@
                   <span class="rack-list-summary-value">{{ rackAggregate.totalDevices }}</span>
                 </span>
               </div>
-              <div class="rack-list-summary-metric">
+              <div class="rack-list-summary-metric rack-list-summary-metric-usage">
                 <span class="rack-list-summary-icon"><PieChartOutlined /></span>
                 <span class="rack-list-summary-text">
                   <span class="rack-list-summary-label">{{ t('rackDiagram.averageUsage') }}</span>
-                  <span class="rack-list-summary-value">{{ rackAggregate.averageUsage }}%</span>
+                  <span class="rack-list-summary-value-row">
+                    <span class="rack-list-summary-value">{{ rackAggregate.averageUsage }}%</span>
+                  <a-progress
+                    class="rack-list-summary-progress"
+                    :percent="rackAggregate.averageUsage"
+                    :show-info="false"
+                    size="small"
+                    :stroke-width="6"
+                  />
+                  </span>
                 </span>
-                <a-progress
-                  class="rack-list-summary-progress"
-                  :percent="rackAggregate.averageUsage"
-                  :show-info="false"
-                  size="small"
-                  :stroke-width="6"
-                />
               </div>
               <div class="rack-list-summary-metric">
                 <span class="rack-list-summary-icon"><DatabaseOutlined /></span>
@@ -142,7 +144,17 @@
               </div>
             </div>
           </a-card>
-          <div class="rack-list-grid">
+          <div class="rack-list-view-switch">
+            <a-radio-group v-model:value="rackListViewMode" size="small" button-style="solid">
+              <a-radio-button value="card">
+                <AppstoreOutlined /> {{ t('rackDiagram.cardView') }}
+              </a-radio-button>
+              <a-radio-button value="list">
+                <UnorderedListOutlined /> {{ t('rackDiagram.listView') }}
+              </a-radio-button>
+            </a-radio-group>
+          </div>
+          <div v-if="rackListViewMode === 'card'" class="rack-list-grid">
           <a-card
             v-for="(rack, idx) in parsedRacks"
             :key="`rack-list-${idx}`"
@@ -191,13 +203,12 @@
               <div class="rack-list-card-content">
                 <div class="rack-list-card-title-row">
                   <a-tooltip :title="getOverflowTitle(`list-${idx}`, rack.name)">
-                    <div
-                      class="rack-list-card-title"
-                      :ref="setOverflowTitleRef(`list-${idx}`)"
-                      @mouseenter="updateOverflowTitle(`list-${idx}`)"
-                    >{{ rack.name }}</div>
-                  </a-tooltip>
-                  <span class="rack-list-card-status"><span class="rack-list-card-status-dot"></span>{{ t('state.ok') }}</span>
+                  <div
+                    class="rack-list-card-title"
+                    :ref="setOverflowTitleRef(`list-${idx}`)"
+                    @mouseenter="updateOverflowTitle(`list-${idx}`)"
+                  >{{ rack.name }}</div>
+                </a-tooltip>
                 </div>
                 <div class="rack-list-card-usage">{{ t('rackDiagram.usage') }} {{ getRackUsagePercent(rack) }}%</div>
                 <div class="rack-list-card-progress-row">
@@ -233,6 +244,84 @@
           </a-card>
           <button type="button" class="rack-list-add-card" @click="openRackModal('add')">
             <span class="rack-list-add-icon"><PlusOutlined /></span>
+            <span>{{ t('rackDiagram.addRack') }}</span>
+          </button>
+        </div>
+        <div v-else class="rack-list-table">
+          <div
+            v-for="(rack, idx) in parsedRacks"
+            :key="`rack-list-row-${idx}`"
+            :class="[
+              'rack-list-row',
+              { 'rack-list-row--matched': hasSearchQuery && isRackMatched(rack), 'rack-list-row--dimmed': hasSearchQuery && !isRackMatched(rack) }
+            ]"
+            @click="openRackDetail(idx)"
+          >
+            <div class="rack-list-row-main">
+              <span class="rack-list-row-icon" aria-hidden="true"><RackListCardIcon /></span>
+              <div class="rack-list-row-title-wrap">
+                <div class="rack-list-row-title-line">
+                  <a-tooltip :title="getOverflowTitle(`list-row-${idx}`, rack.name)">
+                    <span
+                      class="rack-list-row-title"
+                      :ref="setOverflowTitleRef(`list-row-${idx}`)"
+                      @mouseenter="updateOverflowTitle(`list-row-${idx}`)"
+                    >{{ rack.name }}</span>
+                  </a-tooltip>
+                  <a-tag v-if="hasSearchQuery && getRackMatchCount(rack) > 0" color="blue" class="rack-list-row-match">
+                    {{ t('rackDiagram.searchMatched', { count: getRackMatchCount(rack) }) }}
+                  </a-tag>
+                </div>
+                <div class="rack-list-row-meta">
+                  <span><CalendarOutlined /> {{ t('label.created') }} {{ getRackCreatedDate(rack) }}</span>
+                  <a-tooltip :title="`${t('rackDiagram.rackLocation')} ${getRackLocation(rack)}`">
+                    <span class="rack-list-row-location"><EnvironmentOutlined /> {{ t('rackDiagram.rackLocation') }} {{ getRackLocation(rack) }}</span>
+                  </a-tooltip>
+                </div>
+              </div>
+            </div>
+            <div class="rack-list-row-usage">
+              <span class="rack-list-row-label">{{ t('rackDiagram.usage') }}</span>
+              <strong>{{ getRackUsagePercent(rack) }}%</strong>
+              <a-progress
+                class="rack-list-row-progress"
+                :percent="getRackUsagePercent(rack)"
+                :show-info="false"
+                size="small"
+                :stroke-width="6"
+              />
+              <span class="rack-list-row-used">{{ getRackUsedU(rack) }}U / {{ rack.totalHeight }}U</span>
+            </div>
+            <div class="rack-list-row-stats">
+              <span>{{ t('rackDiagram.freeSpace') }} <strong>{{ getRackFreeU(rack) }}U</strong></span>
+              <span>{{ t('rackDiagram.deviceCount') }} <strong>{{ getRackDeviceCount(rack) }}{{ t('rackDiagram.countSuffix') }}</strong></span>
+            </div>
+            <div class="rack-list-row-actions" @click.stop>
+              <a-dropdown :trigger="['click']">
+                <a-button size="small" type="text" class="rack-list-more-btn">
+                  <template #icon><MoreOutlined /></template>
+                </a-button>
+                <template #overlay>
+                  <a-menu>
+                    <a-menu-item @click.stop="cloneRack(idx)">
+                      <CopyOutlined /> {{ t('rackDiagram.cloneRack') }}
+                    </a-menu-item>
+                    <a-menu-item @click.stop="openRackModal('edit', idx)">
+                      <SettingOutlined /> {{ t('rackDiagram.edit') }}
+                    </a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item danger>
+                      <a-popconfirm :title="t('rackDiagram.deleteConfirm')" :ok-text="t('label.ok')" :cancel-text="t('label.cancel')" @confirm="deleteRack(idx)">
+                        <span @click.stop><DeleteOutlined /> {{ t('rackDiagram.delete') }}</span>
+                      </a-popconfirm>
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </div>
+          </div>
+          <button type="button" class="rack-list-add-row" @click="openRackModal('add')">
+            <PlusOutlined />
             <span>{{ t('rackDiagram.addRack') }}</span>
           </button>
         </div>
@@ -771,7 +860,12 @@
       destroyOnClose
     >
       <a-form layout="vertical">
-        <a-form-item :label="t('rackDiagram.rackName')">
+        <a-form-item
+          :label="t('rackDiagram.rackName')"
+          :required="true"
+          :validateStatus="rackFormErrors.name ? 'error' : ''"
+          :help="rackFormErrors.name"
+        >
           <a-input v-model:value="rackForm.name" :placeholder="t('rackDiagram.rackNamePlaceholder')" />
         </a-form-item>
         <a-form-item :label="t('rackDiagram.rackLocation')">
@@ -780,7 +874,12 @@
         <a-form-item :label="t('label.created')">
           <a-input :value="formatRackDate(rackForm.createdAt)" disabled />
         </a-form-item>
-        <a-form-item :label="t('rackDiagram.totalHeight')">
+        <a-form-item
+          :label="t('rackDiagram.totalHeight')"
+          :required="true"
+          :validateStatus="rackFormErrors.totalHeight ? 'error' : ''"
+          :help="rackFormErrors.totalHeight"
+        >
           <a-input-number
             v-model:value="rackForm.totalHeight"
             :min="10"
@@ -832,7 +931,12 @@
     >
       <a-form layout="vertical" class="device-config-form">
         <a-card size="small" class="device-config-section" :title="t('rackDiagram.sectionBasicInfo')">
-        <a-form-item :label="t('rackDiagram.deviceType')">
+        <a-form-item
+          :label="t('rackDiagram.deviceType')"
+          :required="true"
+          :validateStatus="deviceFormErrors.type ? 'error' : ''"
+          :help="deviceFormErrors.type"
+        >
           <a-select v-model:value="deviceForm.type" style="width: 100%" @change="handleTypeChange">
             <a-select-option value="server">{{ t('rackDiagram.deviceTypeServer') }}</a-select-option>
             <a-select-option value="blade">{{ t('rackDiagram.deviceTypeBlade') }}</a-select-option>
@@ -853,7 +957,13 @@
           </a-select>
         </a-form-item>
 
-        <a-form-item :label="t('rackDiagram.deviceName')" v-if="deviceForm.type !== 'blank'">
+        <a-form-item
+          :label="t('rackDiagram.deviceName')"
+          v-if="deviceForm.type !== 'blank'"
+          :required="true"
+          :validateStatus="deviceFormErrors.label ? 'error' : ''"
+          :help="deviceFormErrors.label"
+        >
           <a-input
             v-model:value="deviceForm.label"
             :placeholder="t('rackDiagram.deviceNamePlaceholder')"
@@ -875,11 +985,22 @@
           />
         </a-form-item>
 
-        <a-form-item :label="t('rackDiagram.customTypeName')" v-if="deviceForm.type === 'custom'">
+        <a-form-item
+          :label="t('rackDiagram.customTypeName')"
+          v-if="deviceForm.type === 'custom'"
+          :required="true"
+          :validateStatus="deviceFormErrors.customType ? 'error' : ''"
+          :help="deviceFormErrors.customType"
+        >
           <a-input v-model:value="deviceForm.customType" :placeholder="t('rackDiagram.customTypePlaceholder')" />
         </a-form-item>
 
-        <a-form-item :label="t('rackDiagram.height')">
+        <a-form-item
+          :label="t('rackDiagram.height')"
+          :required="true"
+          :validateStatus="deviceFormErrors.height ? 'error' : ''"
+          :help="deviceFormErrors.height"
+        >
         <a-input-number
           v-model:value="deviceForm.height"
           :min="1"
@@ -1267,6 +1388,7 @@ const sidePaneInlineStyle = computed(() => {
 // 데이터 모델
 const parsedRacks = ref([])
 const showRackList = ref(true)
+const rackListViewMode = ref('card')
 const selectedRackIndex = ref(-1)
 const selectedDeviceRackIndex = ref(-1)
 const selectedDeviceItemIndex = ref(-1)
@@ -1950,8 +2072,46 @@ const rackModalMode = ref('add') // 'add' or 'edit'
 const targetRackIndex = ref(-1)
 
 const rackForm = reactive({ name: '', totalHeight: 42, location: '', createdAt: '' })
+const rackFormErrors = reactive({ name: '', totalHeight: '' })
+
+const clearRackFormErrors = () => {
+  rackFormErrors.name = ''
+  rackFormErrors.totalHeight = ''
+}
+
+const validateRackModalForm = () => {
+  clearRackFormErrors()
+  const rackName = String(rackForm.name || '').trim()
+
+  if (!rackName) {
+    rackFormErrors.name = t('rackDiagram.msg.enterRackName')
+  } else if (rackName.length > 60) {
+    rackFormErrors.name = t('rackDiagram.msg.rackNameMax')
+  } else {
+    const duplicateName = parsedRacks.value.some((rack, idx) => {
+      if (rackModalMode.value === 'edit' && idx === targetRackIndex.value) return false
+      return String(rack.name || '').trim().toLowerCase() === rackName.toLowerCase()
+    })
+    if (duplicateName) rackFormErrors.name = t('rackDiagram.msg.duplicateRackName')
+  }
+
+  if (!Number.isInteger(rackForm.totalHeight) || rackForm.totalHeight < 10 || rackForm.totalHeight > 50) {
+    rackFormErrors.totalHeight = t('rackDiagram.msg.rackHeightRange')
+  }
+
+  return !rackFormErrors.name && !rackFormErrors.totalHeight
+}
+
+watch(() => rackForm.name, () => {
+  if (rackFormErrors.name) rackFormErrors.name = ''
+})
+
+watch(() => rackForm.totalHeight, () => {
+  if (rackFormErrors.totalHeight) rackFormErrors.totalHeight = ''
+})
 
 const openRackModal = (mode, index = -1) => {
+  clearRackFormErrors()
   rackModalMode.value = mode
   targetRackIndex.value = index
   if (mode === 'edit' && index > -1) {
@@ -1970,6 +2130,7 @@ const openRackModal = (mode, index = -1) => {
 }
 
 const closeRackModal = () => {
+  clearRackFormErrors()
   rackModalVisible.value = false
 }
 
@@ -2102,30 +2263,10 @@ const cloneRack = (rIndex) => {
 
 // 랙 모달 저장 로직
 const submitRackModal = () => {
+  if (!validateRackModalForm()) return
+
   const rackName = String(rackForm.name || '').trim()
   const rackLocation = String(rackForm.location || '').trim()
-  if (!rackName) {
-    message.warning(t('rackDiagram.msg.enterRackName'))
-    return
-  }
-  if (rackName.length > 60) {
-    message.warning(t('rackDiagram.msg.rackNameMax'))
-    return
-  }
-
-  if (!Number.isInteger(rackForm.totalHeight) || rackForm.totalHeight < 10 || rackForm.totalHeight > 50) {
-    message.warning(t('rackDiagram.msg.rackHeightRange'))
-    return
-  }
-
-  const duplicateName = parsedRacks.value.some((rack, idx) => {
-    if (rackModalMode.value === 'edit' && idx === targetRackIndex.value) return false
-    return String(rack.name || '').trim().toLowerCase() === rackName.toLowerCase()
-  })
-  if (duplicateName) {
-    message.warning(t('rackDiagram.msg.duplicateRackName'))
-    return
-  }
 
   if (rackModalMode.value === 'add') {
     parsedRacks.value.push({
@@ -2385,6 +2526,55 @@ const deviceForm = reactive({
   sourceRef: undefined,
   hardwareInfo: createEmptyHardwareInfo()
 })
+const deviceFormErrors = reactive({ type: '', label: '', customType: '', height: '' })
+
+const clearDeviceFormErrors = () => {
+  deviceFormErrors.type = ''
+  deviceFormErrors.label = ''
+  deviceFormErrors.customType = ''
+  deviceFormErrors.height = ''
+}
+
+const validateDeviceModalForm = () => {
+  clearDeviceFormErrors()
+  const rawLabel = String(deviceForm.label || '').trim()
+  const rawCustomType = String(deviceForm.customType || '').trim()
+
+  if (!deviceForm.type) {
+    deviceFormErrors.type = t('rackDiagram.msg.selectDeviceType')
+  }
+  if (deviceForm.type !== 'blank') {
+    if (!rawLabel) deviceFormErrors.label = t('rackDiagram.msg.enterDeviceName')
+    else if (rawLabel.length > 60) deviceFormErrors.label = t('rackDiagram.msg.deviceNameMax')
+  }
+  if (deviceForm.type === 'custom') {
+    if (!rawCustomType) deviceFormErrors.customType = t('rackDiagram.msg.enterCustomType')
+    else if (rawCustomType.length > 60) deviceFormErrors.customType = t('rackDiagram.msg.customTypeMax')
+  }
+  if (!Number.isInteger(deviceForm.height) || deviceForm.height <= 0) {
+    deviceFormErrors.height = t('rackDiagram.msg.deviceHeightInteger')
+  } else if (deviceForm.height > maxAllowedHeight.value) {
+    deviceFormErrors.height = t('rackDiagram.msg.deviceLargerThanGap')
+  }
+
+  return !deviceFormErrors.type && !deviceFormErrors.label && !deviceFormErrors.customType && !deviceFormErrors.height
+}
+
+watch(() => deviceForm.type, () => {
+  if (deviceFormErrors.type) deviceFormErrors.type = ''
+})
+
+watch(() => deviceForm.label, () => {
+  if (deviceFormErrors.label) deviceFormErrors.label = ''
+})
+
+watch(() => deviceForm.customType, () => {
+  if (deviceFormErrors.customType) deviceFormErrors.customType = ''
+})
+
+watch(() => deviceForm.height, () => {
+  if (deviceFormErrors.height) deviceFormErrors.height = ''
+})
 
 const inventoryLoading = ref(false)
 const inventoryOptions = ref([])
@@ -2438,7 +2628,7 @@ const removeQuickLinkRow = (index) => {
   if (!quickLinkRows.value.length) quickLinkRows.value.push(makeQuickLinkRow())
 }
 // 샘플 VM 목록
-const ENABLE_VM_FALLBACK_MOCK = false
+const ENABLE_VM_FALLBACK_MOCK = true
 const HOST_ACTIVE_VM_STATES = new Set(['running', 'starting', 'stopping', 'migrating'])
 
 const buildVmMockList = (hostId, hostName = 'sample') => {
@@ -2976,6 +3166,7 @@ const getDefaultLabel = (type) => t(defaultLabelKeys[type] || 'rackDiagram.defau
 
 // 모달 열기 로직 수정
 const openDeviceModal = (rIndex, iIndex) => {
+  clearDeviceFormErrors()
   targetRackIndex.value = rIndex
   targetItemIndex.value = iIndex
   const item = parsedRacks.value[rIndex].items[iIndex]
@@ -3014,6 +3205,7 @@ const openDeviceModal = (rIndex, iIndex) => {
 
 // 장비 종류 Select Box 변경 시 라벨 자동 업데이트
 const handleTypeChange = (newType) => {
+  clearDeviceFormErrors()
   // 사용자가 직접 입력한 라벨이 없거나, 기존 기본 라벨명과 똑같을 때만 새 기본명으로 교체
   const isLabelEmpty = !deviceForm.label
   const isLabelDefault = Object.values(defaultLabelKeys).map(key => t(key)).includes(deviceForm.label)
@@ -3030,10 +3222,13 @@ const handleTypeChange = (newType) => {
 }
 
 const closeDeviceModal = () => {
+  clearDeviceFormErrors()
   deviceModalVisible.value = false
 }
 
 const submitDeviceModal = () => {
+  if (!validateDeviceModalForm()) return
+
   const rIndex = targetRackIndex.value
   const iIndex = targetItemIndex.value
   const rack = parsedRacks.value[rIndex]
@@ -3041,29 +3236,8 @@ const submitDeviceModal = () => {
 
   const rawLabel = String(deviceForm.label || '').trim()
   const rawCustomType = String(deviceForm.customType || '').trim()
-  const finalLabel = rawLabel || getDefaultLabel(deviceForm.type) || t('rackDiagram.newDevice')
+  const finalLabel = deviceForm.type === 'blank' ? (rawLabel || getDefaultLabel('blank')) : rawLabel
   const finalCustomType = rawCustomType || (deviceForm.type === 'custom' ? t('rackDiagram.customUnit') : '')
-
-  if (deviceForm.type !== 'blank' && !finalLabel) {
-    message.warning(t('rackDiagram.msg.enterDeviceName'))
-    return
-  }
-  if (finalLabel.length > 60) {
-    message.warning(t('rackDiagram.msg.deviceNameMax'))
-    return
-  }
-  if (deviceForm.type === 'custom' && !rawCustomType) {
-    message.warning(t('rackDiagram.msg.enterCustomType'))
-    return
-  }
-  if (deviceForm.type === 'custom' && rawCustomType.length > 60) {
-    message.warning(t('rackDiagram.msg.customTypeMax'))
-    return
-  }
-  if (!Number.isInteger(deviceForm.height) || deviceForm.height <= 0) {
-    message.warning(t('rackDiagram.msg.deviceHeightInteger'))
-    return
-  }
   const cleanHardwareInfo = validateHardwareInfo(deviceForm.hardwareInfo)
   if (!cleanHardwareInfo) return
   const quickLinkParsed = parseQuickLinksRowsWithValidation(quickLinkRows.value)
@@ -4100,14 +4274,42 @@ onBeforeUnmount(() => {
   height: 22px;
 }
 
+.rack-list-summary-value-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .rack-list-summary-progress {
-  width: 104px;
-  margin-left: 10px;
-  flex: 0 0 104px;
+  display: block;
+  width: 48px;
+  margin: 0;
+  flex: 0 0 48px;
+}
+
+.rack-list-summary-progress :deep(.ant-progress-outer) {
+  display: block;
+  width: 100%;
+  padding-right: 0;
+  margin-right: 0;
 }
 
 .rack-list-summary-progress :deep(.ant-progress-inner) {
   background-color: #e5e7eb;
+}
+
+.rack-list-view-switch {
+  display: flex;
+  justify-content: flex-end;
+  margin: -2px 0 12px;
+}
+
+.rack-list-view-switch :deep(.ant-radio-button-wrapper) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .rack-list-grid {
@@ -4230,23 +4432,6 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.rack-list-card-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  color: #334155;
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.rack-list-card-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #10b981;
-}
-
 .rack-list-card-usage {
   margin-top: 24px;
   color: #475569;
@@ -4351,6 +4536,193 @@ onBeforeUnmount(() => {
 }
 
 .rack-list-add-card:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.04);
+}
+
+.rack-list-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rack-list-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.45fr) minmax(260px, 1fr) minmax(180px, 0.7fr) 42px;
+  align-items: center;
+  gap: 18px;
+  min-height: 82px;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.035);
+  cursor: pointer;
+  transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.rack-list-row:hover {
+  border-color: #bfdbfe;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.07);
+}
+
+.rack-list-row--matched {
+  border-color: #91caff;
+  box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.16) inset;
+}
+
+.rack-list-row--dimmed {
+  opacity: 0.52;
+}
+
+.rack-list-row-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.rack-list-row-icon {
+  width: 34px;
+  height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  color: #1f2937;
+}
+
+.rack-list-row-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.rack-list-row-title-wrap {
+  min-width: 0;
+}
+
+.rack-list-row-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rack-list-row-title {
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rack-list-row-match {
+  flex: 0 1 auto;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rack-list-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.rack-list-row-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.rack-list-row-location {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rack-list-row-usage {
+  display: grid;
+  grid-template-columns: auto auto minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rack-list-row-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rack-list-row-usage strong {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.rack-list-row-progress {
+  min-width: 0;
+  margin: 0;
+}
+
+.rack-list-row-used {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rack-list-row-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.rack-list-row-stats strong {
+  color: #0f172a;
+  font-size: 14px;
+  margin-left: 4px;
+}
+
+.rack-list-row-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rack-list-add-row {
+  min-height: 58px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #0f172a;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.rack-list-add-row:hover {
   border-color: #1677ff;
   color: #1677ff;
   background: rgba(22, 119, 255, 0.04);
@@ -5870,7 +6242,6 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.9);
 }
 
-.rack-diagram-root.is-dark .rack-list-card-status,
 .rack-diagram-root.is-dark .rack-list-card-stat-label,
 .rack-diagram-root.is-dark .rack-list-card-footer,
 .rack-diagram-root.is-dark .rack-list-card-usage-detail,
@@ -5906,6 +6277,50 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .rack-list-add-icon {
   background: rgba(22, 119, 255, 0.16);
+  color: #8cc8ff;
+}
+
+.rack-diagram-root.is-dark .rack-list-row {
+  background: #1f2732;
+  border-color: #3a4654;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14);
+}
+
+.rack-diagram-root.is-dark .rack-list-row:hover {
+  border-color: #4c93ff;
+}
+
+.rack-diagram-root.is-dark .rack-list-row--matched {
+  border-color: #4c93ff;
+  box-shadow: 0 0 0 1px rgba(76, 147, 255, 0.32) inset;
+}
+
+.rack-diagram-root.is-dark .rack-list-row-title,
+.rack-diagram-root.is-dark .rack-list-row-usage strong,
+.rack-diagram-root.is-dark .rack-list-row-stats strong {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.rack-diagram-root.is-dark .rack-list-row-icon {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.rack-diagram-root.is-dark .rack-list-row-meta,
+.rack-diagram-root.is-dark .rack-list-row-label,
+.rack-diagram-root.is-dark .rack-list-row-used,
+.rack-diagram-root.is-dark .rack-list-row-stats {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.rack-diagram-root.is-dark .rack-list-add-row {
+  background: rgba(31, 39, 50, 0.7);
+  border-color: #475569;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.rack-diagram-root.is-dark .rack-list-add-row:hover {
+  background: rgba(22, 119, 255, 0.10);
+  border-color: #4c93ff;
   color: #8cc8ff;
 }
 
@@ -6023,6 +6438,32 @@ onBeforeUnmount(() => {
   .rack-list-card-footer {
     flex-wrap: wrap;
     gap: 8px 14px;
+  }
+
+  .rack-list-row {
+    grid-template-columns: minmax(0, 1fr) 42px;
+    gap: 12px 14px;
+  }
+
+  .rack-list-row-main,
+  .rack-list-row-usage,
+  .rack-list-row-stats {
+    grid-column: 1 / 2;
+  }
+
+  .rack-list-row-actions {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+    align-self: start;
+  }
+
+  .rack-list-row-title {
+    max-width: 220px;
+  }
+
+  .rack-list-row-stats {
+    flex-direction: row;
+    gap: 18px;
   }
 
   .rack-side-pane-slot {

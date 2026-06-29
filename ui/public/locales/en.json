@@ -5271,6 +5271,7 @@
 "rackDiagram.msg.cubeLoadFailed": "Failed to load Cube portal info.",
 "rackDiagram.msg.quickLinkUrlEmpty": "Line {line}: URL is empty. (Use Name: URL or Name|URL)",
 "rackDiagram.msg.quickLinkUrlInvalid": "Line {line}: Invalid URL. (e.g. https://10.10.12.2:9090 or 10.10.12.2:9090)",
+"rackDiagram.msg.selectDeviceType": "Please select device type.",
 "rackDiagram.msg.enterDeviceName": "Please enter device name.",
 "rackDiagram.msg.deviceNameMax": "Device name must be 60 characters or less.",
 "rackDiagram.msg.enterCustomType": "Please enter custom type name.",
@@ -5304,5 +5305,7 @@
 "rackDiagram.averageUsage": "Average Usage",
 "rackDiagram.totalUsedU": "Total Used U",
 "rackDiagram.totalFreeU": "Free U",
+"rackDiagram.cardView": "Card",
+"rackDiagram.listView": "List",
 "rackDiagram.countSuffix": ""
 }
