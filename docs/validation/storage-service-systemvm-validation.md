@@ -1836,3 +1836,166 @@ The feature is ready for the next integration step only when:
 - Confirm `ss -lntp` shows the configured NFS listener port and `ganesha.nfsd` owns the socket.
 - Confirm `/run/ablestack-storage/ganesha/<endpoint>.log` does not contain `open(/var/run/ganesha/ganesha.pid` or other fatal pid-file errors.
 - Reboot or stop/start the Storage Service VM and confirm boot reconcile restores the same Ganesha endpoint units without manual directory creation.
+
+## iSCSI CHAP and Non-default Port Validation Notes
+
+### Scope
+
+This validation records the runtime assumptions used for the iSCSI implementation alignment.
+
+### Results
+
+| Scenario | Result | Evidence |
+| --- | --- | --- |
+| Existing iSCSI default port target | PASS | LIO target on TCP 3260 can be discovered and logged in from the WSL initiator. |
+| Non-default iSCSI port | PASS with target binding | Temporary `10.10.22.202:3261` LIO portal was created on the running Storage Service VM and discovery/login succeeded from WSL. |
+| Candidate endpoint without target binding | Not a valid listener | LIO exposes ports from target TPG portals, not from standalone protocol endpoint records. |
+| CHAP with only stored config | FAIL | CHAP target config existed, but LIO had `authentication=0` or missing ACL password. |
+| CHAP after runtime correction | PASS | Setting ACL `userid/password` and TPG `authentication=1` allowed WSL CHAP login and ext4 mount/write. |
+
+### Required Regression Checks
+
+1. Create iSCSI target on port 3260 and verify discovery/login.
+2. Add candidate endpoint port 3261 and verify it does not require listen until a target selects it.
+3. Create/update a target selecting listener port group 3261 and verify LIO portal creation.
+4. Create CHAP ACL with username/secret and verify targetcli ACL auth plus `authentication=1`.
+5. Verify CHAP login from WSL and block read/write or filesystem mount/write depending on LUN contents.
+
+## iSCSI Runtime Session Cache Regression (2026-06-28)
+
+### Scope
+
+This regression check covers the case where the iSCSI service, targetcli state,
+initiator login, and write path are healthy, but the Storage Service UI still
+shows no active session because the SystemVM monitoring cache did not preserve
+the observed iSCSI TCP sessions.
+
+### Reference Failure
+
+| Item | Observed value |
+| --- | --- |
+| SharedFS | `779826e0-f5de-4a95-bb0f-00cb40c0cd6c` |
+| Storage Service VM | `i-2-566-VM` on `10.10.22.1` |
+| Service endpoint | `10.10.254.213/16`, secondary `10.10.22.201/16` |
+| Runtime listener | `0.0.0.0:3260` |
+| WSL initiator | `iqn.1994-05.com.redhat:b48878fe831c` |
+| Non-CHAP target | `iqn.2026-06.local.storage:tc03c01`, LUN `0` and `1` |
+| CHAP target | `iqn.2026-05.local.storage:sharedfs-test01-5346`, LUN `0` |
+| Functional result | Initiator login and non-destructive last-block write/restore succeeded for both non-CHAP and CHAP targets. |
+| UI/runtime defect | `ss` showed established `10.10.22.201:3260` sessions, but `session-state.json` was empty and the UI displayed no sessions. |
+
+### Required Result
+
+- `ablestack-storagectl sessions` must return a non-empty `sessions` array when
+  iSCSI TCP sessions exist on enabled listener ports.
+- When target/LUN mapping is exact, each row must include `targetIqn`,
+  `initiatorIqn`, `lun`, `local`, `peer`, `state`, `connectedAt`, and
+  `lastSeen`.
+- Exact mapping is verified from `targetcli sessions detail` plus configfs LUN
+  symlink resolution, not from TCP socket inference alone.
+- When target/LUN mapping is only port-based, the session must still be
+  returned with `mappingStatus=candidate`, `possibleTargets`, and
+  `possibleInitiators` where available.
+- `sessions.json` must include `observedTcpCount`, `status`, and `warnings`
+  so the UI can distinguish idle state from degraded session collection.
+- The iSCSI tab must not show the normal no-session message when the runtime
+  response is degraded or when observed iSCSI TCP sessions are present.
+
+## SystemVM Template Integrity Regression (2026-06-28)
+
+### Reference Failure
+
+| Item | Observed value |
+| --- | --- |
+| Storage Service VM | `i-2-568-VM` on `10.10.22.2` |
+| Template | `SystemVM Template Storage Service 202606281522`, template id `401` |
+| Failure | `targetcli` failed with `ImportError: ... gi/_gi...so: invalid ELF header` |
+| Root cause | The registered qcow2 in secondary storage had qcow2 refcount errors and selected package files were zero-filled. |
+| Corrupted files | `python3-gi` `_gi.so`, `libmagic.so.1`, `/var/lib/dpkg/status` |
+
+### Required Build Gate
+
+1. `qemu-img check <kvm qcow2>` must pass.
+2. `tools/appliance/scripts/validate_systemvm_image.sh <kvm qcow2>` must pass.
+3. `bunzip2 -c <kvm qcow2.bz2> > <roundtrip qcow2>` must produce a qcow2 that is byte-identical to the source qcow2.
+4. `qemu-img check <roundtrip qcow2>` must pass.
+5. `tools/appliance/scripts/validate_systemvm_image.sh <roundtrip qcow2>` must pass.
+
+### Required Runtime Behavior
+
+- If a Storage Service SystemVM is somehow booted from a corrupt template,
+  iSCSI apply must fail before target creation with an explicit dependency
+  message:
+  `SystemVM iSCSI runtime dependency is broken`.
+- The user-facing error must direct the operator to rebuild and register a
+  valid Storage Service SystemVM template.
+- A raw `targetcli` traceback caused by broken Python GI or package files is a
+  validation failure.
+
+## iSCSI Reboot Authoritative Reconcile Regression (2026-06-29)
+
+### Reference Failure
+
+| Item | Observed value |
+| --- | --- |
+| SharedFS | `cb04e1af-7c20-4b51-80fa-f3f145851a96` |
+| Storage Service VM | `i-2-569-VM` on `10.10.22.1` |
+| Protocol | iSCSI only |
+| Desired listeners | `0.0.0.0:3260`, `10.10.22.201:3261` |
+| Desired targets | `tc03c01` LUN `0` and `1`, plus two CHAP-enabled targets |
+| Pre-reboot result | WSL initiator login, mount, and write succeeded for non-CHAP and CHAP targets. |
+| Reboot action | Cloud API stop/start of the Storage Service VM. |
+| Failure | After boot, `rtslib-fb-targetctl` restored only part of the target set and `ablestack-storage-reconcile.service` failed with `storage object or path not valid`. |
+| Root cause | `targetctl` persisted LIO backstores with volatile `/dev/sdX` paths. After reboot, disk order changed and restored backstores no longer matched ABLESTACK volume serials. Desired-state reapply also could not rebuild CHAP targets after clear because CHAP secrets are redacted from DB/API state. |
+
+### Live Injection Validation
+
+| Step | Result |
+| --- | --- |
+| Clear LIO and apply saved desired state without secrets | Failed with `missing chapSecret`, proving reboot recovery needs a SystemVM-local secret store. |
+| Add `acl.secrets.chapSecret` in a root-only temporary desired state and run `targetcli clearconfig confirm=True` followed by `ablestack-storagectl iscsi target apply` | Passed. All four desired target rows were applied. |
+| Runtime mapping after validated apply | `tc03c01` LUN0 mapped to serial `15ec190e9d44449bac16`, LUN1 mapped to serial `b20cc090542b465bbb85`, CHAP targets mapped to their expected serials, and ports `3260`/`3261` listened. |
+
+### Required Result
+
+- Boot reconcile must not trust `targetctl` restored `/dev/sdX` mappings.
+- On boot, managed iSCSI targets/backstores are rebuilt from ABLESTACK desired
+  state using stable volume identifiers.
+- CHAP and mutual CHAP secrets are stored only in a root-only SystemVM secret
+  store and merged into desired state at apply time.
+- Monitor inventory must mark desired rows without matching runtime target/LUN
+  mappings as degraded/error.
+- Final pass requires Cloud-managed stop/start followed by targetcli, monitor,
+  initiator login, mount/read/write, and UI/API consistency checks.
+
+## iSCSI Session Attribution Prototype (2026-06-29)
+
+### Reference VM
+
+| Item | Observed value |
+| --- | --- |
+| SharedFS | `9af2ab61-9dcb-4bd2-bd40-3f89760780e1` |
+| Storage Service VM | `i-2-570-VM` on `10.10.22.2` |
+| Protocol | iSCSI only |
+| Runtime listeners | `0.0.0.0:3260`, `10.10.22.201:3261` |
+| Observed issue | Health showed only `3260`; session rows showed `mappingStatus=degraded/candidate` even though targetcli could identify exact target IQN and LUN. |
+
+### Live Injection Result
+
+| Probe | Result |
+| --- | --- |
+| Health port prototype | Returned both `3260` and `3261` as healthy listener ports. |
+| `targetcli sessions detail` parsing | Returned connected initiator IQN, peer IP, targetcli SID, and mapped LUN backstore names. |
+| Configfs LUN symlink mapping | Resolved each targetcli backstore to exact target IQN and LUN under `/sys/kernel/config/target/iscsi/<target>/tpgt_1/lun/lun_*`. |
+| Single-portal target | Target IQN, LUN, and endpoint were exact. |
+| Multi-portal target | Target IQN and LUN were exact; endpoint was candidate because the target had both `0.0.0.0:3260` and `10.10.22.201:3261`. |
+
+### Required Result
+
+- iSCSI health must report all desired listener ports from `iscsi-targets.json`.
+- iSCSI session rows must be created from `targetcli` plus configfs, not from
+  raw TCP socket target inference.
+- Target/LUN exactness and endpoint exactness must be reported separately:
+  `mappingStatus=exact` can coexist with `endpointMappingStatus=candidate`.
+- Endpoint candidate state is informational and must not mark the session API
+  as degraded unless target/LUN mapping itself is unmapped.

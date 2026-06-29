@@ -650,6 +650,18 @@
                   <template v-if="column.key === 'state'">
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
                   </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-button size="small" @click="openActionModal('editIscsiTarget', record)">
+                        <template #icon><EditOutlined /></template>
+                        {{ $t('label.edit') }}
+                      </a-button>
+                      <a-button size="small" danger @click="openDeleteConfirm('iscsiTarget', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        {{ $t('label.delete') }}
+                      </a-button>
+                    </div>
+                  </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
                   </template>
@@ -682,6 +694,18 @@
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'state'">
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-button size="small" @click="openActionModal('editIscsiAcl', record)">
+                        <template #icon><EditOutlined /></template>
+                        {{ $t('label.edit') }}
+                      </a-button>
+                      <a-button size="small" danger @click="openDeleteConfirm('iscsiAcl', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        {{ $t('label.delete') }}
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -732,6 +756,12 @@
                   <p>{{ $t('message.storage.service.iscsi.sessions.table') }}</p>
                 </div>
               </div>
+              <a-alert
+                v-if="iscsiSessionRuntimeWarning"
+                class="storage-service__alert"
+                type="warning"
+                show-icon
+                :message="iscsiSessionRuntimeWarning" />
               <a-table
                 class="storage-data-table"
                 size="small"
@@ -739,7 +769,7 @@
                 :columns="iscsiSessionColumns"
                 :dataSource="iscsiSessionRows"
                 :pagination="false"
-                :scroll="{ x: 1160 }"
+                :scroll="{ x: 1810 }"
                 :locale="storageTableLocale('message.storage.service.no.sessions')">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'state'">
@@ -1480,31 +1510,112 @@ wrapClassName="storage-service-action-modal"
             <a-col :xs="24" :md="24"><a-form-item><template #label><tooltip-label :title="$t('label.password')" :tooltip="$t('message.storage.service.ad.leave.password.help')" /></template><a-input-password v-model:value="forms.adLeave.password" autocomplete="new-password" /></a-form-item></a-col>
           </a-row>
         </div>
-        <div v-if="actionModal.type === 'iscsiTarget'" class="storage-action-form storage-action-form--vertical">
-          <a-row :gutter="16">
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.target.iqn')" :tooltip="$t('message.storage.service.target.iqn.help')" /></template><a-input v-model:value="forms.iscsiTarget.targetname" /></a-form-item></a-col>
-            <a-col :xs="24" :md="6"><a-form-item required><template #label><tooltip-label title="LUN" :tooltip="$t('message.storage.service.lun.help')" /></template><a-input v-model:value="forms.iscsiTarget.lun" /></a-form-item></a-col>
-            <a-col :xs="24" :md="6">
-              <volume-select
-                v-model:value="forms.iscsiTarget.volumeid"
-                :volumes="availableVolumes"
-                :loading="volumeLoading"
-                :formatter="formatVolumeOption"
-                required
-                :tooltip="$t('message.storage.service.existing.volume.select.help')" />
-            </a-col>
-            <a-col :xs="24" :md="12"><capacity-input :label="$t('label.storage.service.lun.size')" :tooltip="$t('message.storage.service.lun.size.help')" v-model:amount="forms.iscsiTarget.lunsizeamount" v-model:unit="forms.iscsiTarget.lunsizeunit" :units="capacityUnits" /></a-col>
-          </a-row>
+        <div v-if="actionModal.type === 'iscsiTarget' || actionModal.type === 'editIscsiTarget'" class="storage-action-form storage-action-form--vertical">
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.target.iqn')" :tooltip="$t('message.storage.service.target.iqn.help')" /></template>
+            <a-input v-model:value="forms.iscsiTarget.targetname" />
+          </a-form-item>
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.lun')" :tooltip="$t('message.storage.service.lun.help')" /></template>
+            <a-input v-model:value="forms.iscsiTarget.lun" />
+          </a-form-item>
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.backing.volume') }}</div>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.volume.mode')" :tooltip="$t('message.storage.service.volume.mode.help')" /></template>
+              <a-radio-group v-model:value="forms.iscsiTarget.volumemode" :disabled="actionModal.type === 'editIscsiTarget'">
+                <a-radio value="CURRENT">{{ $t('label.storage.service.current.volume') }}</a-radio>
+                <a-radio value="EXISTING">{{ $t('label.storage.service.existing.volume.select') }}</a-radio>
+                <a-radio value="NEW">{{ $t('label.storage.service.new.volume') }}</a-radio>
+              </a-radio-group>
+            </a-form-item>
+            <a-form-item v-if="forms.iscsiTarget.volumemode === 'CURRENT'" required>
+              <template #label><tooltip-label :title="$t('label.storage.service.iscsi.current.block.volume')" :tooltip="$t('message.storage.service.iscsi.current.block.volume.help')" /></template>
+              <a-select v-model:value="forms.iscsiTarget.volumeid" :loading="volumeLoading" show-search optionFilterProp="label" :disabled="actionModal.type === 'editIscsiTarget'">
+                <a-select-option v-for="volume in currentIscsiBlockVolumes" :key="volume.id" :value="volume.id" :label="formatCurrentBackingVolumeOption(volume)">
+                  {{ formatCurrentBackingVolumeOption(volume) }}
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+            <volume-select
+              v-if="forms.iscsiTarget.volumemode === 'EXISTING'"
+              v-model:value="forms.iscsiTarget.volumeid"
+              :volumes="availableVolumes"
+              :loading="volumeLoading"
+              :formatter="formatVolumeOption"
+              required
+              :tooltip="$t('message.storage.service.existing.volume.select.help')" />
+            <template v-if="forms.iscsiTarget.volumemode === 'NEW'">
+              <a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.new.volume.name')" :tooltip="$t('message.storage.service.new.volume.name.help')" /></template><a-input v-model:value="forms.iscsiTarget.newvolumename" /></a-form-item>
+              <a-form-item required><template #label><tooltip-label :title="$t('label.diskoffering')" :tooltip="$t('message.storage.service.new.volume.diskoffering.help')" /></template><a-select v-model:value="forms.iscsiTarget.diskofferingid" :loading="diskOfferingLoading" show-search optionFilterProp="label" @change="reconcileIscsiNewVolumeStorage"><a-select-option v-for="offering in diskOfferings" :key="offering.id" :value="offering.id" :label="offering.displaytext || offering.name">{{ offering.displaytext || offering.name }}</a-select-option></a-select></a-form-item>
+              <a-form-item required><template #label><tooltip-label :title="$t('label.primary.storage')" :tooltip="$t('message.storage.service.new.volume.storage.help')" /></template><a-select v-model:value="forms.iscsiTarget.storageid" :loading="storagePoolLoading" show-search optionFilterProp="label"><a-select-option v-for="pool in filteredIscsiNewVolumeStoragePools" :key="pool.id" :value="pool.id" :label="storagePoolLabel(pool)">{{ storagePoolLabel(pool) }}</a-select-option></a-select></a-form-item>
+              <a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.volume.size.gib')" :tooltip="$t('message.storage.service.volume.size.help')" /></template><a-input-number v-model:value="forms.iscsiTarget.newvolumesize" class="storage-input-number" :min="1" /></a-form-item>
+            </template>
+          </section>
+          <a-alert class="storage-action-alert" type="info" show-icon :message="$t('message.storage.service.iscsi.block.only.help')" />
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.iscsi.listener.groups') }}</div>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.iscsi.listener.group')" :tooltip="$t('message.storage.service.iscsi.listener.group.help')" /></template>
+              <a-select v-model:value="forms.iscsiTarget.listenerports" mode="multiple" show-search optionFilterProp="label">
+                <a-select-option v-for="group in iscsiListenerGroupOptions" :key="group.value" :value="group.value" :label="group.label">{{ group.label }}</a-select-option>
+              </a-select>
+            </a-form-item>
+            <div class="storage-action-summary-box storage-action-summary-box--compact">
+              <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.accessible.endpoints') }}</span><code>{{ formatIscsiListenerGroupEndpoints(forms.iscsiTarget.listenerports) }}</code></div>
+            </div>
+          </section>
         </div>
-        <div v-if="actionModal.type === 'iscsiAcl'" class="storage-action-form storage-action-form--vertical">
-          <a-row :gutter="16">
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.iscsi.target')" :tooltip="$t('message.storage.service.iscsi.target.help')" /></template><a-select v-model:value="forms.iscsiAcl.targetid" show-search optionFilterProp="label"><a-select-option v-for="target in storageService.iscsiTargets" :key="target.id" :value="target.id" :label="targetLabel(target)">{{ targetLabel(target) }}</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.allowed.initiator.iqn')" :tooltip="$t('message.storage.service.allowed.initiator.iqn.help')" /></template><a-input v-model:value="forms.iscsiAcl.initiatoriqn" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.permission')" :tooltip="$t('message.storage.service.permission.help')" /></template><a-select v-model:value="forms.iscsiAcl.permission"><a-select-option value="READ_ONLY">{{ $t('label.storage.service.permission.readonly') }}</a-select-option><a-select-option value="READ_WRITE">{{ $t('label.storage.service.permission.readwrite') }}</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="12"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.chap.enabled')" :tooltip="$t('message.storage.service.chap.enabled.help')" /></template><a-switch v-model:checked="forms.iscsiAcl.chapenabled" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12" v-if="forms.iscsiAcl.chapenabled"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.chap.username')" :tooltip="$t('message.storage.service.chap.username.help')" /></template><a-input v-model:value="forms.iscsiAcl.chapusername" /></a-form-item></a-col>
-            <a-col :xs="24" :md="12" v-if="forms.iscsiAcl.chapenabled"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.chap.secret')" :tooltip="$t('message.storage.service.chap.secret.help')" /></template><a-input-password v-model:value="forms.iscsiAcl.chapsecret" /></a-form-item></a-col>
-          </a-row>
+        <div v-if="actionModal.type === 'iscsiAcl' || actionModal.type === 'editIscsiAcl'" class="storage-action-form storage-action-form--vertical">
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.iscsi.target')" :tooltip="$t('message.storage.service.iscsi.target.help')" /></template>
+            <a-select v-model:value="forms.iscsiAcl.targetid" show-search optionFilterProp="label" :disabled="actionModal.type === 'editIscsiAcl'">
+              <a-select-option v-for="target in storageService.iscsiTargets" :key="target.id" :value="target.id" :label="targetLabel(target)">
+                {{ target.targetname || target.targetName || target.name }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+          <div v-if="selectedIscsiAclTarget" class="storage-action-summary-box storage-action-summary-box--compact">
+            <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.target.iqn') }}</span><code>{{ selectedIscsiAclTarget.targetname || selectedIscsiAclTarget.targetName || '-' }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.lun') }}</span><code>{{ selectedIscsiAclTargetLuns }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.backing.volume') }}</span><code>{{ selectedIscsiAclVolumeLabel }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.accessible.endpoints') }}</span><code>{{ selectedIscsiAclEndpointLabel }}</code></div>
+          </div>
+          <a-alert class="storage-action-alert" type="info" show-icon :message="$t('message.storage.service.iscsi.acl.target.scoped')" />
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.allowed.initiator.iqn')" :tooltip="$t('message.storage.service.allowed.initiator.iqn.help')" /></template>
+            <a-input v-model:value="forms.iscsiAcl.initiatoriqn" :placeholder="$t('message.storage.service.allowed.initiator.iqn.placeholder')" />
+          </a-form-item>
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.permission')" :tooltip="$t('message.storage.service.permission.help')" /></template>
+            <a-select v-model:value="forms.iscsiAcl.permission">
+              <a-select-option value="READ_ONLY">{{ $t('label.storage.service.permission.readonly') }}</a-select-option>
+              <a-select-option value="READ_WRITE">{{ $t('label.storage.service.permission.readwrite') }}</a-select-option>
+            </a-select>
+          </a-form-item>
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.chap.authentication') }}</div>
+            <a-form-item>
+              <template #label><tooltip-label :title="$t('label.storage.service.chap.enabled')" :tooltip="$t('message.storage.service.chap.enabled.help')" /></template>
+              <a-switch v-model:checked="forms.iscsiAcl.chapenabled" />
+            </a-form-item>
+            <a-alert
+              v-if="!forms.iscsiAcl.chapenabled"
+              class="storage-action-alert"
+              type="info"
+              show-icon
+              :message="$t('message.storage.service.iscsi.chap.disabled.help')" />
+            <template v-if="forms.iscsiAcl.chapenabled">
+              <a-form-item required>
+                <template #label><tooltip-label :title="$t('label.storage.service.chap.username')" :tooltip="$t('message.storage.service.chap.username.help')" /></template>
+                <a-input v-model:value="forms.iscsiAcl.chapusername" />
+              </a-form-item>
+              <a-form-item required>
+                <template #label><tooltip-label :title="$t('label.storage.service.chap.secret')" :tooltip="$t('message.storage.service.chap.secret.help')" /></template>
+                <a-input-password v-model:value="forms.iscsiAcl.chapsecret" autocomplete="new-password" />
+              </a-form-item>
+            </template>
+          </section>
         </div>
         <div v-if="actionModal.type === 'nvmePrepare'" class="storage-action-form storage-action-form--vertical">
           <a-row :gutter="16">
@@ -1982,12 +2093,18 @@ export default {
           password: ''
         },
         iscsiTarget: {
+          id: '',
           targetname: '',
           lun: '0',
           volumeid: '',
-          lunsizeamount: null,
-          lunsizeunit: 'GiB',
-          backingpath: ''
+          volumemode: 'CURRENT',
+          newvolumename: '',
+          diskofferingid: '',
+          storageid: '',
+          newvolumesize: null,
+          backingpath: '',
+          endpointmode: 'LISTENER_GROUP',
+          listenerports: [3260]
         },
         iscsiAcl: {
           targetid: '',
@@ -2092,6 +2209,25 @@ export default {
       }
       return volumes
     },
+    currentIscsiBlockVolumes () {
+      const used = new Set()
+      const addUsed = value => {
+        if (value) {
+          used.add(String(value))
+        }
+      }
+      this.storageService.nfsExports.forEach(share => addUsed(share.volumeid || share.volumeId))
+      this.storageService.smbShares.forEach(share => addUsed(share.volumeid || share.volumeId))
+      this.storageService.iscsiTargets.forEach(target => addUsed(target.volumeid || target.volumeId))
+      this.storageService.nvmeSubsystems.forEach(target => addUsed(target.volumeid || target.volumeId))
+      return this.currentBackingVolumes.filter(volume => {
+        if (used.has(String(volume.id)) || used.has(String(volume.uuid))) {
+          return false
+        }
+        const mountPath = this.currentBackingVolumeMountPath(volume)
+        return !mountPath || mountPath === '-'
+      })
+    },
     selectedCurrentBackingVolume () {
       const selected = String(this.forms.nfsExport.volumeid || '')
       if (!selected) {
@@ -2105,6 +2241,45 @@ export default {
         return null
       }
       return this.currentBackingVolumes.find(volume => String(volume.id) === selected || String(volume.uuid) === selected) || null
+    },
+    selectedIscsiCurrentBackingVolume () {
+      const selected = String(this.forms.iscsiTarget.volumeid || '')
+      if (!selected) {
+        return null
+      }
+      return this.currentIscsiBlockVolumes.find(volume => String(volume.id) === selected || String(volume.uuid) === selected) || null
+    },
+    selectedIscsiAclTarget () {
+      const selected = String(this.forms.iscsiAcl.targetid || '')
+      if (!selected) {
+        return null
+      }
+      return this.storageService.iscsiTargets.find(target => String(target.id) === selected || String(target.uuid) === selected) || null
+    },
+    selectedIscsiAclTargetLuns () {
+      const target = this.selectedIscsiAclTarget
+      if (!target) {
+        return '-'
+      }
+      return target.targetluns || target.targetLuns || target.lunornamespace || target.lunOrNamespace || '0'
+    },
+    selectedIscsiAclVolumeLabel () {
+      const target = this.selectedIscsiAclTarget
+      if (!target) {
+        return '-'
+      }
+      const volume = this.volumeForTarget(target)
+      const name = volume.name || volume.displayname || target.volumename || target.volumeName || target.volumeid || target.volumeId || '-'
+      const size = this.formatCapacityValue(target.volumesizebytes || target.volumeSizeBytes || volume.size || this.volume.size || this.resource.size)
+      return size && size !== '-' ? `${name} / ${size}` : name
+    },
+    selectedIscsiAclEndpointLabel () {
+      const target = this.selectedIscsiAclTarget
+      if (!target) {
+        return '-'
+      }
+      const config = this.parseStorageConfig(target.config)
+      return target.endpoints || target.endpoint || this.formatIscsiListenerGroupEndpoints(this.normalizeListenerPorts(target.listenerports || target.listenerPorts || config.listenerGroupPorts || config.listenerports || 3260))
     },
     selectedNfsDiskOffering () {
       return this.diskOfferings.find(offering => offering.id === this.forms.nfsExport.diskofferingid)
@@ -2130,6 +2305,22 @@ export default {
     },
     filteredSmbNewVolumeStoragePools () {
       const requiredTags = this.selectedSmbDiskOfferingTags.map(tag => tag.toLowerCase())
+      if (!requiredTags.length) {
+        return this.storagePools
+      }
+      return this.storagePools.filter(pool => {
+        const poolTags = this.extractStorageTags(pool).map(tag => tag.toLowerCase())
+        return requiredTags.every(tag => poolTags.includes(tag))
+      })
+    },
+    selectedIscsiDiskOffering () {
+      return this.diskOfferings.find(offering => offering.id === this.forms.iscsiTarget.diskofferingid)
+    },
+    selectedIscsiDiskOfferingTags () {
+      return this.extractStorageTags(this.selectedIscsiDiskOffering)
+    },
+    filteredIscsiNewVolumeStoragePools () {
+      const requiredTags = this.selectedIscsiDiskOfferingTags.map(tag => tag.toLowerCase())
       if (!requiredTags.length) {
         return this.storagePools
       }
@@ -2262,6 +2453,26 @@ export default {
         label: `${this.$t('label.port')} ${port} / ${this.formatNfsListenerGroupEndpoints([port])}`
       }))
     },
+    iscsiListenerGroupOptions () {
+      const ports = new Set([3260])
+      const addPorts = value => this.normalizeListenerPorts(value).forEach(port => ports.add(port))
+      const addConfigPorts = config => {
+        if (!config || typeof config !== 'object') return
+        addPorts(config.listenerGroupPorts ?? config.listenergroupports ?? config.listenerPorts ?? config.listenerports)
+      }
+      const protocols = this.storageService.protocols || []
+      protocols.forEach(protocol => {
+        if (String(protocol.protocol || protocol.name || '').toUpperCase() === 'ISCSI') {
+          addPorts(protocol?.port ?? protocol?.listenPort ?? protocol?.listenport ?? protocol?.endpointPort)
+          addConfigPorts(this.parseStorageConfig(protocol.config))
+        }
+      })
+      this.storageService.iscsiTargets.forEach(target => addConfigPorts(this.parseStorageConfig(target.config)))
+      return Array.from(ports).sort((a, b) => a - b).map(port => ({
+        value: port,
+        label: `${this.$t('label.port')} ${port} / ${this.formatIscsiListenerGroupEndpoints([port])}`
+      }))
+    },
     serviceEndpoint () {
       const nic = this.serviceListenIps.find(item => item.kind === 'PRIMARY' && item.ipaddress) || this.serviceListenIps.find(item => item.ipaddress) || {}
       return nic.ipaddress || this.vm.ipaddress || this.resource.ipaddress || this.resource.serviceip || this.resource.ip || ''
@@ -2326,8 +2537,24 @@ export default {
       return this.parsedHealth.qga || this.parsedHealth.qgaStatus || this.parsedHealth.guestAgent || '-'
     },
     allSessions () {
-      const runtime = this.parseRuntimeResult(this.storageService.sessions[0])
-      return runtime.sessions || []
+      return this.sessionsRuntime.sessions || []
+    },
+    sessionsRuntime () {
+      return this.parseRuntimeResult(this.storageService.sessions[0])
+    },
+    iscsiSessionRuntimeWarning () {
+      const runtime = this.sessionsRuntime || {}
+      const status = String(runtime.status || '').toLowerCase()
+      const observed = Number(runtime.observedIscsiTcpCount || runtime.observediscsiTcpCount || 0)
+      const warnings = Array.isArray(runtime.warnings) ? runtime.warnings.filter(Boolean) : []
+      if (!['degraded', 'error'].includes(status) && !observed) {
+        return ''
+      }
+      const detail = warnings.length ? warnings.join(' ') : ''
+      return this.$t('message.storage.service.iscsi.sessions.degraded', {
+        count: observed || 0,
+        detail: detail || '-'
+      })
     },
     activeServiceTypes () {
       const protocols = []
@@ -2872,24 +3099,28 @@ export default {
       return [
         { title: this.$t('label.storage.service.target.iqn'), dataIndex: 'targetName', key: 'targetName', fixed: 'left', width: 330, code: true },
         { title: this.$t('label.storage.service.lun'), dataIndex: 'lun', key: 'lun', width: 90, code: true },
+        { title: this.$t('label.storage.service.target.luns'), dataIndex: 'targetLuns', key: 'targetLuns', width: 130, code: true },
         { title: this.$t('label.storage.service.endpoint'), dataIndex: 'endpoint', key: 'endpoint', width: 180, code: true },
         { title: this.$t('label.storage.service.backing.volume'), dataIndex: 'volumeName', key: 'volumeName', width: 220 },
         { title: this.$t('label.storage.service.lun.size'), dataIndex: 'lunSize', key: 'lunSize', width: 150 },
         { title: this.$t('label.storage.service.effective.lun.size'), dataIndex: 'effectiveSize', key: 'effectiveSize', width: 160 },
         { title: this.$t('label.storage.service.runtime.backing.path'), dataIndex: 'backingPath', key: 'backingPath', width: 300, code: true },
         { title: this.$t('label.storage.service.access.rules'), dataIndex: 'aclSummary', key: 'aclSummary', width: 260 },
-        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 }
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 190, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     iscsiAclColumns () {
       return [
         { title: this.$t('label.storage.service.target.iqn'), dataIndex: 'targetName', key: 'targetName', fixed: 'left', width: 330, code: true },
         { title: this.$t('label.storage.service.allowed.initiator.iqn'), dataIndex: 'principal', key: 'principal', width: 300, code: true },
+        { title: this.$t('label.storage.service.target.luns'), dataIndex: 'targetLuns', key: 'targetLuns', width: 130, code: true },
         { title: this.$t('label.storage.service.permission'), dataIndex: 'permission', key: 'permission', width: 140 },
         { title: this.$t('label.storage.service.chap.enabled'), dataIndex: 'chapEnabled', key: 'chapEnabled', width: 130 },
         { title: this.$t('label.storage.service.chap.username'), dataIndex: 'chapUsername', key: 'chapUsername', width: 190, code: true },
         { title: this.$t('label.storage.service.mutual.chap.enabled'), dataIndex: 'mutualChapEnabled', key: 'mutualChapEnabled', width: 160 },
-        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 }
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     iscsiVolumeColumns () {
@@ -2908,10 +3139,15 @@ export default {
     iscsiSessionColumns () {
       return [
         { title: this.$t('label.storage.service.peer'), dataIndex: 'peer', key: 'peer', fixed: 'left', width: 220, code: true },
+        { title: this.$t('label.storage.service.initiator.iqn'), dataIndex: 'initiatorIqn', key: 'initiatorIqn', width: 300, code: true },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 130 },
+        { title: this.$t('label.storage.service.session.mapping.status'), dataIndex: 'mappingStatusLabel', key: 'mappingStatusLabel', width: 150 },
+        { title: this.$t('label.storage.service.session.endpoint.mapping.status'), dataIndex: 'endpointMappingStatusLabel', key: 'endpointMappingStatusLabel', width: 170 },
         { title: this.$t('label.storage.service.connected.at'), dataIndex: 'connectedAt', key: 'connectedAt', width: 190 },
         { title: this.$t('label.storage.service.target.iqn'), dataIndex: 'resourceName', key: 'resourceName', width: 300, code: true },
-        { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 220, code: true },
+        { title: this.$t('label.storage.service.lun'), dataIndex: 'lun', key: 'lun', width: 130, code: true },
+        { title: this.$t('label.storage.service.listener.ports'), dataIndex: 'listenerPorts', key: 'listenerPorts', width: 160, code: true },
+        { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 260, code: true },
         { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
@@ -2958,7 +3194,8 @@ export default {
           id: target.id,
           targetName: target.targetname || target.targetName || target.name || '-',
           lun: target.lunornamespace || target.lunOrNamespace || target.lun || '0',
-          endpoint: `${target.listenip || this.serviceEndpoint || '-'}:${target.port || 3260}`,
+          targetLuns: target.targetluns || target.targetLuns || runtime.targetLuns || runtime.targetluns || target.lunornamespace || target.lunOrNamespace || target.lun || '0',
+          endpoint: target.endpoints || target.endpoint || this.formatIscsiListenerGroupEndpoints(this.normalizeListenerPorts(target.listenerports || target.listenerPorts || config.listenerGroupPorts || config.listenerports || 3260)),
           volumeName: volume.name || volume.displayname || target.volumename || target.volumeName || target.volumeid || '-',
           lunSize: this.formatCapacityValue(lunSizeBytes),
           effectiveSize: this.formatCapacityValue(effectiveSizeBytes),
@@ -2977,6 +3214,7 @@ export default {
           key: acl.id || `iscsi-acl-${index}`,
           targetName: target?.targetname || target?.targetName || acl.targetname || acl.resourcename || '-',
           principal: acl.principal || acl.initiatoriqn || '-',
+          targetLuns: acl.targetluns || acl.targetLuns || target?.targetluns || target?.targetLuns || target?.lunornamespace || target?.lunOrNamespace || '-',
           permission: this.permissionLabel(acl.permission || acl.access || '-'),
           chapEnabled: this.booleanLabel(acl.chapenabled ?? acl.chapEnabled ?? config.chapEnabled),
           chapUsername: acl.chapusername || acl.chapUsername || config.chapUsername || '-',
@@ -3011,17 +3249,30 @@ export default {
       return rows
     },
     iscsiSessionRows () {
-      return this.protocolSessions('ISCSI').map((session, index) => ({
-        key: session.sessionId || session.id || `${session.peer || 'session'}-${index}`,
-        protocol: session.protocol || 'ISCSI',
-        peer: session.peer || session.client || session.clientIp || '-',
-        state: session.state || session.status || '-',
-        connectedAt: session.connectedAt || session.since || session.age || '-',
-        resourceName: session.resourceName || session.targetName || session.target || '-',
-        local: session.local || session.endpoint || '-',
-        sessionId: session.sessionId || session.id || '',
-        raw: session
-      }))
+      return this.protocolSessions('ISCSI').map((session, index) => {
+        const mappingStatus = session.mappingStatus || session.mappingstatus || 'exact'
+        const endpointMappingStatus = session.endpointMappingStatus || session.endpointmappingstatus || (session.local || session.endpoint ? 'exact' : (session.possibleEndpoints || session.possibleendpoints ? 'candidate' : ''))
+        const possibleEndpoints = session.possibleEndpoints || session.possibleendpoints
+        const listenerPorts = session.listenerPorts || session.listenerports || this.possibleSessionValues(possibleEndpoints, 'port')
+        return {
+          key: session.sessionId || session.id || `${session.peer || 'session'}-${index}`,
+          protocol: session.protocol || 'ISCSI',
+          peer: session.peer || session.client || session.clientIp || '-',
+          initiatorIqn: session.initiatorIqn || session.initiatoriqn || session.principal || this.possibleSessionValues(session.possibleInitiators, 'principal') || '-',
+          state: session.state || session.status || '-',
+          mappingStatus,
+          mappingStatusLabel: this.iscsiMappingStatusLabel(mappingStatus),
+          endpointMappingStatus,
+          endpointMappingStatusLabel: this.iscsiEndpointMappingStatusLabel(endpointMappingStatus),
+          connectedAt: session.connectedAt || session.since || session.age || '-',
+          resourceName: session.resourceName || session.targetIqn || session.targetiqn || session.targetName || session.target || this.possibleSessionValues(session.possibleTargets, 'targetIqn') || '-',
+          lun: session.targetLuns || session.targetluns || session.lun || session.lunOrNamespace || session.lunornamespace || this.possibleSessionValues(session.possibleTargets, 'lun') || '-',
+          listenerPorts: listenerPorts || '-',
+          local: session.local || session.endpoint || this.possibleSessionValues(possibleEndpoints) || '-',
+          sessionId: session.sessionId || session.id || '',
+          raw: session
+        }
+      })
     },
     nvmeSubsystemRows () {
       return this.storageService.nvmeSubsystems.map((target, index) => {
@@ -3087,7 +3338,9 @@ export default {
         adRejoin: 'label.storage.service.rejoin.ad.domain',
         adLeave: 'label.storage.service.leave.ad.domain',
         iscsiTarget: 'label.storage.service.create.iscsi.target',
+        editIscsiTarget: 'label.storage.service.update.iscsi.target',
         iscsiAcl: 'label.storage.service.create.iscsi.acl',
+        editIscsiAcl: 'label.storage.service.update.iscsi.acl',
         nvmePrepare: 'label.storage.service.prepare.nvmeof',
         nvmeSubsystem: 'label.storage.service.create.nvme.subsystem',
         nvmeHostAcl: 'label.storage.service.create.nvme.host.acl',
@@ -3511,9 +3764,20 @@ export default {
       const smbAcls = await Promise.all(this.storageService.smbShares.map(share => this.listApi('listStorageSmbAcls', { shareid: share.id }, 'storageaccessrule')))
       const iscsiAcls = await Promise.all(this.storageService.iscsiTargets.map(target => this.listApi('listStorageIscsiAcls', { targetid: target.id }, 'storageaccessrule')))
       const nvmeHostAcls = await Promise.all(this.storageService.nvmeSubsystems.map(target => this.listApi('listStorageNvmeOfHostAcls', { subsystemid: target.id }, 'storageaccessrule')))
+      const iscsiAclMap = new Map()
+      iscsiAcls.flat().forEach(acl => {
+        const key = acl.id || [
+          acl.targetgroupkey || acl.targetGroupKey || acl.targetname || acl.targetName || acl.resourceid || acl.resourceId || '',
+          acl.principal || '',
+          acl.permission || acl.access || ''
+        ].join(':')
+        if (!iscsiAclMap.has(key)) {
+          iscsiAclMap.set(key, acl)
+        }
+      })
       this.storageService.nfsAcls = nfsAcls.filter(acl => this.nfsShareForAcl(acl))
       this.storageService.smbAcls = smbAcls.flat()
-      this.storageService.iscsiAcls = iscsiAcls.flat()
+      this.storageService.iscsiAcls = Array.from(iscsiAclMap.values())
       this.storageService.nvmeHostAcls = nvmeHostAcls.flat()
     },
     async fetchBackingVolumes () {
@@ -3798,6 +4062,32 @@ export default {
       }
       return this.$t('label.no')
     },
+    iscsiMappingStatusLabel (value) {
+      const status = String(value || '').toLowerCase()
+      if (status === 'exact') {
+        return this.$t('label.storage.service.session.mapping.exact')
+      }
+      if (status === 'candidate') {
+        return this.$t('label.storage.service.session.mapping.candidate')
+      }
+      if (status === 'unmapped') {
+        return this.$t('label.storage.service.session.mapping.unmapped')
+      }
+      return value || '-'
+    },
+    iscsiEndpointMappingStatusLabel (value) {
+      const status = String(value || '').toLowerCase()
+      if (status === 'exact') {
+        return this.$t('label.storage.service.session.endpoint.mapping.exact')
+      }
+      if (status === 'candidate') {
+        return this.$t('label.storage.service.session.endpoint.mapping.candidate')
+      }
+      if (status === 'unmapped') {
+        return this.$t('label.storage.service.session.endpoint.mapping.unmapped')
+      }
+      return value || '-'
+    },
     boolValue (value) {
       return value === true || value === 'true' || value === 'TRUE' || value === 1 || value === '1'
     },
@@ -3879,24 +4169,30 @@ export default {
     runtimeBlockTarget (target, inventoryKey) {
       const inventory = this.parsedInventory[inventoryKey] || {}
       const targets = Array.isArray(inventory.targets) ? inventory.targets : []
+      const targetName = String(target.targetname || target.targetName || '')
+      const targetLun = String(target.lunornamespace || target.lunOrNamespace || target.lun || '0')
       const ids = [
         target.id,
         target.uuid,
-        target.targetname,
-        target.targetName,
         target.lunornamespace,
         target.lunOrNamespace
       ].filter(Boolean).map(value => String(value))
-      return targets.find(item => {
+      const exact = targets.find(item => {
         const itemIds = [
           item.uuid,
           item.id,
-          item.targetName,
-          item.targetname,
           item.lunOrNamespace,
           item.lunornamespace
         ].filter(Boolean).map(value => String(value))
         return itemIds.some(id => ids.includes(id))
+      })
+      if (exact) {
+        return exact
+      }
+      return targets.find(item => {
+        const itemName = String(item.targetName || item.targetname || '')
+        const itemLun = String(item.lunOrNamespace || item.lunornamespace || item.lun || '0')
+        return itemName && itemName === targetName && itemLun === targetLun
       }) || {}
     },
     volumeForShare (share) {
@@ -4045,6 +4341,7 @@ export default {
     },
     blockAclsForTarget (target, rules) {
       const ids = [target.id, target.uuid, target.resourceid, target.resourceuuid].filter(Boolean).map(value => String(value))
+      const groupKey = target.targetgroupkey || target.targetGroupKey || target.targetname || target.targetName
       return (rules || []).filter(acl => {
         const aclIds = [
           acl.targetid,
@@ -4055,7 +4352,11 @@ export default {
           acl.blocktargetid,
           acl.blockTargetId
         ].filter(Boolean).map(value => String(value))
-        return aclIds.some(id => ids.includes(id))
+        if (aclIds.some(id => ids.includes(id))) {
+          return true
+        }
+        const aclGroupKey = acl.targetgroupkey || acl.targetGroupKey || acl.targetname || acl.targetName
+        return groupKey && aclGroupKey && String(groupKey) === String(aclGroupKey)
       })
     },
     blockTargetForAcl (acl, targets) {
@@ -4068,9 +4369,17 @@ export default {
         acl.blocktargetid,
         acl.blockTargetId
       ].filter(Boolean).map(value => String(value))
-      return (targets || []).find(target => {
+      const exact = (targets || []).find(target => {
         const targetIds = [target.id, target.uuid, target.resourceid, target.resourceuuid].filter(Boolean).map(value => String(value))
         return targetIds.some(id => aclIds.includes(id))
+      })
+      if (exact) {
+        return exact
+      }
+      const aclGroupKey = acl.targetgroupkey || acl.targetGroupKey || acl.targetname || acl.targetName
+      return (targets || []).find(target => {
+        const targetGroupKey = target.targetgroupkey || target.targetGroupKey || target.targetname || target.targetName
+        return aclGroupKey && targetGroupKey && String(aclGroupKey) === String(targetGroupKey)
       }) || null
     },
     isProtocolEnabled (protocol) {
@@ -4112,6 +4421,15 @@ export default {
         return null
       }
       return Math.round(numericAmount * this.capacityMultiplier(unit))
+    },
+    capacityAmountFromBytes (bytes, unit = 'GiB') {
+      const value = Number(bytes)
+      if (!Number.isFinite(value) || value <= 0) {
+        return null
+      }
+      const divisor = this.capacityMultiplier(unit) || 1
+      const amount = value / divisor
+      return Number.isInteger(amount) ? amount : Number(amount.toFixed(2))
     },
     formatBytes (bytes) {
       const value = Number(bytes)
@@ -4179,9 +4497,23 @@ export default {
         this.forms.smbShare.storageid = this.filteredSmbNewVolumeStoragePools[0]?.id || ''
       }
     },
+    reconcileIscsiNewVolumeStorage () {
+      if (this.forms.iscsiTarget.volumemode !== 'NEW') {
+        return
+      }
+      if (!this.filteredIscsiNewVolumeStoragePools.some(pool => pool.id === this.forms.iscsiTarget.storageid)) {
+        this.forms.iscsiTarget.storageid = this.filteredIscsiNewVolumeStoragePools[0]?.id || ''
+      }
+    },
     defaultCurrentBackingVolumeId () {
       if (this.currentBackingVolumes.length === 1) {
         return this.currentBackingVolumes[0].id
+      }
+      return ''
+    },
+    defaultCurrentIscsiBlockVolumeId () {
+      if (this.currentIscsiBlockVolumes.length === 1) {
+        return this.currentIscsiBlockVolumes[0].id
       }
       return ''
     },
@@ -4202,6 +4534,13 @@ export default {
         return preferred
       }
       return this.filteredSmbNewVolumeStoragePools[0]?.id || preferred || ''
+    },
+    defaultIscsiNewVolumeStorageId () {
+      const preferred = this.volume.storageid || this.resource.storageid || this.storageService.backingVolumes?.[0]?.storageid
+      if (preferred && this.filteredIscsiNewVolumeStoragePools.some(pool => pool.id === preferred)) {
+        return preferred
+      }
+      return this.filteredIscsiNewVolumeStoragePools[0]?.id || preferred || ''
     },
     formatProtocolEndpoints (port, preferredIp = null) {
       const ips = preferredIp ? [preferredIp] : this.serviceEndpoints
@@ -4501,6 +4840,83 @@ export default {
       const amount = unit.multiplier ? value / unit.multiplier : value
       return { amount, unit: unit.value }
     },
+    defaultIscsiListenerPort () {
+      const options = this.iscsiListenerGroupOptions || []
+      return options.length ? options[0].value : 3260
+    },
+    formatIscsiListenerGroupEndpoints (ports) {
+      const normalized = this.normalizeListenerPorts(ports)
+      if (!normalized.length) {
+        return '-'
+      }
+      return normalized.flatMap(port => this.formatProtocolEndpoints(port)).join(', ')
+    },
+    selectedIscsiListenerPorts () {
+      return this.normalizeListenerPorts(this.forms.iscsiTarget.listenerports)
+    },
+    resetIscsiTargetForm () {
+      this.forms.iscsiTarget = {
+        id: '',
+        targetname: `iqn.2026-05.local.storage:${this.resource.name || 'target'}-${Date.now().toString().slice(-4)}`,
+        lun: '0',
+        volumeid: this.defaultCurrentIscsiBlockVolumeId(),
+        volumemode: this.currentIscsiBlockVolumes.length ? 'CURRENT' : 'EXISTING',
+        newvolumename: '',
+        diskofferingid: '',
+        storageid: this.defaultIscsiNewVolumeStorageId(),
+        newvolumesize: null,
+        backingpath: '',
+        endpointmode: 'LISTENER_GROUP',
+        listenerports: [this.defaultIscsiListenerPort()]
+      }
+    },
+    populateIscsiTargetForm (record) {
+      const raw = record?.raw || record || {}
+      const config = this.parseStorageConfig(raw.config)
+      this.forms.iscsiTarget = {
+        id: raw.id || record?.id || '',
+        targetname: raw.targetname || raw.targetName || record?.targetName || '',
+        lun: raw.lunornamespace || raw.lunOrNamespace || raw.lun || record?.lun || '0',
+        volumeid: raw.volumeid || raw.volumeId || '',
+        volumemode: 'EXISTING',
+        newvolumename: '',
+        diskofferingid: '',
+        storageid: this.defaultIscsiNewVolumeStorageId(),
+        newvolumesize: null,
+        backingpath: raw.backingpath || raw.backingPath || config.backingPath || '',
+        endpointmode: raw.endpointmode || raw.endpointMode || config.endpointMode || 'LISTENER_GROUP',
+        listenerports: this.normalizeListenerPorts(raw.listenerports || raw.listenerPorts || config.listenerGroupPorts || config.listenerports || this.defaultIscsiListenerPort())
+      }
+    },
+    resetIscsiAclForm () {
+      this.forms.iscsiAcl = {
+        targetid: this.storageService.iscsiTargets[0]?.id || '',
+        initiatoriqn: '',
+        permission: 'READ_WRITE',
+        chapenabled: false,
+        chapusername: '',
+        chapsecret: '',
+        mutualchapenabled: false,
+        mutualchapusername: '',
+        mutualchapsecret: ''
+      }
+    },
+    populateIscsiAclForm (record) {
+      const raw = record?.raw || record || {}
+      const config = this.parseStorageConfig(raw.config)
+      this.forms.iscsiAcl = {
+        id: raw.id || record?.id || '',
+        targetid: raw.resourceid || raw.resourceId || raw.targetid || raw.targetId || '',
+        initiatoriqn: raw.principal || raw.initiatoriqn || record?.principal || '',
+        permission: raw.permission || 'READ_WRITE',
+        chapenabled: raw.chapenabled ?? raw.chapEnabled ?? config.chapEnabled ?? false,
+        chapusername: raw.chapusername || raw.chapUsername || config.chapUsername || '',
+        chapsecret: '',
+        mutualchapenabled: raw.mutualchapenabled ?? raw.mutualChapEnabled ?? config.mutualChapEnabled ?? false,
+        mutualchapusername: raw.mutualchapusername || raw.mutualChapUsername || config.mutualChapUsername || '',
+        mutualchapsecret: ''
+      }
+    },
     resetNfsExportForm () {
       Object.assign(this.forms.nfsExport, {
         name: '',
@@ -4782,6 +5198,27 @@ export default {
           password: ''
         }
       }
+      if (type === 'iscsiTarget') {
+        this.resetIscsiTargetForm()
+        this.fetchDiskOfferings()
+        this.fetchStoragePools()
+      }
+      if (type === 'editIscsiTarget') {
+        this.populateIscsiTargetForm(context)
+        this.fetchDiskOfferings()
+        this.fetchStoragePools()
+      }
+      if (type === 'iscsiAcl') {
+        this.resetIscsiAclForm()
+        if (context?.targetid) {
+          this.forms.iscsiAcl.targetid = context.targetid
+        } else if (this.storageService.iscsiTargets.length > 0) {
+          this.forms.iscsiAcl.targetid = this.storageService.iscsiTargets[0].id
+        }
+      }
+      if (type === 'editIscsiAcl') {
+        this.populateIscsiAclForm(context)
+      }
       if (type === 'resizeShare' && context?.id) {
         this.forms.resizeShare.id = context.id
       }
@@ -4820,14 +5257,18 @@ export default {
         nfsExport: record?.name || this.clientVisibleName(raw.name || raw.exportname, ''),
         nfsAcl: record?.principal || raw.principal || raw.cidr || raw.client,
         smbShare: record?.name || this.clientVisibleName(raw.name || raw.sharename, ''),
-        smbAcl: record?.principal || raw.principal || raw.username || raw.account
+        smbAcl: record?.principal || raw.principal || raw.username || raw.account,
+        iscsiTarget: record?.targetName || raw.targetname || raw.targetName,
+        iscsiAcl: record?.principal || raw.principal || raw.initiatoriqn
       }
       const commands = {
         protocol: 'deleteStorageServiceProtocol',
         nfsExport: 'deleteStorageNfsExport',
         nfsAcl: 'deleteStorageNfsAcl',
         smbShare: 'deleteStorageSmbShare',
-        smbAcl: 'deleteStorageSmbAcl'
+        smbAcl: 'deleteStorageSmbAcl',
+        iscsiTarget: 'deleteStorageIscsiTarget',
+        iscsiAcl: 'deleteStorageIscsiAcl'
       }
       this.forms.deleteConfirm = {
         resourceType,
@@ -4867,7 +5308,9 @@ export default {
         adRejoin: this.joinAdDomain,
         adLeave: this.leaveAdDomain,
         iscsiTarget: this.createIscsiTarget,
+        editIscsiTarget: this.updateIscsiTarget,
         iscsiAcl: this.createIscsiAcl,
+        editIscsiAcl: this.updateIscsiAcl,
         nvmePrepare: this.prepareNvmeOf,
         nvmeSubsystem: this.createNvmeSubsystem,
         nvmeHostAcl: this.createNvmeHostAcl,
@@ -5228,17 +5671,95 @@ export default {
         this.actionLoading.adStatus = false
       }
     },
-    createIscsiTarget () {
+    async prepareIscsiTargetVolume () {
+      if (this.forms.iscsiTarget.volumemode === 'CURRENT' || this.forms.iscsiTarget.volumemode === 'EXISTING') {
+        if (!this.forms.iscsiTarget.volumeid) {
+          this.$message.error(this.$t(this.forms.iscsiTarget.volumemode === 'CURRENT' ? 'message.storage.service.current.volume.required' : 'message.storage.service.existing.volume.required'))
+          return false
+        }
+        return this.forms.iscsiTarget.volumeid
+      }
+      if (!this.forms.iscsiTarget.storageid) {
+        this.forms.iscsiTarget.storageid = this.defaultIscsiNewVolumeStorageId()
+      }
+      if (!this.forms.iscsiTarget.diskofferingid || !this.forms.iscsiTarget.storageid || !this.forms.iscsiTarget.newvolumesize) {
+        this.$message.error(this.$t('message.storage.service.new.volume.required'))
+        return false
+      }
+      const params = {
+        name: this.forms.iscsiTarget.newvolumename || `${this.forms.iscsiTarget.targetname || 'iscsi'}-volume`,
+        zoneid: this.resource.zoneid,
+        diskofferingid: this.forms.iscsiTarget.diskofferingid,
+        storageid: this.forms.iscsiTarget.storageid,
+        size: this.forms.iscsiTarget.newvolumesize
+      }
+      const json = await postAPI('createVolume', this.cleanParams(params))
+      const response = json.createvolumeresponse || {}
+      const jobResult = response.jobid ? await this.waitStorageServiceJob(response.jobid, 'createVolume', 180) : null
+      const jobVolume = jobResult?.jobresult?.volume || jobResult?.volume || {}
+      const id = jobVolume.id || response.id || response.volume?.id
+      if (!id) {
+        this.$message.error(this.$t('message.storage.service.new.volume.create.failed'))
+        return false
+      }
+      await this.waitVolumeAttachable(id)
+      return id
+    },
+    async createIscsiTarget () {
+      const volumeId = await this.prepareIscsiTargetVolume()
+      if (volumeId === false) {
+        return Promise.resolve()
+      }
+      const listenerPorts = this.selectedIscsiListenerPorts()
+      if (!listenerPorts.length) {
+        this.$message.error(this.$t('message.storage.service.iscsi.listener.group.required'))
+        return Promise.resolve()
+      }
       return this.runStorageAction('iscsiTarget', 'createStorageIscsiTarget', {
         instanceid: this.storageService.instance.id,
         targetname: this.forms.iscsiTarget.targetname,
         lun: this.forms.iscsiTarget.lun,
-        volumeid: this.forms.iscsiTarget.volumeid,
-        lunsizebytes: this.toCapacityBytes(this.forms.iscsiTarget.lunsizeamount, this.forms.iscsiTarget.lunsizeunit),
-        backingpath: this.forms.iscsiTarget.backingpath
+        volumeid: volumeId,
+        backingpath: this.forms.iscsiTarget.backingpath,
+        endpointmode: 'LISTENER_GROUP',
+        listenerports: listenerPorts.join(','),
+        cleanupvolumeonfailure: this.forms.iscsiTarget.volumemode === 'NEW' && !!volumeId
       }, this.$t('label.storage.service.create.iscsi.target'))
     },
+    updateIscsiTarget () {
+      const context = this.actionModal.context?.raw || this.actionModal.context || {}
+      const listenerPorts = this.selectedIscsiListenerPorts()
+      if (!listenerPorts.length) {
+        this.$message.error(this.$t('message.storage.service.iscsi.listener.group.required'))
+        return Promise.resolve()
+      }
+      return this.runStorageAction('editIscsiTarget', 'updateStorageIscsiTarget', {
+        id: context.id || this.forms.iscsiTarget.id,
+        targetname: this.forms.iscsiTarget.targetname,
+        lun: this.forms.iscsiTarget.lun,
+        volumeid: this.forms.iscsiTarget.volumeid,
+        backingpath: this.forms.iscsiTarget.backingpath,
+        endpointmode: 'LISTENER_GROUP',
+        listenerports: listenerPorts.join(',')
+      }, this.$t('label.storage.service.update.iscsi.target'))
+    },
+    validateIscsiChapForm () {
+      if (this.forms.iscsiAcl.chapenabled) {
+        if (!this.forms.iscsiAcl.chapusername || !this.forms.iscsiAcl.chapsecret) {
+          this.$message.error(this.$t('message.storage.service.iscsi.chap.credential.required'))
+          return false
+        }
+        if (this.forms.iscsiAcl.mutualchapenabled && (!this.forms.iscsiAcl.mutualchapusername || !this.forms.iscsiAcl.mutualchapsecret)) {
+          this.$message.error(this.$t('message.storage.service.iscsi.mutual.chap.credential.required'))
+          return false
+        }
+      }
+      return true
+    },
     createIscsiAcl () {
+      if (!this.validateIscsiChapForm()) {
+        return Promise.resolve()
+      }
       const result = this.runStorageAction('iscsiAcl', 'createStorageIscsiAcl', {
         targetid: this.forms.iscsiAcl.targetid,
         initiatoriqn: this.forms.iscsiAcl.initiatoriqn,
@@ -5250,6 +5771,26 @@ export default {
         mutualchapusername: this.forms.iscsiAcl.chapenabled && this.forms.iscsiAcl.mutualchapenabled ? this.forms.iscsiAcl.mutualchapusername : '',
         mutualchapsecret: this.forms.iscsiAcl.chapenabled && this.forms.iscsiAcl.mutualchapenabled ? this.forms.iscsiAcl.mutualchapsecret : ''
       }, this.$t('label.storage.service.create.iscsi.acl'))
+      this.forms.iscsiAcl.chapsecret = ''
+      this.forms.iscsiAcl.mutualchapsecret = ''
+      return result
+    },
+    updateIscsiAcl () {
+      if (!this.validateIscsiChapForm()) {
+        return Promise.resolve()
+      }
+      const context = this.actionModal.context?.raw || this.actionModal.context || {}
+      const result = this.runStorageAction('editIscsiAcl', 'updateStorageIscsiAcl', {
+        id: context.id || this.forms.iscsiAcl.id,
+        initiatoriqn: this.forms.iscsiAcl.initiatoriqn,
+        permission: this.forms.iscsiAcl.permission,
+        chapenabled: this.forms.iscsiAcl.chapenabled,
+        chapusername: this.forms.iscsiAcl.chapenabled ? this.forms.iscsiAcl.chapusername : '',
+        chapsecret: this.forms.iscsiAcl.chapenabled ? this.forms.iscsiAcl.chapsecret : '',
+        mutualchapenabled: this.forms.iscsiAcl.chapenabled && this.forms.iscsiAcl.mutualchapenabled,
+        mutualchapusername: this.forms.iscsiAcl.chapenabled && this.forms.iscsiAcl.mutualchapenabled ? this.forms.iscsiAcl.mutualchapusername : '',
+        mutualchapsecret: this.forms.iscsiAcl.chapenabled && this.forms.iscsiAcl.mutualchapenabled ? this.forms.iscsiAcl.mutualchapsecret : ''
+      }, this.$t('label.storage.service.update.iscsi.acl'))
       this.forms.iscsiAcl.chapsecret = ''
       this.forms.iscsiAcl.mutualchapsecret = ''
       return result
@@ -5337,6 +5878,22 @@ export default {
         const sessionProtocol = (session.protocol || session.service || '').toUpperCase()
         return sessionProtocol === protocol
       })
+    },
+    possibleSessionValues (values, key) {
+      if (!Array.isArray(values)) {
+        return ''
+      }
+      const resolved = values.map(item => {
+        if (item === null || item === undefined) {
+          return ''
+        }
+        if (typeof item === 'object') {
+          const lowerKey = String(key || '').toLowerCase()
+          return item[key] || item[lowerKey] || item.value || ''
+        }
+        return item
+      }).map(item => String(item || '').trim()).filter(Boolean)
+      return [...new Set(resolved)].join(', ')
     },
     normalizeSessionAddress (value) {
       const text = String(value || '').trim()

@@ -60,6 +60,15 @@ public class UpdateStorageIscsiTargetCmd extends BaseAsyncCmd implements UserCmd
     @Parameter(name = "backingpath", type = CommandType.STRING, description = "optional block device path inside the Storage Service System VM")
     private String backingPath;
 
+    @Parameter(name = "backstoretype", type = CommandType.STRING, description = "legacy iSCSI LIO backstore type parameter. Only BLOCK is supported")
+    private String backstoreType;
+
+    @Parameter(name = "endpointmode", type = CommandType.STRING, description = "iSCSI target endpoint exposure mode: ALL or LISTENER_GROUP")
+    private String endpointMode;
+
+    @Parameter(name = "listenerports", type = CommandType.STRING, description = "comma-separated iSCSI listener port groups for this target")
+    private String listenerPorts;
+
     public Long getId() {
         return id;
     }
@@ -82,6 +91,18 @@ public class UpdateStorageIscsiTargetCmd extends BaseAsyncCmd implements UserCmd
 
     public String getBackingPath() {
         return backingPath;
+    }
+
+    public String getBackstoreType() {
+        return backstoreType;
+    }
+
+    public String getEndpointMode() {
+        return endpointMode;
+    }
+
+    public String getListenerPorts() {
+        return listenerPorts;
     }
 
     @Override
