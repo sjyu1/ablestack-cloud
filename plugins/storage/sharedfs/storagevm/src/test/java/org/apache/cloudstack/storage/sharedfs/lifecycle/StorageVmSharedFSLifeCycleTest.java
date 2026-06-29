@@ -166,7 +166,7 @@ public class StorageVmSharedFSLifeCycleTest {
         when(callContextMock.register(CallContext.current(), ApiCommandResourceType.VirtualMachine)).thenReturn(vmContext);
 
         fileUtilMocked = mockStatic(FileUtil.class);
-        fileUtilMocked.when(() -> FileUtil.readResourceFile("/conf/fsvm-init.yml")).thenReturn("");
+        fileUtilMocked.when(() -> FileUtil.readResourceFile("conf/fsvm-init.yml")).thenReturn("");
     }
 
     @After

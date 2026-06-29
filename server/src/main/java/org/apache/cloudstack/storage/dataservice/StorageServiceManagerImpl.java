@@ -298,8 +298,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
         final StorageServiceInstance.Protocol protocol = parseProtocol(cmd.getProtocol());
         final Integer port = normalizeStorageServiceProtocolPort(protocol, cmd.getPort());
-        StorageServiceProtocolVO protocolVO = protocol == StorageServiceInstance.Protocol.NFS ?
-                findNfsProtocolEndpoint(instance.getId(), cmd.getListenIp(), port) :
+        StorageServiceProtocolVO protocolVO = isEndpointProtocol(protocol) ?
+                findProtocolEndpoint(instance.getId(), protocol, cmd.getListenIp(), port) :
                 storageServiceProtocolDao.findByInstanceIdAndProtocol(instance.getId(), protocol);
         final StorageServiceProtocolVO modeProtocol = protocol == StorageServiceInstance.Protocol.NFS ?
                 selectNfsModeProtocol(storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), protocol)) : protocolVO;
@@ -326,6 +326,11 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                     protocolVO.setListenIp(cmd.getListenIp());
                 }
                 protocolVO.setPort(dualModeServiceIpRegistration ? 2049 : (protocolVO.getPort() == null ? port : protocolVO.getPort()));
+            } else if (isEndpointProtocol(protocol)) {
+                if (StringUtils.isBlank(protocolVO.getListenIp())) {
+                    protocolVO.setListenIp(cmd.getListenIp());
+                }
+                protocolVO.setPort(port);
             } else {
                 protocolVO.setListenIp(cmd.getListenIp());
                 protocolVO.setPort(port);
@@ -1331,15 +1336,25 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     public StorageBlockTargetResponse createStorageIscsiTarget(final CreateStorageIscsiTargetCmd cmd) {
         final StorageServiceInstanceVO instance = requireInstance(cmd.getInstanceId());
         validateStorageServiceBackingVolume(instance, cmd.getVolumeId(), "iSCSI target");
+        validateIscsiBlockOnlyBackstore(cmd.getBackstoreType());
+        validateIscsiBackingVolumeAvailable(instance, cmd.getVolumeId(), null);
+        validateIscsiEndpointPolicy(cmd.getEndpointMode(), cmd.getListenerPorts());
+        validateIscsiListenerPortsExist(instance, cmd.getListenerPorts());
         ensureProtocol(instance, StorageServiceInstance.Protocol.ISCSI);
+        prepareIscsiBackingVolume(instance, cmd.getVolumeId());
         StorageBlockTargetVO target = new StorageBlockTargetVO(instance.getId(), StorageServiceInstance.Protocol.ISCSI, cmd.getTargetName(),
                 StringUtils.defaultIfBlank(cmd.getLun(), "0"), cmd.getVolumeId(), StorageServiceInstance.ResourceState.Creating,
-                buildIscsiTargetConfigJson(null, cmd.getBackingPath(), cmd.getLunSizeBytes()));
+                buildIscsiTargetConfigJson(null, cmd.getBackingPath(), cmd.getBackstoreType(), cmd.getLunSizeBytes(), cmd.getEndpointMode(), cmd.getListenerPorts()));
         target = storageBlockTargetDao.persist(target);
-        target.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
-        storageBlockTargetDao.update(target.getId(), target);
-        applyIscsiDesiredState(instance);
-        return createBlockTargetResponse(target, "storageiscsitarget");
+        try {
+            target.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
+            storageBlockTargetDao.update(target.getId(), target);
+            applyIscsiDesiredState(instance);
+            return createBlockTargetResponse(target, "storageiscsitarget");
+        } catch (final RuntimeException e) {
+            cleanupFailedBlockTargetCreate(instance, target, Boolean.TRUE.equals(cmd.getCleanupVolumeOnFailure()));
+            throw e;
+        }
     }
 
     @Override
@@ -1354,9 +1369,14 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
         if (cmd.getVolumeId() != null) {
             validateStorageServiceBackingVolume(instance, cmd.getVolumeId(), "iSCSI target");
+            validateIscsiBackingVolumeAvailable(instance, cmd.getVolumeId(), target.getId());
+            prepareIscsiBackingVolume(instance, cmd.getVolumeId());
             target.setVolumeId(cmd.getVolumeId());
         }
-        target.setConfigJson(buildIscsiTargetConfigJson(target.getConfigJson(), cmd.getBackingPath(), cmd.getLunSizeBytes()));
+        validateIscsiBlockOnlyBackstore(cmd.getBackstoreType());
+        validateIscsiEndpointPolicy(cmd.getEndpointMode(), cmd.getListenerPorts());
+        validateIscsiListenerPortsExist(instance, cmd.getListenerPorts());
+        target.setConfigJson(buildIscsiTargetConfigJson(target.getConfigJson(), cmd.getBackingPath(), cmd.getBackstoreType(), cmd.getLunSizeBytes(), cmd.getEndpointMode(), cmd.getListenerPorts()));
         target.setState(StorageServiceInstance.ResourceState.Updating);
         storageBlockTargetDao.update(target.getId(), target);
         applyIscsiDesiredState(instance);
@@ -1397,10 +1417,13 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final StorageBlockTargetVO target = requireBlockTarget(cmd.getTargetId(), StorageServiceInstance.Protocol.ISCSI);
         final StorageServiceInstanceVO instance = requireInstance(target.getInstanceId());
         final StorageServiceInstance.Permission permission = parseBlockPermission(cmd.getPermission());
+        validateIscsiChapCredentialRequest(cmd.getChapEnabled(), cmd.getChapUsername(), cmd.getChapSecret(), cmd.getMutualChapEnabled(), cmd.getMutualChapUsername(), cmd.getMutualChapSecret());
+        final String configJson = buildIscsiAclConfigJson(null, cmd.getChapEnabled(), cmd.getChapUsername(), cmd.getMutualChapEnabled(), cmd.getMutualChapUsername(),
+                cmd.getChapSecret(), cmd.getMutualChapSecret());
+        validateIscsiAclTargetScope(target, null, cmd.getInitiatorIqn(), parseJsonObject(configJson));
         StorageAccessRuleVO rule = new StorageAccessRuleVO(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId(),
                 StorageServiceInstance.PrincipalType.ISCSI_INITIATOR_IQN, cmd.getInitiatorIqn(), permission, StorageServiceInstance.ResourceState.Creating,
-                buildIscsiAclConfigJson(null, cmd.getChapEnabled(), cmd.getChapUsername(), cmd.getMutualChapEnabled(), cmd.getMutualChapUsername(),
-                        cmd.getChapSecret(), cmd.getMutualChapSecret()));
+                configJson);
         rule = storageAccessRuleDao.persist(rule);
         rule.setState(instance.getVmId() == null ? StorageServiceInstance.ResourceState.Allocated : StorageServiceInstance.ResourceState.Ready);
         storageAccessRuleDao.update(rule.getId(), rule);
@@ -1419,8 +1442,11 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         if (cmd.getPermission() != null) {
             rule.setPermission(parseBlockPermission(cmd.getPermission()));
         }
-        rule.setConfigJson(buildIscsiAclConfigJson(rule.getConfigJson(), cmd.getChapEnabled(), cmd.getChapUsername(), cmd.getMutualChapEnabled(), cmd.getMutualChapUsername(),
-                cmd.getChapSecret(), cmd.getMutualChapSecret()));
+        validateIscsiChapCredentialRequest(cmd.getChapEnabled(), cmd.getChapUsername(), cmd.getChapSecret(), cmd.getMutualChapEnabled(), cmd.getMutualChapUsername(), cmd.getMutualChapSecret());
+        final String configJson = buildIscsiAclConfigJson(rule.getConfigJson(), cmd.getChapEnabled(), cmd.getChapUsername(), cmd.getMutualChapEnabled(), cmd.getMutualChapUsername(),
+                cmd.getChapSecret(), cmd.getMutualChapSecret());
+        validateIscsiAclTargetScope(target, rule.getId(), rule.getPrincipal(), parseJsonObject(configJson));
+        rule.setConfigJson(configJson);
         rule.setState(StorageServiceInstance.ResourceState.Updating);
         storageAccessRuleDao.update(rule.getId(), rule);
         applyIscsiDesiredState(instance, buildChapSecretMap(rule.getId(), cmd.getChapSecret(), cmd.getMutualChapSecret()));
@@ -1884,6 +1910,42 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected void cleanupFailedBlockTargetCreate(final StorageServiceInstanceVO instance, final StorageBlockTargetVO target, final boolean cleanupVolumeOnFailure) {
+        if (target == null) {
+            return;
+        }
+        final Long volumeId = target.getVolumeId();
+        try {
+            for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId())) {
+                storageAccessRuleDao.remove(rule.getId());
+            }
+            storageBlockTargetDao.remove(target.getId());
+            applyIscsiDesiredState(instance);
+        } catch (final RuntimeException cleanupError) {
+            logger.warn("Failed to reconcile Storage Service iSCSI target [{}] after create failure", target.getUuid(), cleanupError);
+        }
+        if (cleanupVolumeOnFailure && volumeId != null) {
+            cleanupCreatedBackingVolume(instance, volumeId);
+        }
+    }
+
+    protected VolumeVO prepareIscsiBackingVolume(final StorageServiceInstanceVO instance, final Long volumeId) {
+        VolumeVO volume = requireVolume(volumeId);
+        if (instance.getVmId() == null) {
+            return volume;
+        }
+        final Long attachedVmId = volume.getInstanceId();
+        if (attachedVmId != null && !attachedVmId.equals(instance.getVmId())) {
+            throw new InvalidParameterValueException("Backing volume " + volume.getUuid() + " is already attached to another VM");
+        }
+        if (attachedVmId == null) {
+            volume = waitForFileShareVolumeAttachable(volume.getId());
+            volumeApiService.attachVolumeToVM(instance.getVmId(), volume.getId(), null, true);
+            volume = requireVolume(volumeId);
+        }
+        return volume;
+    }
+
     protected void applyIscsiDesiredState(final StorageServiceInstanceVO instance) {
         applyIscsiDesiredState(instance, Collections.emptyMap());
     }
@@ -1898,18 +1960,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final JsonArray targets = new JsonArray();
         for (final StorageBlockTargetVO target : storageBlockTargetDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.ISCSI)) {
             final JsonObject targetJson = createBlockTargetJson(target);
-            final JsonArray acls = new JsonArray();
-            for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, target.getId())) {
-                if (rule.getPrincipalType() != StorageServiceInstance.PrincipalType.ISCSI_INITIATOR_IQN) {
-                    continue;
-                }
-                final JsonObject acl = createBlockAclJson(rule);
-                if (chapSecrets != null && chapSecrets.containsKey(rule.getId())) {
-                    acl.add("secrets", chapSecrets.get(rule.getId()));
-                }
-                acls.add(acl);
-            }
-            targetJson.add("acls", acls);
+            targetJson.add("acls", createIscsiTargetAclJson(target, chapSecrets));
             targets.add(targetJson);
         }
         payload.add("targets", targets);
@@ -2146,14 +2197,45 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                 payload.addProperty("port", protocol.getPort());
             }
         }
+        payload.add("listeners", buildBlockProtocolListeners(instance, protocolType));
         return payload;
+    }
+
+    protected JsonArray buildBlockProtocolListeners(final StorageServiceInstanceVO instance, final StorageServiceInstance.Protocol protocolType) {
+        final JsonArray listeners = new JsonArray();
+        final HashSet<String> seen = new HashSet<>();
+        for (final StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), protocolType)) {
+            if (protocol == null || !protocol.isEnabled()) {
+                continue;
+            }
+            final String listenIp = StringUtils.defaultIfBlank(protocol.getListenIp(), "0.0.0.0");
+            final int defaultPort = protocolType == StorageServiceInstance.Protocol.ISCSI ? 3260 : 4420;
+            final int port = protocol.getPort() == null ? defaultPort : protocol.getPort();
+            final String key = listenIp + ":" + port;
+            if (!seen.add(key)) {
+                continue;
+            }
+            final JsonObject listener = new JsonObject();
+            listener.addProperty("listenIp", listenIp);
+            listener.addProperty("port", port);
+            listeners.add(listener);
+        }
+        if (listeners.size() == 0) {
+            final JsonObject listener = new JsonObject();
+            listener.addProperty("listenIp", "0.0.0.0");
+            listener.addProperty("port", protocolType == StorageServiceInstance.Protocol.ISCSI ? 3260 : 4420);
+            listeners.add(listener);
+        }
+        return listeners;
     }
 
     protected JsonObject createBlockTargetJson(final StorageBlockTargetVO target) {
         final JsonObject targetJson = new JsonObject();
         final JsonObject config = parseJsonObject(target.getConfigJson());
-        Long configuredSize = getJsonLong(config, "lunSizeBytes");
-        if (configuredSize == null) {
+        final boolean iscsiBlockTarget = target.getProtocol() == StorageServiceInstance.Protocol.ISCSI
+                && "BLOCK".equalsIgnoreCase(StringUtils.defaultIfBlank(getJsonString(config, "backstoreType"), "BLOCK"));
+        Long configuredSize = iscsiBlockTarget ? null : getJsonLong(config, "lunSizeBytes");
+        if (configuredSize == null && !iscsiBlockTarget) {
             configuredSize = getJsonLong(config, "namespaceSizeBytes");
         }
         Long volumeSize = null;
@@ -2168,6 +2250,16 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             if (volume != null) {
                 targetJson.addProperty("volumeUuid", volume.getUuid());
                 targetJson.addProperty("volumeName", volume.getName());
+                if (StringUtils.isNotBlank(volume.getPath())) {
+                    targetJson.addProperty("volumePath", volume.getPath());
+                }
+                if (volume.getDeviceId() != null) {
+                    targetJson.addProperty("volumeDeviceId", volume.getDeviceId());
+                }
+                final String serialPrefix = compactVolumeIdentity(volume.getUuid());
+                if (StringUtils.isNotBlank(serialPrefix)) {
+                    targetJson.addProperty("expectedSerialPrefix", serialPrefix.length() > 20 ? serialPrefix.substring(0, 20) : serialPrefix);
+                }
                 volumeSize = volume.getSize();
                 targetJson.addProperty("volumeSizeBytes", volumeSize);
             }
@@ -2181,6 +2273,18 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final String backingPath = getJsonString(config, "backingPath");
         if (StringUtils.isNotBlank(backingPath)) {
             targetJson.addProperty("backingPath", backingPath);
+        }
+        final String backstoreType = getJsonString(config, "backstoreType");
+        if (StringUtils.isNotBlank(backstoreType)) {
+            targetJson.addProperty("backstoreType", backstoreType);
+        }
+        final String endpointMode = getJsonString(config, "endpointMode");
+        if (StringUtils.isNotBlank(endpointMode)) {
+            targetJson.addProperty("endpointMode", endpointMode);
+        }
+        final String listenerPorts = listenerPortsAsString(config);
+        if (StringUtils.isNotBlank(listenerPorts)) {
+            targetJson.addProperty("listenerPorts", listenerPorts);
         }
         StorageServiceInstance.ResourceState desiredState = target.getState();
         if (desiredState == StorageServiceInstance.ResourceState.Creating || desiredState == StorageServiceInstance.ResourceState.Updating) {
@@ -2201,6 +2305,67 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         acl.addProperty("state", rule.getState().name());
         acl.add("config", parseJsonObject(rule.getConfigJson()));
         return acl;
+    }
+
+    protected JsonArray createIscsiTargetAclJson(final StorageBlockTargetVO target, final Map<Long, JsonObject> chapSecrets) {
+        final JsonArray acls = new JsonArray();
+        final Map<String, JsonObject> aclByPrincipal = new HashMap<>();
+        final Map<String, String> chapSignatureByPrincipal = new HashMap<>();
+        for (final StorageBlockTargetVO candidate : listBlockTargetGroup(target)) {
+            for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, candidate.getId())) {
+                if (rule.getPrincipalType() != StorageServiceInstance.PrincipalType.ISCSI_INITIATOR_IQN || StringUtils.isBlank(rule.getPrincipal())) {
+                    continue;
+                }
+                final JsonObject config = parseJsonObject(rule.getConfigJson());
+                final String signature = iscsiAclChapSignature(config);
+                final String previous = chapSignatureByPrincipal.putIfAbsent(rule.getPrincipal(), signature);
+                if (previous != null && !previous.equals(signature)) {
+                    throw new CloudRuntimeException("Conflicting iSCSI CHAP settings for target " + target.getTargetName()
+                            + " and initiator " + rule.getPrincipal() + ". iSCSI CHAP is target-scoped; update the existing ACL instead of creating per-LUN variants.");
+                }
+                JsonObject acl = aclByPrincipal.get(rule.getPrincipal());
+                if (acl == null) {
+                    acl = createBlockAclJson(rule);
+                    aclByPrincipal.put(rule.getPrincipal(), acl);
+                }
+                if (chapSecrets != null && chapSecrets.containsKey(rule.getId())) {
+                    acl.add("secrets", chapSecrets.get(rule.getId()));
+                }
+            }
+        }
+        for (final JsonObject acl : aclByPrincipal.values()) {
+            acls.add(acl);
+        }
+        return acls;
+    }
+
+    protected void validateIscsiAclTargetScope(final StorageBlockTargetVO target, final Long currentRuleId, final String principal, final JsonObject config) {
+        if (target == null || target.getProtocol() != StorageServiceInstance.Protocol.ISCSI || StringUtils.isBlank(principal)) {
+            return;
+        }
+        final String requestedSignature = iscsiAclChapSignature(config);
+        for (final StorageBlockTargetVO candidate : listBlockTargetGroup(target)) {
+            for (final StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, candidate.getId())) {
+                if (currentRuleId != null && currentRuleId.equals(rule.getId())) {
+                    continue;
+                }
+                if (rule.getPrincipalType() != StorageServiceInstance.PrincipalType.ISCSI_INITIATOR_IQN || !principal.equals(rule.getPrincipal())) {
+                    continue;
+                }
+                final String existingSignature = iscsiAclChapSignature(parseJsonObject(rule.getConfigJson()));
+                if (!requestedSignature.equals(existingSignature)) {
+                    throw new InvalidParameterValueException("iSCSI CHAP settings are target-scoped. The same initiator already has different CHAP settings on target "
+                            + target.getTargetName() + "; update the existing ACL or use consistent CHAP settings across all LUNs.");
+                }
+            }
+        }
+    }
+
+    protected String iscsiAclChapSignature(final JsonObject config) {
+        final boolean chapEnabled = Boolean.TRUE.equals(getJsonBoolean(config, "chapEnabled"));
+        final boolean mutualChapEnabled = Boolean.TRUE.equals(getJsonBoolean(config, "mutualChapEnabled"));
+        return chapEnabled + "|" + StringUtils.defaultString(getJsonString(config, "chapUsername"))
+                + "|" + mutualChapEnabled + "|" + StringUtils.defaultString(getJsonString(config, "mutualChapUsername"));
     }
 
     protected ListResponse<StorageServiceRuntimeResponse> listRuntimeOperation(final Long instanceId, final String operation) {
@@ -2480,7 +2645,14 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                 rules.add(rule);
             }
         } else if (targetId != null) {
-            rules.addAll(storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, targetId));
+            final StorageBlockTargetVO target = storageBlockTargetDao.findById(targetId);
+            if (target != null && target.getProtocol() == protocol && protocol == StorageServiceInstance.Protocol.ISCSI) {
+                for (final StorageBlockTargetVO candidate : listBlockTargetGroup(target)) {
+                    rules.addAll(storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, candidate.getId()));
+                }
+            } else {
+                rules.addAll(storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, targetId));
+            }
         } else {
             rules.addAll(storageAccessRuleDao.listAll());
         }
@@ -2521,6 +2693,10 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     }
 
     protected void validateBackingVolumeUnused(final StorageServiceInstanceVO instance, final Long volumeId) {
+        validateBackingVolumeUnused(instance, volumeId, null);
+    }
+
+    protected void validateBackingVolumeUnused(final StorageServiceInstanceVO instance, final Long volumeId, final Long excludedBlockTargetId) {
         final List<String> users = new ArrayList<>();
         for (final StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
             if (volumeId.equals(share.getVolumeId())) {
@@ -2533,18 +2709,29 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
         }
         for (final StorageBlockTargetVO target : storageBlockTargetDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.ISCSI)) {
-            if (volumeId.equals(target.getVolumeId())) {
+            if (volumeId.equals(target.getVolumeId()) && (excludedBlockTargetId == null || target.getId() != excludedBlockTargetId)) {
                 users.add("iSCSI target " + target.getTargetName());
             }
         }
         for (final StorageBlockTargetVO target : storageBlockTargetDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NVME_OF)) {
-            if (volumeId.equals(target.getVolumeId())) {
+            if (volumeId.equals(target.getVolumeId()) && (excludedBlockTargetId == null || target.getId() != excludedBlockTargetId)) {
                 users.add("NVMe-oF subsystem " + target.getTargetName());
             }
         }
         if (!users.isEmpty()) {
             throw new InvalidParameterValueException("Backing volume is still used by Storage Service resources: " + StringUtils.join(users, ", "));
         }
+    }
+
+    protected void validateIscsiBackingVolumeAvailable(final StorageServiceInstanceVO instance, final Long volumeId, final Long excludedBlockTargetId) {
+        if (volumeId == null) {
+            return;
+        }
+        validateBackingVolumeUnused(instance, volumeId, excludedBlockTargetId);
+    }
+
+    protected String compactVolumeIdentity(final String value) {
+        return StringUtils.defaultString(value).replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
     }
 
     protected String resolveFileSharePath(final String path, final String name) {
@@ -3339,10 +3526,18 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         throw new InvalidParameterValueException("Unsupported NFS protocol mode: " + protocolMode);
     }
 
+    protected boolean isEndpointProtocol(final StorageServiceInstance.Protocol protocol) {
+        return protocol == StorageServiceInstance.Protocol.NFS || protocol == StorageServiceInstance.Protocol.ISCSI;
+    }
+
     protected StorageServiceProtocolVO findNfsProtocolEndpoint(final long instanceId, final String listenIp, final Integer port) {
-        final Integer normalizedPort = port == null ? 2049 : port;
-        for (final StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instanceId, StorageServiceInstance.Protocol.NFS)) {
-            final Integer existingPort = protocol.getPort() == null ? 2049 : protocol.getPort();
+        return findProtocolEndpoint(instanceId, StorageServiceInstance.Protocol.NFS, listenIp, port);
+    }
+
+    protected StorageServiceProtocolVO findProtocolEndpoint(final long instanceId, final StorageServiceInstance.Protocol protocolType, final String listenIp, final Integer port) {
+        final Integer normalizedPort = port == null ? defaultProtocolPort(protocolType) : port;
+        for (final StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instanceId, protocolType)) {
+            final Integer existingPort = protocol.getPort() == null ? defaultProtocolPort(protocolType) : protocol.getPort();
             if (!normalizedPort.equals(existingPort)) {
                 continue;
             }
@@ -3353,6 +3548,19 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
         }
         return null;
+    }
+
+    protected int defaultProtocolPort(final StorageServiceInstance.Protocol protocol) {
+        if (protocol == StorageServiceInstance.Protocol.SMB) {
+            return 445;
+        }
+        if (protocol == StorageServiceInstance.Protocol.ISCSI) {
+            return 3260;
+        }
+        if (protocol == StorageServiceInstance.Protocol.NVME_OF) {
+            return 4420;
+        }
+        return 2049;
     }
 
     protected StorageServiceProtocolVO selectNfsModeProtocol(final List<StorageServiceProtocolVO> protocols) {
@@ -3697,16 +3905,114 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return value.substring(0, Math.min(value.length(), 15)).toUpperCase(Locale.ROOT);
     }
 
-    protected String buildIscsiTargetConfigJson(final String currentConfig, final String backingPath, final Long lunSizeBytes) {
+    protected String buildIscsiTargetConfigJson(final String currentConfig, final String backingPath, final String backstoreType, final Long lunSizeBytes,
+            final String endpointMode, final String listenerPorts) {
         final JsonObject config = parseJsonObject(currentConfig);
         config.addProperty("type", "target");
         if (backingPath != null) {
             config.addProperty("backingPath", backingPath);
         }
-        if (lunSizeBytes != null) {
+        final String normalizedBackstoreType = normalizeIscsiBackstoreType(StringUtils.defaultIfBlank(backstoreType, getJsonString(config, "backstoreType")));
+        config.addProperty("backstoreType", normalizedBackstoreType);
+        if ("BLOCK".equals(normalizedBackstoreType)) {
+            config.remove("lunSizeBytes");
+        } else if (lunSizeBytes != null) {
             config.addProperty("lunSizeBytes", lunSizeBytes);
         }
+        if (listenerPorts != null) {
+            final JsonArray parsedListenerPorts = parseIscsiListenerPorts(listenerPorts);
+            config.add("listenerGroupPorts", parsedListenerPorts.size() > 0 ? parsedListenerPorts : singletonNfsListenerPortArray(3260));
+            config.addProperty("endpointMode", "LISTENER_GROUP");
+        } else if (endpointMode != null) {
+            config.addProperty("endpointMode", normalizeIscsiEndpointMode(endpointMode));
+            if (!config.has("listenerGroupPorts")) {
+                config.add("listenerGroupPorts", singletonNfsListenerPortArray(3260));
+            }
+        } else if (!config.has("endpointMode")) {
+            config.addProperty("endpointMode", "LISTENER_GROUP");
+            config.add("listenerGroupPorts", singletonNfsListenerPortArray(3260));
+        }
         return GSON.toJson(config);
+    }
+
+    protected String normalizeIscsiBackstoreType(final String backstoreType) {
+        final String value = StringUtils.defaultIfBlank(backstoreType, "BLOCK").trim().toUpperCase(Locale.ROOT);
+        if (!"BLOCK".equals(value)) {
+            throw new InvalidParameterValueException("iSCSI targets support block backstores only. File-based LUNs are not supported.");
+        }
+        return value;
+    }
+
+    protected void validateIscsiBlockOnlyBackstore(final String backstoreType) {
+        normalizeIscsiBackstoreType(backstoreType);
+    }
+
+    protected JsonArray parseIscsiListenerPorts(final String listenerPorts) {
+        final JsonArray result = new JsonArray();
+        if (StringUtils.isBlank(listenerPorts)) {
+            return result;
+        }
+        final HashSet<Integer> seen = new HashSet<>();
+        for (final String rawValue : StringUtils.split(listenerPorts, ',')) {
+            final String value = StringUtils.trim(rawValue);
+            if (StringUtils.isBlank(value)) {
+                continue;
+            }
+            final int port;
+            try {
+                port = Integer.parseInt(value);
+            } catch (final NumberFormatException e) {
+                throw new InvalidParameterValueException("Invalid iSCSI listener port group: " + value);
+            }
+            if (port < 1 || port > 65535) {
+                throw new InvalidParameterValueException("Invalid iSCSI listener port group: " + port);
+            }
+            if (seen.add(port)) {
+                result.add(port);
+            }
+        }
+        return result;
+    }
+
+    protected String normalizeIscsiEndpointMode(final String endpointMode) {
+        final String value = StringUtils.isBlank(endpointMode) ? "LISTENER_GROUP" : StringUtils.trim(endpointMode).toUpperCase();
+        if (!"ALL".equals(value) && !"LISTENER_GROUP".equals(value)) {
+            throw new InvalidParameterValueException("Invalid iSCSI target endpoint mode: " + endpointMode);
+        }
+        return value;
+    }
+
+    protected void validateIscsiEndpointPolicy(final String endpointMode, final String listenerPorts) {
+        final String normalized = normalizeIscsiEndpointMode(endpointMode);
+        if ("LISTENER_GROUP".equals(normalized)) {
+            parseIscsiListenerPorts(listenerPorts);
+        }
+    }
+
+    protected void validateIscsiListenerPortsExist(final StorageServiceInstanceVO instance, final String listenerPorts) {
+        if (StringUtils.isBlank(listenerPorts)) {
+            return;
+        }
+        final JsonArray requestedPorts = parseIscsiListenerPorts(listenerPorts);
+        if (requestedPorts.size() == 0) {
+            throw new InvalidParameterValueException("iSCSI targets require at least one listener port group.");
+        }
+        final HashSet<Integer> enabledPorts = new HashSet<>();
+        for (final StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.ISCSI)) {
+            if (protocol == null || !protocol.isEnabled()) {
+                continue;
+            }
+            enabledPorts.add(protocol.getPort() == null ? 3260 : protocol.getPort());
+        }
+        if (enabledPorts.isEmpty()) {
+            enabledPorts.add(3260);
+        }
+        for (final JsonElement element : requestedPorts) {
+            final int port = element.getAsInt();
+            if (!enabledPorts.contains(port)) {
+                throw new InvalidParameterValueException("iSCSI listener port group is not enabled for this Storage Service: " + port);
+            }
+        }
     }
 
     protected void validateNfsNumericPermissionValue(final String name, final Integer value) {
@@ -3732,6 +4038,17 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         }
     }
 
+    protected Boolean getJsonBoolean(final JsonObject object, final String key) {
+        if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
+            return null;
+        }
+        try {
+            return object.get(key).getAsBoolean();
+        } catch (final RuntimeException e) {
+            return null;
+        }
+    }
+
     protected String getJsonString(final JsonObject object, final String key) {
         if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
             return null;
@@ -3748,6 +4065,29 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             return null;
         }
         return object.getAsJsonObject(key);
+    }
+
+    protected void validateIscsiChapCredentialRequest(final Boolean chapEnabled, final String chapUsername, final String chapSecret,
+            final Boolean mutualChapEnabled, final String mutualChapUsername, final String mutualChapSecret) {
+        if (Boolean.TRUE.equals(chapEnabled)) {
+            if (StringUtils.isBlank(chapUsername)) {
+                throw new InvalidParameterValueException("CHAP username is required when iSCSI CHAP authentication is enabled");
+            }
+            if (StringUtils.isBlank(chapSecret)) {
+                throw new InvalidParameterValueException("CHAP secret is required when iSCSI CHAP authentication is enabled because CHAP secrets are not stored");
+            }
+        }
+        if (Boolean.TRUE.equals(mutualChapEnabled)) {
+            if (!Boolean.TRUE.equals(chapEnabled)) {
+                throw new InvalidParameterValueException("Mutual CHAP requires one-way CHAP authentication to be enabled");
+            }
+            if (StringUtils.isBlank(mutualChapUsername)) {
+                throw new InvalidParameterValueException("Mutual CHAP username is required when mutual CHAP is enabled");
+            }
+            if (StringUtils.isBlank(mutualChapSecret)) {
+                throw new InvalidParameterValueException("Mutual CHAP secret is required when mutual CHAP is enabled because CHAP secrets are not stored");
+            }
+        }
     }
 
     protected String buildIscsiAclConfigJson(final String currentConfig, final Boolean chapEnabled, final String chapUsername,
@@ -4344,7 +4684,9 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     protected StorageBlockTargetResponse createBlockTargetResponse(final StorageBlockTargetVO target, final String objectName) {
         final StorageBlockTargetResponse response = new StorageBlockTargetResponse();
         final JsonObject config = parseJsonObject(target.getConfigJson());
-        final Long configuredSize = getJsonLong(config, "lunSizeBytes");
+        final boolean iscsiBlockTarget = target.getProtocol() == StorageServiceInstance.Protocol.ISCSI
+                && "BLOCK".equalsIgnoreCase(StringUtils.defaultIfBlank(getJsonString(config, "backstoreType"), "BLOCK"));
+        final Long configuredSize = iscsiBlockTarget ? null : getJsonLong(config, "lunSizeBytes");
         Long volumeSize = null;
         response.setId(target.getUuid());
         final StorageServiceInstanceVO instance = storageServiceInstanceDao.findById(target.getInstanceId());
@@ -4364,10 +4706,117 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         response.setLunSizeBytes(configuredSize);
         response.setEffectiveSizeBytes(configuredSize == null ? volumeSize : configuredSize);
         response.setBackingPath(getJsonString(config, "backingPath"));
+        response.setEndpointMode(getJsonString(config, "endpointMode"));
+        response.setListenerPorts(listenerPortsAsString(config));
+        response.setBackstoreType(getJsonString(config, "backstoreType"));
+        response.setEndpoints(blockTargetEndpointsAsString(target, config));
+        response.setTargetGroupKey(blockTargetGroupKey(target));
+        response.setTargetLuns(blockTargetGroupLuns(target));
+        response.setTargetLunCount(blockTargetGroupLunCount(target));
+        response.setAclCount(blockTargetGroupAclCount(target));
         response.setState(target.getState().name());
         response.setConfig(target.getConfigJson());
         response.setObjectName(objectName);
         return response;
+    }
+
+    protected String blockTargetGroupKey(final StorageBlockTargetVO target) {
+        if (target == null || target.getProtocol() == null) {
+            return null;
+        }
+        if (target.getProtocol() == StorageServiceInstance.Protocol.ISCSI) {
+            return target.getTargetName();
+        }
+        return target.getUuid();
+    }
+
+    protected List<StorageBlockTargetVO> listBlockTargetGroup(final StorageBlockTargetVO target) {
+        if (target == null) {
+            return Collections.emptyList();
+        }
+        if (target.getProtocol() != StorageServiceInstance.Protocol.ISCSI || StringUtils.isBlank(target.getTargetName())) {
+            return Collections.singletonList(target);
+        }
+        final List<StorageBlockTargetVO> group = new ArrayList<>();
+        for (final StorageBlockTargetVO candidate : storageBlockTargetDao.listByInstanceIdAndProtocol(target.getInstanceId(), target.getProtocol())) {
+            if (candidate != null && target.getTargetName().equals(candidate.getTargetName())) {
+                group.add(candidate);
+            }
+        }
+        return group.isEmpty() ? Collections.singletonList(target) : group;
+    }
+
+    protected String blockTargetGroupLuns(final StorageBlockTargetVO target) {
+        final List<String> luns = new ArrayList<>();
+        for (final StorageBlockTargetVO candidate : listBlockTargetGroup(target)) {
+            final String lun = StringUtils.defaultIfBlank(candidate.getLunOrNamespace(), "0");
+            if (!luns.contains(lun)) {
+                luns.add(lun);
+            }
+        }
+        return luns.isEmpty() ? null : StringUtils.join(luns, ',');
+    }
+
+    protected Integer blockTargetGroupLunCount(final StorageBlockTargetVO target) {
+        final String luns = blockTargetGroupLuns(target);
+        return StringUtils.isBlank(luns) ? 0 : luns.split(",").length;
+    }
+
+    protected Integer blockTargetGroupAclCount(final StorageBlockTargetVO target) {
+        int count = 0;
+        for (final StorageBlockTargetVO candidate : listBlockTargetGroup(target)) {
+            count += storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.BLOCK_TARGET, candidate.getId()).size();
+        }
+        return count;
+    }
+
+    protected String listenerPortsAsString(final JsonObject config) {
+        if (config == null || !config.has("listenerGroupPorts") || !config.get("listenerGroupPorts").isJsonArray()) {
+            return null;
+        }
+        final List<String> ports = new ArrayList<>();
+        for (final JsonElement element : config.getAsJsonArray("listenerGroupPorts")) {
+            if (element != null && !element.isJsonNull()) {
+                ports.add(element.getAsString());
+            }
+        }
+        return ports.isEmpty() ? null : StringUtils.join(ports, ',');
+    }
+
+    protected String blockTargetEndpointsAsString(final StorageBlockTargetVO target, final JsonObject config) {
+        if (target == null || target.getProtocol() == null) {
+            return null;
+        }
+        final StorageServiceInstanceVO instance = storageServiceInstanceDao.findById(target.getInstanceId());
+        if (instance == null) {
+            return null;
+        }
+        final HashSet<Integer> targetPorts = new HashSet<>();
+        final JsonArray configuredPorts = config != null && config.has("listenerGroupPorts") && config.get("listenerGroupPorts").isJsonArray() ? config.getAsJsonArray("listenerGroupPorts") : new JsonArray();
+        for (final JsonElement element : configuredPorts) {
+            if (element != null && !element.isJsonNull()) {
+                targetPorts.add(element.getAsInt());
+            }
+        }
+        final int defaultPort = target.getProtocol() == StorageServiceInstance.Protocol.ISCSI ? 3260 : 4420;
+        if (targetPorts.isEmpty()) {
+            targetPorts.add(defaultPort);
+        }
+        final List<String> endpoints = new ArrayList<>();
+        for (final StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), target.getProtocol())) {
+            if (protocol == null || !protocol.isEnabled()) {
+                continue;
+            }
+            final int port = protocol.getPort() == null ? defaultPort : protocol.getPort();
+            if (!targetPorts.contains(port)) {
+                continue;
+            }
+            endpoints.add(StringUtils.defaultIfBlank(protocol.getListenIp(), "0.0.0.0") + ":" + port);
+        }
+        if (endpoints.isEmpty()) {
+            endpoints.add("0.0.0.0:" + defaultPort);
+        }
+        return StringUtils.join(endpoints, ',');
     }
 
     protected StorageAccessRuleResponse createAclResponse(final StorageAccessRuleVO rule) {
@@ -4380,6 +4829,11 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         } else if (rule.getResourceType() == StorageServiceInstance.AccessResourceType.BLOCK_TARGET) {
             final StorageBlockTargetVO target = storageBlockTargetDao.findById(rule.getResourceId());
             response.setResourceId(target == null ? String.valueOf(rule.getResourceId()) : target.getUuid());
+            if (target != null) {
+                response.setTargetName(target.getTargetName());
+                response.setTargetGroupKey(blockTargetGroupKey(target));
+                response.setTargetLuns(blockTargetGroupLuns(target));
+            }
         } else {
             response.setResourceId(String.valueOf(rule.getResourceId()));
         }

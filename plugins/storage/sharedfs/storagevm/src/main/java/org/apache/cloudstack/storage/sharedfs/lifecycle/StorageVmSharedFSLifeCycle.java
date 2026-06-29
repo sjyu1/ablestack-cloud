@@ -80,6 +80,8 @@ import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.vm.VirtualMachineManager;
 
 public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
+    private static final String STORAGE_VM_CONFIG_RESOURCE = "conf/fsvm-init.yml";
+
     protected Logger logger = LogManager.getLogger(getClass());
 
     @Inject
@@ -122,15 +124,18 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
     protected LaunchPermissionDao launchPermissionDao;
 
     private String readResourceFile(String resource) {
+        String normalizedResource = resource != null && resource.startsWith("/") ? resource.substring(1) : resource;
         try {
-            return FileUtil.readResourceFile(resource);
+            return FileUtil.readResourceFile(normalizedResource);
+        } catch (NullPointerException e) {
+            throw new CloudRuntimeException(String.format("Unable to read the user data resource file [%s]: resource was not found on classpath", normalizedResource), e);
         } catch (IOException e) {
-            throw new CloudRuntimeException("Unable to read the user data resource file due to exception " + e.getMessage());
+            throw new CloudRuntimeException(String.format("Unable to read the user data resource file [%s] due to exception %s", normalizedResource, e.getMessage()), e);
         }
     }
 
     private String getStorageVmConfig() {
-        return readResourceFile("/conf/fsvm-init.yml");
+        return readResourceFile(STORAGE_VM_CONFIG_RESOURCE);
     }
 
     private String getStorageVmName(String fileShareName) {

@@ -39,6 +39,18 @@ public class StorageAccessRuleResponse extends BaseResponse {
     @Param(description = "access rule resource ID")
     private String resourceId;
 
+    @SerializedName("targetname")
+    @Param(description = "block target name, such as iSCSI target IQN")
+    private String targetName;
+
+    @SerializedName("targetgroupkey")
+    @Param(description = "target group key, such as iSCSI target IQN")
+    private String targetGroupKey;
+
+    @SerializedName("targetluns")
+    @Param(description = "comma-separated LUNs or namespaces affected by this rule")
+    private String targetLuns;
+
     @SerializedName("principaltype")
     @Param(description = "principal type")
     private String principalType;
@@ -69,6 +81,18 @@ public class StorageAccessRuleResponse extends BaseResponse {
 
     public void setResourceId(String resourceId) {
         this.resourceId = resourceId;
+    }
+
+    public void setTargetName(String targetName) {
+        this.targetName = targetName;
+    }
+
+    public void setTargetGroupKey(String targetGroupKey) {
+        this.targetGroupKey = targetGroupKey;
+    }
+
+    public void setTargetLuns(String targetLuns) {
+        this.targetLuns = targetLuns;
     }
 
     public void setPrincipalType(String principalType) {

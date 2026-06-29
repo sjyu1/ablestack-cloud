@@ -1262,6 +1262,57 @@ Features:
 - target session listing
 - LUN resize
 
+The iSCSI user experience must follow the mature NFS/SMB Storage Service
+standard. Operators manage iSCSI from the iSCSI protocol tab with dense tables,
+right-aligned row actions, fixed action columns, dark-mode safe colors, and
+vertical action dialogs that never introduce modal-level horizontal scrolling.
+
+Target and LUN lifecycle:
+
+- The target create/edit dialog exposes Target IQN, LUN number, LUN size, backing
+  volume mode, and listener port group selection.
+- The backing volume mode is the same operator model used by NFS and SMB:
+  current backing volume, existing unattached volume, or new volume creation.
+- New volume creation must require disk offering, primary storage, and volume
+  size. The primary storage selector is filtered by the selected disk offering
+  tag when a tag exists.
+- The API receives a prepared olumeid; the UI may create or attach the volume
+  before calling the iSCSI target API. The backend still validates that the
+  selected volume is either already attached to the Storage Service System VM or
+  is otherwise safe for that Storage Service instance.
+- LUN size is a block object size and must not reuse file-share quota wording.
+  If omitted, the backing volume size is used.
+
+iSCSI endpoint model:
+
+- storage_service_protocol rows represent enabled iSCSI listeners. The default
+  port is TCP 3260.
+- A target can select one or more listener port groups. A listener port group is
+  all enabled iSCSI listeners with the same TCP port. For example, selecting
+  port 3261 exposes the target on every enabled iSCSI listener whose port is
+  3261.
+- The target API persists this as endpointMode=LISTENER_GROUP and
+  listenerPorts=[3260,3261] in storage_block_target.config_json. This avoids
+  adding a new schema table and keeps the model aligned with the NFSv4 listener
+  group approach.
+- Legacy targets without listener-port metadata are read as the current default
+  iSCSI listener port. Update paths should preserve existing behavior unless the
+  operator explicitly changes listener port groups.
+- The backend must validate that every requested listener port exists as an
+  enabled iSCSI protocol row for the same Storage Service instance.
+
+ACL and authentication:
+
+- iSCSI ACLs are per target and per initiator IQN.
+- ACL create/edit supports permission, CHAP, and mutual CHAP.
+- CHAP usernames and enablement flags are stored as desired state. CHAP secrets
+  are accepted only in the async request and forwarded to the SystemVM QGA
+  payload; they must not be returned by list APIs, displayed in the UI, written
+  to monitor cache, or logged.
+- Updating an ACL with CHAP enabled but without a new secret preserves the
+  existing runtime credential if present. Disabling CHAP clears runtime
+  authentication for that initiator.
+
 Capacity is controlled by the backing volume size. When an operator supplies an
 explicit raw `backingPath`, the SystemVM may expose that block device directly
 through a LIO block backstore only if the device is not mounted. When the
@@ -1277,11 +1328,40 @@ The QGA apply path must fail the async operation if:
 - `targetcli` is missing while enabled targets exist
 - the backing block device or file-backed LUN cannot be resolved or created
 - target/LUN/portal creation fails
-- TCP 3260 is not listening after target application and service restart
+- any requested iSCSI listener port is not listening after target application and
+  service restart
 
 The runtime monitor cache must include iSCSI listen status, target inventory,
-and the latest generated timestamp so the UI can render fast status without
-running expensive target inspection on every page refresh.
+listener inventory, session inventory, and the latest generated timestamp so the
+UI can render fast status without running expensive target inspection on every
+page refresh. The monitor must not assume port 3260; it must use the desired
+listener list stored in /etc/ablestack-storage/iscsi-targets.json.
+
+SystemVM runtime rendering:
+
+- blestack-storagectl iscsi target apply writes the sanitized desired state to
+  /etc/ablestack-storage/iscsi-targets.json.
+- It renders LIO targets idempotently with 	argetcli, removes stale portals for
+  the managed target, creates the selected portals, creates LUNs, applies ACLs,
+  and saves the target configuration.
+- It starts/enables `target` or `rtslib-fb-targetctl` and opens requested TCP
+  ports best effort through the guest firewall.
+- The boot reconcile service must reapply stored iSCSI desired state so targets
+  survive Storage Service System VM reboot.
+
+iSCSI UI tab table standard:
+
+- iSCSI targets table: target IQN, LUN, listener endpoints, backing volume, LUN
+  size, effective size, backstore type, ACL summary, state, and right-aligned row
+  actions for edit, resize, and delete.
+- iSCSI ACLs table: target IQN, initiator IQN, permission, CHAP enabled, CHAP
+  username, mutual CHAP enabled, state, and right-aligned row actions for edit
+  and delete.
+- Backing volumes table: volume name, ABLESTACK volume ID, size, used capacity
+  when available, disk offering, storage pool, connected target, state, and
+  right-aligned row actions.
+- Sessions table: initiator/client, target IQN, LUN, endpoint, state,
+  connected timestamp when available, and right-aligned disconnect action.
 
 ## NVMe-oF Design
 
@@ -3926,3 +4006,349 @@ response uses a different naming style.
 - The managed unit must remove only stale default `ganesha.pid` files before start. The Storage Service-owned pid remains under `/run/ablestack-storage/ganesha/<endpoint>.pid`.
 - `ablestack-storagectl start_ganesha_endpoints()` must call the same runtime preflight before stopping old endpoint units and again before starting new endpoint units.
 - Runtime error reporting must keep the endpoint log tail so a Ganesha fatal startup error is surfaced instead of a generic `Connection refused` message.
+
+### Storage VM user-data resource loading guardrail
+
+- The Storage VM cloud-init payload must be loaded from the Java classpath as `conf/fsvm-init.yml`. The runtime must not use a leading `/` because `ClassLoader.getResourceAsStream()` resolves packaged jar resources as classpath-relative names.
+- `StorageVmSharedFSLifeCycle` normalizes any legacy leading slash before delegating to `FileUtil.readResourceFile()` and raises an explicit not-found error when the resource is absent. This prevents a missing classpath resource from being reported as an ambiguous zip or user-data read failure.
+- The unit test for the lifecycle must mock the normalized resource path so build-time tests catch regressions in the resource lookup contract.
+- Deployment must update the integrated management-server `cloudstack-4.22.0.0-SNAPSHOT.jar` with both `StorageVmSharedFSLifeCycle.class` and `conf/fsvm-init.yml` from the same build output. Updating only API/server jars or only the standalone plugin jar can leave the management server running an old lifecycle class.
+- Post-deploy verification must confirm that the deployed jar can read `conf/fsvm-init.yml`, that the lifecycle class contains the normalized resource name, and that `mold.service` is active before SharedFS creation is retested.
+
+### iSCSI Block-Only LUN Contract (2026-06-25)
+
+The iSCSI target workflow exposes only dedicated block volumes. File-backed
+LUN images inside a mounted filesystem are intentionally removed because they
+make the service model ambiguous and overlap with NFS/SMB file-share semantics.
+One iSCSI LUN maps to one ABLESTACK data volume, and the exported LUN size is
+the actual volume size.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| LUN model | The UI and runtime exposed both block and file-backed backstore concepts. This made users think an iSCSI LUN could safely be a file under an NFS/SMB backing filesystem. | `BLOCK` is the only supported model. Legacy `backstoretype` API input is accepted only when omitted or set to `BLOCK`; any other value fails before DB/runtime apply. |
+| Volume selection | The iSCSI target dialog could select mounted/current file-service volumes and then rely on late SystemVM inspection to reject unsafe devices. | The UI offers current attached volumes only when they are unused by NFS, SMB, iSCSI, or NVMe-oF and not mounted as a filesystem. Existing detached volumes and new volumes remain supported. |
+| Current/default volume use | A default Storage Service data volume could be selected even if it was already mounted for `/export` and used by file services. | A current volume can be used for iSCSI only when it is an unused attached raw block candidate. Mounted file-service volumes are excluded from the UI and rejected by SystemVM. |
+| Existing volume use | Existing detached volumes were allowed, but their filesystem/file-backed meaning was unclear. | Existing detached volumes are attached as raw block devices for iSCSI. Existing filesystem signatures are allowed as guest-visible content, but the SystemVM must not mount them. |
+| New volume use | New volume creation could also ask for an independent LUN size. | New volume creation asks only for disk offering, primary storage, and volume size. The LUN size is the new volume size. |
+| Engine config JSON | `lunSizeBytes` and `backstoreType` could imply a file-sized LUN separate from the selected volume. | iSCSI config always stores `backstoreType=BLOCK` and removes `lunSizeBytes`. Responses use volume size as effective LUN size. |
+| SystemVM runtime | `ablestack-storagectl` had a FILEIO branch and could create file-backed LUN images. | `ablestack-storagectl` only creates `/backstores/block/<target>`. It rejects OS, boot, swap, mounted devices, or devices with mounted descendants. |
+| UI | The iSCSI target dialog exposed backstore type and LUN size controls. | The dialog removes backstore type and LUN-size controls. It shows an info notice that iSCSI is block-only and that the selected volume is consumed as a dedicated LUN. |
+| Failure cleanup | A failed target could leave a DB row or newly created volume behind. | Create failure removes the target row and, when a new volume was created by the UI, requests cleanup of the failed volume. |
+
+Operational rules:
+
+- Use iSCSI only with a dedicated raw data volume.
+- Do not reuse a volume that backs NFS/SMB shares or NVMe-oF namespaces.
+- Do not mount an iSCSI backing volume inside the SystemVM.
+- Do not create iSCSI LUN image files under the SystemVM root filesystem or under `/export`.
+- If an existing detached volume already contains ext4/xfs or any other guest
+  filesystem signature, it is still treated as raw guest data and exposed as a
+  block device; the SystemVM does not interpret or mount it.
+- The SystemVM template must include `targetcli`/`rtslib-fb-targetctl` and the updated `ablestack-storagectl` script.
+
+### iSCSI Authoritative Reconcile And CHAP Secret Contract (2026-06-29)
+
+Live validation on Storage Service VM `i-2-569-VM` showed that relying on
+`targetctl restore` for iSCSI persistence is unsafe. `targetctl` persists LIO
+backstores with volatile `/dev/sdX` paths. After a SystemVM stop/start, guest
+disk order can change, so a restored target may point at the wrong ABLESTACK
+volume. The Storage Service desired state already carries stable volume UUID,
+name, and expected serial hints; reboot recovery must use those identifiers as
+the source of truth.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Boot restore source | `rtslib-fb-targetctl` restores `/etc/rtslib-fb-target/saveconfig.json`, which stores volatile `/dev/sdX` backstore paths. | Storage Service boot reconcile treats ABLESTACK desired state as authoritative. It clears managed LIO targets/backstores and rebuilds them by resolving each backing volume from UUID/name/serial. |
+| CHAP persistence | API/DB desired state intentionally redacts CHAP secrets, so a reboot-time clear/rebuild cannot recreate CHAP ACLs. | `ablestack-storagectl` stores only CHAP secret material in a root-only SystemVM secret store and merges it into desired state during apply. Secrets remain excluded from UI, API responses, logs, and normal desired-state JSON. |
+| Runtime apply | A normal apply can preserve existing CHAP credentials from the current LIO ACL, but that does not help after `clearconfig` or reboot. | Every successful apply refreshes `/etc/ablestack-storage/secrets/iscsi-acl-secrets.json` from supplied secrets or currently applied credentials. |
+| Reconcile collision | Stale `targetctl` objects can conflict with desired-state reapply and fail with `storage object or path not valid`. | Boot reconcile runs iSCSI apply with `ABLESTACK_STORAGE_ISCSI_AUTHORITATIVE_REBUILD=1`, causing managed LIO state to be deleted before desired state is rebuilt. |
+| Verification | Listener presence can make the service look healthy even when target/LUN mappings are missing or wrong. | Monitor inventory must compare desired target rows with runtime target/LUN/backstore data and expose missing runtime rows or serial mismatch as degraded/error. |
+
+Implementation rules:
+
+- Do not use `/dev/sdX` as persistent identity for an iSCSI backing device.
+- The secret store path is root-only and local to the SystemVM:
+  `/etc/ablestack-storage/secrets/iscsi-acl-secrets.json`.
+- The secret store key is target IQN plus initiator IQN. This keeps CHAP
+  target-scoped and avoids leaking one target's secret into another target.
+- Boot reconcile must remain idempotent. Re-running it may restart/rebuild
+  managed iSCSI state, but it must not alter unmanaged targets.
+- Deleting an ACL or target prunes the corresponding secret entry on the next
+  successful apply.
+- The operator-visible validation result is not `Pass` until Cloud-managed
+  stop/start has been performed and target/LUN/ACL/portal mapping still matches
+  desired state.
+
+### iSCSI New Volume Attach And Multi-LUN Apply Contract (2026-06-25)
+
+When an iSCSI LUN is created from a newly created ABLESTACK volume, volume
+creation, Storage Service VM attachment, guest block device discovery, and
+target application are one logical operation. A target row must not become
+`Ready` until the selected volume is visible as a safe raw guest block device.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| New LUN volume lifecycle | The UI created an ABLESTACK volume and then called `createStorageIscsiTarget` with the new volume ID. The backend persisted the target and immediately sent desired state to the SystemVM. | `createStorageIscsiTarget` guarantees that the selected volume is attached to the Storage Service VM before desired state is applied. A newly created volume is attached, waited for in the guest, then used as the raw block LUN. |
+| Guest block discovery | `ablestack-storagectl` resolved a LUN backing device only from currently visible guest disks. If the attach was not complete, apply failed with `volumeUuid or volumeName did not match any guest disk`. | The backend waits for the guest-visible block device before persisting a Ready target. The SystemVM resolver also retries and compares full UUID, hyphenless UUID, UUID prefix, volume name, and optional path hints. |
+| Same target IQN with multiple LUNs | Runtime rendering iterated per target row and deleted/recreated the same IQN for each row, which is unsafe when one IQN owns multiple LUNs. | Runtime rendering groups rows by `targetName`. One LIO target is created per IQN, with one LUN per row under that target. ACLs are merged at the IQN level, and inventory is expanded back into row-level runtime data for UI display. |
+| Failure cleanup | A failed apply could leave a newly created volume unattached, attached, or expunged inconsistently while existing LUNs were reconciled separately. | If the failed operation created the volume, cleanup detaches it from the Storage Service VM when needed and then destroys/expunges it. Existing Ready LUNs remain intact and are re-applied without the failed row. |
+
+Implementation rules:
+
+- `StorageServiceManagerImpl.createStorageIscsiTarget` must call a dedicated
+  `prepareIscsiBackingVolume` step before target persistence/apply.
+- Existing or current volumes are allowed only if they are not used by NFS,
+  SMB, iSCSI, or NVMe-oF resources in the same Storage Service instance.
+- iSCSI volumes are never formatted or mounted inside the SystemVM.
+- The SystemVM `iscsi target apply` command must render by IQN group, not by DB
+  row, so one target can safely expose LUN `0`, `1`, and later LUNs together.
+- UI-created volumes should continue to send `cleanupvolumeonfailure=true` so
+  backend rollback can remove only volumes created for the failed operation.
+
+### iSCSI ACL Modal and Runtime Inventory Alignment (2026-06-25)
+
+The iSCSI UI and SystemVM monitoring contract follows the same service-tab rules already established for NFS and SMB: vertical action dialogs, dark-mode readable controls, explicit volume/backing details, and fast status rendering from cached SystemVM inventory files.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| iSCSI ACL dialog layout | The ACL dialog used a horizontal two-column form and could create unnecessary horizontal scroll in dark mode. | The ACL dialog is vertical: target selection, target summary, initiator IQN, permission, optional CHAP section, and fixed footer. Only the modal body scrolls vertically. |
+| Target context in ACL dialog | The selected target value was difficult to read because target IQN and LUN/backing information were mixed in one select label. | The select shows the target IQN. A summary box below it shows LUN, backing volume, and listener endpoints so the operator can confirm the ACL target without widening the form. |
+| CHAP fields | CHAP-related fields were visible even when CHAP was not enabled, increasing form noise. | CHAP username/password fields are shown only when CHAP is enabled. Password values are passed only in the async request and are never stored or echoed in UI state. |
+| Runtime ACL inventory | `targetcli ls` parsing could treat tree glyph tokens such as `o-` as ACL principals. | Runtime inventory prefers configfs ACL directories and uses a strict targetcli regex for IQN/NQN/eui/naa principals, so UI rows show real initiator IQNs only. |
+| LUN effective size | Block-backed LUN size could be reported as `0` because `os.path.getsize()` was used on block devices. | SystemVM inventory uses `blockdev --getsize64` for block devices and falls back to file size for file-backed LUNs. |
+| Session inventory | iSCSI sessions were detected only on TCP 3260 and did not include target/LUN/initiator context. | Session detection uses the saved desired iSCSI listener ports. When one target maps to the connected port, the session row includes target IQN, LUN, and the configured initiator IQN hint. |
+
+Validation requirements:
+
+- iSCSI ACL creation must accept an initiator IQN without CHAP and must keep the CHAP section hidden unless explicitly enabled.
+- A connected iSCSI session must remain visible in the iSCSI tab with client, local endpoint, target IQN, LUN, and initiator IQN when the target/port mapping is unambiguous.
+- Block-backed LUN size in the iSCSI target table must match the ABLESTACK volume size and the guest block device size observed by the initiator.
+- The SystemVM template must include the updated `ablestack-storagectl`; existing running Storage Service VMs require recreation or manual patching before this runtime inventory behavior appears.
+
+### iSCSI Target Group, ACL, and Session Semantics (2026-06-26)
+
+iSCSI management is normalized around the target IQN. One target IQN can expose
+multiple LUNs, and the LIO target portal group applies initiator ACLs to the
+target rather than to one individual LUN row. The UI, API responses, and
+SystemVM monitoring cache must therefore distinguish between target-level
+state and LUN-level backing volumes.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Target rows | Each `storage_block_target` row was displayed as an independent target even when several rows shared the same target IQN. | Rows remain one DB row per LUN for API compatibility, but every iSCSI response includes `targetgroupkey`, `targetluns`, `targetluncount`, and `aclcount` so the UI can present the shared target context. |
+| ACL lookup | `listStorageIscsiAcls(targetid=...)` returned only ACL rows attached to that exact LUN row. | For iSCSI, a target ID resolves to its target IQN group and returns ACL rows attached to any LUN row in the same instance with that target IQN. |
+| ACL display | ACLs looked LUN-specific even though targetcli applies them to the whole TPG. | The ACL table labels the scope as target IQN level and shows the affected LUNs. |
+| Runtime inventory | `targetcli ls` enrichment kept one backing path per target IQN, so multiple LUNs could inherit the same runtime path. | SystemVM inventory parses targetcli LUN lines into a per-LUN runtime list and enriches each desired LUN by IQN + LUN number. |
+| Session hints | iSCSI session hinting required exactly one target row for a listener port; a multi-LUN target caused target IQN, initiator IQN, and LUN to be rendered as `-`. | If all targets on a listener port share the same IQN, sessions are attributed to that IQN. The session row shows the target IQN, initiator IQN when exactly one active ACL principal exists, and a comma-separated LUN summary such as `0,1`. |
+| UI session table | Connected sessions could show only peer and endpoint. | iSCSI sessions must show client, initiator IQN, target IQN, LUN summary, endpoint, state, connection time, and disconnect action. Long IQNs use the standard ellipsis and tooltip table behavior. |
+
+Validation requirements:
+
+- A target with LUN `0` and `1` under the same IQN must show both LUNs in the
+  target and session views.
+- Adding an ACL to either LUN row of the same target IQN must display the ACL
+  for that target IQN group and must apply to all mapped LUNs at runtime.
+- Runtime backing path and effective size must match each LUN's ABLESTACK
+  volume and guest block device, not the last LUN parsed from `targetcli`.
+- The sessions cache must avoid `-` placeholders for iSCSI target IQN and
+  initiator IQN whenever a target IQN group and a single ACL principal can be
+  inferred.
+
+### iSCSI Listener Port Group and Target-Scoped CHAP Correction (2026-06-26)
+
+iSCSI listener management follows the NFSv4-only listener-group principle:
+listeners are independent service protocol rows, while a target selects one or
+more listener port groups. CHAP is not LUN-scoped in LIO targetcli; it is an ACL
+property of the target IQN's TPG initiator entry.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Protocol persistence | `enableStorageServiceProtocol` treated non-NFS protocols as one row per protocol, so adding `3261` could overwrite or roll back the existing `3260` row. | iSCSI uses endpoint protocol rows like NFS: `instance + protocol + listenIp + port` is preserved, and `listStorageServiceProtocols` remains the UI source of truth for selectable iSCSI listener port groups. |
+| Same-port secondary IP | Adding `10.10.22.x:3260` while `0.0.0.0:3260` existed could reach targetcli as a duplicate NetworkPortal. | SystemVM normalizes wildcard listeners as covering all specific IPs on the same port and skips exact/specific portal creation when wildcard already exists. |
+| Additional port group | A target selecting `3261` could fail with `no iSCSI listener port group is enabled` if the protocol row was not persisted. | The backend persists `3261` as an iSCSI protocol listener row before desired-state apply, then validates target `listenerports` against the enabled row set. |
+| CHAP scope | LUN `0` and LUN `1` under the same IQN could have conflicting ACL/CHAP rows. SystemVM merged the first ACL and silently dropped CHAP secrets from another LUN row. | Backend rejects conflicting CHAP settings for the same target IQN and initiator. Desired-state payload sends target-group ACLs, including transient secrets, consistently to every LUN row in the IQN group. SystemVM also rejects conflicts defensively. |
+| ACL UI summary | The ACL dialog showed only the selected LUN and implied a per-LUN ACL. | The ACL dialog shows `targetluns` for the target IQN group and displays an info notice that iSCSI ACL/CHAP applies to the target IQN. |
+| Session hint | Multiple targets on a listener port could leave target and LUN fields blank. | Session hints show the target IQN and LUN summary when unambiguous; when a port contains multiple targets, the cache reports the candidate target names instead of a blank placeholder. |
+
+Validation requirements:
+
+- Enabling `iSCSI / 10.10.22.x / 3261` must keep the original `3260` protocol
+  row and expose both `3260` and `3261` as target listener-group choices.
+- Enabling `iSCSI / 10.10.22.x / 3260` while `0.0.0.0:3260` exists must not
+  call targetcli in a way that creates a duplicate NetworkPortal error.
+- A CHAP-enabled ACL for `iqn.1994-05.com.redhat:b48878fe831c` must populate the
+  targetcli ACL auth fields and require the initiator to authenticate.
+- The ACL table and dialog must show the affected LUN set for the target IQN,
+  while the target table keeps per-LUN backing volume information.
+
+### iSCSI Apply Atomicity and Runtime Cleanup Correction (2026-06-26)
+
+iSCSI desired-state application must be treated as an atomic runtime render.
+The SystemVM may temporarily call multiple `targetcli` commands, but a failed
+apply must not leave target skeletons, partial backstores, or stale configfs
+objects that no longer match the database state.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Python dependency | The embedded iSCSI apply script used `Path(...)` inside `iscsi_portal_exists()` without importing `pathlib.Path`, causing QGA apply to fail with `NameError` before portal and LUN creation. | The embedded iSCSI Python block imports `Path` explicitly. Runtime-only imports are kept in the same block as the iSCSI apply code so template smoke tests can catch missing dependencies. |
+| Partial target creation | `targetcli /iscsi create` could succeed before a later portal, backstore, LUN, or ACL step failed. This left target IQN skeletons in the SystemVM while the DB/API state showed no usable target. | The apply path tracks target IQNs and block backstores created in the current run. On any exception, it deletes those created resources before returning the error to the backend. |
+| Stale runtime cleanup | If the desired payload had no active targets, previously created or partially created managed targets could remain under configfs. | Before rendering, the SystemVM compares the current payload, previous desired-state file, and existing configfs targets. Stale ABLESTACK-managed targets are removed. |
+| Ownership boundary | A broad cleanup could delete administrator-created targetcli objects. | Cleanup is limited to ABLESTACK-managed IQNs matching `iqn.*.local.storage:*` and block backstores named `ablestack-*`. |
+| Previous state | The state file was overwritten before applying the new desired state, making it harder to identify stale runtime objects after a failed run. | The previous sanitized desired state is loaded first and used with the new payload to determine stale target/backstore cleanup. |
+| State-file scope | The iSCSI state-file variables were accidentally placed in the SMB apply block, while the iSCSI apply block wrote `state_file` and later read `previous_payload` without defining them. This caused `NameError` during initial target creation. | SMB must not reference `iscsi-targets.json`. The iSCSI apply block owns `state_file = /etc/ablestack-storage/iscsi-targets.json`, loads `previous_payload` before writing the sanitized current payload, and then uses both current and previous desired state for cleanup. |
+| Reboot reconcile | Boot reconcile reused the same apply path and could replay the same runtime error after VM restart. | Boot reconcile inherits the corrected import, cleanup, and rollback behavior through `ablestack-storagectl`. |
+
+Validation requirements:
+
+- Creating an iSCSI-only Storage Service with no target rows must leave no
+  managed target skeleton under `/sys/kernel/config/target/iscsi`.
+- Creating a target must produce target, backstore, LUN, portal, ACL, and
+  listener state together; none of those partial objects may remain after a
+  forced apply failure.
+- Re-applying an empty target payload must remove stale ABLESTACK-managed
+  target skeletons and `ablestack-*` block backstores from the SystemVM.
+- SystemVM template validation must include at least a minimal iSCSI apply
+  smoke check so missing imports such as `Path` are detected before upload.
+- The iSCSI smoke check must verify that `state_file` and `previous_payload`
+  are defined inside the iSCSI embedded Python block, not in unrelated SMB
+  runtime code.
+
+## iSCSI Listener Group and CHAP Runtime Rule
+
+### Verified Runtime Behavior
+
+- iSCSI port changes are technically possible on the Storage Service System VM when the port is created as a Linux LIO target portal.
+- A protocol endpoint by itself is only a candidate endpoint. LIO does not expose an independent global iSCSI listener that is detached from a target TPG.
+- A target becomes reachable on a port only when that target TPG owns a `NetworkPortal` for the selected `listenIp:port`.
+- CHAP is technically supported by the current System VM runtime, but it requires both target TPG authentication and ACL-level credentials:
+  - `tpg1` must have `authentication=1` when any ACL on the target uses CHAP or mutual CHAP.
+  - The initiator ACL must have `userid/password` for one-way CHAP.
+  - The initiator ACL must also have `mutual_userid/mutual_password` for mutual CHAP.
+
+### Implementation Rule
+
+| Item | Rule |
+| --- | --- |
+| Protocol endpoint | Stored as an available endpoint candidate. It must not be treated as proof that the port is listening until a target uses it. |
+| Target listener group | `listenerGroupPorts` is the source of truth for the target exposure ports. |
+| Runtime portal | The System VM creates LIO portals from the union of listener groups selected by active LUNs that share the same target IQN. |
+| Port verification | Verify only ports that are attached to at least one active target. Candidate-only ports are not required to listen. |
+| CHAP request | CHAP username and secret are required on CHAP create/update requests because secrets are not persisted in the control plane or UI. |
+| CHAP apply | The System VM applies ACL credentials first, then sets TPG `authentication=1` if any target ACL requires CHAP. |
+| Missing CHAP credential | Runtime apply fails with an explicit missing credential error instead of silently creating a no-auth target. |
+
+### UI Rule
+
+- The iSCSI protocol activation dialog manages candidate endpoints.
+- The iSCSI target create/update dialog selects the listener port group used by the target.
+- The iSCSI ACL create/update dialog requires CHAP username and secret when CHAP is enabled, and requires mutual CHAP username and secret when mutual CHAP is enabled.
+- The UI must state that CHAP secrets are sent only with the request and are not stored in the UI.
+
+## iSCSI Runtime Session Cache and UI Accuracy Rule (2026-06-28)
+
+The iSCSI service can be functionally healthy even when the monitoring cache
+does not expose the connected initiator sessions. This is unacceptable for the
+service tabs because operators must be able to see active clients and terminate
+sessions from the UI. The runtime session pipeline is therefore treated as a
+first-class validation path, not a best-effort display hint.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Session source | `ablestack-storagectl sessions` primarily parsed `ss -H -tn` and then inferred the protocol from listener ports. In some cases TCP `ESTAB` connections existed but the generated `sessions.json` and `session-state.json` were empty. | iSCSI session collection must keep every TCP connection whose local port is an enabled iSCSI listener port. It must never drop an iSCSI TCP session merely because target/LUN enrichment is incomplete. |
+| Target mapping | A same-port multi-target or multi-LUN setup could not be mapped to one exact target, so target IQN, LUN, and initiator IQN could become blank in the UI. | The collector enriches exact fields when possible and otherwise reports `possibleTargets`, `targetGroupKey`, `targetLuns`, and `mappingStatus=candidate`. Candidate mapping is displayed as degraded information instead of no data. |
+| Initiator IQN | TCP sockets do not carry the iSCSI initiator IQN. The previous fallback depended on target ACL inference only when a single ACL was obvious. | If exactly one active ACL principal applies to the inferred target group, use it as `initiatorIqn`. If several principals exist, list them in `possibleInitiators` and keep the session row visible. |
+| Cache status | Empty `sessions.json` was indistinguishable from a genuinely idle service. | `sessions.json` includes `observedTcpCount`, `status`, and optional `warnings`. If iSCSI TCP sessions are observed but enrichment is partial, the status is `degraded`; if collection fails, status is `error`. |
+| UI behavior | The iSCSI tab showed the generic no-data row when `sessions` was empty, even if runtime TCP sessions existed. | The iSCSI session section shows active rows when available. If the runtime response is `degraded` or `error`, it shows a dark-mode-safe warning above the table so operators can distinguish idle state from collection failure. |
+
+Implementation constraints:
+
+- The SystemVM monitor must continue to redact secrets and must not expose CHAP
+  passwords in session, inventory, or health caches.
+- The UI must continue to use the existing Storage Service runtime API; no
+  browser-side direct VM probing is allowed.
+- iSCSI block data validation remains non-destructive by default. The operator
+  must explicitly request filesystem formatting before a raw LUN is formatted.
+
+Exact iSCSI session attribution:
+
+- The SystemVM collector first runs `targetcli sessions detail`.
+- The collector extracts the connected initiator IQN, peer IP, mapped LUNs, and
+  targetcli backstore names.
+- It then resolves target IQN and LUN numbers from configfs LUN symlinks under
+  `/sys/kernel/config/target/iscsi/<target>/tpgt_1/lun/lun_*`.
+- If exactly one active target matches the peer and listener port, the session
+  row is emitted with `mappingStatus=exact`.
+- If multiple active target sessions match the same peer/listener or targetcli
+  detail cannot be resolved to configfs, the row remains visible with
+  `mappingStatus=candidate` or `mappingStatus=unmapped` and a runtime warning.
+
+Validation requirements:
+
+- With a WSL initiator logged into a non-CHAP target, the iSCSI session table
+  must show client, state, connected time, target IQN or candidate target list,
+  LUN or candidate LUN list, and service endpoint.
+- With a WSL initiator logged into a CHAP target, the session table must still
+  show the session and must not expose the CHAP secret.
+- If `ss -ntp` shows established iSCSI sockets but target/LUN enrichment is not
+  exact, the UI must show a degraded session warning instead of the normal
+  no-session icon.
+
+## SystemVM Template Integrity Gate (2026-06-28)
+
+The Storage Service SystemVM image is part of the runtime contract. A template
+that boots with corrupted OS package files can make iSCSI fail before the
+Storage Service code runs. The template build and upload path must therefore
+verify both the qcow2 image and the compressed artifact.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| KVM qcow2 export | The build produced a compressed KVM qcow2 artifact without proving that the compressed artifact round-tripped to the same qcow2. | The build validates the qcow2, compresses with `bzip2 -k`, decompresses to a temporary qcow2, compares the decompressed image with the source qcow2, and validates the decompressed image again. |
+| Image structure | `qemu-img check` was not a hard gate for both the source qcow2 and the decompressed bz2 payload. | `qemu-img check` must pass for the source qcow2 and the decompressed bz2 payload. Any refcount, metadata, or data-cluster error fails the build. |
+| Guest OS dependency files | The build did not inspect files required by targetcli and Python GI. | The validator mounts the root partition read-only and checks ELF/text headers for `/usr/bin/python3`, `python3-gi` `_gi.so`, `libmagic.so.1`, `/var/lib/dpkg/status`, and `targetcli`. |
+| Runtime diagnostics | A corrupted Python GI library produced a raw `targetcli` traceback. | iSCSI apply performs a dependency preflight and reports a clear SystemVM runtime dependency error when targetcli, python3-gi, libmagic, or dpkg status is broken. |
+| Template publication | HTTP 200 on the uploaded bz2 was treated as sufficient. | A publishable Storage Service template must pass local build validation. Operators should only register the validated bz2 URL. |
+
+### Implementation Targets
+
+- `tools/appliance/scripts/validate_systemvm_image.sh`
+  - Attaches the qcow2 through NBD.
+  - Mounts the SystemVM root partition read-only.
+  - Verifies critical runtime files have valid headers.
+- `tools/appliance/build.sh`
+  - Runs image validation before and after bz2 round-trip.
+  - Fails the build if the compressed artifact does not match the source qcow2.
+- `systemvm/debian/usr/local/bin/ablestack-storagectl`
+  - Runs iSCSI dependency preflight before applying target state.
+  - Replaces low-level targetcli tracebacks with actionable template rebuild
+    guidance when the SystemVM runtime is corrupt.
+
+## iSCSI Target/LUN Authoritative Session Mapping (2026-06-29)
+
+Live validation on a running Storage Service VM proved that TCP socket data is
+not sufficient to identify iSCSI target IQN and LUN. The iSCSI session pipeline
+therefore separates two concepts:
+
+- `mappingStatus`: target IQN and LUN attribution.
+- `endpointMappingStatus`: exactness of the local service endpoint for the
+  session.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Health listener ports | `listStorageServiceHealth` calculated iSCSI listener health from the boolean desired-state summary. This collapsed multi-port state to `3260` only. | Health calculates listener ports from the persisted `iscsi-targets.json` desired-state document. All listener ports referenced by targets and listeners are checked. |
+| Session source | Session rows were generated from `ss -H -tn` and then enriched by listener-port inference. Multiple targets sharing a listener degraded target/LUN mapping. | Session rows are generated from `targetcli sessions detail` and configfs LUN symlinks. TCP sockets remain only supporting connectivity evidence. |
+| Target/LUN attribution | A target with multiple portals or shared ports could show `mappingStatus=candidate`, leaving target IQN/LUN unclear in UI. | Target IQN and LUN are authoritative when targetcli reports mapped LUNs and configfs resolves each backstore to `/sys/kernel/config/target/iscsi/<target>/tpgt_1/lun/lun_*`. |
+| Endpoint attribution | Endpoint and target mapping were treated as one status, so multi-portal targets made otherwise accurate sessions look degraded. | Endpoint exactness is reported separately. A multi-portal target can have `mappingStatus=exact` and `endpointMappingStatus=candidate`. This is not a service failure. |
+| Cache status | Any candidate iSCSI mapping could mark the session response degraded. | Only target/LUN `mappingStatus=unmapped` degrades the session response. Endpoint candidate state is displayed in UI but does not make the service unhealthy. |
+
+Implementation rules:
+
+- `ablestack-storagectl sessions` must prefer `targetcli sessions detail` for
+  iSCSI rows and must not duplicate those rows from raw TCP sockets.
+- Each iSCSI row must include `initiatorIqn`, `targetIqn`, `lun`,
+  `mappingStatus`, `endpointMappingStatus`, `listenerPorts`, and either a
+  concrete `local` endpoint or `possibleEndpoints`.
+- The UI must show separate columns for target/LUN mapping and endpoint mapping
+  so operators can distinguish exact target visibility from multi-portal
+  endpoint ambiguity.
+- No CHAP or mutual CHAP secret may be emitted in health, inventory, or session
+  cache output.

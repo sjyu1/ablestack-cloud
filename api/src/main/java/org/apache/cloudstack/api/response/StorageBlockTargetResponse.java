@@ -71,6 +71,38 @@ public class StorageBlockTargetResponse extends BaseResponse {
     @Param(description = "configured backing path inside the Storage Service System VM")
     private String backingPath;
 
+    @SerializedName("endpointmode")
+    @Param(description = "endpoint exposure mode")
+    private String endpointMode;
+
+    @SerializedName("listenerports")
+    @Param(description = "comma-separated listener port groups")
+    private String listenerPorts;
+
+    @SerializedName("endpoints")
+    @Param(description = "effective listener endpoints")
+    private String endpoints;
+
+    @SerializedName("targetgroupkey")
+    @Param(description = "target group key, such as iSCSI target IQN")
+    private String targetGroupKey;
+
+    @SerializedName("targetluns")
+    @Param(description = "comma-separated LUNs or namespaces that share the same target group")
+    private String targetLuns;
+
+    @SerializedName("targetluncount")
+    @Param(description = "number of LUNs or namespaces that share the same target group")
+    private Integer targetLunCount;
+
+    @SerializedName("aclcount")
+    @Param(description = "number of access rules that apply to the target group")
+    private Integer aclCount;
+
+    @SerializedName("backstoretype")
+    @Param(description = "runtime LIO backstore type")
+    private String backstoreType;
+
     @SerializedName(ApiConstants.STATE)
     @Param(description = "target state")
     private String state;
@@ -121,6 +153,38 @@ public class StorageBlockTargetResponse extends BaseResponse {
 
     public void setBackingPath(final String backingPath) {
         this.backingPath = backingPath;
+    }
+
+    public void setEndpointMode(final String endpointMode) {
+        this.endpointMode = endpointMode;
+    }
+
+    public void setListenerPorts(final String listenerPorts) {
+        this.listenerPorts = listenerPorts;
+    }
+
+    public void setEndpoints(final String endpoints) {
+        this.endpoints = endpoints;
+    }
+
+    public void setTargetGroupKey(final String targetGroupKey) {
+        this.targetGroupKey = targetGroupKey;
+    }
+
+    public void setTargetLuns(final String targetLuns) {
+        this.targetLuns = targetLuns;
+    }
+
+    public void setTargetLunCount(final Integer targetLunCount) {
+        this.targetLunCount = targetLunCount;
+    }
+
+    public void setAclCount(final Integer aclCount) {
+        this.aclCount = aclCount;
+    }
+
+    public void setBackstoreType(final String backstoreType) {
+        this.backstoreType = backstoreType;
     }
 
     public void setState(final String state) {

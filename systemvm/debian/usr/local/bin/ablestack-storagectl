@@ -594,10 +594,48 @@ desired_state = {
     "iscsiTargets": load_state("iscsi-targets.json"),
     "nvmeofSubsystems": load_state("nvmeof-subsystems.json"),
 }
+def desired_iscsi_ports(state):
+    ports = set()
+    if isinstance(state, dict):
+        for listener in state.get("listeners") or []:
+            if isinstance(listener, dict):
+                try:
+                    ports.add(int(listener.get("port") or 3260))
+                except Exception:
+                    pass
+        if not ports and state.get("port"):
+            try:
+                ports.add(int(state.get("port")))
+            except Exception:
+                pass
+        for target in state.get("targets") or []:
+            config = target.get("config") or {}
+            raw = target.get("listenerPorts") or config.get("listenerGroupPorts") or config.get("listenerPorts")
+            if isinstance(raw, list):
+                for value in raw:
+                    try:
+                        ports.add(int(value))
+                    except Exception:
+                        pass
+            elif isinstance(raw, str):
+                for value in re.split(r"[,\s]+", raw):
+                    if not value:
+                        continue
+                    try:
+                        ports.add(int(value))
+                    except Exception:
+                        pass
+    if not ports:
+        ports.add(3260)
+    return sorted(ports)
+
+iscsi_targets_state = load_json_state("iscsi-targets.json")
+iscsi_ports = desired_iscsi_ports(iscsi_targets_state)
 listen_ports = {
     "nfs": ganesha_runtime["listening"] if ganesha_runtime["configured"] else port_listening(2049),
     "smb": port_listening(445) or port_listening(139),
-    "iscsi": port_listening(3260),
+    "iscsi": all(port_listening(port) for port in iscsi_ports),
+    "iscsiPorts": {str(port): port_listening(port) for port in iscsi_ports},
     "nvmeof": port_listening(4420),
 }
 status = "ok"
@@ -911,6 +949,29 @@ try:
 except Exception:
     pass
 
+def effective_backing_size(path):
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        result = run(["blockdev", "--getsize64", path])
+        if result.returncode == 0 and result.stdout.strip().isdigit():
+            return int(result.stdout.strip())
+    except Exception:
+        pass
+    try:
+        return os.path.getsize(path)
+    except Exception:
+        return None
+
+def configfs_iscsi_acls(target_name):
+    if not target_name:
+        return []
+    acl_root = os.path.join("/sys/kernel/config/target/iscsi", target_name, "tpgt_1", "acls")
+    try:
+        return sorted(name for name in os.listdir(acl_root) if name)
+    except Exception:
+        return []
+
 def targetcli_iscsi_runtime():
     if not shutil.which("targetcli"):
         return []
@@ -921,22 +982,41 @@ def targetcli_iscsi_runtime():
     current_target = None
     for raw_line in result.stdout.splitlines():
         line = raw_line.strip()
-        if line.startswith("o- iqn."):
-            current_target = {"targetName": line.split()[1], "acls": []}
+        target_match = re.match(r"o-\s+((?:iqn|eui|naa)\.[^\s]+|nqn\.[^\s]+)", line)
+        if target_match and "TPGs:" in line:
+            current_target = {"targetName": target_match.group(1), "acls": []}
             runtime.append(current_target)
-        elif current_target and "lun" in line and " [" in line and "(" in line and ")" in line:
+            continue
+        lun_match = re.match(r"o-\s+lun([^\s]*)\s+.*\[([^/\]]+)/[^\]]+\]\s+\(([^)]+)\)", line)
+        if current_target and lun_match:
             try:
-                current_target["backingPath"] = line.split("(", 1)[1].split(")", 1)[0]
-                current_target["backstoreType"] = line.split("[", 1)[1].split("/", 1)[0]
-                path = current_target["backingPath"]
-                if os.path.exists(path):
-                    current_target["effectiveSizeBytes"] = os.path.getsize(path)
+                lun_id = lun_match.group(1) or "0"
+                backing_path = lun_match.group(3)
+                backstore_type = lun_match.group(2)
+                lun_runtime = {
+                    "lunOrNamespace": lun_id,
+                    "lun": lun_id,
+                    "backingPath": backing_path,
+                    "backstoreType": backstore_type,
+                }
+                size = effective_backing_size(backing_path)
+                if size is not None:
+                    lun_runtime["effectiveSizeBytes"] = size
+                current_target.setdefault("luns", []).append(lun_runtime)
+                if "backingPath" not in current_target:
+                    current_target["backingPath"] = backing_path
+                    current_target["backstoreType"] = backstore_type
+                    if size is not None:
+                        current_target["effectiveSizeBytes"] = size
             except Exception:
                 pass
-        elif current_target and line.startswith("o- iqn.") is False and "acls" not in line and ("iqn." in line or "nqn." in line):
-            parts = line.split()
-            if len(parts) >= 2:
-                current_target.setdefault("acls", []).append(parts[1])
+            continue
+        acl_match = re.match(r"o-\s+((?:iqn|eui|naa)\.[^\s]+|nqn\.[^\s]+)", line)
+        if current_target and acl_match and "Mapped LUNs:" in line:
+            current_target.setdefault("acls", []).append(acl_match.group(1))
+    for target in runtime:
+        if not target.get("acls"):
+            target["acls"] = configfs_iscsi_acls(target.get("targetName"))
     return runtime
 
 def enrich_iscsi_targets(desired):
@@ -948,15 +1028,59 @@ def enrich_iscsi_targets(desired):
         config = target.get("config") or {}
         runtime = runtime_by_name.get(target.get("targetName")) or {}
         if runtime:
-            target["runtime"] = runtime
+            target_lun = str(target.get("lunOrNamespace") or target.get("lunornamespace") or target.get("lun") or "0")
+            runtime_lun = {}
+            for item in runtime.get("luns", []) or []:
+                if str(item.get("lunOrNamespace") or item.get("lun") or "0") == target_lun:
+                    runtime_lun = item
+                    break
+            target["runtime"] = dict(runtime)
+            if runtime_lun:
+                target["runtime"].update(runtime_lun)
             for key in ("backingPath", "backstoreType", "effectiveSizeBytes"):
-                if runtime.get(key) is not None:
-                    target[key] = runtime.get(key)
+                value = runtime_lun.get(key) if runtime_lun else runtime.get(key)
+                if value is not None:
+                    target[key] = value
         if config.get("lunSizeBytes") is not None:
             target["lunSizeBytes"] = config.get("lunSizeBytes")
         if target.get("effectiveSizeBytes") is None:
             target["effectiveSizeBytes"] = target.get("lunSizeBytes") or target.get("volumeSizeBytes")
     return enriched
+
+def desired_iscsi_ports(state):
+    ports = set()
+    if isinstance(state, dict):
+        for listener in state.get("listeners") or []:
+            if isinstance(listener, dict):
+                try:
+                    ports.add(int(listener.get("port") or 3260))
+                except Exception:
+                    pass
+        if not ports and state.get("port"):
+            try:
+                ports.add(int(state.get("port")))
+            except Exception:
+                pass
+        for target in state.get("targets") or []:
+            config = target.get("config") or {}
+            raw = target.get("listenerPorts") or target.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports")
+            if isinstance(raw, list):
+                for value in raw:
+                    try:
+                        ports.add(int(value))
+                    except Exception:
+                        pass
+            elif isinstance(raw, str):
+                for value in re.split(r"[,\s]+", raw):
+                    if not value:
+                        continue
+                    try:
+                        ports.add(int(value))
+                    except Exception:
+                        pass
+    if not ports:
+        ports.add(3260)
+    return sorted(ports)
 
 iscsi_targets = enrich_iscsi_targets(load_json("/etc/ablestack-storage/iscsi-targets.json", {}))
 
@@ -973,7 +1097,7 @@ print(json.dumps({
     "smbDomain": load_json("/etc/ablestack-storage/smb-domain.json", {}),
     "smbDomainError": load_json("/etc/ablestack-storage/smb-domain-error.json", {}),
     "iscsiTargets": iscsi_targets,
-    "iscsiRuntime": {"listening": port_listening(3260), "port": 3260},
+    "iscsiRuntime": {"listening": all(port_listening(port) for port in desired_iscsi_ports(iscsi_targets)), "ports": desired_iscsi_ports(iscsi_targets), "portStatus": {str(port): port_listening(port) for port in desired_iscsi_ports(iscsi_targets)}},
     "nvmeofSubsystems": redact_sensitive(load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})),
     "nvmeofRuntime": {"listening": port_listening(4420), "port": 4420, "capabilities": nvmeof_capabilities()},
     "capabilities": {
@@ -1138,6 +1262,387 @@ def nvme_subsystem_hint(filters):
         return subsystems[0]
     return {}
 
+def active_iscsi_state():
+    state = load_json("/etc/ablestack-storage/iscsi-targets.json", {})
+    return state if isinstance(state, dict) else {}
+
+def configfs_iscsi_listener_ports():
+    ports = set()
+    root = "/sys/kernel/config/target/iscsi"
+    if not os.path.isdir(root):
+        return ports
+    for portals_root in glob.glob(os.path.join(root, "*", "tpgt_1", "np")):
+        if not os.path.isdir(portals_root):
+            continue
+        for entry in os.listdir(portals_root):
+            port = endpoint_port(entry)
+            if port:
+                ports.add(port)
+    return ports
+
+def normalize_port_values(value):
+    ports = set()
+    if isinstance(value, list):
+        values = value
+    elif isinstance(value, str):
+        values = [part.strip() for part in value.split(",")]
+    elif value is None:
+        values = []
+    else:
+        values = [value]
+    for item in values:
+        try:
+            port = int(item)
+            if port > 0:
+                ports.add(port)
+        except Exception:
+            pass
+    return ports
+
+def iscsi_listener_ports():
+    state = active_iscsi_state()
+    ports = set()
+    ports.update(configfs_iscsi_listener_ports())
+    for listener in state.get("listeners") or []:
+        if isinstance(listener, dict):
+            ports.update(normalize_port_values(listener.get("port") or listener.get("listenPort") or listener.get("listenport")))
+    ports.update(normalize_port_values(state.get("port") or state.get("listenPort") or state.get("listenport")))
+    for target in state.get("targets") or []:
+        if not isinstance(target, dict):
+            continue
+        config = target.get("config") if isinstance(target.get("config"), dict) else {}
+        ports.update(normalize_port_values(target.get("listenerPorts") or target.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports") or config.get("listenerPorts") or config.get("listenerports")))
+    return ports or {3260}
+
+def target_listener_ports_from_state(target):
+    config = target.get("config") if isinstance(target.get("config"), dict) else {}
+    ports = normalize_port_values(target.get("listenerPorts") or target.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports") or config.get("listenerPorts") or config.get("listenerports"))
+    return ports or iscsi_listener_ports()
+
+def active_iscsi_targets_for_port(local_port):
+    state = active_iscsi_state()
+    targets = []
+    for target in state.get("targets") or []:
+        if not isinstance(target, dict):
+            continue
+        if target.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+            continue
+        if local_port in target_listener_ports_from_state(target):
+            targets.append(target)
+    return targets
+
+def target_name_value(target):
+    return str(target.get("targetName") or target.get("targetname") or target.get("name") or "").strip()
+
+def target_lun_value(target):
+    return str(target.get("lunOrNamespace") or target.get("lunornamespace") or target.get("lun") or "0").strip()
+
+def configfs_iscsi_acls_for_target(target_name):
+    root = os.path.join("/sys/kernel/config/target/iscsi", str(target_name or ""), "tpgt_1", "acls")
+    if not os.path.isdir(root):
+        return []
+    acls = []
+    for name in sorted(os.listdir(root)):
+        path = os.path.join(root, name)
+        if os.path.isdir(path):
+            acls.append({"principal": name, "state": "Ready", "source": "configfs"})
+    return acls
+
+def active_acls_for_target(target):
+    acls = []
+    raw_acls = target.get("acls", [])
+    if not raw_acls:
+        raw_acls = configfs_iscsi_acls_for_target(target_name_value(target))
+    for acl in raw_acls:
+        if not isinstance(acl, dict) or acl.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+            continue
+        principal = acl.get("principal") or acl.get("initiatorIqn") or acl.get("initiatoriqn")
+        if not principal:
+            continue
+        acls.append(acl)
+    return acls
+
+def configfs_iscsi_lun_backstore_map():
+    mapping = {}
+    root = "/sys/kernel/config/target/iscsi"
+    if not os.path.isdir(root):
+        return mapping
+    for target_name in sorted(os.listdir(root)):
+        if target_name == "discovery_auth":
+            continue
+        lun_root = os.path.join(root, target_name, "tpgt_1", "lun")
+        if not os.path.isdir(lun_root):
+            continue
+        for lun_dir_name in sorted(os.listdir(lun_root)):
+            if not lun_dir_name.startswith("lun_"):
+                continue
+            lun_dir = os.path.join(lun_root, lun_dir_name)
+            if not os.path.isdir(lun_dir):
+                continue
+            lun = lun_dir_name.split("_", 1)[1]
+            for entry in os.listdir(lun_dir):
+                path = os.path.join(lun_dir, entry)
+                if not os.path.islink(path):
+                    continue
+                backstore = os.path.basename(os.path.realpath(path))
+                if backstore:
+                    mapping[backstore] = {"targetIqn": target_name, "lun": lun}
+    return mapping
+
+def targetcli_iscsi_session_details():
+    if not shutil.which("targetcli"):
+        return []
+    result = subprocess.run(["targetcli", "sessions", "detail"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        return []
+    lun_map = configfs_iscsi_lun_backstore_map()
+    sessions = []
+    current = None
+    for line in result.stdout.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith("alias:"):
+            if current:
+                sessions.append(current)
+            current = {"mappedLuns": []}
+            sid_match = re.search(r"\bsid:\s*([^\s]+)", text)
+            if sid_match:
+                current["targetcliSid"] = sid_match.group(1)
+            state_match = re.search(r"session-state:\s*([A-Z_]+)", text)
+            if state_match:
+                current["state"] = state_match.group(1)
+            continue
+        if current is None:
+            continue
+        if text.startswith("name:"):
+            name_match = re.search(r"name:\s*([^\s]+)", text)
+            if name_match:
+                current["initiatorIqn"] = name_match.group(1)
+            if "NOT AUTHENTICATED" in text:
+                current["authenticated"] = False
+            elif "AUTHENTICATED" in text:
+                current["authenticated"] = True
+            continue
+        if text.startswith("mapped-lun:"):
+            lun_match = re.search(r"mapped-lun:\s*([^\s]+)", text)
+            backstore_match = re.search(r"backstore:\s*[^/]+/([^\s]+)", text)
+            mode_match = re.search(r"\bmode:\s*([^\s]+)", text)
+            mapped = {}
+            if lun_match:
+                mapped["mappedLun"] = lun_match.group(1)
+            if backstore_match:
+                backstore = backstore_match.group(1)
+                mapped["backstore"] = backstore
+                mapped.update(lun_map.get(backstore, {}))
+            if mode_match:
+                mapped["mode"] = mode_match.group(1)
+            current["mappedLuns"].append(mapped)
+            continue
+        if text.startswith("address:"):
+            address_match = re.search(r"address:\s*([^\s]+)", text)
+            if address_match:
+                current["peerHost"] = normalize_ip(address_match.group(1))
+            connection_match = re.search(r"connection-state:\s*([A-Z_]+)", text)
+            if connection_match:
+                current["connectionState"] = connection_match.group(1)
+            continue
+    if current:
+        sessions.append(current)
+    return sessions
+
+def configfs_iscsi_target_portals(target_name):
+    portals = []
+    if not target_name:
+        return portals
+    np_root = os.path.join("/sys/kernel/config/target/iscsi", target_name, "tpgt_1", "np")
+    if not os.path.isdir(np_root):
+        return portals
+    for entry in sorted(os.listdir(np_root)):
+        value = entry.strip()
+        if value:
+            portals.append(value)
+    return portals
+
+def active_iscsi_target_for_name(target_name):
+    if not target_name:
+        return {}
+    for target in active_iscsi_state().get("targets", []) or []:
+        if not isinstance(target, dict):
+            continue
+        if target_name_value(target) == target_name:
+            return target
+    return {}
+
+def targetcli_iscsi_session_rows():
+    rows = []
+    for detail in targetcli_iscsi_session_details():
+        target_map = {}
+        for mapped in detail.get("mappedLuns") or []:
+            target_name = mapped.get("targetIqn")
+            if not target_name:
+                continue
+            lun = str(mapped.get("lun") or mapped.get("mappedLun") or "").strip()
+            item = target_map.setdefault(target_name, {"luns": set(), "mapped": []})
+            if lun:
+                item["luns"].add(lun)
+            item["mapped"].append(mapped)
+        if not target_map:
+            continue
+        for target_name, item in sorted(target_map.items()):
+            target = active_iscsi_target_for_name(target_name)
+            luns = ",".join(sort_lun_values(item.get("luns") or []))
+            portals = configfs_iscsi_target_portals(target_name)
+            ports = target_listener_ports_from_state(target) if target else sorted({endpoint_port(portal) for portal in portals if endpoint_port(portal)})
+            exact_endpoint = len(portals) == 1
+            local = portals[0] if exact_endpoint else ""
+            peer_host = detail.get("peerHost") or ""
+            session_id = hashlib.sha256(
+                f"ISCSI|{detail.get('targetcliSid')}|{target_name}|{luns}|{detail.get('initiatorIqn')}|{peer_host}".encode("utf-8")
+            ).hexdigest()[:20]
+            state = "ESTAB" if str(detail.get("connectionState") or "").upper() == "LOGGED_IN" else (detail.get("connectionState") or detail.get("state") or "UNKNOWN")
+            row = {
+                "sessionId": session_id,
+                "protocol": "ISCSI",
+                "state": state,
+                "connectionState": detail.get("connectionState") or detail.get("state"),
+                "peer": peer_host,
+                "client": peer_host,
+                "initiatorIqn": detail.get("initiatorIqn"),
+                "targetcliSid": detail.get("targetcliSid"),
+                "authenticated": detail.get("authenticated"),
+                "resourceId": target.get("uuid") or target.get("id") if target else None,
+                "resourceName": target_name,
+                "targetName": target_name,
+                "targetIqn": target_name,
+                "targetiqn": target_name,
+                "targetGroupKey": target_name,
+                "targetLuns": luns,
+                "lun": luns,
+                "lunOrNamespace": luns,
+                "mappingStatus": "exact",
+                "endpointMappingStatus": "exact" if exact_endpoint else "candidate",
+                "local": local,
+                "possibleEndpoints": portals,
+                "listenerPorts": ",".join(str(port) for port in ports) if ports else "",
+            }
+            if not exact_endpoint:
+                row["mappingWarning"] = "Target/LUN attribution is exact from targetcli; endpoint is candidate because the target has multiple portals or shared listeners."
+            rows.append({k: v for k, v in row.items() if v not in (None, "")})
+    return rows
+
+def sort_lun_values(values):
+    return sorted(values, key=lambda value: int(value) if str(value).isdigit() else str(value))
+
+def exact_iscsi_session_hint(local, peer=None):
+    local_port = endpoint_port(local)
+    peer_host = normalize_ip(endpoint_host(peer or ""))
+    if not local_port or not peer_host:
+        return {}
+    targets_by_name = {target_name_value(target): target for target in active_iscsi_state().get("targets", []) if isinstance(target, dict)}
+    candidates = []
+    for session in targetcli_iscsi_session_details():
+        if normalize_ip(session.get("peerHost")) != peer_host:
+            continue
+        target_map = {}
+        for mapped in session.get("mappedLuns") or []:
+            target_name = mapped.get("targetIqn")
+            lun = str(mapped.get("lun") or mapped.get("mappedLun") or "").strip()
+            if not target_name:
+                continue
+            target_map.setdefault(target_name, set())
+            if lun:
+                target_map[target_name].add(lun)
+        for target_name, luns in target_map.items():
+            target = targets_by_name.get(target_name)
+            if target and local_port not in target_listener_ports_from_state(target):
+                continue
+            lun_list = ",".join(sort_lun_values(luns))
+            candidates.append({
+                "resourceId": target.get("uuid") or target.get("id") if target else None,
+                "targetIqn": target_name,
+                "targetiqn": target_name,
+                "targetName": target_name,
+                "resourceName": target_name,
+                "targetGroupKey": target_name,
+                "targetLuns": lun_list,
+                "lun": lun_list,
+                "lunOrNamespace": lun_list,
+                "initiatorIqn": session.get("initiatorIqn"),
+                "targetcliSid": session.get("targetcliSid"),
+                "connectionState": session.get("connectionState"),
+            })
+    if not candidates:
+        return {}
+    if len(candidates) == 1:
+        hint = dict(candidates[0])
+        hint["mappingStatus"] = "exact"
+        return {k: v for k, v in hint.items() if v not in (None, "")}
+    return {
+        "mappingStatus": "candidate",
+        "possibleTargets": [{"targetIqn": item.get("targetIqn"), "lun": item.get("lun")} for item in candidates],
+        "possibleInitiators": sorted({item.get("initiatorIqn") for item in candidates if item.get("initiatorIqn")}),
+        "mappingWarning": "Multiple active iSCSI target sessions match this client and listener; target/LUN attribution is candidate-based.",
+    }
+
+def iscsi_session_hint(local, peer=None):
+    exact_hint = exact_iscsi_session_hint(local, peer)
+    if exact_hint:
+        return exact_hint
+    port = endpoint_port(local)
+    if not port:
+        return {}
+    targets = active_iscsi_targets_for_port(port)
+    if not targets:
+        return {"mappingStatus": "unmapped", "mappingWarning": f"No active iSCSI target uses listener port {port}"}
+    target_names = sorted({target_name_value(target) for target in targets if target_name_value(target)})
+    if not target_names:
+        return {"mappingStatus": "unmapped", "mappingWarning": f"No iSCSI target IQN was found for listener port {port}"}
+    exact = len(target_names) == 1
+    target_name = target_names[0] if exact else ", ".join(target_names)
+    group_targets = [target for target in targets if exact and target_name_value(target) == target_name] if exact else targets
+    luns = []
+    acls = []
+    seen_acl = set()
+    for target in group_targets:
+        lun = target_lun_value(target)
+        if lun not in luns:
+            luns.append(lun)
+        for acl in active_acls_for_target(target):
+            principal = acl.get("principal") or acl.get("initiatorIqn") or acl.get("initiatoriqn")
+            if principal in seen_acl:
+                continue
+            seen_acl.add(principal)
+            acls.append(acl)
+    target = group_targets[0]
+    hint = {
+        "resourceId": target.get("uuid") or target.get("id"),
+        "resourceName": target_name,
+        "targetName": target_name,
+        "targetIqn": target_name,
+        "targetiqn": target_name,
+        "targetGroupKey": target_name,
+        "targetLuns": ",".join(luns),
+        "lun": ",".join(luns),
+        "lunOrNamespace": ",".join(luns),
+        "mappingStatus": "exact" if exact else "candidate",
+    }
+    if len(acls) == 1:
+        hint["initiatorIqn"] = acls[0].get("principal") or acls[0].get("initiatorIqn") or acls[0].get("initiatoriqn")
+    elif len(acls) > 1:
+        hint["possibleInitiators"] = sorted(seen_acl)
+    if not exact:
+        hint["possibleTargets"] = [
+            {
+                "targetIqn": target_name_value(target),
+                "lun": target_lun_value(target),
+                "resourceId": target.get("uuid") or target.get("id"),
+            }
+            for target in group_targets if target_name_value(target)
+        ]
+        hint["mappingWarning"] = "Multiple iSCSI targets share this listener port; target/LUN attribution is candidate-based."
+    return {k: v for k, v in hint.items() if v not in (None, "")}
+
 def smbstatus_sessions():
     if not shutil.which("smbstatus"):
         return []
@@ -1187,31 +1692,46 @@ def smbstatus_sessions():
         rows.append({k: v for k, v in row.items() if v not in (None, "")})
     return rows
 
-def tcp_sessions(filters):
+def tcp_socket_rows():
     if not shutil.which("ss"):
         return []
     result = subprocess.run(["ss", "-H", "-tn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    nfs_ports = nfs_listener_ports()
-    sessions = []
+    rows = []
     for line in result.stdout.splitlines():
         parts = line.split()
         if len(parts) < 4:
             continue
-        local = parts[3]
-        peer = parts[4] if len(parts) > 4 else ""
-        local_port = endpoint_port(local)
+        rows.append({
+            "state": parts[0],
+            "local": parts[3],
+            "peer": parts[4] if len(parts) > 4 else "",
+            "line": line,
+            "localPort": endpoint_port(parts[3]),
+        })
+    return rows
+
+def observed_iscsi_tcp_count():
+    ports = iscsi_listener_ports()
+    return len([row for row in tcp_socket_rows() if row.get("localPort") in ports])
+
+def tcp_sessions(filters):
+    rows = tcp_socket_rows()
+    nfs_ports = nfs_listener_ports()
+    sessions = []
+    for row in rows:
+        local = row.get("local") or ""
+        peer = row.get("peer") or ""
+        local_port = row.get("localPort")
         protocol = None
         if local_port in nfs_ports:
             protocol = "NFS"
         elif local.endswith(":445") or local.endswith(":139"):
             protocol = "SMB"
-        elif local.endswith(":3260"):
-            protocol = "ISCSI"
         elif local.endswith(":4420"):
             protocol = "NVME_OF"
         if protocol:
-            session_id = hashlib.sha256(f"{protocol}|{parts[0]}|{local}|{peer}".encode("utf-8")).hexdigest()[:20]
-            session = {"sessionId": session_id, "protocol": protocol, "state": parts[0], "local": local, "peer": peer, "client": endpoint_host(peer)}
+            session_id = hashlib.sha256(f"{protocol}|{row.get('state')}|{local}|{peer}".encode("utf-8")).hexdigest()[:20]
+            session = {"sessionId": session_id, "protocol": protocol, "state": row.get("state"), "local": local, "peer": peer, "client": endpoint_host(peer)}
             if protocol == "NFS":
                 hint = nfs_export_hint_for_session(local)
                 if hint:
@@ -1228,10 +1748,12 @@ def tcp_sessions(filters):
 def ss_sessions(filters):
     tcp_rows = tcp_sessions(filters)
     smb_rows = smbstatus_sessions()
+    iscsi_rows = targetcli_iscsi_session_rows()
+    base_rows = [session for session in tcp_rows if session.get("protocol") != "ISCSI"]
     if not smb_rows:
-        return tcp_rows
-    result = [session for session in tcp_rows if session.get("protocol") != "SMB"]
-    smb_tcp_rows = [session for session in tcp_rows if session.get("protocol") == "SMB"]
+        return base_rows + iscsi_rows
+    result = [session for session in base_rows if session.get("protocol") != "SMB"]
+    smb_tcp_rows = [session for session in base_rows if session.get("protocol") == "SMB"]
     for smb in smb_rows:
         client = smb.get("client") or endpoint_host(smb.get("peer"))
         match = next((tcp for tcp in smb_tcp_rows if client and client == tcp.get("client")), None)
@@ -1240,7 +1762,7 @@ def ss_sessions(filters):
             smb.setdefault("peer", match.get("peer"))
             smb.setdefault("state", match.get("state"))
         result.append(smb)
-    return result
+    return result + iscsi_rows
 
 payload = load_payload(sys.argv[1] if len(sys.argv) > 1 else "")
 protocol_filter = str(payload.get("protocol", "")).upper()
@@ -1251,7 +1773,10 @@ now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 session_state_path = "/run/ablestack-storage/monitor/session-state.json"
 session_state = load_json(session_state_path, {})
 next_state = {}
-for session in ss_sessions(payload):
+raw_sessions = ss_sessions(payload)
+observed_iscsi = observed_iscsi_tcp_count()
+warnings = []
+for session in raw_sessions:
     if protocol_filter and session.get("protocol") != protocol_filter:
         continue
     if client_filter and client_filter not in session.get("peer", "") and client_filter not in session.get("client", ""):
@@ -1279,10 +1804,42 @@ for session in ss_sessions(payload):
         "sambaSessionId": session.get("sambaSessionId"),
         "treeId": session.get("treeId"),
         "subsystemNqn": session.get("subsystemNqn"),
+        "targetName": session.get("targetName"),
+        "targetIqn": session.get("targetIqn"),
+        "targetGroupKey": session.get("targetGroupKey"),
+        "targetLuns": session.get("targetLuns"),
+        "initiatorIqn": session.get("initiatorIqn"),
+        "possibleInitiators": session.get("possibleInitiators"),
+        "possibleTargets": session.get("possibleTargets"),
+        "mappingStatus": session.get("mappingStatus"),
+        "endpointMappingStatus": session.get("endpointMappingStatus"),
+        "mappingWarning": session.get("mappingWarning"),
+        "possibleEndpoints": session.get("possibleEndpoints"),
+        "listenerPorts": session.get("listenerPorts"),
+        "connectionState": session.get("connectionState"),
+        "authenticated": session.get("authenticated"),
+        "lun": session.get("lun"),
+        "lunOrNamespace": session.get("lunOrNamespace"),
     }
+    if session.get("mappingWarning"):
+        warnings.append(session.get("mappingWarning"))
     sessions.append(session)
 store_json(session_state_path, next_state)
-print(json.dumps({"success": True, "status": "ok", "sessions": sessions, "count": len(sessions)}, sort_keys=True))
+status = "ok"
+if observed_iscsi and not any(session.get("protocol") == "ISCSI" for session in sessions):
+    status = "degraded"
+    warnings.append("iSCSI TCP sessions were observed but no iSCSI session rows matched the current filters.")
+elif any(session.get("protocol") == "ISCSI" and session.get("mappingStatus") == "unmapped" for session in sessions):
+    status = "degraded"
+print(json.dumps({
+    "success": True,
+    "status": status,
+    "sessions": sessions,
+    "count": len(sessions),
+    "observedTcpCount": len(raw_sessions),
+    "observedIscsiTcpCount": observed_iscsi,
+    "warnings": sorted(set([warning for warning in warnings if warning])),
+}, sort_keys=True))
 PY
 }
 
@@ -3721,6 +4278,7 @@ apply_iscsi_targets() {
 import glob
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -3733,8 +4291,82 @@ with open(payload_path, "r", encoding="utf-8") as payload_fp:
 
 state_dir = "/etc/ablestack-storage"
 os.makedirs(state_dir, exist_ok=True)
-with open(os.path.join(state_dir, "iscsi-targets.json"), "w", encoding="utf-8") as state_fp:
-    json.dump(payload, state_fp, sort_keys=True, indent=2)
+state_file = os.path.join(state_dir, "iscsi-targets.json")
+secret_dir = os.path.join(state_dir, "secrets")
+secret_file = os.path.join(secret_dir, "iscsi-acl-secrets.json")
+
+previous_payload = {}
+try:
+    with open(state_file, "r", encoding="utf-8") as previous_state_fp:
+        previous_payload = json.load(previous_state_fp)
+except Exception:
+    previous_payload = {}
+
+SENSITIVE_KEYS = {"secrets", "chapSecret", "mutualChapSecret", "secret", "password"}
+
+def load_secret_store():
+    try:
+        with open(secret_file, "r", encoding="utf-8") as secret_fp:
+            value = json.load(secret_fp)
+            return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+def write_secret_store(value):
+    os.makedirs(secret_dir, mode=0o700, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix=".iscsi-acl-secrets.", dir=secret_dir)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as tmp_fp:
+            json.dump(value, tmp_fp, sort_keys=True, indent=2)
+            tmp_fp.write("\n")
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, secret_file)
+    finally:
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except Exception:
+            pass
+
+def acl_secret_key(target, acl):
+    return f"{target.get('targetName') or ''}|{acl.get('principal') or ''}"
+
+def merge_and_persist_iscsi_secrets(value):
+    store = load_secret_store()
+    next_store = {}
+    for target in value.get("targets", []) or []:
+        if target.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+            continue
+        for acl in target.get("acls", []) or []:
+            if acl.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+                continue
+            config = acl.get("config") or {}
+            needs_chap = bool(config.get("chapEnabled")) or bool(config.get("mutualChapEnabled"))
+            if not needs_chap:
+                continue
+            key = acl_secret_key(target, acl)
+            secrets = acl.setdefault("secrets", {})
+            saved = store.get(key) or {}
+            for name in ("chapSecret", "mutualChapSecret"):
+                if secrets.get(name):
+                    saved[name] = secrets.get(name)
+                elif saved.get(name):
+                    secrets[name] = saved.get(name)
+            if saved:
+                next_store[key] = saved
+    write_secret_store(next_store)
+
+merge_and_persist_iscsi_secrets(payload)
+
+def sanitized(value):
+    if isinstance(value, dict):
+        return {k: sanitized(v) for k, v in value.items() if k not in SENSITIVE_KEYS}
+    if isinstance(value, list):
+        return [sanitized(v) for v in value]
+    return value
+
+with open(state_file, "w", encoding="utf-8") as state_fp:
+    json.dump(sanitized(payload), state_fp, sort_keys=True, indent=2)
 
 def run(args, timeout=20):
     return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
@@ -3754,6 +4386,52 @@ def require_targetcli(*args):
 
 def command_exists(name):
     return shutil.which(name) is not None
+
+def resolve_existing_path(path):
+    if os.path.islink(path):
+        target = os.readlink(path)
+        if os.path.isabs(target):
+            return target
+        return os.path.normpath(os.path.join(os.path.dirname(path), target))
+    return path
+
+def has_elf_header(path):
+    try:
+        with open(resolve_existing_path(path), "rb") as fp:
+            return fp.read(4) == b"\x7fELF"
+    except Exception:
+        return False
+
+def has_text_prefix(path, prefix):
+    try:
+        with open(path, "rb") as fp:
+            return fp.read(len(prefix)) == prefix.encode("utf-8")
+    except Exception:
+        return False
+
+def ensure_iscsi_runtime_dependencies():
+    failures = []
+    python_path = shutil.which("python3") or "/usr/bin/python3"
+    if not command_exists("targetcli"):
+        failures.append("targetcli is missing")
+    if not has_elf_header(python_path):
+        failures.append(f"python3 has an invalid ELF header: {python_path}")
+    if not has_elf_header("/usr/lib/python3/dist-packages/gi/_gi.cpython-311-x86_64-linux-gnu.so"):
+        failures.append("python3-gi has an invalid ELF header")
+    if not has_elf_header("/lib/x86_64-linux-gnu/libmagic.so.1"):
+        failures.append("libmagic has an invalid ELF header")
+    if not has_text_prefix("/var/lib/dpkg/status", "Package:"):
+        failures.append("dpkg status database is unreadable")
+    if not failures:
+        result = run(["python3", "-c", "import gi"], timeout=10)
+        if result.returncode != 0:
+            failures.append((result.stderr or result.stdout or "python3-gi cannot be loaded").strip())
+    if failures:
+        raise SystemExit(
+            "SystemVM iSCSI runtime dependency is broken: "
+            + "; ".join(failures)
+            + ". Rebuild and register a valid Storage Service SystemVM template."
+        )
 
 def service_action(action):
     if not command_exists("systemctl"):
@@ -3799,12 +4477,16 @@ def matchable_tokens(target):
     candidates = [
         target.get("volumeUuid"),
         target.get("volumeName"),
+        target.get("volumePath"),
+        target.get("expectedSerialPrefix"),
     ]
     config = target.get("config") or {}
     candidates.extend([
         config.get("volumeUuid"),
         config.get("volumeName"),
         config.get("volumeSerial"),
+        config.get("volumePath"),
+        config.get("expectedSerialPrefix"),
     ])
     tokens = []
     for candidate in candidates:
@@ -3828,7 +4510,7 @@ def token_matches_text(token, text):
         return False
     return token in text or text in token or (len(token) >= 16 and token[:16] in text)
 
-def find_backing_path(target):
+def try_find_backing_path(target):
     config = target.get("config") or {}
     configured = config.get("backingPath")
     if configured and os.path.exists(configured):
@@ -3842,6 +4524,20 @@ def find_backing_path(target):
         fields = [normalize_token(dev.get(key)) for key in ("name", "path", "serial", "uuid")]
         if any(token_matches_text(token, field) for token in tokens for field in fields):
             return dev.get("path")
+    return None
+
+def find_backing_path(target):
+    deadline = time.time() + int(target.get("deviceSettleSeconds") or payload.get("deviceSettleSeconds") or 90)
+    last_tokens = matchable_tokens(target)
+    while True:
+        path = try_find_backing_path(target)
+        if path:
+            return path
+        if time.time() >= deadline:
+            break
+        if command_exists("udevadm"):
+            run(["udevadm", "settle"], timeout=10)
+        time.sleep(2)
     raise SystemExit(f"unable to resolve backing block device for iSCSI target {target.get('targetName') or target.get('uuid')}; volumeUuid or volumeName did not match any guest disk")
 
 def mountpoint_for_device(path):
@@ -3860,31 +4556,57 @@ def device_size_bytes(path):
 
 def target_size_bytes(target, backing_path):
     config = target.get("config") or {}
+    if normalize_backstore_type(target) == "BLOCK":
+        return device_size_bytes(backing_path)
     value = config.get("lunSizeBytes") or target.get("lunSizeBytes") or target.get("effectiveSizeBytes") or target.get("volumeSizeBytes")
     if value:
         return int(value)
     return device_size_bytes(backing_path)
 
-def resolve_backstore(target, backstore_name):
+def normalize_backstore_type(target):
     config = target.get("config") or {}
-    path = find_backing_path(target)
-    explicit = bool(config.get("backingPath"))
-    mountpoint = mountpoint_for_device(path)
-    if explicit and not mountpoint:
-        require_targetcli("/backstores/block", "create", backstore_name, path)
-        return f"/backstores/block/{backstore_name}", path, "block"
+    value = target.get("backstoreType") or target.get("backstoretype") or config.get("backstoreType") or config.get("backstoretype") or "BLOCK"
+    value = str(value).strip().upper()
+    if value != "BLOCK":
+        raise SystemExit("iSCSI targets support block backstores only; file-backed LUNs are not supported")
+    return value
 
-    if not mountpoint:
-        raise SystemExit(f"backing device {path} is not mounted; refusing to create iSCSI LUN under root filesystem")
-    file_root = mountpoint
-    lun_dir = os.path.join(file_root, ".ablestack-storage", "iscsi")
-    os.makedirs(lun_dir, exist_ok=True)
-    lun_file = os.path.join(lun_dir, f"{target.get('uuid')}.img")
-    lun_size = target_size_bytes(target, path)
-    if not os.path.exists(lun_file) or os.path.getsize(lun_file) != lun_size:
-        run(["truncate", "-s", str(lun_size), lun_file], timeout=60)
-    require_targetcli("/backstores/fileio", "create", backstore_name, lun_file, str(lun_size))
-    return f"/backstores/fileio/{backstore_name}", lun_file, "fileio"
+def device_tree_for_path(path):
+    real = os.path.realpath(path)
+    for dev in walk_devices(lsblk_devices()):
+        dev_path = dev.get("path")
+        if dev_path and os.path.realpath(dev_path) == real:
+            return dev
+    return None
+
+def device_has_mounted_or_swap_descendant(dev):
+    if not dev:
+        return False
+    mountpoint = str(dev.get("mountpoint") or "")
+    fstype = str(dev.get("fstype") or "").lower()
+    if mountpoint or fstype == "swap":
+        return True
+    return any(device_has_mounted_or_swap_descendant(child) for child in dev.get("children") or [])
+
+def validate_block_backstore_device(path):
+    dev = device_tree_for_path(path)
+    if not dev:
+        raise SystemExit(f"unable to inspect backing block device {path}; refusing unsafe iSCSI BLOCK backstore")
+    dev_type = str(dev.get("type") or "")
+    if dev_type not in ("disk", "part", "lvm", "mpath"):
+        raise SystemExit(f"backing device {path} has unsupported block type {dev_type}; refusing iSCSI BLOCK backstore")
+    if device_has_mounted_or_swap_descendant(dev):
+        raise SystemExit(f"backing device {path} or one of its partitions is mounted or swap; refusing iSCSI BLOCK backstore")
+
+def resolve_backstore(target, backstore_name):
+    path = find_backing_path(target)
+    backstore_type = normalize_backstore_type(target)
+    mountpoint = mountpoint_for_device(path)
+    if mountpoint:
+        raise SystemExit(f"backing device {path} is mounted at {mountpoint}; refusing iSCSI BLOCK backstore")
+    validate_block_backstore_device(path)
+    require_targetcli("/backstores/block", "create", backstore_name, path)
+    return f"/backstores/block/{backstore_name}", path, "block"
 
 def port_listening(port):
     if not command_exists("ss"):
@@ -3893,78 +4615,336 @@ def port_listening(port):
     suffix = ":" + str(port)
     return any(len(line.split()) >= 4 and line.split()[3].endswith(suffix) for line in result.stdout.splitlines())
 
+def configured_listeners():
+    listeners = []
+    for item in payload.get("listeners") or []:
+        if not isinstance(item, dict):
+            continue
+        listen_ip = str(item.get("listenIp") or item.get("listenip") or "0.0.0.0")
+        port = int(item.get("port") or 3260)
+        listeners.append({"listenIp": listen_ip, "port": port})
+    if not listeners:
+        listeners.append({"listenIp": str(payload.get("listenIp") or "0.0.0.0"), "port": int(payload.get("port") or 3260)})
+    normalized = []
+    seen = set()
+    for item in listeners:
+        key = (item["listenIp"], item["port"])
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(item)
+    ports_with_any = {item["port"] for item in normalized if item["listenIp"] in ("0.0.0.0", "::")}
+    if ports_with_any:
+        normalized = [item for item in normalized if item["port"] not in ports_with_any or item["listenIp"] in ("0.0.0.0", "::")]
+    return normalized
+
+def target_listener_ports(target, listeners):
+    config = target.get("config") or {}
+    raw_ports = target.get("listenerPorts") or target.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports") or config.get("listenerPorts") or config.get("listenerports")
+    ports = set()
+    if isinstance(raw_ports, list):
+        for value in raw_ports:
+            try:
+                ports.add(int(value))
+            except Exception:
+                pass
+    elif isinstance(raw_ports, str):
+        for value in raw_ports.split(','):
+            value = value.strip()
+            if value:
+                ports.add(int(value))
+    elif raw_ports:
+        ports.add(int(raw_ports))
+    if not ports:
+        ports.add(int(payload.get("port") or 3260))
+    return ports
+
+def selected_listeners_for_target(target, listeners):
+    config = target.get("config") or {}
+    mode = str(target.get("endpointMode") or target.get("endpointmode") or config.get("endpointMode") or config.get("endpointmode") or "LISTENER_GROUP").upper()
+    if mode == "ALL":
+        return listeners
+    ports = target_listener_ports(target, listeners)
+    selected = [item for item in listeners if item["port"] in ports]
+    if not selected:
+        raise SystemExit(f"no iSCSI listener port group is enabled for target {target.get('targetName') or target.get('uuid')}: {sorted(ports)}")
+    return selected
+
+listeners = configured_listeners()
+required_ports = set()
+
 enabled = bool(payload.get("enabled", True))
 applied = 0
 skipped = 0
 runtime_targets = []
-port = str(payload.get("port") or 3260)
 targets = payload.get("targets", [])
-if enabled and targets and not command_exists("targetcli"):
-    raise SystemExit("targetcli is required to apply iSCSI targets")
-if enabled and command_exists("targetcli"):
-    for target in payload.get("targets", []):
+
+def active_targets_by_iqn(targets):
+    groups = {}
+    for target in targets:
         if target.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
             continue
         iqn = target.get("targetName")
-        lun = str(target.get("lunOrNamespace") or "0")
         if not iqn:
-            skipped += 1
             continue
-        backstore = f"ablestack-{target.get('uuid')}"
-        run_targetcli("/iscsi", "delete", iqn)
-        run_targetcli("/backstores/fileio", "delete", backstore)
-        run_targetcli("/backstores/block", "delete", backstore)
-        backstore_path, backing_path, backstore_type = resolve_backstore(target, backstore)
-        require_targetcli("/iscsi", "create", iqn)
-        run_targetcli(f"/iscsi/{iqn}/tpg1/portals", "delete", "0.0.0.0", "3260")
-        listen_ip = payload.get("listenIp") or "0.0.0.0"
-        require_targetcli(f"/iscsi/{iqn}/tpg1/portals", "create", listen_ip, port)
-        require_targetcli(f"/iscsi/{iqn}/tpg1/luns", "create", backstore_path, lun)
+        groups.setdefault(iqn, []).append(target)
+    return groups
+
+def merged_listeners_for_targets(group_targets, listeners):
+    selected = []
+    seen = set()
+    for target in group_targets:
+        for listener in selected_listeners_for_target(target, listeners):
+            key = (listener["listenIp"], listener["port"])
+            if key in seen:
+                continue
+            seen.add(key)
+            selected.append(listener)
+    return selected
+
+def iscsi_portal_exists(iqn, listen_ip, port):
+    path = Path("/sys/kernel/config/target/iscsi") / str(iqn) / "tpgt_1" / "np" / f"{listen_ip}:{port}"
+    return path.exists()
+
+def create_iscsi_portal(iqn, listen_ip, port):
+    listen_ip = str(listen_ip or "0.0.0.0")
+    port = int(port or 3260)
+    if iscsi_portal_exists(iqn, listen_ip, port):
+        return
+    if listen_ip not in ("0.0.0.0", "::") and iscsi_portal_exists(iqn, "0.0.0.0", port):
+        return
+    result = run_targetcli(f"/iscsi/{iqn}/tpg1/portals", "create", listen_ip, str(port))
+    if ok_or_exists(result):
+        return
+    if listen_ip not in ("0.0.0.0", "::") and iscsi_portal_exists(iqn, "0.0.0.0", port):
+        return
+    if iscsi_portal_exists(iqn, listen_ip, port):
+        return
+    raise SystemExit((result.stderr or result.stdout or f"targetcli failed to create portal {listen_ip}:{port}").strip())
+
+def iscsi_acl_chap_signature(acl):
+    config = acl.get("config") or {}
+    return "|".join([
+        str(bool(config.get("chapEnabled"))),
+        str(config.get("chapUsername") or ""),
+        str(bool(config.get("mutualChapEnabled"))),
+        str(config.get("mutualChapUsername") or ""),
+    ])
+
+def merged_acls_for_targets(group_targets):
+    merged = []
+    seen = {}
+    for target in group_targets:
         for acl in target.get("acls", []):
             if acl.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
                 continue
             initiator = acl.get("principal")
             if not initiator:
                 continue
-            require_targetcli(f"/iscsi/{iqn}/tpg1/acls", "create", initiator)
-            acl_config = acl.get("config") or {}
-            secrets = acl.get("secrets") or {}
-            if acl_config.get("chapUsername"):
-                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"userid={acl_config.get('chapUsername')}")
-            if secrets.get("chapSecret"):
-                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"password={secrets.get('chapSecret')}")
-            if acl_config.get("mutualChapUsername"):
-                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"mutual_userid={acl_config.get('mutualChapUsername')}")
-            if secrets.get("mutualChapSecret"):
-                run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"mutual_password={secrets.get('mutualChapSecret')}")
-        applied += 1
-        runtime_targets.append({
-            "uuid": target.get("uuid"),
-            "targetName": iqn,
-            "lunOrNamespace": lun,
-            "volumeUuid": target.get("volumeUuid"),
-            "volumeName": target.get("volumeName"),
-            "volumeSizeBytes": target.get("volumeSizeBytes"),
-            "lunSizeBytes": target.get("lunSizeBytes") or (target.get("config") or {}).get("lunSizeBytes"),
-            "effectiveSizeBytes": target_size_bytes(target, backing_path),
-            "backingPath": backing_path,
-            "backstoreType": backstore_type,
-        })
+            signature = iscsi_acl_chap_signature(acl)
+            if initiator in seen:
+                if seen[initiator] != signature:
+                    raise SystemExit(f"conflicting iSCSI CHAP settings for initiator {initiator}; CHAP is target-scoped")
+                existing = next(item for item in merged if item.get("principal") == initiator)
+                if not (existing.get("secrets") or {}) and (acl.get("secrets") or {}):
+                    existing["secrets"] = acl.get("secrets")
+                continue
+            seen[initiator] = signature
+            merged.append(acl)
+    return merged
+
+def chap_enabled_for_acl(acl):
+    config = acl.get("config") or {}
+    return bool(config.get("chapEnabled")) or bool(config.get("mutualChapEnabled"))
+
+def target_acl_auth(iqn, initiator):
+    result = run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "get", "auth", "userid", "password", "mutual_userid", "mutual_password")
+    values = {}
+    for line in (result.stdout or "").splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+def previous_acl_auth_map(iqn):
+    values = {}
+    root = Path("/sys/kernel/config/target/iscsi") / str(iqn) / "tpgt_1" / "acls"
+    if not root.exists():
+        return values
+    for item in root.iterdir():
+        if item.is_dir():
+            values[item.name] = target_acl_auth(iqn, item.name)
+    return values
+
+def require_chap_value(name, value, iqn, initiator):
+    if value:
+        return value
+    raise SystemExit(f"iSCSI CHAP credential is required to apply target {iqn} for initiator {initiator}: missing {name}")
+
+def managed_iqn(iqn):
+    text = str(iqn or "")
+    return text.startswith("iqn.") and ".local.storage:" in text
+
+def existing_iscsi_targets():
+    root = Path("/sys/kernel/config/target/iscsi")
+    if not root.exists():
+        return set()
+    return {item.name for item in root.iterdir() if item.is_dir() and managed_iqn(item.name)}
+
+def desired_iqns_from_payload(value):
+    iqns = set()
+    for target in value.get("targets", []) or []:
+        if target.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
+            continue
+        iqn = target.get("targetName")
+        if iqn and managed_iqn(iqn):
+            iqns.add(iqn)
+    return iqns
+
+def block_backstores_from_payload(value, iqns=None):
+    names = set()
+    for target in value.get("targets", []) or []:
+        iqn = target.get("targetName")
+        if iqns is not None and iqn not in iqns:
+            continue
+        uuid = target.get("uuid")
+        if uuid:
+            names.add(f"ablestack-{uuid}")
+    return names
+
+def existing_managed_block_backstores():
+    root = Path("/sys/kernel/config/target/core")
+    if not root.exists():
+        return set()
+    names = set()
+    for path in root.glob("iblock_*/*"):
+        if path.is_dir() and path.name.startswith("ablestack-"):
+            names.add(path.name)
+    return names
+
+def cleanup_stale_managed_targets(desired_iqns):
+    previous_iqns = desired_iqns_from_payload(previous_payload)
+    stale_iqns = (existing_iscsi_targets() | previous_iqns) - desired_iqns
+    for iqn in sorted(stale_iqns):
+        if managed_iqn(iqn):
+            run_targetcli("/iscsi", "delete", iqn)
+    stale_backstores = block_backstores_from_payload(previous_payload, stale_iqns)
+    if not desired_iqns:
+        stale_backstores |= existing_managed_block_backstores()
+    for name in sorted(stale_backstores):
+        run_targetcli("/backstores/block", "delete", name)
+
+def clear_managed_iscsi_runtime():
+    for iqn in sorted(existing_iscsi_targets()):
+        run_targetcli("/iscsi", "delete", iqn)
+    for name in sorted(existing_managed_block_backstores()):
+        run_targetcli("/backstores/block", "delete", name)
+
+def rollback_created(created_iqns, created_backstores):
+    for iqn in reversed(created_iqns):
+        run_targetcli("/iscsi", "delete", iqn)
+    for name in reversed(created_backstores):
+        run_targetcli("/backstores/block", "delete", name)
+
+if enabled and targets:
+    ensure_iscsi_runtime_dependencies()
+if enabled and command_exists("targetcli"):
+    desired_iqns = set(active_targets_by_iqn(targets).keys())
+    if os.environ.get("ABLESTACK_STORAGE_ISCSI_AUTHORITATIVE_REBUILD") == "1":
+        clear_managed_iscsi_runtime()
+    cleanup_stale_managed_targets(desired_iqns)
+    created_iqns = []
+    created_backstores = []
+    for target in targets:
+        if target.get("state", "Ready") in ("Disabled", "Destroyed", "Error") or target.get("targetName"):
+            continue
+        skipped += 1
+    try:
+        for iqn, group_targets in active_targets_by_iqn(targets).items():
+            previous_auth = previous_acl_auth_map(iqn)
+            run_targetcli("/iscsi", "delete", iqn)
+            for target in group_targets:
+                run_targetcli("/backstores/block", "delete", f"ablestack-{target.get('uuid')}")
+            require_targetcli("/iscsi", "create", iqn)
+            created_iqns.append(iqn)
+            run_targetcli(f"/iscsi/{iqn}/tpg1/portals", "delete", "0.0.0.0", "3260")
+            group_listeners = merged_listeners_for_targets(group_targets, listeners)
+            required_ports.update({item["port"] for item in group_listeners})
+            for listener in group_listeners:
+                create_iscsi_portal(iqn, listener["listenIp"], listener["port"])
+            for target in group_targets:
+                lun = str(target.get("lunOrNamespace") or "0")
+                backstore = f"ablestack-{target.get('uuid')}"
+                backstore_path, backing_path, backstore_type = resolve_backstore(target, backstore)
+                created_backstores.append(backstore)
+                require_targetcli(f"/iscsi/{iqn}/tpg1/luns", "create", backstore_path, lun)
+                applied += 1
+                runtime_targets.append({
+                    "uuid": target.get("uuid"),
+                    "targetName": iqn,
+                    "lunOrNamespace": lun,
+                    "volumeUuid": target.get("volumeUuid"),
+                    "volumeName": target.get("volumeName"),
+                    "volumeSizeBytes": target.get("volumeSizeBytes"),
+                    "lunSizeBytes": target.get("lunSizeBytes") or (target.get("config") or {}).get("lunSizeBytes"),
+                    "effectiveSizeBytes": target_size_bytes(target, backing_path),
+                    "backingPath": backing_path,
+                    "backstoreType": backstore_type,
+                    "listenerPorts": sorted({item["port"] for item in group_listeners}),
+                    "endpoints": [f"{item['listenIp']}:{item['port']}" for item in group_listeners],
+                })
+            chap_required = False
+            for acl in merged_acls_for_targets(group_targets):
+                initiator = acl.get("principal")
+                require_targetcli(f"/iscsi/{iqn}/tpg1/acls", "create", initiator)
+                acl_config = acl.get("config") or {}
+                secrets = acl.get("secrets") or {}
+                old_auth = previous_auth.get(initiator, {})
+                if chap_enabled_for_acl(acl):
+                    chap_required = True
+                if acl_config.get("chapEnabled"):
+                    username = require_chap_value("chapUsername", acl_config.get("chapUsername"), iqn, initiator)
+                    password = secrets.get("chapSecret") or old_auth.get("password")
+                    password = require_chap_value("chapSecret", password, iqn, initiator)
+                    secrets["chapSecret"] = password
+                    require_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"userid={username}")
+                    require_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"password={password}")
+                else:
+                    run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", "userid=")
+                    run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", "password=")
+                if acl_config.get("mutualChapEnabled"):
+                    mutual_username = require_chap_value("mutualChapUsername", acl_config.get("mutualChapUsername"), iqn, initiator)
+                    mutual_password = secrets.get("mutualChapSecret") or old_auth.get("mutual_password")
+                    mutual_password = require_chap_value("mutualChapSecret", mutual_password, iqn, initiator)
+                    secrets["mutualChapSecret"] = mutual_password
+                    require_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"mutual_userid={mutual_username}")
+                    require_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", f"mutual_password={mutual_password}")
+                else:
+                    run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", "mutual_userid=")
+                    run_targetcli(f"/iscsi/{iqn}/tpg1/acls/{initiator}", "set", "auth", "mutual_password=")
+            require_targetcli(f"/iscsi/{iqn}/tpg1", "set", "attribute", f"authentication={1 if chap_required else 0}")
+    except BaseException:
+        rollback_created(created_iqns, created_backstores)
+        raise
+    merge_and_persist_iscsi_secrets(payload)
     run_targetcli("saveconfig")
 else:
     skipped = len(payload.get("targets", []))
 
 if enabled and applied:
     service_action("restart")
-    best_effort_firewall(port)
+    for port in required_ports:
+        best_effort_firewall(port)
     for _ in range(10):
-        if port_listening(port):
+        if all(port_listening(port) for port in required_ports):
             break
         time.sleep(0.5)
-    if not port_listening(port):
-        raise SystemExit(f"iSCSI target service did not listen on TCP port {port}")
+    missing_ports = [port for port in sorted(required_ports) if not port_listening(port)]
+    if missing_ports:
+        raise SystemExit(f"iSCSI target service did not listen on TCP port(s): {', '.join(str(port) for port in missing_ports)}")
 
-print(json.dumps({"success": True, "targets": len(payload.get("targets", [])), "applied": applied, "skipped": skipped, "port": int(port), "listening": port_listening(port), "runtimeTargets": runtime_targets}))
+print(json.dumps({"success": True, "targets": len(payload.get("targets", [])), "applied": applied, "skipped": skipped, "ports": sorted(required_ports), "listening": all(port_listening(port) for port in required_ports), "runtimeTargets": runtime_targets}))
 PY
 
   if command -v systemctl >/dev/null 2>&1; then

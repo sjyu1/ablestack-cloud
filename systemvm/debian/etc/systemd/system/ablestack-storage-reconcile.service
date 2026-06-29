@@ -1,6 +1,6 @@
 [Unit]
 Description=ABLESTACK Storage Service boot reconcile
-After=local-fs.target network-online.target qemu-guest-agent.service
+After=local-fs.target network-online.target qemu-guest-agent.service rtslib-fb-targetctl.service
 Wants=network-online.target
 Before=ablestack-storage-monitor.service
 

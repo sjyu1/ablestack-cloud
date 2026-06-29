@@ -7,6 +7,7 @@ MONITOR="${ABLESTACK_STORAGE_MONITOR:-/usr/local/bin/ablestack-storage-monitor}"
 DESIRED_STATE_DIR="${ABLESTACK_STORAGE_DESIRED_STATE_DIR:-/etc/ablestack-storage/desired-state}"
 NFS_PAYLOAD="${ABLESTACK_STORAGE_NFS_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/nfs-export-apply.json}"
 SMB_PAYLOAD="${ABLESTACK_STORAGE_SMB_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/smb-share-apply.json}"
+ISCSI_PAYLOAD="${ABLESTACK_STORAGE_ISCSI_DESIRED_STATE_FILE:-/etc/ablestack-storage/iscsi-targets.json}"
 LOG_FILE="${ABLESTACK_STORAGE_BOOT_RECONCILE_LOG:-/var/log/ablestack-storage-boot-reconcile.log}"
 MAX_ATTEMPTS="${ABLESTACK_STORAGE_BOOT_RECONCILE_ATTEMPTS:-12}"
 SLEEP_SECONDS="${ABLESTACK_STORAGE_BOOT_RECONCILE_SLEEP:-5}"
@@ -27,7 +28,7 @@ ensure_ganesha_runtime_dirs() {
   fi
 }
 
-if [[ ! -s "$NFS_PAYLOAD" && ! -s "$SMB_PAYLOAD" ]]; then
+if [[ ! -s "$NFS_PAYLOAD" && ! -s "$SMB_PAYLOAD" && ! -s "$ISCSI_PAYLOAD" ]]; then
   log "no saved Storage Service desired state; skipping boot reconcile"
   exit 0
 fi
@@ -37,7 +38,7 @@ if [[ ! -x "$STORAGECTL" ]]; then
   exit 1
 fi
 
-log "starting boot reconcile nfs=$NFS_PAYLOAD smb=$SMB_PAYLOAD"
+log "starting boot reconcile nfs=$NFS_PAYLOAD smb=$SMB_PAYLOAD iscsi=$ISCSI_PAYLOAD"
 ensure_ganesha_runtime_dirs
 systemctl daemon-reload >/dev/null 2>&1 || true
 
@@ -61,6 +62,14 @@ while (( attempt <= MAX_ATTEMPTS )); do
       log "SMB desired state reapplied successfully"
     else
       log "SMB desired state reapply failed"
+      success=0
+    fi
+  fi
+  if [[ -s "$ISCSI_PAYLOAD" ]]; then
+    if ABLESTACK_STORAGE_ISCSI_AUTHORITATIVE_REBUILD=1 "$STORAGECTL" iscsi target apply "$ISCSI_PAYLOAD" >> "$LOG_FILE" 2>&1; then
+      log "iSCSI desired state reapplied successfully"
+    else
+      log "iSCSI desired state reapply failed"
       success=0
     fi
   fi
