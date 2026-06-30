@@ -265,13 +265,6 @@ def ensure_backup_framework_configuration(zone_id: str, cluster_id: str, args: a
         print(f"Updated zone configuration: backup.framework.enabled=true (zoneid={zone_id})")
         restart_required = True
 
-    log_info("Checking global configuration: backup.enable.attach.detach.of.volumes")
-    current = get_configuration_value("backup.enable.attach.detach.of.volumes", args.mold_url, args.admin_apikey, args.admin_secretkey)
-    if current.lower() != "true":
-        log_info("Updating global configuration: backup.enable.attach.detach.of.volumes=true")
-        update_configuration_value("backup.enable.attach.detach.of.volumes", "true", args.mold_url, args.admin_apikey, args.admin_secretkey)
-        print("Updated global configuration: backup.enable.attach.detach.of.volumes=true")
-
     log_info("Checking cluster configuration: kvm.incremental.backup")
     current = get_configuration_value("kvm.incremental.backup", args.mold_url, args.admin_apikey, args.admin_secretkey, cluster_id=cluster_id)
     if current.lower() != "true":

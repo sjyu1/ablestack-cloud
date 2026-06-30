@@ -2976,7 +2976,7 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     }
 
     protected void checkForBackups(UserVmVO vm, boolean attach) {
-        if ((vm.getBackupOfferingId() == null || CollectionUtils.isEmpty(vm.getBackupVolumeList())) || BooleanUtils.isTrue(BackupManager.BackupEnableAttachDetachVolumes.value())) {
+        if (!doesVmHaveBackupOfferingAndVolumes(vm) || BooleanUtils.isTrue(BackupManager.BackupEnableAttachDetachVolumes.value())) {
             return;
         }
         String errorMsg = String.format("Unable to detach volume, cannot detach volume from a VM that has backups. First remove the VM from the backup offering or "
@@ -2986,6 +2986,10 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
                     + "'%s' to true.", BackupManager.BackupEnableAttachDetachVolumes.key());
         }
         throw new InvalidParameterValueException(errorMsg);
+    }
+
+    protected boolean doesVmHaveBackupOfferingAndVolumes(UserVmVO vm) {
+        return vm.getBackupOfferingId() != null && CollectionUtils.isNotEmpty(vm.getBackupVolumeList());
     }
 
     protected String createVolumeInfoFromVolumes(List<VolumeVO> vmVolumes) {
