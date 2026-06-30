@@ -183,10 +183,13 @@ def wait_for_async_job(job_id: str, mold_url: str, api_key: str, secret_key: str
     return {}
 
 
-def get_configuration_value(config_name: str, mold_url: str, api_key: str, secret_key: str, zone_id: Optional[str] = None) -> str:
+def get_configuration_value(config_name: str, mold_url: str, api_key: str, secret_key: str,
+                            zone_id: Optional[str] = None, cluster_id: Optional[str] = None) -> str:
     params = {"listAll": "true", "pagesize": "20", "page": "1", "name": config_name}
     if zone_id:
         params["zoneid"] = zone_id
+    if cluster_id:
+        params["clusterid"] = cluster_id
     data = invoke_mold_api("GET", "listConfigurations", params, mold_url, api_key, secret_key)
     configs = data.get("listconfigurationsresponse", {}).get("configuration", [])
     if isinstance(configs, dict):
@@ -197,10 +200,13 @@ def get_configuration_value(config_name: str, mold_url: str, api_key: str, secre
     return ""
 
 
-def update_configuration_value(config_name: str, config_value: str, mold_url: str, api_key: str, secret_key: str, zone_id: Optional[str] = None) -> None:
+def update_configuration_value(config_name: str, config_value: str, mold_url: str, api_key: str, secret_key: str,
+                               zone_id: Optional[str] = None, cluster_id: Optional[str] = None) -> None:
     params = {"name": config_name, "value": config_value}
     if zone_id:
         params["zoneid"] = zone_id
+    if cluster_id:
+        params["clusterid"] = cluster_id
     invoke_mold_api("POST", "updateConfiguration", params, mold_url, api_key, secret_key)
 
 
@@ -212,9 +218,9 @@ def append_provider_if_missing(provider_list: str, provider_name: str) -> str:
     return ",".join(items)
 
 
-def resolve_zone_id(policy_name: str, mold_url: str, api_key: str, secret_key: str) -> str:
-    log_step("Resolve Zone")
-    log_info(f"Resolving zone ID using policy/host name={policy_name}")
+def resolve_host_context(policy_name: str, mold_url: str, api_key: str, secret_key: str) -> tuple[str, str]:
+    log_step("Resolve Host Context")
+    log_info(f"Resolving zone and cluster IDs using policy/host name={policy_name}")
     data = invoke_mold_api("GET", "listHosts", {
         "listAll": "true",
         "pagesize": "500",
@@ -231,11 +237,15 @@ def resolve_zone_id(policy_name: str, mold_url: str, api_key: str, secret_key: s
     if not exact or not exact.get("zoneid"):
         fail(f"Unable to resolve zone ID from host/policy name '{policy_name}' via listHosts.")
     zone_id = str(exact["zoneid"])
+    cluster_id = str(exact.get("clusterid", "") or "")
+    if not cluster_id:
+        fail(f"Unable to resolve cluster ID from host/policy name '{policy_name}' via listHosts.")
     log_ok(f"Resolved zone ID: {zone_id}")
-    return zone_id
+    log_ok(f"Resolved cluster ID: {cluster_id}")
+    return zone_id, cluster_id
 
 
-def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace) -> bool:
+def ensure_backup_framework_configuration(zone_id: str, cluster_id: str, args: argparse.Namespace) -> bool:
     restart_required = False
     log_step("Configure Mold")
 
@@ -261,6 +271,14 @@ def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace
         log_info("Updating global configuration: backup.enable.attach.detach.of.volumes=true")
         update_configuration_value("backup.enable.attach.detach.of.volumes", "true", args.mold_url, args.admin_apikey, args.admin_secretkey)
         print("Updated global configuration: backup.enable.attach.detach.of.volumes=true")
+
+    log_info("Checking cluster configuration: kvm.incremental.backup")
+    current = get_configuration_value("kvm.incremental.backup", args.mold_url, args.admin_apikey, args.admin_secretkey, cluster_id=cluster_id)
+    if current.lower() != "true":
+        log_info("Updating cluster configuration: kvm.incremental.backup=true")
+        update_configuration_value("kvm.incremental.backup", "true", args.mold_url, args.admin_apikey, args.admin_secretkey, cluster_id=cluster_id)
+        print(f"Updated cluster configuration: kvm.incremental.backup=true (clusterid={cluster_id})")
+        restart_required = True
 
     log_info("Checking zone configuration: backup.framework.provider.plugin")
     current = get_configuration_value("backup.framework.provider.plugin", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
@@ -640,10 +658,10 @@ def main() -> None:
     log_step("NetBackup Configuration")
     log_info("Starting NetBackup host configuration")
 
-    zone_id = resolve_zone_id(args.policy_name, args.mold_url, args.admin_apikey, args.admin_secretkey)
-    restart_required = ensure_backup_framework_configuration(zone_id, args)
+    zone_id, cluster_id = resolve_host_context(args.policy_name, args.mold_url, args.admin_apikey, args.admin_secretkey)
+    restart_required = ensure_backup_framework_configuration(zone_id, cluster_id, args)
     if restart_required:
-        fail("Updated backup.framework.enabled=true. Restart the Mold management server, then run this script again to import the NetBackup offering.")
+        fail("Updated non-dynamic backup configuration. Restart the Mold management server, then run this script again to import the NetBackup offering.")
     ensure_netbackup_offering(zone_id, args)
     log_ok("Completed Mold API configuration for NetBackup host")
     generate_host_outputs(zone_id, args)
