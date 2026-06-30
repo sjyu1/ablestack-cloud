@@ -27,7 +27,7 @@
         size="large">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'status'">
-            <status class="status" :text="record.success === true ? 'True' : 'False'" displayText />
+            <status class="status" :text="record.result === true ? 'True' : 'False'" displayText />
           </template>
         </template>
       </a-table>
