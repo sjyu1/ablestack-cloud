@@ -110,6 +110,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     private static final Logger LOG = LogManager.getLogger(AblestackNetBackupProvider.class);
 
+    private static final int NETBACKUP_BACKUP_COMMAND_WAIT_SECONDS = 21600;
     private static final String BACKUP_ROOT = "/tmp/mold/netbackup";
     private static final String BACKUP_TYPE_FULL = "FULL";
     private static final String BACKUP_TYPE_INCREMENTAL = "INCREMENTAL";
@@ -273,6 +274,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
         final BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         AblestackNetBackupTakeBackupCommand command = new AblestackNetBackupTakeBackupCommand(vm.getInstanceName(), backupPath);
+        command.setWait(NETBACKUP_BACKUP_COMMAND_WAIT_SECONDS);
         command.setQuiesce(quiesceVM);
         command.setVolumePools(volumePoolsAndPaths.first());
         command.setVolumePaths(volumePoolsAndPaths.second());

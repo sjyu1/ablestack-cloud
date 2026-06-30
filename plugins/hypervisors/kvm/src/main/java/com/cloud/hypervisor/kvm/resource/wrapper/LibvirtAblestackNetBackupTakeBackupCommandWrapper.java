@@ -34,6 +34,7 @@ public class LibvirtAblestackNetBackupTakeBackupCommandWrapper extends CommandWr
     @Override
     public Answer execute(final AblestackNetBackupTakeBackupCommand command, final LibvirtComputingResource libvirtComputingResource) {
         final AblestackNetBackupTakeBackupCommand delegate = new AblestackNetBackupTakeBackupCommand(command.getVmName(), command.getBackupPath());
+        delegate.setWait(command.getWait());
         delegate.setQuiesce(command.getQuiesce());
         delegate.setVolumePools(command.getVolumePools());
         delegate.setVolumePaths(command.getVolumePaths());
