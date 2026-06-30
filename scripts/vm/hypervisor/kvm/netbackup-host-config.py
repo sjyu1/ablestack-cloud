@@ -235,7 +235,8 @@ def resolve_zone_id(policy_name: str, mold_url: str, api_key: str, secret_key: s
     return zone_id
 
 
-def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace) -> None:
+def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace) -> bool:
+    restart_required = False
     log_step("Configure Mold")
     log_info("Checking zone configuration: backup.framework.enabled")
     current = get_configuration_value("backup.framework.enabled", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
@@ -243,6 +244,7 @@ def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace
         log_info("Updating zone configuration: backup.framework.enabled=true")
         update_configuration_value("backup.framework.enabled", "true", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
         print(f"Updated zone configuration: backup.framework.enabled=true (zoneid={zone_id})")
+        restart_required = True
 
     log_info("Checking global configuration: backup.enable.attach.detach.of.volumes")
     current = get_configuration_value("backup.enable.attach.detach.of.volumes", args.mold_url, args.admin_apikey, args.admin_secretkey)
@@ -272,6 +274,8 @@ def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace
         log_info("Updating zone configuration: backup.plugin.netbackup.apikey=<hidden>")
         update_configuration_value("backup.plugin.netbackup.apikey", args.netbackup_apikey, args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
         print(f"Updated zone configuration: backup.plugin.netbackup.apikey=<hidden> (zoneid={zone_id})")
+
+    return restart_required
 
 
 def ensure_netbackup_offering(zone_id: str, args: argparse.Namespace) -> None:
@@ -628,7 +632,9 @@ def main() -> None:
     log_info("Starting NetBackup host configuration")
 
     zone_id = resolve_zone_id(args.policy_name, args.mold_url, args.admin_apikey, args.admin_secretkey)
-    ensure_backup_framework_configuration(zone_id, args)
+    restart_required = ensure_backup_framework_configuration(zone_id, args)
+    if restart_required:
+        fail("Updated backup.framework.enabled=true. Restart the Mold management server, then run this script again to import the NetBackup offering.")
     ensure_netbackup_offering(zone_id, args)
     log_ok("Completed Mold API configuration for NetBackup host")
     generate_host_outputs(zone_id, args)
