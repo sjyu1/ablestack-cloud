@@ -114,7 +114,7 @@ def build_signed_url(base_url: str, api_params: str, api_key: str, secret_key: s
     sorted_params = [f"apikey={quote_plus(api_key).lower()}"]
     for token in api_params.split("&"):
         key, value = token.split("=", 1)
-        sorted_params.append(f"{key.lower()}={value.lower()}")
+        sorted_params.append(f"{key.lower()}={value.replace('+', '%20').lower()}")
     sorted_url = "&".join(sorted(sorted_params))
     signature = base64.b64encode(hmac.new(secret_key.encode(), sorted_url.encode(), hashlib.sha256).digest()).decode()
     encoded_signature = quote_plus(signature)
