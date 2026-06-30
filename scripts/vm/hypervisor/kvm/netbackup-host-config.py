@@ -238,6 +238,15 @@ def resolve_zone_id(policy_name: str, mold_url: str, api_key: str, secret_key: s
 def ensure_backup_framework_configuration(zone_id: str, args: argparse.Namespace) -> bool:
     restart_required = False
     log_step("Configure Mold")
+
+    log_info("Checking global configuration: backup.framework.enabled")
+    current = get_configuration_value("backup.framework.enabled", args.mold_url, args.admin_apikey, args.admin_secretkey)
+    if current.lower() != "true":
+        log_info("Updating global configuration: backup.framework.enabled=true")
+        update_configuration_value("backup.framework.enabled", "true", args.mold_url, args.admin_apikey, args.admin_secretkey)
+        print("Updated global configuration: backup.framework.enabled=true")
+        restart_required = True
+
     log_info("Checking zone configuration: backup.framework.enabled")
     current = get_configuration_value("backup.framework.enabled", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
     if current.lower() != "true":
