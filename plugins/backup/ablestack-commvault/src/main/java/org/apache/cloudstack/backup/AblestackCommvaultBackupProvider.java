@@ -106,6 +106,7 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
+import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
@@ -637,6 +638,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
         BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         AblestackCommvaultTakeBackupCommand command = new AblestackCommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
+        final int commandTimeout = BackupCommandTimeout.value();
+        if (commandTimeout > 0) {
+            command.setWait(commandTimeout);
+        }
         command.setQuiesce(quiesceVM);
         command.setVolumePools(volumePoolsAndPaths.first());
         command.setVolumePaths(volumePoolsAndPaths.second());

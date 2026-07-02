@@ -100,7 +100,8 @@ class LibvirtAblestackCommvaultBackupHelper {
         String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
         LOGGER.debug("Executing Commvault backup script command=[{}]", String.join(" ", scriptCommand));
         commands.add(scriptCommand);
-        return Script.executePipedCommands(commands, resource.getCmdsTimeout());
+        final int timeout = command.getWait() > 0 ? command.getWait() * 1000 : resource.getCmdsTimeout();
+        return Script.executePipedCommands(commands, timeout);
     }
 
     List<String> resolveDiskPaths(List<PrimaryDataStoreTO> volumePools, List<String> volumePaths) {

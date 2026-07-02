@@ -968,6 +968,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_BACKUP_CREATE, eventDescription = "creating VM backup", async = true)
     public boolean createBackup(CreateBackupCmd cmd, Object job) throws ResourceAllocationException {
+        final long backupStartTime = System.currentTimeMillis();
         Long vmId = cmd.getVmId();
         Account caller = CallContext.current().getCallingAccount();
 
@@ -1001,6 +1002,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         Long backupScheduleId = getBackupScheduleId(job);
         boolean isScheduledBackup = backupScheduleId != null;
+        logger.info("Starting VM backup request [vmId: {}, vmUuid: {}, vmName: {}, provider: {}, offeringId: {}, scheduleId: {}, scheduled: {}]",
+                vm.getId(), vm.getUuid(), vm.getInstanceName(), offering.getProvider(), offering.getId(), backupScheduleId, isScheduledBackup);
         Account owner = accountManager.getAccount(vm.getAccountId());
 
         Long backupSize = 0L;
@@ -1017,6 +1020,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         if (isScheduledBackup) {
             deleteOldestBackupFromScheduleIfRequired(vmId, backupScheduleId);
         }
+        logger.info("Completed VM backup request [vmId: {}, vmUuid: {}, vmName: {}, provider: {}, offeringId: {}, scheduleId: {}, elapsedMs: {}]",
+                vm.getId(), vm.getUuid(), vm.getInstanceName(), offering.getProvider(), offering.getId(), backupScheduleId, System.currentTimeMillis() - backupStartTime);
         return true;
     }
 
@@ -2700,6 +2705,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 BackupFrameworkEnabled,
                 BackupProviderPlugin,
                 BackupSyncPollingInterval,
+                BackupCommandTimeout,
                 BackupEnableAttachDetachVolumes,
                 KvmIncrementalBackup,
                 BackupChainSize,
@@ -2776,17 +2782,25 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         for (final BackupScheduleVO backupSchedule : backupSchedules) {
             final Long asyncJobId = backupSchedule.getAsyncJobId();
             final AsyncJobVO asyncJob = asyncJobManager.getAsyncJob(asyncJobId);
+            if (asyncJob == null) {
+                logger.warn("Backup schedule [id: {}, uuid: {}, vmId: {}] references missing async job [id: {}]. Scheduling next backup run.",
+                        backupSchedule.getId(), backupSchedule.getUuid(), backupSchedule.getVmId(), asyncJobId);
+                scheduleNextBackupJob(backupSchedule);
+                continue;
+            }
             switch (asyncJob.getStatus()) {
                 case SUCCEEDED:
                 case FAILED:
+                case CANCELLED:
                     final Date nextDateTime = scheduleNextBackupJob(backupSchedule);
                     final String nextScheduledTime = DateUtil.displayDateInTimezone(DateUtil.GMT_TIMEZONE, nextDateTime);
-                    logger.debug("Next backup scheduled time for VM ID " + backupSchedule.getVmId() + " is " + nextScheduledTime);
+                    logger.info("Backup schedule [id: {}, uuid: {}, vmId: {}] completed async job [id: {}, uuid: {}, status: {}]. Next scheduled time is [{}].",
+                            backupSchedule.getId(), backupSchedule.getUuid(), backupSchedule.getVmId(), asyncJob.getId(), asyncJob.getUuid(), asyncJob.getStatus(), nextScheduledTime);
                     break;
             default:
-                logger.debug("Found async backup job [id: {}, uuid: {}, vmId: {}] with " +
+                logger.debug("Found async backup job [id: {}, uuid: {}, scheduleId: {}, vmId: {}] with " +
                         "status [{}] and cmd information: [cmd: {}, cmdInfo: {}].",
-                        asyncJob.getId(), asyncJob.getUuid(), backupSchedule.getVmId(),
+                        asyncJob.getId(), asyncJob.getUuid(), backupSchedule.getId(), backupSchedule.getVmId(),
                         asyncJob.getStatus(), asyncJob.getCmd(), asyncJob.getCmdInfo());
                 break;
             }
@@ -2799,6 +2813,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         logger.debug("Backup backup.poll is being called at " + displayTime);
 
         final List<BackupScheduleVO> backupsToBeExecuted = backupScheduleDao.getSchedulesToExecute(currentTimestamp);
+        logger.debug("Found [{}] backup schedules to execute at [{}].", backupsToBeExecuted.size(), displayTime);
         for (final BackupScheduleVO backupSchedule: backupsToBeExecuted) {
             final Long backupScheduleId = backupSchedule.getId();
             final Long vmId = backupSchedule.getVmId();
@@ -2836,6 +2851,9 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
             try {
                 tmpBackupScheduleVO = backupScheduleDao.acquireInLockTable(backupScheduleId);
+                logger.info("Submitting scheduled backup [scheduleId: {}, scheduleUuid: {}, vmId: {}, vmUuid: {}, vmName: {}, provider: {}, offeringId: {}, scheduledTimestamp: {}, submitTime: {}].",
+                        backupScheduleId, backupSchedule.getUuid(), vm.getId(), vm.getUuid(), vm.getInstanceName(), offering.getProvider(), offering.getId(),
+                        backupSchedule.getScheduledTimestamp(), new Date());
 
                 final Long eventId = ActionEventUtils.onScheduledActionEvent(User.UID_SYSTEM, vm.getAccountId(),
                         EventTypes.EVENT_VM_BACKUP_CREATE, "creating backup for VM ID:" + vm.getUuid(),
@@ -2865,8 +2883,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 final long jobId = asyncJobManager.submitAsyncJob(job);
                 tmpBackupScheduleVO.setAsyncJobId(jobId);
                 backupScheduleDao.update(backupScheduleId, tmpBackupScheduleVO);
+                logger.info("Submitted scheduled backup [scheduleId: {}, scheduleUuid: {}, vmId: {}, vmUuid: {}, provider: {}, offeringId: {}, jobId: {}, jobUuid: {}].",
+                        backupScheduleId, backupSchedule.getUuid(), vm.getId(), vm.getUuid(), offering.getProvider(), offering.getId(), jobId, job.getUuid());
             } catch (Exception e) {
-                logger.error(String.format("Scheduling backup failed due to: [%s].", e.getMessage()), e);
+                logger.error("Scheduling backup failed [scheduleId: {}, scheduleUuid: {}, vmId: {}, provider: {}, offeringId: {}] due to: [{}].",
+                        backupScheduleId, backupSchedule.getUuid(), vmId, offering.getProvider(), offering.getId(), e.getMessage(), e);
             } finally {
                 if (tmpBackupScheduleVO != null) {
                     backupScheduleDao.releaseFromLockTable(backupScheduleId);

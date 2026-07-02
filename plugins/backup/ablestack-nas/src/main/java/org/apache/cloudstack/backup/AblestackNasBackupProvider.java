@@ -86,6 +86,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
+import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
@@ -294,6 +295,10 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType,
                 checkpointName, backupEngine, incrementalBackup ? parentBackup : null, volumePoolsAndPaths.second());
         AblestackNasTakeBackupCommand command = new AblestackNasTakeBackupCommand(vm.getInstanceName(), backupPath);
+        final int commandTimeout = BackupCommandTimeout.value();
+        if (commandTimeout > 0) {
+            command.setWait(commandTimeout);
+        }
         command.setBackupType(requestedBackupType);
         command.setCheckpointName(checkpointName);
         command.setBackupFiles(backupFiles);
@@ -310,21 +315,34 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         command.setQuiesce(quiesceVM);
 
         BackupAnswer answer;
+        final long backupStartTime = System.currentTimeMillis();
+        LOG.info("Starting ABLESTACK NAS backup [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, parentBackupUuid: {}, hostId: {}, hostName: {}, repositoryId: {}, repositoryName: {}, repositoryType: {}, repositoryAddress: {}, backupPath: {}, timeoutSeconds: {}]",
+                backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                parentBackup != null ? parentBackup.getUuid() : null, host.getId(), host.getName(), backupRepository.getId(), backupRepository.getName(),
+                backupRepository.getType(), backupRepository.getAddress(), backupPath, commandTimeout > 0 ? commandTimeout : command.getWait());
         try {
             answer = (BackupAnswer) agentManager.send(host.getId(), command);
         } catch (AgentUnavailableException e) {
-            logger.error("Unable to contact backend control plane to initiate backup for VM {}", vm.getInstanceName());
+            logger.error("Unable to contact backend control plane to initiate ABLESTACK NAS backup [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, hostId: {}, repositoryId: {}, repositoryAddress: {}]",
+                    backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    host.getId(), backupRepository.getId(), backupRepository.getAddress(), e);
             backupVO.setStatus(Backup.Status.Failed);
             removeBackupWithDetails(backupVO.getId());
             throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
         } catch (OperationTimedoutException e) {
-            logger.error("Operation to initiate backup timed out for VM {}", vm.getInstanceName());
+            logger.error("Operation to initiate ABLESTACK NAS backup timed out [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, hostId: {}, repositoryId: {}, repositoryAddress: {}, elapsedMs: {}, timeoutSeconds: {}]",
+                    backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    host.getId(), backupRepository.getId(), backupRepository.getAddress(), System.currentTimeMillis() - backupStartTime,
+                    commandTimeout > 0 ? commandTimeout : command.getWait(), e);
             backupVO.setStatus(Backup.Status.Failed);
             removeBackupWithDetails(backupVO.getId());
             throw new CloudRuntimeException("Operation to initiate backup timed out, please try again");
         }
 
         if (answer != null && answer.getResult()) {
+            LOG.info("Completed ABLESTACK NAS backup [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, repositoryId: {}, backupPath: {}, size: {}, elapsedMs: {}]",
+                    backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    backupRepository.getId(), backupPath, answer.getSize(), System.currentTimeMillis() - backupStartTime);
             backupVO.setDate(new Date());
             backupVO.setSize(answer.getSize());
             backupVO.setStatus(Backup.Status.BackedUp);
@@ -336,7 +354,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         }
 
         final String details = answer != null ? answer.getDetails() : "No answer received";
-        logger.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
+        logger.error("Failed to take ABLESTACK NAS backup [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, repositoryId: {}, backupPath: {}, elapsedMs: {}]: {}",
+                backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                backupRepository.getId(), backupPath, System.currentTimeMillis() - backupStartTime, details);
         if (retryAsFullOnFailure) {
             backupVO.setStatus(Backup.Status.Failed);
             removeBackupWithDetails(backupVO.getId());
