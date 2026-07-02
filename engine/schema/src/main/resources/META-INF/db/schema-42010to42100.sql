@@ -346,7 +346,10 @@ CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backup_schedule', 'uuid', 'VARCHAR(4
 UPDATE `cloud`.`backup_schedule` SET uuid = UUID() WHERE uuid IS NULL OR uuid = '';
 
 -- Extension framework
-UPDATE `cloud`.`configuration` SET value = CONCAT(value, ',External') WHERE name = 'hypervisor.list';
+UPDATE `cloud`.`configuration`
+SET value = IF(value IS NULL OR value = '', 'External', CONCAT(value, ',External'))
+WHERE name = 'hypervisor.list'
+  AND (value IS NULL OR FIND_IN_SET('External', value) = 0);
 
 CREATE TABLE IF NOT EXISTS `cloud`.`extension` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
