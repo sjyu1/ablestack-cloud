@@ -2730,8 +2730,8 @@ const removeQuickLinkRow = (index) => {
   quickLinkRows.value.splice(index, 1)
   if (!quickLinkRows.value.length) quickLinkRows.value.push(makeQuickLinkRow())
 }
-// 샘플 VM 목록
-const ENABLE_VM_FALLBACK_MOCK = true
+// 샘플(테스트) VM(가상머신) 목록
+const ENABLE_VM_FALLBACK_MOCK = false
 const HOST_ACTIVE_VM_STATES = new Set(['running', 'starting', 'stopping', 'migrating'])
 
 const buildVmMockList = (hostId, hostName = 'sample') => {
