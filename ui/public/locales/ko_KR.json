@@ -4364,6 +4364,7 @@
   "router.health.checks": "헬스 체크",
   "side.by.side": "나란히",
   "state.completed": "완료",
+  "state.created": "생성됨",
   "state.declined": "거절",
   "state.disabled": "비활성화",
   "state.enabled": "활성화",
