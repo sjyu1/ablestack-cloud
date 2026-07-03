@@ -1549,11 +1549,16 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             }
             LOG.info("Cleaning up NetBackup restore sources on stage/source host [{}] for backup paths {}",
                     sourceHost, sourceHostChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
-            cleanupBackupPathsOnHost(zoneId, sourceHost, sourceHostChain.stream()
-                    .map(Backup::getExternalId)
-                    .filter(StringUtils::isNotBlank)
-                    .distinct()
-                    .collect(Collectors.toList()));
+            try {
+                cleanupBackupPathsOnHost(zoneId, sourceHost, sourceHostChain.stream()
+                        .map(Backup::getExternalId)
+                        .filter(StringUtils::isNotBlank)
+                        .distinct()
+                        .collect(Collectors.toList()));
+            } catch (final Exception e) {
+                LOG.warn("Failed to cleanup NetBackup restore sources on stage/source host [{}]. Restore result will be preserved. paths={}",
+                        sourceHost, sourceHostChain.stream().map(Backup::getExternalId).collect(Collectors.toList()), e);
+            }
         }
     }
 
@@ -1567,7 +1572,14 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             return;
         }
         final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-        final Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
+        final Ternary<String, String, String> credentials;
+        try {
+            credentials = getKVMHyperisorCredentials(host);
+        } catch (final Exception e) {
+            LOG.warn("Skipping NetBackup restore cleanup on host [{}] because KVM login credentials could not be resolved. paths={}",
+                    hostName, backupPaths, e);
+            return;
+        }
         for (final String backupPath : backupPaths) {
             if (!isNetBackupRestoreCleanupPath(backupPath)) {
                 LOG.warn("Skipping NetBackup restore cleanup for path [{}] on host [{}] because it is outside [{}].",
