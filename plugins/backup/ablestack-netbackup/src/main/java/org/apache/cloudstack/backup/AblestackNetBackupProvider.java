@@ -17,6 +17,7 @@
 package org.apache.cloudstack.backup;
 
 import com.cloud.agent.AgentManager;
+import com.cloud.agent.api.Answer;
 import com.cloud.exception.AgentUnavailableException;
 import com.cloud.exception.OperationTimedoutException;
 import com.cloud.host.Host;
@@ -37,12 +38,9 @@ import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.VolumeDao;
-import com.cloud.utils.NumbersUtil;
 import com.cloud.utils.Pair;
-import com.cloud.utils.Ternary;
 import com.cloud.utils.component.AdapterBase;
 import com.cloud.utils.exception.CloudRuntimeException;
-import com.cloud.utils.ssh.SshHelper;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine;
 import com.cloud.vm.dao.VMInstanceDao;
@@ -302,18 +300,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             final BackupAnswer answer = (BackupAnswer) agentManager.send(vmHost.getId(), command);
             if (answer != null && answer.getResult()) {
                 if (BACKUP_ENGINE_QCOW2.equals(backupEngine)) {
-                    final HostVO vmHostVO = hostDao.findById(vmHost.getId());
-                    if (vmHostVO != null) {
-                        final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-                        final Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
-                        final String checkpointXml = readFileContentsOnHost(vmHostVO, credentials.first(), credentials.second(), sshPort,
-                                getCheckpointPath(backupPath, checkpointName, backupEngine));
-                        if (StringUtils.isNotBlank(checkpointXml)) {
-                            final String checkpointXmlToStore = incrementalBackup ? checkpointXml : removeParentFromCheckpointXml(checkpointXml);
-                            backupDetails.put(DETAIL_CHECKPOINT_XML, checkpointXmlToStore);
-                            backupDetailsDao.removeDetail(backupVO.getId(), DETAIL_CHECKPOINT_XML);
-                            backupDetailsDao.addDetail(backupVO.getId(), DETAIL_CHECKPOINT_XML, checkpointXmlToStore, false);
-                        }
+                    final String checkpointXml = readFileContentsOnHost(vmHost.getId(), getCheckpointPath(backupPath, checkpointName, backupEngine));
+                    if (StringUtils.isNotBlank(checkpointXml)) {
+                        final String checkpointXmlToStore = incrementalBackup ? checkpointXml : removeParentFromCheckpointXml(checkpointXml);
+                        backupDetails.put(DETAIL_CHECKPOINT_XML, checkpointXmlToStore);
+                        backupDetailsDao.removeDetail(backupVO.getId(), DETAIL_CHECKPOINT_XML);
+                        backupDetailsDao.addDetail(backupVO.getId(), DETAIL_CHECKPOINT_XML, checkpointXmlToStore, false);
                     }
                 }
 
@@ -873,40 +865,21 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return false;
     }
 
-    protected Ternary<String, String, String> getKVMHyperisorCredentials(final HostVO host) {
-        String username = null;
-        String password = null;
-        if (host != null && host.getHypervisorType() == Hypervisor.HypervisorType.KVM) {
-            hostDao.loadDetails(host);
-            password = host.getDetail("password");
-            username = host.getDetail("username");
-        }
-        if (password == null || username == null) {
-            throw new CloudRuntimeException("Cannot find login credentials for HYPERVISOR " + Objects.requireNonNull(host).getUuid());
-        }
-        return new Ternary<>(username, password, null);
-    }
-
-    private String readFileContentsOnHost(final HostVO host, final String username, final String password, final int port, final String path) {
-        if (host == null || StringUtils.isBlank(path)) {
+    private String readFileContentsOnHost(final Long hostId, final String path) {
+        if (hostId == null || StringUtils.isBlank(path)) {
             return null;
         }
-        final String command = String.format("test -f %s && cat %s", shellQuote(path), shellQuote(path));
         try {
-            final Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), port,
-                    username, null, password, command, 120000, 120000, 3600000);
-            if (!response.first()) {
-                return null;
+            final Answer answer = agentManager.send(hostId, new AblestackNetBackupReadFileCommand(path));
+            if (answer != null && answer.getResult()) {
+                return answer.getDetails();
             }
-            return response.second();
-        } catch (final Exception e) {
-            LOG.warn("Failed to read file [{}] on host [{}]", path, host.getName(), e);
-            return null;
+            LOG.warn("Failed to read NetBackup file [{}] on host [{}]: {}",
+                    path, hostId, answer != null ? answer.getDetails() : "no answer received");
+        } catch (final AgentUnavailableException | OperationTimedoutException e) {
+            LOG.warn("Failed to read NetBackup file [{}] on host [{}]: {}", path, hostId, e.getMessage(), e);
         }
-    }
-
-    private String shellQuote(final String value) {
-        return "'" + StringUtils.defaultString(value).replace("'", "'\"'\"'") + "'";
+        return null;
     }
 
     @Override
@@ -996,12 +969,14 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                             vm.getInstanceName(), backup.getUuid(), host.getName(), backup.getExternalId());
                     waitForPreparedRestorePathOnDestinationHost(host, backup.getExternalId());
                 } else {
-                    LOG.info("Mold-initiated incremental restore will request the complete NetBackup restore chain. vm=[{}], backup=[{}], restoreHost=[{}], restoreSourcesToPrepare={}",
+                    LOG.info("Mold-initiated incremental restore will request the complete NetBackup restore chain. vm=[{}], backup=[{}], "
+                                    + "restoreHost=[{}], restoreSourcesToPrepare={}",
                             vm.getInstanceName(), backup.getUuid(), host.getName(),
                             restoreSourcesToPrepare.stream().map(Backup::getExternalId).collect(Collectors.toList()));
                 }
                 if (restoreSourcesAlreadyPrepared) {
-                    LOG.info("Prepared incremental restore will skip the already-restored target path from staged sources. vm=[{}], backup=[{}], excludedPath=[{}], stagedRestoreChain={}",
+                    LOG.info("Prepared incremental restore will skip the already-restored target path from staged sources. vm=[{}], backup=[{}], "
+                                    + "excludedPath=[{}], stagedRestoreChain={}",
                             vm.getInstanceName(), backup.getUuid(), backup.getExternalId(),
                             stagedRestoreChain.stream().map(Backup::getExternalId).collect(Collectors.toList()));
                 }
@@ -1571,35 +1546,16 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             LOG.warn("Unable to find restore host [{}] while cleaning up NetBackup restore paths {}.", hostName, backupPaths);
             return;
         }
-        final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-        final Ternary<String, String, String> credentials;
         try {
-            credentials = getKVMHyperisorCredentials(host);
-        } catch (final Exception e) {
-            LOG.warn("Skipping NetBackup restore cleanup on host [{}] because KVM login credentials could not be resolved. paths={}",
-                    hostName, backupPaths, e);
-            return;
-        }
-        for (final String backupPath : backupPaths) {
-            if (!isNetBackupRestoreCleanupPath(backupPath)) {
-                LOG.warn("Skipping NetBackup restore cleanup for path [{}] on host [{}] because it is outside [{}].",
-                        backupPath, hostName, BACKUP_ROOT);
-                continue;
+            final Answer answer = agentManager.send(host.getId(), new AblestackNetBackupCleanupCommand(backupPaths));
+            if (answer == null || !answer.getResult()) {
+                LOG.warn("NetBackup restore cleanup command failed on host [{}]: {}",
+                        host.getName(), answer != null ? answer.getDetails() : "no answer received");
             }
-            try {
-                executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort,
-                        String.format("rm -rf %s", shellQuote(backupPath)));
-            } catch (final Exception e) {
-                LOG.warn("Failed to cleanup NetBackup restore source path [{}] on host [{}]", backupPath, hostName, e);
-            }
+        } catch (final AgentUnavailableException | OperationTimedoutException e) {
+            LOG.warn("Failed to execute NetBackup restore cleanup command on host [{}]: {}",
+                    host.getName(), e.getMessage(), e);
         }
-    }
-
-    private boolean isNetBackupRestoreCleanupPath(final String backupPath) {
-        final String normalizedPath = StringUtils.removeEnd(StringUtils.defaultString(backupPath).trim(), "/");
-        return StringUtils.isNotBlank(normalizedPath)
-                && !StringUtils.equals(normalizedPath, BACKUP_ROOT)
-                && StringUtils.startsWith(normalizedPath, BACKUP_ROOT + "/");
     }
 
     private HostVO findRestoreHost(final String restoreHostName) {
@@ -1608,22 +1564,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             return host;
         }
         return hostDao.findByIp(restoreHostName);
-    }
-
-    private void executeDeleteBackupPathCommand(final HostVO host, final String username, final String password, final int sshPort,
-            final String command) {
-        if (host == null || StringUtils.isBlank(command)) {
-            return;
-        }
-        try {
-            final Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), sshPort,
-                    username, null, password, command, 120000, 120000, 3600000);
-            if (!response.first()) {
-                LOG.warn("NetBackup restore cleanup command failed on host [{}]: {}", host.getName(), response.second());
-            }
-        } catch (final Exception e) {
-            LOG.warn("Failed to execute NetBackup restore cleanup command on host [{}]", host.getName(), e);
-        }
     }
 
     private LinkedHashMap<String, List<Backup>> groupRestoreChainByStageHost(final String destinationHostName, final List<Backup> restoreChain) {
