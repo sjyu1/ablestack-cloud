@@ -2,23 +2,54 @@
   <div class="p-2 rack-diagram-root" :class="{ 'is-dark': isDarkMode }">
     <div class="toolbar-container" :class="{ 'toolbar-detail': !showRackList }">
 
-      <div class="toolbar-left">
-        <a-space :wrap="false" size="small">
-          <a-input-search
-            v-model:value="searchQuery"
-            :placeholder="t('rackDiagram.searchPlaceholder')"
-            :style="{ width: showRackList ? '320px' : '240px' }"
-            allow-clear
-          />
-        </a-space>
-        <input type="file" ref="fileInput" accept=".json" style="display: none" @change="handleImport" />
-      </div>
+      <div class="toolbar-view-controls">
+        <div class="toolbar-left">
+          <a-space :wrap="false" size="small">
+            <a-input-search
+              v-model:value="searchQuery"
+              :placeholder="t('rackDiagram.searchPlaceholder')"
+              :style="{ width: showRackList ? '320px' : '240px' }"
+              allow-clear
+            />
+          </a-space>
+          <input type="file" ref="fileInput" accept=".json" style="display: none" @change="handleImport" />
+        </div>
 
+        <div v-if="!showRackList" class="toolbar-zoom">
+          <a-input-number
+            :value="zoomPercentUi"
+            @change="onZoomInputChange"
+            @pressEnter="commitZoomUi"
+            @blur="commitZoomUi"
+            :min="40"
+            :max="150"
+            :formatter="value => `${value}%`"
+            :parser="value => value.replace('%', '')"
+            size="small"
+            class="zoom-input"
+          />
+
+          <div class="zoom-slider-wrap">
+            <a-slider
+              :value="zoomPercentUi"
+              @change="onZoomSliderChange"
+              @afterChange="commitZoomUi"
+              :min="40"
+              :max="150"
+              :tip-formatter="null"
+            />
+          </div>
+        </div>
+      </div>
       <div class="toolbar-actions">
         <a-space :wrap="false" size="small">
-          <a-button type="primary" @click="saveRackData" :loading="saving" :disabled="!isDirty">
-            <SaveOutlined /> {{ t('rackDiagram.save') }}
-          </a-button>
+          <a-tooltip :title="!isDirty ? t('rackDiagram.msg.noChangesToSave') : ''">
+            <span class="rack-save-tooltip-wrap">
+              <a-button type="primary" @click="saveRackData" :loading="saving" :disabled="!isDirty">
+                <SaveOutlined /> {{ t('rackDiagram.save') }}
+              </a-button>
+            </span>
+          </a-tooltip>
           <a-dropdown
             :trigger="['click']"
             placement="bottomRight"
@@ -63,33 +94,6 @@
         </a-space>
       </div>
 
-      <div v-if="!showRackList" class="toolbar-zoom">
-        <span class="zoom-label">{{ t('rackDiagram.zoom') }}:</span>
-
-        <a-input-number
-          :value="zoomPercentUi"
-          @change="onZoomInputChange"
-          @pressEnter="commitZoomUi"
-          @blur="commitZoomUi"
-          :min="40"
-          :max="150"
-          :formatter="value => `${value}%`"
-          :parser="value => value.replace('%', '')"
-          size="small"
-          class="zoom-input"
-        />
-
-        <div class="zoom-slider-wrap">
-          <a-slider
-            :value="zoomPercentUi"
-            @change="onZoomSliderChange"
-            @afterChange="commitZoomUi"
-            :min="40"
-            :max="150"
-            :tip-formatter="null"
-          />
-        </div>
-      </div>
     </div>
     <a-spin :spinning="loading || saving">
       <div v-if="showRackList" class="rack-list-view">
@@ -123,7 +127,7 @@
                     :percent="rackAggregate.averageUsage"
                     :show-info="false"
                     size="small"
-                    :stroke-width="6"
+                    :stroke-width="7"
                   />
                   </span>
                 </span>
@@ -217,7 +221,7 @@
                     :percent="getRackUsagePercent(rack)"
                     :show-info="false"
                     size="small"
-                    :stroke-width="7"
+                    :stroke-width="8"
                   />
                   <div class="rack-list-card-usage-detail">
                     {{ getRackUsedU(rack) }}U / {{ rack.totalHeight }}U
@@ -288,7 +292,7 @@
                 :percent="getRackUsagePercent(rack)"
                 :show-info="false"
                 size="small"
-                :stroke-width="6"
+                :stroke-width="7"
               />
               <span class="rack-list-row-used">{{ getRackUsedU(rack) }}U / {{ rack.totalHeight }}U</span>
             </div>
@@ -376,7 +380,7 @@
                       </a-tooltip>
                       <a-popconfirm :title="t('rackDiagram.deleteConfirm')" :ok-text="t('label.ok')" :cancel-text="t('label.cancel')" @confirm="deleteRack(rIndex)">
                         <a-tooltip :title="t('rackDiagram.delete')">
-                          <a-button class="rack-header-action-btn rack-header-action-danger">
+                          <a-button class="rack-header-action-btn" danger>
                             <template #icon><DeleteOutlined /></template>
                           </a-button>
                         </a-tooltip>
@@ -702,7 +706,27 @@
                             @select="markInlineDraftChanged"
                             @keydown.enter.stop="finishInlineEdit"
                           />
-                          <a-input v-model:value="row.value" size="small" :placeholder="t('rackDiagram.deviceSpecValuePlaceholder')" @click.stop @pressEnter="finishInlineEdit" />
+                          <span v-if="isNumericDeviceSpecRow(row)" class="device-spec-number-wrap" @click.stop @mousedown.stop>
+                            <a-input-number
+                              :value="getSpecNumericEditValue(row)"
+                              size="small"
+                              :min="0"
+                              :precision="getSpecNumericPrecision(row)"
+                              :placeholder="t('rackDiagram.deviceSpecValuePlaceholder')"
+                              @change="value => setSpecNumericEditValue(row, value)"
+                              @pressEnter="finishInlineEdit"
+                            />
+                            <span v-if="getDeviceSpecUnit(row)" class="device-spec-unit">{{ getDeviceSpecUnit(row) }}</span>
+                          </span>
+                          <a-input
+                            v-else
+                            v-model:value="row.value"
+                            size="small"
+                            :placeholder="t('rackDiagram.deviceSpecValuePlaceholder')"
+                            @click.stop
+                            @change="markInlineDraftChanged"
+                            @pressEnter="finishInlineEdit"
+                          />
                           <a-button size="small" type="text" danger @click.stop="removeInlineSpecRow(idx)">
                             <DeleteOutlined />
                           </a-button>
@@ -1095,7 +1119,18 @@
                   />
                 </template>
                 <template v-else-if="column.key === 'value'">
+                  <span v-if="isNumericDeviceSpecRow(record)" class="device-spec-number-wrap">
+                    <a-input-number
+                      :value="getSpecNumericEditValue(record)"
+                      :min="0"
+                      :precision="getSpecNumericPrecision(record)"
+                      :placeholder="t('rackDiagram.deviceSpecValuePlaceholder')"
+                      @change="value => setSpecNumericEditValue(record, value)"
+                    />
+                    <span v-if="getDeviceSpecUnit(record)" class="device-spec-unit">{{ getDeviceSpecUnit(record) }}</span>
+                  </span>
                   <a-input
+                    v-else
                     v-model:value="record.value"
                     :placeholder="t('rackDiagram.deviceSpecValuePlaceholder')"
                   />
@@ -1544,10 +1579,73 @@ const deviceSpecKeyOptionKeys = [
   'rackDiagram.specHypervisor'
 ]
 
+const textDeviceSpecKeyOptionKeys = new Set([
+  'rackDiagram.specFirmware',
+  'rackDiagram.specOs',
+  'rackDiagram.specHypervisor'
+])
+
 const deviceSpecKeyOptions = computed(() => deviceSpecKeyOptionKeys.map(key => ({ value: t(key) })))
 
 const filterDeviceSpecKeyOption = (input, option) => {
   return String(option?.value || '').toLowerCase().includes(String(input || '').toLowerCase())
+}
+
+const getDeviceSpecMetaByLabel = (label) => {
+  const normalized = String(label || '').trim()
+  if (!normalized) return null
+  const labelKey = deviceSpecKeyOptionKeys.find(key => t(key) === normalized)
+  if (!labelKey) return null
+  const translated = t(labelKey)
+  const unitMatch = translated.match(/\(([^)]+)\)/)
+  return {
+    labelKey,
+    numeric: !textDeviceSpecKeyOptionKeys.has(labelKey),
+    unit: unitMatch ? unitMatch[1].trim() : ''
+  }
+}
+
+const isNumericDeviceSpecRow = (row) => {
+  return !!getDeviceSpecMetaByLabel(row?.key)?.numeric
+}
+
+const getDeviceSpecUnit = (row) => {
+  return getDeviceSpecMetaByLabel(row?.key)?.unit || ''
+}
+
+const getSpecNumericPrecision = (row) => {
+  const unit = getDeviceSpecUnit(row).toLowerCase()
+  return ['ghz', 'kw', 'kva', 'tbps'].includes(unit) ? 2 : 0
+}
+
+const stripDeviceSpecUnit = (row) => {
+  const value = String(row?.value || '').trim()
+  const unit = getDeviceSpecUnit(row)
+  if (!unit) return value
+  return value.replace(new RegExp(`\\s*${unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), '').trim()
+}
+
+const getSpecNumericEditValue = (row) => {
+  const numericValue = stripDeviceSpecUnit(row).match(/^\d+(\.\d+)?/)
+  return numericValue ? Number(numericValue[0]) : undefined
+}
+
+const setSpecNumericEditValue = (row, value) => {
+  row.value = value === null || value === undefined || value === '' ? '' : String(value)
+  markInlineDraftChanged()
+}
+
+const formatDeviceSpecValue = (row) => {
+  const key = String(row.key || '').trim()
+  const value = String(row.value || '').trim()
+  if (!key || !isNumericDeviceSpecRow(row)) return value
+
+  const numericMatch = stripDeviceSpecUnit(row).match(/^\d+(\.\d+)?/)
+  const numericValue = numericMatch ? numericMatch[0] : ''
+  if (!numericValue) return ''
+
+  const unit = getDeviceSpecUnit(row)
+  return unit ? `${numericValue}${unit}` : numericValue
 }
 
 const normalizeHardwareInfo = (hardwareInfo) => {
@@ -1580,6 +1678,10 @@ const validateHardwareInfo = (hardwareInfo) => {
   const invalid = lengthFields.find(field => normalized[field.key].length > 128)
   if (invalid) {
     message.warning(t('rackDiagram.msg.hardwareFieldMax', { field: t(invalid.labelKey) }))
+    return null
+  }
+  if (normalized.purchaseDate && normalized.maintenanceEndDate && normalized.purchaseDate >= normalized.maintenanceEndDate) {
+    message.warning(t('rackDiagram.msg.purchaseDateBeforeMaintenanceEndDate'))
     return null
   }
   return normalized
@@ -1729,7 +1831,8 @@ const finishInlineEdit = () => {
 }
 
 const markInlineDraftChanged = () => {
-  // v-model already updates the draft. Keep the editor open until the user leaves the section.
+  // v-model already updates the draft. Keep the editor open until explicit save/section switch.
+  isDirty.value = true
 }
 
 const activateInlineField = (field) => {
@@ -1745,13 +1848,13 @@ const activateInlineField = (field) => {
 
 const addInlineSpecRow = () => {
   selectedDeviceDraft.specs.push(makeMemoRow())
-  applyInlineDeviceChangesToRack()
+  markInlineDraftChanged()
 }
 
 const removeInlineSpecRow = (idx) => {
   selectedDeviceDraft.specs.splice(idx, 1)
   if (!selectedDeviceDraft.specs.length) addInlineSpecRow()
-  applyInlineDeviceChangesToRack()
+  markInlineDraftChanged()
 }
 
 const addInlineQuickLink = () => {
@@ -2609,7 +2712,7 @@ const removeDeviceSpecRow = (index) => {
 
 const getCleanSpecRows = (rows) => {
   return rows
-    .map(row => ({ key: String(row.key || '').trim(), value: String(row.value || '').trim() }))
+    .map(row => ({ key: String(row.key || '').trim(), value: formatDeviceSpecValue(row) }))
     .filter(row => row.key || row.value)
 }
 
@@ -3909,6 +4012,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
 }
 
+.toolbar-view-controls,
 .toolbar-left,
 .toolbar-actions,
 .toolbar-zoom {
@@ -3919,9 +4023,21 @@ onBeforeUnmount(() => {
 
 .toolbar-detail {
   flex-wrap: nowrap !important;
+  justify-content: flex-start !important;
 }
 
-.toolbar-detail .toolbar-left {
+.toolbar-detail .toolbar-view-controls {
+  min-width: 0;
+  order: 1;
+}
+
+.toolbar-detail .toolbar-actions {
+  order: 2;
+  margin-left: auto;
+}
+
+.toolbar-view-controls {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -3929,10 +4045,16 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
+.rack-save-tooltip-wrap {
+  display: inline-flex;
+}
+
 .toolbar-zoom {
   flex: 0 0 auto;
   gap: 8px;
-  margin-left: 12px;
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid #e5e7eb;
 }
 
 .toolbar-container :deep(.ant-btn),
@@ -4138,14 +4260,6 @@ onBeforeUnmount(() => {
 }
 
 /* 화면 배율 텍스트 */
-.zoom-label {
-  font-weight: bold;
-  color: #595959;
-  font-size: 13px;
-  line-height: 32px;
-  white-space: nowrap;
-}
-
 .zoom-input {
   width: 70px;
   text-align: center;
@@ -4153,7 +4267,7 @@ onBeforeUnmount(() => {
 }
 
 .zoom-slider-wrap {
-  width: 120px;
+  width: 144px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -4188,7 +4302,7 @@ onBeforeUnmount(() => {
 }
 
 .rack-list-summary-card :deep(.ant-card-body) {
-  padding: 12px 22px;
+  padding: 15px 24px;
 }
 
 .rack-list-summary-title {
@@ -4206,6 +4320,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   min-width: 0;
   width: 100%;
@@ -4240,7 +4355,7 @@ onBeforeUnmount(() => {
 
 .rack-list-summary-value {
   color: #0f172a;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 700;
   line-height: 1.25;
   white-space: nowrap;
@@ -4254,24 +4369,24 @@ onBeforeUnmount(() => {
 }
 
 .rack-list-summary-icon {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 32px;
+  flex: 0 0 36px;
   color: #1677ff;
   background: rgba(22, 119, 255, 0.09);
 }
 
 .rack-list-summary-icon :deep(.anticon) {
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .rack-list-summary-rack-icon :deep(.rack-card-icon) {
-  width: 18px;
-  height: 22px;
+  width: 21px;
+  height: 25px;
 }
 
 .rack-list-summary-value-row {
@@ -4346,6 +4461,15 @@ onBeforeUnmount(() => {
 
 .rack-list-more-btn {
   color: #64748b !important;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 !important;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .rack-list-more-btn:hover {
@@ -4353,9 +4477,14 @@ onBeforeUnmount(() => {
   background: #f1f5f9 !important;
 }
 
+.rack-list-more-btn :deep(.anticon) {
+  font-size: 20px;
+  line-height: 1;
+}
+
 .rack-list-more-btn :deep(.anticon-more svg) {
-  width: 3em;
-  height: 3em;
+  width: 1em;
+  height: 1em;
 }
 
 .rack-list-card-match {
@@ -4513,7 +4642,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.rack-list-card-footer > span:first-child {
+  flex: 0 0 auto;
+}
+
 .rack-list-card-location {
+  flex: 1 1 auto;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -4647,7 +4782,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.rack-list-row-meta > span:first-child {
+  flex: 0 0 auto;
+}
+
 .rack-list-row-location {
+  flex: 1 1 auto;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -4769,8 +4910,9 @@ onBeforeUnmount(() => {
   position: sticky;
   top: 64px;
   align-self: flex-start;
-  height: fit-content;
-  max-height: none;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 80px);
   overflow: visible;
   max-width: 100%;
   z-index: 20;
@@ -4794,11 +4936,15 @@ onBeforeUnmount(() => {
   border-color: rgba(0,0,0,0.06);
   box-shadow: 0 1px 2px rgba(0,0,0,0.06);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+  min-height: 0;
 }
 
 .rack-side-pane-card :deep(.ant-card-head) {
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
+  position: relative;
   z-index: 2;
   background: #fff;
   border-bottom-color: rgba(0, 0, 0, 0.06);
@@ -4807,7 +4953,8 @@ onBeforeUnmount(() => {
 .rack-side-pane-card :deep(.ant-card-body) {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 132px);
+  flex: 1 1 auto;
+  max-height: none;
   min-height: 0;
   overflow: hidden;
 }
@@ -5130,6 +5277,35 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
+.device-spec-number-wrap {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.device-spec-number-wrap :deep(.ant-input-number) {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.device-spec-unit {
+  flex: 0 0 auto;
+  min-width: 36px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0 7px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+}
+
 .device-memo-row-delete {
   justify-self: center;
 }
@@ -5235,8 +5411,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   flex: 0 0 auto;
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 3;
   margin: 12px -12px -12px;
   padding: 12px;
@@ -5535,34 +5710,22 @@ onBeforeUnmount(() => {
 }
 
 .rack-header-action-btn {
-  width: 46px !important;
-  height: 46px !important;
+  width: 48px !important;
+  height: 42px !important;
   padding: 0 !important;
-  border-radius: 8px !important;
-  border-color: #e5e7eb !important;
-  color: #111827 !important;
-  background: #fff !important;
+  border-radius: 6px !important;
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
 }
 
 .rack-header-action-btn :deep(.anticon) {
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .rack-header-action-btn:hover {
-  color: #1677ff !important;
-  border-color: #1677ff !important;
-}
-
-.rack-header-action-danger {
-  color: #ff4d4f !important;
-}
-
-.rack-header-action-danger:hover {
-  color: #ff4d4f !important;
-  border-color: #ff4d4f !important;
+  color: #1677ff;
+  border-color: #1677ff;
 }
 
 .rack-header-meta-row {
@@ -6176,8 +6339,8 @@ onBeforeUnmount(() => {
   background-color: #4a515a !important;
 }
 
-.rack-diagram-root.is-dark .zoom-label {
-  color: rgba(255, 255, 255, 0.85) !important;
+.rack-diagram-root.is-dark .toolbar-zoom {
+  border-left-color: #4a515a;
 }
 
 .rack-diagram-root.is-dark .rack-canvas {
@@ -6185,15 +6348,47 @@ onBeforeUnmount(() => {
   background: radial-gradient(circle, #232a33 0%, #1b2129 100%);
 }
 
+.rack-diagram-root.is-dark .rack-list-view {
+  background: #151b24;
+}
+
 .rack-diagram-root.is-dark .rack-list-card {
-  background: #1f2732;
-  border-color: #3a4654;
+  background: #1f2732 !important;
+  border-color: #3a4654 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+.rack-diagram-root.is-dark :deep(.rack-list-card.ant-card) {
+  background: #1f2732 !important;
+  border-color: #3a4654 !important;
+}
+
+.rack-diagram-root.is-dark :deep(.rack-list-card.ant-card > .ant-card-body) {
+  background: transparent !important;
+}
+
+.rack-diagram-root.is-dark .rack-list-card:hover {
+  border-color: #4c93ff !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+}
+
+.rack-diagram-root.is-dark .rack-list-card :deep(.ant-card-body) {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .rack-diagram-root.is-dark .rack-list-summary-card {
-  background: #1f2732;
-  border-color: #3a4654;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  background: #1f2732 !important;
+  border-color: #3a4654 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
+}
+
+.rack-diagram-root.is-dark :deep(.rack-list-summary-card.ant-card) {
+  background: #1f2732 !important;
+  border-color: #3a4654 !important;
+}
+
+.rack-diagram-root.is-dark :deep(.rack-list-summary-card.ant-card > .ant-card-body) {
+  background: transparent !important;
 }
 
 .rack-diagram-root.is-dark .rack-list-summary-title,
@@ -6212,8 +6407,31 @@ onBeforeUnmount(() => {
 }
 
 .rack-diagram-root.is-dark .rack-list-summary-icon {
-  background: rgba(22, 119, 255, 0.16);
+  background: rgba(22, 119, 255, 0.20);
   color: #8cc8ff;
+}
+
+.rack-diagram-root.is-dark .rack-list-summary-progress :deep(.ant-progress-inner),
+.rack-diagram-root.is-dark .rack-list-progress :deep(.ant-progress-inner),
+.rack-diagram-root.is-dark .rack-list-row-progress :deep(.ant-progress-inner) {
+  background-color: #334155;
+}
+
+.rack-diagram-root.is-dark .rack-list-view-switch :deep(.ant-radio-button-wrapper) {
+  background: #1f2732;
+  border-color: #3a4654;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.rack-diagram-root.is-dark .rack-list-view-switch :deep(.ant-radio-button-wrapper:not(.ant-radio-button-wrapper-checked):hover) {
+  color: #8cc8ff;
+  border-color: #4c93ff;
+}
+
+.rack-diagram-root.is-dark .rack-list-view-switch :deep(.ant-radio-button-wrapper-checked) {
+  background: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
 }
 
 .rack-diagram-root.is-dark .rack-list-summary-metric + .rack-list-summary-metric {
@@ -6235,22 +6453,22 @@ onBeforeUnmount(() => {
 }
 
 .rack-diagram-root.is-dark .rack-list-card-title {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.94);
 }
 
 .rack-diagram-root.is-dark .rack-list-card-rack-icon {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .rack-diagram-root.is-dark .rack-list-card-stat-label,
 .rack-diagram-root.is-dark .rack-list-card-footer,
 .rack-diagram-root.is-dark .rack-list-card-usage-detail,
 .rack-diagram-root.is-dark .rack-list-card-extra {
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .rack-diagram-root.is-dark .rack-list-card-usage {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .rack-diagram-root.is-dark .rack-list-card-stat strong {
@@ -6264,7 +6482,7 @@ onBeforeUnmount(() => {
 }
 
 .rack-diagram-root.is-dark .rack-list-add-card {
-  background: rgba(31, 39, 50, 0.7);
+  background: rgba(31, 39, 50, 0.72);
   border-color: #475569;
   color: rgba(255, 255, 255, 0.86);
 }
@@ -6281,8 +6499,8 @@ onBeforeUnmount(() => {
 }
 
 .rack-diagram-root.is-dark .rack-list-row {
-  background: #1f2732;
-  border-color: #3a4654;
+  background: #1f2732 !important;
+  border-color: #3a4654 !important;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14);
 }
 
@@ -6298,18 +6516,18 @@ onBeforeUnmount(() => {
 .rack-diagram-root.is-dark .rack-list-row-title,
 .rack-diagram-root.is-dark .rack-list-row-usage strong,
 .rack-diagram-root.is-dark .rack-list-row-stats strong {
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.94);
 }
 
 .rack-diagram-root.is-dark .rack-list-row-icon {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .rack-diagram-root.is-dark .rack-list-row-meta,
 .rack-diagram-root.is-dark .rack-list-row-label,
 .rack-diagram-root.is-dark .rack-list-row-used,
 .rack-diagram-root.is-dark .rack-list-row-stats {
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .rack-diagram-root.is-dark .rack-list-add-row {
@@ -6334,12 +6552,21 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .rack-side-pane-card :deep(.ant-card-head) {
   background: #1f2732;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.rack-diagram-root.is-dark .rack-side-pane-card :deep(.ant-card-head-title) {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .rack-diagram-root.is-dark .rack-side-pane-card {
   background: #1f2732;
   border-color: #3a4654;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.rack-diagram-root.is-dark .rack-side-pane-card :deep(.ant-card-body) {
+  background: #151b24;
 }
 
 .rack-diagram-root.is-dark .device-summary-header,
@@ -6350,6 +6577,73 @@ onBeforeUnmount(() => {
 .rack-diagram-root.is-dark .device-linked-asset-card {
   background: #202938;
   border-color: rgba(255, 255, 255, 0.08);
+}
+
+.rack-diagram-root.is-dark .device-summary-title,
+.rack-diagram-root.is-dark .device-info-section-title {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.rack-diagram-root.is-dark .device-summary-subtitle {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.rack-diagram-root.is-dark .device-status-inline {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-nav) {
+  background: transparent;
+}
+
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-tab) {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-tab:hover) {
+  color: #8cc8ff;
+}
+
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  color: #4c93ff;
+}
+
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-ink-bar) {
+  background: #4c93ff;
+}
+
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-content-holder),
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-content),
+.rack-diagram-root.is-dark .device-info-tabs :deep(.ant-tabs-tabpane) {
+  background: #151b24;
+}
+
+.rack-diagram-root.is-dark .rack-side-pane :deep(.ant-input),
+.rack-diagram-root.is-dark .rack-side-pane :deep(.ant-input-number),
+.rack-diagram-root.is-dark .rack-side-pane :deep(.ant-select-selector),
+.rack-diagram-root.is-dark .rack-side-pane :deep(.ant-picker),
+.rack-diagram-root.is-dark .rack-side-pane :deep(textarea.ant-input) {
+  background: #17202b !important;
+  border-color: #465366 !important;
+  color: rgba(255, 255, 255, 0.86) !important;
+}
+
+.rack-diagram-root.is-dark .rack-side-pane :deep(.ant-input::placeholder),
+.rack-diagram-root.is-dark .rack-side-pane :deep(textarea.ant-input::placeholder) {
+  color: rgba(255, 255, 255, 0.38) !important;
+}
+
+.rack-diagram-root.is-dark .rack-side-pane :deep(.ant-empty-description) {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.rack-diagram-root.is-dark .device-section-edit-btn {
+  color: rgba(255, 255, 255, 0.62) !important;
+}
+
+.rack-diagram-root.is-dark .device-section-edit-btn:hover {
+  color: #8cc8ff !important;
+  background: rgba(76, 147, 255, 0.12) !important;
 }
 
 .rack-diagram-root.is-dark .device-memo-table-head,
@@ -6365,6 +6659,12 @@ onBeforeUnmount(() => {
 .rack-diagram-root.is-dark .device-readonly-value,
 .rack-diagram-root.is-dark .device-info-table-row > div {
   color: rgba(255, 255, 255, 0.82);
+}
+
+.rack-diagram-root.is-dark .device-spec-unit {
+  background: #263244;
+  border-color: #465366;
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .rack-diagram-root.is-dark .device-linked-asset-ip {
@@ -6390,6 +6690,32 @@ onBeforeUnmount(() => {
   border-color: rgba(255, 255, 255, 0.08);
 }
 
+.rack-diagram-root.is-dark .device-link-group-title {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.rack-diagram-root.is-dark .device-link-button {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(15, 23, 42, 0.14) !important;
+  color: rgba(255, 255, 255, 0.80) !important;
+}
+
+.rack-diagram-root.is-dark .device-link-button:hover,
+.rack-diagram-root.is-dark .device-link-button:focus {
+  border-color: rgba(76, 147, 255, 0.34) !important;
+  background: rgba(76, 147, 255, 0.14) !important;
+  color: #8cc8ff !important;
+}
+
+.rack-diagram-root.is-dark .device-link-button-arrow {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.rack-diagram-root.is-dark .device-link-button:hover .device-link-button-arrow,
+.rack-diagram-root.is-dark .device-link-button:focus .device-link-button-arrow {
+  color: #8cc8ff;
+}
+
 .rack-diagram-root.is-dark .device-info-close-btn {
   color: rgba(255, 255, 255, 0.7) !important;
 }
@@ -6399,9 +6725,294 @@ onBeforeUnmount(() => {
   background: #273244 !important;
 }
 
+.rack-diagram-root.is-dark .rack-wrapper {
+  background: #1f2732;
+  border-color: #3a4654;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.26);
+}
+
+.rack-diagram-root.is-dark .rack-header {
+  background: #202938;
+  border-color: #3a4654;
+  border-bottom-color: #4c93ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.rack-diagram-root.is-dark .rack-header-title {
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.rack-diagram-root.is-dark .rack-header-meta-row,
+.rack-diagram-root.is-dark .rack-header-meta-divider {
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.rack-diagram-root.is-dark .rack-header-meta-item :deep(.anticon) {
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.rack-diagram-root.is-dark .rack-header-action-separator {
+  background: #3a4654;
+}
+
+.rack-diagram-root.is-dark .rack-header-action-btn {
+  background: #1b2430;
+  border-color: #465366;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.rack-diagram-root.is-dark .rack-header-action-btn:hover {
+  color: #8cc8ff;
+  border-color: #4c93ff;
+}
+
+.rack-diagram-root.is-dark .rack-body {
+  background: #1b2430;
+  border-color: #3a4654;
+}
+
+.rack-diagram-root.is-dark .rack-ruler {
+  background: #202938;
+  border-right-color: #3a4654;
+}
+
+.rack-diagram-root.is-dark .ruler-number {
+  color: rgba(255, 255, 255, 0.58);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.rack-diagram-root.is-dark .ruler-number:first-child {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.rack-diagram-root.is-dark .ruler-number-selected {
+  color: #8cc8ff;
+  background: rgba(22, 119, 255, 0.20);
+  border-color: #4c93ff;
+}
+
+.rack-diagram-root.is-dark .rack-frame {
+  background: #17202b !important;
+  border-color: #3a4654 !important;
+}
+
+.rack-diagram-root.is-dark .rack-item {
+  background: #17202b;
+  border-bottom-color: #334155;
+}
+
+.rack-diagram-root.is-dark .rack-item::after {
+  background: #334155;
+}
+
+.rack-diagram-root.is-dark .rack-item:not(.rack-item-selected) {
+  box-shadow: inset 44px 0 0 rgba(31, 41, 55, 0.42);
+}
+
+.rack-diagram-root.is-dark .rack-item-hoverable:hover {
+  background: rgba(76, 147, 255, 0.08);
+}
+
+.rack-diagram-root.is-dark .rack-item-selected,
+.rack-diagram-root.is-dark .rack-item-selected:hover {
+  border-color: #4c93ff;
+  background: rgba(22, 119, 255, 0.20);
+  box-shadow: inset 44px 0 0 rgba(22, 119, 255, 0.20);
+}
+
+.rack-diagram-root.is-dark .device-content {
+  background: linear-gradient(90deg, #202938 0, #202938 74px, #17202b 74px, #17202b 100%) !important;
+}
+
+.rack-diagram-root.is-dark .device-content-selected,
+.rack-diagram-root.is-dark .device-content-selected:hover {
+  background: linear-gradient(90deg, rgba(22, 119, 255, 0.24) 0, rgba(22, 119, 255, 0.24) 74px, rgba(22, 119, 255, 0.14) 74px, rgba(22, 119, 255, 0.14) 100%) !important;
+}
+
+.rack-diagram-root.is-dark .gap-content {
+  background: repeating-linear-gradient(
+    45deg,
+    #17202b,
+    #17202b 10px,
+    #1f2a38 10px,
+    #1f2a38 20px
+  ) !important;
+  color: rgba(255, 255, 255, 0.68);
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.24);
+}
+
+.rack-diagram-root.is-dark .gap-content:hover {
+  background: #202938 !important;
+  color: #8cc8ff;
+}
+
+.rack-diagram-root.is-dark .pattern-blank {
+  background-image: repeating-linear-gradient(-45deg, #1f2a38 0, #1f2a38 6px, #17202b 6px, #17202b 12px);
+}
+
+.rack-diagram-root.is-dark .device-top-line {
+  opacity: 0.95;
+}
+
+.rack-diagram-root.is-dark .device-icon-overlay {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.panel-shell) {
+  fill: #263241;
+  stroke: #4a5a6d;
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.detail-fill),
+.rack-diagram-root.is-dark .device-pattern :deep(.bay),
+.rack-diagram-root.is-dark .device-pattern :deep(.drive),
+.rack-diagram-root.is-dark .device-pattern :deep(.screen),
+.rack-diagram-root.is-dark .device-pattern :deep(.blade-slot) {
+  fill: #607086;
+  stroke: #7f8da0;
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.detail-soft) {
+  fill: #334155;
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.thin),
+.rack-diagram-root.is-dark .device-pattern :deep(.vent),
+.rack-diagram-root.is-dark .device-pattern :deep(.line),
+.rack-diagram-root.is-dark .device-pattern :deep(.block),
+.rack-diagram-root.is-dark .device-pattern :deep(.light),
+.rack-diagram-root.is-dark .device-pattern :deep(.detail-mid) {
+  fill: #74849a;
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.port),
+.rack-diagram-root.is-dark .device-pattern :deep(.jack),
+.rack-diagram-root.is-dark .device-pattern :deep(.sfp),
+.rack-diagram-root.is-dark .device-pattern :deep(.key),
+.rack-diagram-root.is-dark .device-pattern :deep(.port-shell),
+.rack-diagram-root.is-dark .device-pattern :deep(.outlet-shell),
+.rack-diagram-root.is-dark .device-pattern :deep(.plug-shell),
+.rack-diagram-root.is-dark .device-pattern :deep(.outlet) {
+  fill: #202938;
+  stroke: #8b9bb0;
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.hole),
+.rack-diagram-root.is-dark .device-pattern :deep(.port-hole),
+.rack-diagram-root.is-dark .device-pattern :deep(.detail-dark),
+.rack-diagram-root.is-dark .device-pattern :deep(.battery) {
+  fill: #cbd5e1;
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.dot),
+.rack-diagram-root.is-dark .device-pattern :deep(.plug-slot) {
+  fill: #cbd5e1;
+}
+
+.rack-diagram-root.is-dark .device-pattern :deep(.ring),
+.rack-diagram-root.is-dark .device-pattern :deep(.fan),
+.rack-diagram-root.is-dark .device-pattern :deep(.fan-ring),
+.rack-diagram-root.is-dark .device-pattern :deep(.stroke),
+.rack-diagram-root.is-dark .device-pattern :deep(.fan-line),
+.rack-diagram-root.is-dark .device-pattern :deep(.detail-line) {
+  stroke: #94a3b8;
+}
+
+.rack-diagram-root.is-dark .tag-text {
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .rack-diagram-root.is-dark .tag-content {
-  background: rgba(15, 23, 42, 0.52);
+  background: rgba(15, 23, 42, 0.72);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+@media (min-width: 981px) and (max-width: 1640px) {
+  .rack-list-summary-card :deep(.ant-card-body) {
+    padding: 18px 24px;
+  }
+
+  .rack-list-summary-metrics {
+    display: grid;
+    grid-template-columns: 100px repeat(2, minmax(180px, 1fr));
+    align-items: center;
+    gap: 16px 20px;
+  }
+
+  .rack-list-summary-title {
+    grid-row: 1 / span 3;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    padding-right: 18px;
+    margin-right: 0;
+  }
+
+  .rack-list-summary-metric {
+    min-width: 0;
+    width: 100%;
+    padding: 0;
+    border-left: 0 !important;
+  }
+
+  .rack-list-summary-metric:nth-of-type(4),
+  .rack-list-summary-metric:nth-of-type(5) {
+    min-width: 0;
+  }
+
+  .rack-list-summary-metric:nth-of-type(6) {
+    grid-column: 2 / 3;
+  }
+
+  .rack-list-card-footer {
+    gap: 10px;
+  }
+
+  .rack-list-card-location {
+    max-width: 180px;
+  }
+
+  .rack-list-row {
+    grid-template-columns: minmax(0, 1fr) 56px;
+    align-items: start;
+    gap: 12px 16px;
+  }
+
+  .rack-list-row-main {
+    grid-column: 1 / 2;
+    min-width: 0;
+  }
+
+  .rack-list-row-actions {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+    align-self: start;
+    min-width: 56px;
+  }
+
+  .rack-list-row-usage,
+  .rack-list-row-stats {
+    grid-column: 1 / 3;
+  }
+
+  .rack-list-row-usage {
+    grid-template-columns: auto auto minmax(120px, 1fr) auto;
+    max-width: 100%;
+  }
+
+  .rack-list-row-stats {
+    flex-direction: row;
+    gap: 18px;
+  }
+
+  .rack-list-row-title {
+    max-width: min(420px, 100%);
+  }
+
+  .rack-list-row-location {
+    max-width: 360px;
+  }
 }
 
 @media (max-width: 980px) {
@@ -6410,12 +7021,14 @@ onBeforeUnmount(() => {
   }
 
   .rack-list-summary-metrics {
+    display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     row-gap: 8px;
   }
 
   .rack-list-summary-title {
+    grid-row: auto;
     flex: 1 0 100%;
     border-right: 0;
     padding-right: 0;

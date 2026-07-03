@@ -16,7 +16,7 @@
 // under the License.
 
 <template>
-  <a-row :gutter="12">
+  <a-row :gutter="12" class="infra-summary-root" :class="{ 'is-dark': isDarkMode }">
     <a-col :md="24">
       <a-card class="breadcrumb-card">
         <a-col :md="24" style="display: flex">
@@ -235,6 +235,9 @@ export default {
     this.fetchData()
   },
   computed: {
+    isDarkMode () {
+      return !!this.$store.getters.darkMode
+    },
     visibleSummaryGroups () {
       return this.summaryGroups
         .map(group => {
@@ -441,6 +444,38 @@ export default {
     height: 11px;
     border-radius: 2px;
     background: #c7d2df;
+  }
+  .infra-summary-root.is-dark {
+    .summary-cards-pane {
+      border-color: #334155;
+      background: linear-gradient(180deg, #17202b 0%, #131b24 100%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .summary-group {
+      border-color: rgba(148, 163, 184, 0.18);
+      background: rgba(15, 23, 42, 0.46);
+    }
+    .summary-group-header {
+      border-bottom-color: rgba(148, 163, 184, 0.18);
+      color: rgba(255, 255, 255, 0.88);
+    }
+    .summary-group-title::before {
+      background: #4f8df7;
+    }
+    .rack-visualization-card {
+      border-color: #334155;
+      background: #151b24;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.24);
+    }
+    .rack-visualization-card :deep(.ant-card-head) {
+      background: #1f2732;
+      border-bottom-color: #334155;
+      color: rgba(255, 255, 255, 0.88);
+    }
+    .rack-visualization-card :deep(.ant-card-body) {
+      padding: 4px;
+      background: #151b24;
+    }
   }
   .rack-visualization-pane {
     width: 66%;
