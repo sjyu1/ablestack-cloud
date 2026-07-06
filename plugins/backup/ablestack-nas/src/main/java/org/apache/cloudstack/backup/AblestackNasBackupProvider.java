@@ -271,7 +271,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
-        final BackupVO latestBackup = getLatestBackedUpBackup(vm);
+        final BackupVO latestBackup = getLatestBackedUpBackup(vm, backupScheduleId);
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmVolumes, backupScheduleId);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, host, backupRepository, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup,
                 incrementalBackup && vmVolumes.size() > 1);
@@ -462,12 +462,13 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         return String.format("%s/checkpoints/%s.xml", backupPath, checkpointName);
     }
 
-    private BackupVO getLatestBackedUpBackup(VirtualMachine vm) {
+    private BackupVO getLatestBackedUpBackup(VirtualMachine vm, Long backupScheduleId) {
         List<Backup> backups = backupDao.listByVmIdAndOffering(vm.getDataCenterId(), vm.getId(), vm.getBackupOfferingId());
         return backups.stream()
                 .filter(BackupVO.class::isInstance)
                 .map(BackupVO.class::cast)
                 .filter(backup -> Backup.Status.BackedUp.equals(backup.getStatus()))
+                .filter(backup -> Objects.equals(backup.getBackupScheduleId(), backupScheduleId))
                 .peek(backupDao::loadDetails)
                 .filter(backup -> getBackupDetail(backup, DETAIL_CHECKPOINT_NAME) != null)
                 .max(Comparator.comparing(BackupVO::getDate))
@@ -476,10 +477,6 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     private boolean shouldUseIncrementalBackup(VirtualMachine vm, Backup latestBackup, List<VolumeVO> vmVolumes, Long backupScheduleId) {
         if (latestBackup == null) {
-            return false;
-        }
-
-        if (backupScheduleId != null && !hasBackedUpBackupForSchedule(backupScheduleId)) {
             return false;
         }
 
@@ -502,11 +499,6 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             return false;
         }
         return true;
-    }
-
-    private boolean hasBackedUpBackupForSchedule(Long backupScheduleId) {
-        return backupDao.listBySchedule(backupScheduleId).stream()
-                .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
     }
 
     private int getBackupChainSize(VirtualMachine vm, Backup latestBackup) {

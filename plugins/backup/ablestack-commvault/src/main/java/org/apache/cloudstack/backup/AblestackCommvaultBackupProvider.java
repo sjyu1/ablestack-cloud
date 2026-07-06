@@ -361,7 +361,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
         Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths = getVolumePoolsAndPaths(vmVolumes);
         validateVolumePoolTypes(volumePoolsAndPaths.first());
-        final Backup latestBackup = getLatestBackedUpBackup(vm);
+        final Backup latestBackup = getLatestBackedUpBackup(vm, backupScheduleId);
         final boolean incrementalBackup = shouldUseIncrementalBackup(vm, latestBackup, vmHost, vmVolumes, backupScheduleId);
         BackupExecutionResult result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, backupPath, backupContentPath, vmVolumes, volumePoolsAndPaths,
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
@@ -375,12 +375,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return new Pair<>(result.success, result.backup);
     }
 
-    private Backup getLatestBackedUpBackup(VirtualMachine vm) {
+    private Backup getLatestBackedUpBackup(VirtualMachine vm, Long backupScheduleId) {
         List<Backup> backups = backupDao.listByVmId(null, vm.getId());
         return backups.stream()
                 .filter(BackupVO.class::isInstance)
                 .map(BackupVO.class::cast)
                 .filter(b -> Backup.Status.BackedUp.equals(b.getStatus()))
+                .filter(backup -> Objects.equals(backup.getBackupScheduleId(), backupScheduleId))
                 .peek(backupDao::loadDetails)
                 .max(Comparator.comparing(BackupVO::getDate))
                 .orElse(null);
@@ -391,10 +392,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
         loadBackupDetailsIfNeeded(latestBackup);
-
-        if (backupScheduleId != null && !hasBackedUpBackupForSchedule(backupScheduleId)) {
-            return false;
-        }
 
         Long clusterId = getClusterIdFromRootVolume(vm);
         if (clusterId == null) {
@@ -418,11 +415,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
         return true;
-    }
-
-    private boolean hasBackedUpBackupForSchedule(Long backupScheduleId) {
-        return backupDao.listBySchedule(backupScheduleId).stream()
-                .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
     }
 
     private boolean canContinueIncrementalChain(VirtualMachine vm, Backup latestBackup, Host vmHost) {
