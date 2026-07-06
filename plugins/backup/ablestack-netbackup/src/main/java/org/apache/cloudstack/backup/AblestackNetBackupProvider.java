@@ -173,6 +173,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private HostDao hostDao;
     @Inject
     private VolumeDao volumeDao;
+    @Inject
     private VMSnapshotDao vmSnapshotDao;
     @Inject
     private VMSnapshotDetailsDao vmSnapshotDetailsDao;
