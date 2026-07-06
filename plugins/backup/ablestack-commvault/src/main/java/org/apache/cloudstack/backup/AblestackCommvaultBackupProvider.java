@@ -17,6 +17,7 @@
 package org.apache.cloudstack.backup;
 
 import com.cloud.agent.AgentManager;
+import com.cloud.agent.api.Answer;
 import com.cloud.exception.AgentUnavailableException;
 import com.cloud.exception.OperationTimedoutException;
 import com.cloud.dc.dao.ClusterDao;
@@ -44,10 +45,8 @@ import com.cloud.storage.dao.VolumeDao;
 import com.cloud.user.User;
 import com.cloud.user.Account;
 import com.cloud.user.AccountService;
-import com.cloud.utils.NumbersUtil;
 import com.cloud.utils.Pair;
 import com.cloud.utils.Ternary;
-import com.cloud.utils.ssh.SshHelper;
 import com.cloud.utils.component.AdapterBase;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.event.ActionEventUtils;
@@ -131,8 +130,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String DETAIL_CHAIN_SEALED = "commvault.chain.sealed";
     private static final String DETAIL_CHAIN_SEAL_REASON = "commvault.chain.seal.reason";
     private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "commvault.fallback.volume.uuids";
-    private static final String RM_COMMAND = "rm -rf %s";
-    private static final String DF_AVAILABLE_COMMAND = "df -B1 --output=avail %s | tail -n 1";
     private static final int BASE_MAJOR = 11;
     private static final int BASE_FR = 32;
     private static final int BASE_MT = 89;
@@ -666,11 +663,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
 
             if (answer != null && answer.getResult()) {
-                int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-                Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
-                String cmd = String.format(RM_COMMAND, backupPath);
                 if (BACKUP_ENGINE_QCOW2.equals(backupEngine)) {
-                    String checkpointXml = readFileContentsOnHost(vmHostVO, credentials.first(), credentials.second(), sshPort,
+                    String checkpointXml = readFileContentsOnHost(vmHostVO,
                             getCheckpointPath(backupPath, checkpointName, backupEngine));
                     if (StringUtils.isNotBlank(checkpointXml)) {
                         backupDetails.put(DETAIL_CHECKPOINT_XML, checkpointXml);
@@ -735,7 +729,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 }
                 backupVO.setStatus(Backup.Status.Failed);
                 removeBackupWithDetails(backupVO.getId());
-                executeDeleteBackupPathCommand(vmHostVO, credentials.first(), credentials.second(), sshPort, cmd);
+                cleanupBackupPathsOnHost(vmHostVO, Collections.singletonList(backupPath));
                 return BackupExecutionResult.failure("Failed to complete Commvault backup job", backupVO);
             }
 
@@ -1173,8 +1167,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (hostNames == null || hostNames.isEmpty()) {
             return;
         }
-        int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-        String command = String.format(RM_COMMAND, backupPath);
         for (String hostName : hostNames) {
             if (StringUtils.isBlank(hostName)) {
                 continue;
@@ -1184,8 +1176,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 continue;
             }
             try {
-                Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
-                executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort, command);
+                cleanupBackupPathsOnHost(host, Collections.singletonList(backupPath));
             } catch (Exception e) {
                 LOG.warn("Failed to cleanup Commvault restore source path [{}] on host [{}]", backupPath, hostName, e);
             }
@@ -1196,17 +1187,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         if (host == null || CollectionUtils.isEmpty(backupPaths)) {
             return;
         }
-        int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-        Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
-        for (String backupPath : backupPaths) {
-            if (StringUtils.isBlank(backupPath)) {
-                continue;
+        try {
+            final Answer answer = agentManager.send(host.getId(), new AblestackCommvaultCleanupCommand(backupPaths));
+            if (answer == null || !answer.getResult()) {
+                LOG.warn("Failed to cleanup Commvault paths {} on host [{}]: {}", backupPaths, host.getName(),
+                        answer != null ? answer.getDetails() : "no answer received");
             }
-            try {
-                executeDeleteBackupPathCommand(host, credentials.first(), credentials.second(), sshPort, String.format(RM_COMMAND, backupPath));
-            } catch (Exception e) {
-                LOG.warn("Failed to cleanup prepared Commvault incremental source path [{}] on host [{}]", backupPath, host.getName(), e);
-            }
+        } catch (AgentUnavailableException | OperationTimedoutException e) {
+            LOG.warn("Failed to cleanup Commvault paths {} on host [{}]", backupPaths, host.getName(), e);
         }
     }
 
@@ -1323,10 +1311,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     throw new CloudRuntimeException("Operation to restore backup timed out, please try again");
                 }
                 if (!answer.getResult()) {
-                    int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-                    Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
-                    String command = String.format(RM_COMMAND, restoreSourcePath);
-                    executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
+                    cleanupBackupPathsOnHost(restoreHostVO, Collections.singletonList(restoreSourcePath));
                 }
                 return new Pair<>(answer.getResult(), answer.getDetails());
                 } else {
@@ -1539,10 +1524,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                                 backupVolumeInfo.getUuid(), backup, restoredVolume.getUuid());
                         return new Pair<>(answer.getResult(), answer.getDetails());
                     } else {
-                        final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-                        Ternary<String, String, String> credentials = getKVMHyperisorCredentials(restoreHostVO);
-                        String command = String.format(RM_COMMAND, restoreSourcePath);
-                        executeDeleteBackupPathCommand(restoreHostVO, credentials.first(), credentials.second(), sshPort, command);
+                        cleanupBackupPathsOnHost(restoreHostVO, Collections.singletonList(restoreSourcePath));
                         return new Pair<>(false, StringUtils.defaultIfBlank(answer.getDetails(),
                                 String.format("Restore agent returned failure for volume [%s] on host [%s]", backupVolumeInfo.getUuid(), restoreHost.getName())));
                     }
@@ -1611,37 +1593,41 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     }
 
     private long getAvailableBytesOnHostPath(HostVO host, String path) {
-        final int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
-        Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
-        String command = String.format(DF_AVAILABLE_COMMAND, path);
+        if (host == null || StringUtils.isBlank(path)) {
+            throw new CloudRuntimeException("Host and path are required to query available Commvault stage space");
+        }
         try {
-            Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), sshPort,
-                    credentials.first(), null, credentials.second(), command, 120000, 120000, 3600000);
-            if (!response.first()) {
+            final Answer answer = agentManager.send(host.getId(), new AblestackCommvaultGetAvailableBytesCommand(path));
+            if (answer == null || !answer.getResult()) {
                 throw new CloudRuntimeException(String.format("Failed to query available stage space on host %s due to: %s",
-                        host.getName(), response.second()));
+                        host.getName(), answer != null ? answer.getDetails() : "no answer received"));
             }
-            String output = StringUtils.trimToEmpty(response.second());
+            String output = StringUtils.trimToEmpty(answer.getDetails());
             return Long.parseLong(output);
         } catch (NumberFormatException e) {
             throw new CloudRuntimeException(String.format("Failed to parse available stage space on host %s for path %s", host.getName(), path), e);
+        } catch (AgentUnavailableException e) {
+            throw new CloudRuntimeException(String.format("Unable to contact host %s to query available stage space", host.getName()), e);
+        } catch (OperationTimedoutException e) {
+            throw new CloudRuntimeException(String.format("Timed out querying available stage space on host %s", host.getName()), e);
         } catch (Exception e) {
             throw new CloudRuntimeException(String.format("Failed to query available stage space on host %s due to: %s", host.getName(), e.getMessage()), e);
         }
     }
 
-    private String readFileContentsOnHost(HostVO host, String username, String password, int port, String path) {
+    private String readFileContentsOnHost(HostVO host, String path) {
         if (host == null || StringUtils.isBlank(path)) {
             return null;
         }
-        String command = String.format("test -f %s && cat %s", shellQuote(path), shellQuote(path));
         try {
-            Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), port,
-                    username, null, password, command, 120000, 120000, 3600000);
-            if (!response.first()) {
+            final Answer answer = agentManager.send(host.getId(), new AblestackCommvaultReadFileCommand(path));
+            if (answer == null || !answer.getResult()) {
                 return null;
             }
-            return response.second();
+            return answer.getDetails();
+        } catch (AgentUnavailableException | OperationTimedoutException e) {
+            LOG.warn("Failed to read file [{}] on host [{}]", path, host.getName(), e);
+            return null;
         } catch (Exception e) {
             LOG.warn("Failed to read file [{}] on host [{}]", path, host.getName(), e);
             return null;
@@ -2197,26 +2183,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
 
         return new Ternary<>(username, password, null);
-    }
-
-    private String shellQuote(String value) {
-        return "'" + StringUtils.defaultString(value).replace("'", "'\"'\"'") + "'";
-    }
-
-    private boolean executeDeleteBackupPathCommand(HostVO host, String username, String password, int port, String command) {
-        try {
-            Pair<Boolean, String> response = SshHelper.sshExecute(host.getPrivateIpAddress(), port,
-                    username, null, password, command, 120000, 120000, 3600000);
-
-            if (!response.first()) {
-                LOG.error(String.format("failed on HYPERVISOR %s due to: %s", host, response.second()));
-            } else {
-                return true;
-            }
-        } catch (final Exception e) {
-            throw new CloudRuntimeException(String.format("Failed to delete backup path on host %s due to: %s", host.getName(), e.getMessage()));
-        }
-        return false;
     }
 
     private void cleanupBackupPathOnStageHost(String clientName, String path, boolean forced, String checkpointName, String diskPaths) {
