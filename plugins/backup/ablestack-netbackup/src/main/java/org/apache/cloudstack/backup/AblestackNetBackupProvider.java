@@ -28,15 +28,12 @@ import com.cloud.hypervisor.Hypervisor;
 import com.cloud.offering.DiskOffering;
 import com.cloud.resource.ResourceManager;
 import com.cloud.storage.DataStoreRole;
-import com.cloud.storage.Snapshot;
-import com.cloud.storage.SnapshotVO;
 import com.cloud.storage.ScopeType;
 import com.cloud.storage.Storage;
 import com.cloud.storage.Volume;
 import com.cloud.storage.VolumeApiServiceImpl;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
-import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.utils.Pair;
 import com.cloud.utils.component.AdapterBase;
@@ -130,6 +127,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_RESTORE_ROOT_JOB_ID = "netbackup.restore.root.job.id";
     private static final String DETAIL_RESTORE_CHAIN_JOB_ID = "netbackup.restore.chain.job.id";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
+    private static final String MISSING_PARENT_QCOW2_BITMAP_ERROR = "Parent qcow2 bitmap";
     private static final long STALE_BACKUP_THRESHOLD_MS = 24L * 60L * 60L * 1000L;
     private static final long NETBACKUP_SYNC_DELETE_GRACE_MS = 10L * 60L * 1000L;
     private static final String NETBACKUP_OFFERING_NAME = "netbackup";
@@ -175,9 +173,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private HostDao hostDao;
     @Inject
     private VolumeDao volumeDao;
-    @Inject
-    private SnapshotDao snapshotDao;
-    @Inject
     private VMSnapshotDao vmSnapshotDao;
     @Inject
     private VMSnapshotDetailsDao vmSnapshotDetailsDao;
@@ -436,6 +431,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             return false;
         }
         if (StringUtils.contains(result.details, MISSING_PARENT_RBD_SNAPSHOT_ERROR)) {
+            return true;
+        }
+        if (StringUtils.contains(result.details, MISSING_PARENT_QCOW2_BITMAP_ERROR)) {
             return true;
         }
         return vmVolumes.size() > 1;
@@ -837,28 +835,22 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     private void validateNoKvmFileBasedVmSnapshots(final VirtualMachine vm) {
+        if (hasDiskAndMemoryVmSnapshots(vm)) {
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has disk-and-memory VM snapshots.", vm.getUuid()));
+        }
         if (hasKvmFileBasedVmSnapshots(vm)) {
             throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has KVM file-based VM snapshots.", vm.getUuid()));
         }
-        if (hasVolumeSnapshots(vm)) {
-            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has volume snapshots.", vm.getUuid()));
-        }
+    }
+
+    private boolean hasDiskAndMemoryVmSnapshots(final VirtualMachine vm) {
+        return CollectionUtils.isNotEmpty(vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.DiskAndMemory));
     }
 
     private boolean hasKvmFileBasedVmSnapshots(final VirtualMachine vm) {
         for (final VMSnapshotVO vmSnapshotVO : vmSnapshotDao.findByVmAndByType(vm.getId(), VMSnapshot.Type.Disk)) {
             final List<VMSnapshotDetailsVO> vmSnapshotDetails = vmSnapshotDetailsDao.listDetails(vmSnapshotVO.getId());
             if (vmSnapshotDetails.stream().anyMatch(detail -> VolumeApiServiceImpl.KVM_FILE_BASED_STORAGE_SNAPSHOT.equals(detail.getName()))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean hasVolumeSnapshots(final VirtualMachine vm) {
-        for (final VolumeVO volume : volumeDao.findByInstance(vm.getId())) {
-            final List<SnapshotVO> snapshots = snapshotDao.listByVolumeId(volume.getId());
-            if (snapshots.stream().anyMatch(snapshot -> !Snapshot.State.Destroyed.equals(snapshot.getState()))) {
                 return true;
             }
         }
@@ -884,7 +876,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean assignVMToBackupOffering(final VirtualMachine vm, final BackupOffering backupOffering) {
-        if (hasKvmFileBasedVmSnapshots(vm) || hasVolumeSnapshots(vm)) {
+        if (hasKvmFileBasedVmSnapshots(vm)) {
             return false;
         }
         return Hypervisor.HypervisorType.KVM.equals(vm.getHypervisorType());

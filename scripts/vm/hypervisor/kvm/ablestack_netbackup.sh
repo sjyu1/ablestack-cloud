@@ -141,6 +141,75 @@ redefine_checkpoint_if_needed() {
   redefine_checkpoint_chain_if_needed "$vm_name" "$checkpoint_file" ""
 }
 
+parent_qcow2_bitmap_exists_on_all_disks() {
+  [[ "$BACKUP_TYPE" != "INCREMENTAL" || -z "$PARENT_CHECKPOINT_NAME" ]] && return 0
+
+  local disk_count
+  local bitmap_count
+  disk_count=$(virsh -c qemu:///system domblklist "$VM" --details 2>/dev/null | awk '$2=="disk"{c++} END{print c+0}')
+  bitmap_count=$(virsh -c qemu:///system qemu-monitor-command "$VM" '{"execute":"query-block"}' 2>/dev/null | python3 -c '
+import sys, json
+target = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print(0); sys.exit(0)
+files = set()
+for dev in data.get("return", []) or []:
+    inserted = dev.get("inserted") or {}
+    f = inserted.get("file")
+    if not f:
+        continue
+    if any((bitmap or {}).get("name") == target for bitmap in (inserted.get("dirty-bitmaps") or [])):
+        files.add(f)
+print(len(files))
+' "$PARENT_CHECKPOINT_NAME" 2>/dev/null || echo 0)
+
+  [[ "$disk_count" -gt 0 && "$bitmap_count" -ge "$disk_count" ]]
+}
+
+cleanup_parent_qcow2_bitmap_after_success() {
+  [[ "$BACKUP_TYPE" != "INCREMENTAL" || -z "$PARENT_CHECKPOINT_NAME" ]] && return
+
+  local expected=0
+  local removed=0
+  local node
+
+  while IFS= read -r node; do
+    [[ -z "$node" ]] && continue
+    expected=$((expected + 1))
+    if virsh -c qemu:///system qemu-monitor-command "$VM" \
+        "{\"execute\":\"block-dirty-bitmap-remove\",\"arguments\":{\"node\":\"$node\",\"name\":\"$PARENT_CHECKPOINT_NAME\"}}" \
+        > /dev/null 2>>"$logFile"; then
+      removed=$((removed + 1))
+    else
+      log -ne "Failed to remove previous qcow2 parent bitmap [$PARENT_CHECKPOINT_NAME] on node [$node] (non-fatal)"
+    fi
+  done < <(
+    virsh -c qemu:///system qemu-monitor-command "$VM" '{"execute":"query-block"}' 2>/dev/null | python3 -c '
+import sys, json
+target = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+seen = set()
+for dev in data.get("return", []) or []:
+    inserted = dev.get("inserted") or {}
+    node = inserted.get("node-name")
+    if not node or node in seen:
+        continue
+    if any((bitmap or {}).get("name") == target for bitmap in (inserted.get("dirty-bitmaps") or [])):
+        seen.add(node)
+        print(node)
+' "$PARENT_CHECKPOINT_NAME" 2>/dev/null || true
+  )
+
+  if [[ "$expected" -gt 0 && "$removed" -eq "$expected" ]]; then
+    log -ne "Removed previous qcow2 parent bitmap [$PARENT_CHECKPOINT_NAME] from [$removed] disk(s)"
+  fi
+}
+
 get_checkpoint_name_from_file() {
   local checkpoint_file="$1"
   basename "$checkpoint_file" .xml
@@ -287,6 +356,24 @@ cleanup_created_rbd_snapshots() {
   CREATED_RBD_SNAPSHOTS=()
 }
 
+cleanup_parent_rbd_snapshot_after_success() {
+  [[ "$BACKUP_TYPE" != "INCREMENTAL" || -z "$PARENT_CHECKPOINT_NAME" ]] && return
+  [[ "$PARENT_CHECKPOINT_NAME" == "$CHECKPOINT_NAME" ]] && return
+
+  while IFS= read -r disk_path; do
+    [[ -z "$disk_path" ]] && continue
+    parse_rbd_uri "$disk_path"
+    build_rbd_cmd
+
+    if timeout 30s "${RBD_CMD[@]}" snap ls "$RBD_IMAGE" 2>/dev/null | awk 'NR>1 {print $2}' | grep -Fxq "$PARENT_CHECKPOINT_NAME"; then
+      log -ne "Deleting previous RBD parent snapshot after successful backup [${RBD_IMAGE}@${PARENT_CHECKPOINT_NAME}]"
+      if ! "${RBD_CMD[@]}" snap rm "${RBD_IMAGE}@${PARENT_CHECKPOINT_NAME}" >> "$logFile" 2>&1; then
+        log -ne "Failed to delete previous RBD parent snapshot [${RBD_IMAGE}@${PARENT_CHECKPOINT_NAME}]"
+      fi
+    fi
+  done < <(split_csv "$DISK_PATHS")
+}
+
 write_rbd_backup_metadata() {
   local backup_type="$1"
   local checkpoint_name="$2"
@@ -357,6 +444,11 @@ backup_running_vm() {
       cleanup
       exit 1
     fi
+    if ! parent_qcow2_bitmap_exists_on_all_disks; then
+      echo "Parent qcow2 bitmap $PARENT_CHECKPOINT_NAME not found on all disks"
+      cleanup
+      exit 1
+    fi
     redefine_checkpoint_if_needed "$VM" "$parent_checkpoint_file"
   fi
 
@@ -413,6 +505,7 @@ backup_running_vm() {
     sleep 5
   done
 
+  cleanup_parent_qcow2_bitmap_after_success
   dump_checkpoint_xml "$VM"
   rm -f "$dest/backup.xml" "$dest/checkpoint.xml"
   sync
@@ -475,6 +568,7 @@ backup_rbd_volumes() {
 
   write_rbd_backup_metadata "$BACKUP_TYPE" "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
   write_rbd_checkpoint_metadata "$CHECKPOINT_NAME" "$PARENT_CHECKPOINT_NAME"
+  cleanup_parent_rbd_snapshot_after_success
   trap - ERR
   trap - INT TERM
   CREATED_RBD_SNAPSHOTS=()
