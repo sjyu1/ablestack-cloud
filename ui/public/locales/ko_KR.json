@@ -4597,6 +4597,7 @@
   "label.deleting.integrity.verification.results": "무결성 검증 결과 삭제하는 중...",
   "message.action.delete.integrity.verification.result": "현재 무결성 검증 결과를 삭제하시겠습니까?",
   "vm.create": "가상머신 생성",
+  "vm.create.from.backup": "백업에서 새 인스턴스 생성",
   "vm.destroy": "가상머신 삭제",
   "vm.start": "가상머신 시작",
   "vm.stop": "가상머신 중지",

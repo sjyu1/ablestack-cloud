@@ -4597,6 +4597,7 @@
   "label.deleting.integrity.verification.results": "Deleting integrity verification result",
   "message.action.delete.integrity.verification.result": "Please confirm you wish to delete the selected integrity verification result.",
   "vm.create": "VM.CREATE",
+  "vm.create.from.backup": "VM.CREATE.FROM.BACKUP",
   "vm.destroy": "VM.DESTROY",
   "vm.start": "VM.START",
   "vm.stop": "VM.STOP",
