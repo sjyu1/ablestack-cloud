@@ -1104,19 +1104,20 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return getBackupDetail(backup, DETAIL_BACKUP_ENGINE) == null;
     }
 
-    private List<String> restoreBackupSourcesOnAdditionalHosts(AblestackCommvaultClient client, Backup backup, String executionHostName) {
+    private LinkedHashMap<String, List<String>> restoreBackupSourcesOnAdditionalHosts(AblestackCommvaultClient client, Backup backup, String executionHostName) {
         if (!BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
-            return Collections.emptyList();
+            return new LinkedHashMap<>();
         }
 
-        List<String> additionalHosts = new ArrayList<>();
+        LinkedHashMap<String, List<String>> additionalHosts = new LinkedHashMap<>();
         for (Map.Entry<String, Backup> entry : getBackupChainStageHosts(backup).entrySet()) {
             String stageHost = entry.getKey();
             if (StringUtils.isBlank(stageHost) || Objects.equals(stageHost, executionHostName)) {
                 continue;
             }
-            restoreBackupPathsOnStageHost(client, entry.getValue(), getRestoreSourcePathsForStageHost(backup, stageHost));
-            additionalHosts.add(stageHost);
+            List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, stageHost);
+            restoreBackupPathsOnStageHost(client, entry.getValue(), restoreSourcePaths);
+            additionalHosts.put(stageHost, restoreSourcePaths);
         }
         return additionalHosts;
     }
@@ -1161,11 +1162,12 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
     }
 
-    private void cleanupBackupPathOnAdditionalHosts(List<String> hostNames, String backupPath) {
-        if (hostNames == null || hostNames.isEmpty()) {
+    private void cleanupBackupPathsOnAdditionalHosts(Map<String, List<String>> hostPaths) {
+        if (hostPaths == null || hostPaths.isEmpty()) {
             return;
         }
-        for (String hostName : hostNames) {
+        for (Map.Entry<String, List<String>> entry : hostPaths.entrySet()) {
+            String hostName = entry.getKey();
             if (StringUtils.isBlank(hostName)) {
                 continue;
             }
@@ -1174,9 +1176,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 continue;
             }
             try {
-                cleanupBackupPathsOnHost(host, Collections.singletonList(backupPath));
+                cleanupBackupPathsOnHost(host, entry.getValue());
             } catch (Exception e) {
-                LOG.warn("Failed to cleanup Commvault restore source path [{}] on host [{}]", backupPath, hostName, e);
+                LOG.warn("Failed to cleanup Commvault restore source paths {} on host [{}]", entry.getValue(), hostName, e);
             }
         }
     }
@@ -1194,6 +1196,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         } catch (AgentUnavailableException | OperationTimedoutException e) {
             LOG.warn("Failed to cleanup Commvault paths {} on host [{}]", backupPaths, host.getName(), e);
         }
+    }
+
+    private boolean isSameHost(HostVO firstHost, HostVO secondHost) {
+        return firstHost != null && secondHost != null && Objects.equals(firstHost.getId(), secondHost.getId());
     }
 
     private String getLegacyBackupFileName(Backup.VolumeInfo backupVolumeInfo) {
@@ -1254,7 +1260,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         // 복원된 호스트 정의
         final HostVO restoreHost = hostDao.findByName(clientName);
         final HostVO restoreHostVO = hostDao.findById(restoreHost.getId());
-        final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
+        final LinkedHashMap<String, List<String>> additionalSourceHostPaths = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
         final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
         LOG.info(String.format("Restoring vm %s from backup %s on the Commvault Backup Provider", vm, backup));
         try {
@@ -1298,7 +1304,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 restoreCommand.setRestorePlan(createRestorePlan(false));
                 restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                 restoreCommand.setHostName(null);
-                restoreCommand.setBackupSourceHosts(additionalSourceHosts);
+                restoreCommand.setBackupSourceHosts(new ArrayList<>(additionalSourceHostPaths.keySet()));
 
                 BackupAnswer answer;
                 try {
@@ -1320,7 +1326,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
         } finally {
             cleanupBackupPathsOnHost(restoreHostVO, restoreSourcePaths);
-            cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
+            cleanupBackupPathsOnAdditionalHosts(additionalSourceHostPaths);
         }
     }
 
@@ -1401,7 +1407,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
         final HostVO restoreHostVO = restoreHost != null ? hostDao.findById(restoreHost.getId()) : null;
         final List<String> restoreSourcePaths = getRestoreSourcePathsForStageHost(backup, clientName);
-        final List<String> additionalSourceHosts = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
+        final LinkedHashMap<String, List<String>> additionalSourceHostPaths = restoreBackupSourcesOnAdditionalHosts(client, backup, clientName);
+        HostVO commandHostForCleanup = null;
         try {
             ensureStageHostHasCapacityForRestore(backup, clientName, restoreSourcePaths);
             String jobId2 = client.restoreFullVM(subclientId, displayName, backupsetGUID, clientId, companyId, companyName, instanceName, appName, applicationId, clientName, backupsetId, instanceId, backupsetName, commCellId, endTime, restoreSourcePaths);
@@ -1445,6 +1452,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     if (vmHost == null) {
                         throw new CloudRuntimeException(String.format("Unable to find VM host [%s] for Commvault volume restore", hostIp));
                     }
+                    commandHostForCleanup = vmHost;
                     // 복원된 호스트 정의
                     restoreHost = hostDao.findByName(clientName);
                     if (restoreHost == null) {
@@ -1501,7 +1509,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
                     restoreCommand.setCacheMode(cacheMode);
                     restoreCommand.setHostName(restoreHost.getName());
-                    restoreCommand.setBackupSourceHosts(additionalSourceHosts);
+                    restoreCommand.setBackupSourceHosts(new ArrayList<>(additionalSourceHostPaths.keySet()));
 
                     BackupAnswer answer;
                     try {
@@ -1538,7 +1546,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
         } finally {
             cleanupBackupPathsOnHost(restoreHostVO, restoreSourcePaths);
-            cleanupBackupPathOnAdditionalHosts(additionalSourceHosts, restoreSourcePath);
+            cleanupBackupPathsOnAdditionalHosts(additionalSourceHostPaths);
+            if (commandHostForCleanup != null && !isSameHost(commandHostForCleanup, restoreHostVO)) {
+                cleanupBackupPathsOnHost(commandHostForCleanup, Collections.singletonList(restoreSourcePath));
+            }
         }
     }
 
