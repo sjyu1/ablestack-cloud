@@ -1508,7 +1508,15 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         if (CollectionUtils.isEmpty(restoreChain)) {
             return;
         }
-        for (final Map.Entry<String, List<Backup>> entry : groupRestoreChainByStageHost(destinationHostName, restoreChain).entrySet()) {
+        final LinkedHashMap<String, List<Backup>> groupedRestoreChain = groupRestoreChainByStageHost(destinationHostName, restoreChain);
+        final List<String> destinationRestorePaths = groupedRestoreChain.entrySet().stream()
+                .filter(entry -> !StringUtils.equalsIgnoreCase(entry.getKey(), destinationHostName))
+                .flatMap(entry -> entry.getValue().stream())
+                .map(Backup::getExternalId)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+        for (final Map.Entry<String, List<Backup>> entry : groupedRestoreChain.entrySet()) {
             final String sourceHost = entry.getKey();
             final List<Backup> sourceHostChain = entry.getValue();
             if (CollectionUtils.isEmpty(sourceHostChain)) {
@@ -1526,6 +1534,17 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 LOG.warn("Failed to cleanup NetBackup restore sources on stage/source host [{}]. Restore result will be preserved. paths={}",
                         sourceHost, sourceHostChain.stream().map(Backup::getExternalId).collect(Collectors.toList()), e);
             }
+        }
+        if (CollectionUtils.isEmpty(destinationRestorePaths)) {
+            return;
+        }
+        LOG.info("Cleaning up NetBackup restore sources on destination host [{}] for backup paths {}",
+                destinationHostName, destinationRestorePaths);
+        try {
+            cleanupBackupPathsOnHost(zoneId, destinationHostName, destinationRestorePaths);
+        } catch (final Exception e) {
+            LOG.warn("Failed to cleanup NetBackup restore sources on destination host [{}]. Restore result will be preserved. paths={}",
+                    destinationHostName, destinationRestorePaths, e);
         }
     }
 
