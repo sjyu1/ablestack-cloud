@@ -156,25 +156,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             "backup.plugin.commvault.request.timeout", "300",
             "Commvault Command Center API request timeout in seconds.", true, ConfigKey.Scope.Zone);
 
-    private static ConfigKey<Integer> CommvaultRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
-            "backup.plugin.commvault.restore.timeout", "600",
-            "Commvault B&R API restore backup timeout in seconds.", true, ConfigKey.Scope.Zone);
-
-    private static ConfigKey<Integer> CommvaultTaskPollInterval = new ConfigKey<>("Advanced", Integer.class,
-            "backup.plugin.commvault.task.poll.interval", "5",
-            "The time interval in seconds when the management server polls for Commvault task status.", true, ConfigKey.Scope.Zone);
-
-    private static ConfigKey<Integer> CommvaultTaskPollMaxRetry = new ConfigKey<>("Advanced", Integer.class,
-            "backup.plugin.commvault.task.poll.max.retry", "120",
-            "The max number of retrying times when the management server polls for Commvault task status.", true, ConfigKey.Scope.Zone);
-
     private ConfigKey<Boolean> CommvaultClientVerboseLogs = new ConfigKey<>("Advanced", Boolean.class,
             "backup.plugin.commvault.client.verbosity", "false",
             "Produce Verbose logs in Hypervisor", true, ConfigKey.Scope.Zone);
 
     private ConfigKey<Integer> CommvaultBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
             "commvault.backup.restore.timeout",
-            "1800",
+            "7200",
             "Timeout in seconds after which Commvault backup restore operations fail.",
             true,
             BackupFrameworkEnabled.key());

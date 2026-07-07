@@ -110,14 +110,14 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
             "nas.backup.restore.mount.timeout",
-            "30",
+            "60",
             "Timeout in seconds after which backup repository mount for restore fails.",
             true,
             BackupFrameworkEnabled.key());
 
     ConfigKey<Integer> NASBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
             "nas.backup.restore.timeout",
-            "1800",
+            "7200",
             "Timeout in seconds after which NAS backup restore operations fail.",
             true,
             BackupFrameworkEnabled.key());
