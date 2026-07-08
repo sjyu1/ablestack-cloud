@@ -339,6 +339,7 @@ import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.GuestOSCategoryDao;
 import com.cloud.storage.dao.GuestOSDao;
 import com.cloud.storage.dao.SnapshotDao;
+import com.cloud.storage.dao.SnapshotDetailsDao;
 import com.cloud.storage.dao.VMTemplateDao;
 import com.cloud.storage.dao.VMTemplateZoneDao;
 import com.cloud.storage.dao.VolumeDao;
@@ -639,6 +640,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private HypervisorGuruManager _hvGuruMgr;
     @Inject
     VMSnapshotDetailsDao vmSnapshotDetailsDao;
+    @Inject
+    SnapshotDetailsDao snapshotDetailsDao;
 
     private ScheduledExecutorService _executor = null;
     private ScheduledExecutorService _flattenExecutor = null;
@@ -659,6 +662,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private Map<Long, VmAndCountDetails> vmIdCountMap = new ConcurrentHashMap<>();
 
     protected static long ROOT_DEVICE_ID = 0;
+    private static final String CLONE_TYPE_LINKED = "linked";
+    private static final String CLONE_VM_SNAPSHOT_ID = "clone.vm.snapshot.id";
 
     private static final int MAX_HTTP_GET_LENGTH = 2 * MAX_USER_DATA_LENGTH_BYTES;
     private static final int NUM_OF_2K_BLOCKS = 512;
@@ -9866,6 +9871,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         long zoneId = cmd.getTargetVM().getDataCenterId();
         String clone_type = cmd.getType();
         String orgName = cmd.getName();
+        boolean preserveVmSnapshotForLinkedClone = false;
 
         Account owner = _accountService.getAccount(cmd.getEntityOwnerId());
         Account caller = CallContext.current().getCallingAccount();
@@ -9915,10 +9921,13 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 Storage.ProvisioningType provisioningType = diskOffering.getProvisioningType();
                 String rootVolumeName = cmd.getName() + "-" + parentRootVolume.getName();
                 if (parentRootVolume.getVolumeType() == Volume.Type.ROOT) {
-                    if (StringUtils.isNotBlank(clone_type)){
-                        snapVO.setCloneType(clone_type);
+                    String effectiveCloneType = getEffectiveCloneTypeForCloneVm(clone_type, parentRootVolume);
+                    if (StringUtils.isNotBlank(effectiveCloneType)){
+                        snapVO.setCloneType(effectiveCloneType);
                         _snapshotDao.update(snapVO.getId(), snapVO);
                     }
+                    preserveVmSnapshotForLinkedClone = preserveVmSnapshotForLinkedClone || isVmSnapshotRequiredAsLinkedCloneBacking(effectiveCloneType, parentRootVolume);
+                    persistCloneVmSnapshotIdIfNeeded(effectiveCloneType, parentRootVolume, snapVO, vmSnapshot);
                     VolumeVO newVol = cloneVolumeFromSnapToDB(curVmAccount, true, zoneId, diskOfferingId, provisioningType, size, minIops, maxIops, parentRootVolume, rootVolumeName,
                                                                         _uuidMgr.generateUuid(Volume.class, null), new HashMap<>(), Volume.Type.ROOT, 0L);
                     VolumeVO rootVolume = (VolumeVO) _volumeService.cloneVolumeFromSnapshot(newVol, snapVO.getId(), curVm.getId());
@@ -9956,10 +9965,13 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 String dataVolumeName = cmd.getName() + "-" + parentDataDiskVolume.getName();
 
                 if (parentDataDiskVolume.getVolumeType() == Volume.Type.DATADISK) {
-                    if(StringUtils.isNotBlank(clone_type)){
-                        snapVO.setCloneType(clone_type);
+                    String effectiveCloneType = getEffectiveCloneTypeForCloneVm(clone_type, parentDataDiskVolume);
+                    if(StringUtils.isNotBlank(effectiveCloneType)){
+                        snapVO.setCloneType(effectiveCloneType);
                         _snapshotDao.update(snapVO.getId(), snapVO);
                     }
+                    preserveVmSnapshotForLinkedClone = preserveVmSnapshotForLinkedClone || isVmSnapshotRequiredAsLinkedCloneBacking(effectiveCloneType, parentDataDiskVolume);
+                    persistCloneVmSnapshotIdIfNeeded(effectiveCloneType, parentDataDiskVolume, snapVO, vmSnapshot);
                     VolumeVO newDataDiskVol = null;
                     try {
                         newDataDiskVol = cloneVolumeFromSnapToDB(curVmAccount, true, zoneId, diskOfferingId, provisioningType, size, minIops, maxIops, parentDataDiskVolume, dataVolumeName,
@@ -9999,7 +10011,11 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             }
 
             if (countOfCloneVM == cnt) {
-                _vmSnapshotMgr.deleteVMSnapshot(vmSnapshot.getId());
+                if (preserveVmSnapshotForLinkedClone) {
+                    logger.info("Skipping deletion of VM snapshot {} because it is used as a linked clone backing snapshot for SharedMountPoint clone.", vmSnapshot.getId());
+                } else {
+                    _vmSnapshotMgr.deleteVMSnapshot(vmSnapshot.getId());
+                }
 
                 if (!cmd.getStartVm()) {
                     return Optional.of(getUserVm(cmd.getEntityId()));
@@ -10081,6 +10097,32 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             throw new CloudRuntimeException("Clone VM >> createCloneVM() failed : " + e.getMessage(), e);
         }
         return vmResult;
+    }
+
+    protected String getEffectiveCloneTypeForCloneVm(String requestedCloneType, VolumeVO sourceVolume) {
+        if (isSharedMountPointQcow2Volume(sourceVolume)) {
+            return CLONE_TYPE_LINKED;
+        }
+        return requestedCloneType;
+    }
+
+    protected boolean isVmSnapshotRequiredAsLinkedCloneBacking(String cloneType, VolumeVO sourceVolume) {
+        return CLONE_TYPE_LINKED.equalsIgnoreCase(cloneType) && isSharedMountPointQcow2Volume(sourceVolume);
+    }
+
+    protected void persistCloneVmSnapshotIdIfNeeded(String cloneType, VolumeVO sourceVolume, SnapshotVO snapshot, VMSnapshot vmSnapshot) {
+        if (!isVmSnapshotRequiredAsLinkedCloneBacking(cloneType, sourceVolume)) {
+            return;
+        }
+        snapshotDetailsDao.addDetail(snapshot.getId(), CLONE_VM_SNAPSHOT_ID, String.valueOf(vmSnapshot.getId()), false);
+    }
+
+    protected boolean isSharedMountPointQcow2Volume(VolumeVO volume) {
+        if (volume == null || volume.getPoolId() == null || volume.getFormat() != ImageFormat.QCOW2) {
+            return false;
+        }
+        StoragePoolVO storagePool = _storagePoolDao.findById(volume.getPoolId());
+        return storagePool != null && StoragePoolType.SharedMountPoint == storagePool.getPoolType();
     }
 
     private VolumeVO cloneVolumeFromSnapToDB(final Account owner, final Boolean displayVolume, final Long zoneId, final Long diskOfferingId,

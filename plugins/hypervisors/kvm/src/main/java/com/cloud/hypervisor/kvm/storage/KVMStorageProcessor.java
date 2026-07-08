@@ -25,6 +25,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -148,6 +149,9 @@ import com.cloud.vm.VmDetailConstants;
 
 public class KVMStorageProcessor implements StorageProcessor {
     protected Logger logger = LogManager.getLogger(getClass());
+    private static final String CLONE_TYPE = "cloneType";
+    private static final String LINKED_CLONE_TYPE = "linked";
+    private static final String LINKED_CLONE_BACKING_PATH = "linkedCloneBackingPath";
     private final KVMStoragePoolManager storagePoolMgr;
     private final LibvirtComputingResource resource;
     private StorageLayer storageLayer;
@@ -2342,7 +2346,7 @@ public class KVMStorageProcessor implements StorageProcessor {
             if (path == null) {
                 path = details != null ? details.get(DiskTO.IQN) : null;
                 if (path == null) {
-                    new CloudRuntimeException("The 'path' or 'iqn' field must be specified.");
+                    throw new CloudRuntimeException("The 'path' or 'iqn' field must be specified.");
                 }
             }
         }
@@ -2373,22 +2377,69 @@ public class KVMStorageProcessor implements StorageProcessor {
         Map<String, String> details = cmd.getOptions2();
 
         String path = cmd.getDestTO().getPath();
-        if (path == null) {
-            path = details != null ? details.get(DiskTO.PATH) : null;
+        if (path == null) {`
             if (path == null) {
                 path = details != null ? details.get(DiskTO.IQN) : null;
                 if (path == null) {
-                    new CloudRuntimeException("The 'path' or 'iqn' field must be specified.");
+                    throw new CloudRuntimeException("The 'path' or 'iqn' field must be specified.");
                 }
             }
         }
 
         storagePoolMgr.connectPhysicalDisk(pool.getPoolType(), pool.getUuid(), path, details);
 
-        KVMPhysicalDisk newDisk = storagePoolMgr.copyPhysicalDisk(snapshotDisk, path != null ? path : newVol.getUuid(), primaryPool, cmd.getWaitInMillSeconds());
+        try {
+            KVMPhysicalDisk newDisk;
+            if (isLinkedCloneRequested(cmd) && volume.getFormat() == ImageFormat.QCOW2) {
+                KVMPhysicalDisk backingDisk = prepareLinkedCloneBackingDisk(cmd, snapshotDisk, primaryPool);
+                newDisk = storagePoolMgr.createDiskWithTemplateBacking(backingDisk, path != null ? path : newVol.getUuid(), PhysicalDiskFormat.QCOW2, newVol.getSize(),
+                        primaryPool, cmd.getWaitInMillSeconds(), newVol.getPassphrase());
+                if (newDisk == null) {
+                    throw new CloudRuntimeException("Could not create linked clone volume from backing snapshot " + backingDisk.getPath());
+                }
+            } else {
+                newDisk = storagePoolMgr.copyPhysicalDisk(snapshotDisk, path != null ? path : newVol.getUuid(), primaryPool, cmd.getWaitInMillSeconds());
+            }
+            return newDisk;
+        } finally {
+            storagePoolMgr.disconnectPhysicalDisk(pool.getPoolType(), pool.getUuid(), path);
+        }
+    }
 
-        storagePoolMgr.disconnectPhysicalDisk(pool.getPoolType(), pool.getUuid(), path);
-        return newDisk;
+    protected boolean isLinkedCloneRequested(CopyCommand cmd) {
+        Map<String, String> options = cmd.getOptions();
+        return options != null && LINKED_CLONE_TYPE.equalsIgnoreCase(options.get(CLONE_TYPE))
+                && StringUtils.isNotBlank(options.get(LINKED_CLONE_BACKING_PATH));
+    }
+
+    protected KVMPhysicalDisk prepareLinkedCloneBackingDisk(CopyCommand cmd, KVMPhysicalDisk snapshotDisk, KVMStoragePool primaryPool) {
+        String relativeBackingPath = cmd.getOptions().get(LINKED_CLONE_BACKING_PATH);
+        Path poolPath = Paths.get(primaryPool.getLocalPath()).toAbsolutePath().normalize();
+        Path backingPath = poolPath.resolve(relativeBackingPath).toAbsolutePath().normalize();
+        if (!backingPath.startsWith(poolPath)) {
+            throw new CloudRuntimeException("Invalid linked clone backing path " + relativeBackingPath);
+        }
+
+        Path snapshotPath = Paths.get(snapshotDisk.getPath()).toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(backingPath.getParent());
+            try {
+                Files.createLink(backingPath, snapshotPath);
+                logger.info("Created linked clone backing hard link from {} to {}", snapshotPath, backingPath);
+            } catch (FileAlreadyExistsException e) {
+                if (!Files.isSameFile(backingPath, snapshotPath)) {
+                    throw new CloudRuntimeException(String.format("Linked clone backing path [%s] already exists and does not reference snapshot [%s]", backingPath, snapshotPath), e);
+                }
+            }
+        } catch (IOException e) {
+            throw new CloudRuntimeException(String.format("Failed to prepare linked clone backing file [%s] from snapshot [%s]", backingPath, snapshotPath), e);
+        }
+
+        KVMPhysicalDisk backingDisk = new KVMPhysicalDisk(backingPath.toString(), relativeBackingPath, primaryPool);
+        backingDisk.setFormat(PhysicalDiskFormat.QCOW2);
+        backingDisk.setSize(snapshotDisk.getSize());
+        backingDisk.setVirtualSize(snapshotDisk.getVirtualSize());
+        return backingDisk;
     }
 
     private KVMPhysicalDisk createRBDvolumeFromRBDSnapshot(KVMPhysicalDisk volume, String snapshotName, String name,
