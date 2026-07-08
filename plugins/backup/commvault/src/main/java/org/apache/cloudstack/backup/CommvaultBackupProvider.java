@@ -95,6 +95,7 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
+import static org.apache.cloudstack.backup.BackupManager.BackupRestoreTimeout;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 
 public class CommvaultBackupProvider extends AdapterBase implements BackupProvider, Configurable {
@@ -127,13 +128,6 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     private ConfigKey<Integer> CommvaultApiRequestTimeout = new ConfigKey<>("Advanced", Integer.class,
             "backup.plugin.commvault.request.timeout", "300",
             "Commvault Command Center API request timeout in seconds.", true, ConfigKey.Scope.Zone);
-
-    private ConfigKey<Integer> CommvaultBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
-            "commvault.backup.restore.timeout",
-            "3600",
-            "Timeout in seconds after which qemu-img execute when restoring",
-            true,
-            BackupFrameworkEnabled.key());
 
     @Inject
     private BackupDao backupDao;
@@ -515,7 +509,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
                 restoreCommand.setVmExists(vm.getRemoved() == null);
                 restoreCommand.setVmState(vm.getState());
-                restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
+                restoreCommand.setTimeout(BackupRestoreTimeout.value());
                 // 복원된 호스트와 가상머신이 실행중인 호스트가 같은 경우 null, 다른 경우 추가
                 restoreCommand.setHostName(restoreHost.getId() == vmHost.getId() ? null : restoreHost.getName());
 
@@ -674,7 +668,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setVmExists(null);
                 restoreCommand.setVmState(vmNameAndState.second());
                 restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
-                restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
+                restoreCommand.setTimeout(BackupRestoreTimeout.value());
                 restoreCommand.setCacheMode(cacheMode);
                 // 복원된 호스트와 가상머신이 실행중인 호스트가 같은 경우 null, 다른 경우 추가
                 restoreCommand.setHostName(restoreHost.getId() == vmHost.getId() ? null : restoreHost.getName());
@@ -841,8 +835,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 CommvaultUsername,
                 CommvaultPassword,
                 CommvaultValidateSSLSecurity,
-                CommvaultApiRequestTimeout,
-                CommvaultBackupRestoreTimeout
+                CommvaultApiRequestTimeout
         };
     }
 

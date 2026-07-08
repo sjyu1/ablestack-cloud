@@ -78,6 +78,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
+import static org.apache.cloudstack.backup.BackupManager.BackupRestoreTimeout;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 
 public class NASBackupProvider extends AdapterBase implements BackupProvider, Configurable {
@@ -333,6 +334,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         restoreCommand.setVmExists(vm.getRemoved() == null);
         restoreCommand.setVmState(vm.getState());
         restoreCommand.setMountTimeout(NASBackupRestoreMountTimeout.value());
+        restoreCommand.setWait(BackupRestoreTimeout.value());
 
         BackupAnswer answer;
         try {
@@ -433,6 +435,7 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         restoreCommand.setVmState(vmNameAndState.second());
         restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
         restoreCommand.setMountTimeout(NASBackupRestoreMountTimeout.value());
+        restoreCommand.setWait(BackupRestoreTimeout.value());
         restoreCommand.setCacheMode(cacheMode);
 
         BackupAnswer answer;

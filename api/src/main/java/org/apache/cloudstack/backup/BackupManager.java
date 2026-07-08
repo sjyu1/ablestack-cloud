@@ -66,6 +66,13 @@ public interface BackupManager extends BackupService, Configurable, PluggableSer
             true,
             BackupFrameworkEnabled.key());
 
+    ConfigKey<Integer> BackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
+            "backup.restore.timeout",
+            "3600",
+            "Timeout in seconds for KVM backup restore commands. A value of 0 uses the global command wait timeout.",
+            true,
+            BackupFrameworkEnabled.key());
+
     ConfigKey<Boolean> BackupEnableAttachDetachVolumes = new ConfigKey<>("Advanced", Boolean.class,
             "backup.enable.attach.detach.of.volumes",
             "false",
