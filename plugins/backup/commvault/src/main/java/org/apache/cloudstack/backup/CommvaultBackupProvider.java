@@ -96,7 +96,6 @@ import javax.inject.Inject;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
 import static org.apache.cloudstack.backup.BackupManager.BackupRestoreTimeout;
-import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 
 public class CommvaultBackupProvider extends AdapterBase implements BackupProvider, Configurable {
 
