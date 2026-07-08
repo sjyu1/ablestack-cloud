@@ -2377,7 +2377,8 @@ public class KVMStorageProcessor implements StorageProcessor {
         Map<String, String> details = cmd.getOptions2();
 
         String path = cmd.getDestTO().getPath();
-        if (path == null) {`
+        if (path == null) {
+            path = details != null ? details.get(DiskTO.PATH) : null;
             if (path == null) {
                 path = details != null ? details.get(DiskTO.IQN) : null;
                 if (path == null) {
