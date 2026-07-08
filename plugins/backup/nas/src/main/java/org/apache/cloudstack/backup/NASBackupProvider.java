@@ -77,6 +77,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
 
 public class NASBackupProvider extends AdapterBase implements BackupProvider, Configurable {
@@ -215,6 +216,10 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
 
         BackupVO backupVO = createBackupObject(vm, backupPath);
         TakeBackupCommand command = new TakeBackupCommand(vm.getInstanceName(), backupPath);
+        final int commandTimeout = BackupCommandTimeout.value();
+        if (commandTimeout > 0) {
+            command.setWait(commandTimeout);
+        }
         command.setBackupRepoType(backupRepository.getType());
         command.setBackupRepoAddress(backupRepository.getAddress());
         command.setMountOptions(backupRepository.getMountOptions());
@@ -229,6 +234,8 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
             command.setVolumePaths(volumePoolsAndPaths.second());
         }
 
+        logger.info("Submitting NAS backup command for VM [{}] on host [{}] with backup [{}], path [{}], state [{}], timeout [{}] seconds, volumes [{}]",
+                vm.getInstanceName(), host.getName(), backupVO.getUuid(), backupPath, vm.getState(), command.getWait(), vmVolumes.size());
         BackupAnswer answer;
         try {
             answer = (BackupAnswer) agentManager.send(host.getId(), command);
@@ -245,6 +252,8 @@ public class NASBackupProvider extends AdapterBase implements BackupProvider, Co
         }
 
         if (answer != null && answer.getResult()) {
+            logger.info("NAS backup command completed for VM [{}], backup [{}], path [{}], size [{}] bytes",
+                    vm.getInstanceName(), backupVO.getUuid(), backupPath, answer.getSize());
             backupVO.setDate(new Date());
             backupVO.setSize(answer.getSize());
             backupVO.setStatus(Backup.Status.BackedUp);

@@ -59,6 +59,13 @@ public interface BackupManager extends BackupService, Configurable, PluggableSer
             "300",
             "The backup and recovery background sync task polling interval in seconds.", true, BackupFrameworkEnabled.key());
 
+    ConfigKey<Integer> BackupCommandTimeout = new ConfigKey<>("Advanced", Integer.class,
+            "backup.command.timeout",
+            "3600",
+            "Timeout in seconds for KVM backup commands. A value of 0 uses the global command wait timeout.",
+            true,
+            BackupFrameworkEnabled.key());
+
     ConfigKey<Boolean> BackupEnableAttachDetachVolumes = new ConfigKey<>("Advanced", Boolean.class,
             "backup.enable.attach.detach.of.volumes",
             "false",
