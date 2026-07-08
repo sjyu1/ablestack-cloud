@@ -33,6 +33,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -664,6 +665,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     protected static long ROOT_DEVICE_ID = 0;
     private static final String CLONE_TYPE_LINKED = "linked";
     private static final String CLONE_VM_SNAPSHOT_ID = "clone.vm.snapshot.id";
+    private static final String CLONE_VM_SNAPSHOT_BACKING_PATH = "clone.vm.snapshot.backing.path.";
 
     private static final int MAX_HTTP_GET_LENGTH = 2 * MAX_USER_DATA_LENGTH_BYTES;
     private static final int NUM_OF_2K_BLOCKS = 512;
@@ -9889,6 +9891,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             if (vmSnapshot == null) {
                 throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot");
             }
+            prepareCloneVmSnapshotBackingPathsIfNeeded(clone_type, vmSnapshot, curVm.getId());
             vmSnapshot = _vmSnapshotMgr.createVMSnapshot(curVm.getId(), vmSnapshot.getId(), true);
             if (vmSnapshot == null) {
                 throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot due to an internal error creating snapshot for vm " + curVm.getId());
@@ -10115,6 +10118,41 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             return;
         }
         snapshotDetailsDao.addDetail(snapshot.getId(), CLONE_VM_SNAPSHOT_ID, String.valueOf(vmSnapshot.getId()), false);
+    }
+
+    protected void prepareCloneVmSnapshotBackingPathsIfNeeded(String requestedCloneType, VMSnapshot vmSnapshot, long vmId) {
+        List<VolumeVO> sourceVolumes = _volsDao.findByInstance(vmId);
+        for (VolumeVO sourceVolume : sourceVolumes) {
+            String effectiveCloneType = getEffectiveCloneTypeForCloneVm(requestedCloneType, sourceVolume);
+            if (!isVmSnapshotRequiredAsLinkedCloneBacking(effectiveCloneType, sourceVolume)) {
+                continue;
+            }
+            vmSnapshotDetailsDao.addDetail(vmSnapshot.getId(), CLONE_VM_SNAPSHOT_BACKING_PATH + sourceVolume.getId(),
+                    getCloneVmSnapshotBackingPath(vmSnapshot, sourceVolume), false);
+        }
+    }
+
+    protected String getCloneVmSnapshotBackingPath(VMSnapshot vmSnapshot, VolumeVO sourceVolume) {
+        return String.format("clone/vmsnapshot-%s/%s-%s",
+                sanitizePathToken(String.valueOf(vmSnapshot.getId())),
+                sanitizePathToken(sourceVolume.getName()),
+                getVolumeUuidShort(sourceVolume));
+    }
+
+    protected String getVolumeUuidShort(VolumeVO volume) {
+        String uuid = volume.getUuid();
+        if (uuid == null) {
+            return String.valueOf(volume.getId());
+        }
+        return uuid.length() <= 8 ? sanitizePathToken(uuid) : sanitizePathToken(uuid.substring(0, 8));
+    }
+
+    protected String sanitizePathToken(String value) {
+        if (value == null) {
+            return "unknown";
+        }
+        String sanitized = value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-+|-+$)", "");
+        return sanitized.isEmpty() ? "unknown" : sanitized;
     }
 
     protected boolean isSharedMountPointQcow2Volume(VolumeVO volume) {
