@@ -130,7 +130,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
 
     private ConfigKey<Integer> CommvaultBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
             "commvault.backup.restore.timeout",
-            "30",
+            "3600",
             "Timeout in seconds after which qemu-img execute when restoring",
             true,
             BackupFrameworkEnabled.key());
