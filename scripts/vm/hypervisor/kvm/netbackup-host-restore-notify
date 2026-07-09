@@ -34,6 +34,7 @@ ADMIN_APIKEY="${ADMIN_APIKEY:-}"
 ADMIN_SECRETKEY="${ADMIN_SECRETKEY:-}"
 MOLD_SECRET_FILE="${MOLD_SECRET_FILE:-}"
 SECRET_KEY_FILE="${SECRET_KEY_FILE:-}"
+SECRET_HELPER="${SECRET_HELPER:-/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-secret-helper.sh}"
 
 ensure_log_dir() {
   mkdir -p "$(dirname "${LOG_FILE}")"
@@ -105,6 +106,7 @@ load_config() {
       LOG_FILE) [[ "${LOG_FILE}" == "/var/log/netbackup-mold-restore.log" ]] && LOG_FILE="${value}" ;;
       MOLD_SECRET_FILE) [[ -n "${MOLD_SECRET_FILE}" ]] || MOLD_SECRET_FILE="${value}" ;;
       SECRET_KEY_FILE) [[ -n "${SECRET_KEY_FILE}" ]] || SECRET_KEY_FILE="${value}" ;;
+      SECRET_HELPER) [[ -n "${SECRET_HELPER}" ]] || SECRET_HELPER="${value}" ;;
     esac
   done < "${CONFIG_FILE}"
 
@@ -123,38 +125,11 @@ load_secret() {
   [[ -f "${SECRET_KEY_FILE}" ]] || fail "Secret key file not found: ${SECRET_KEY_FILE}"
   [[ -f "${MOLD_SECRET_FILE}" ]] || fail "Secret file not found: ${MOLD_SECRET_FILE}"
 
-  local iterations salt_b64 iv_b64 ciphertext_b64 mac_b64 salt_hex iv_hex ciphertext_hex mac_hex key_iv_lines key_hex derived_iv_hex mac_key_hex mac_input_hex expected_mac_hex plaintext
-  iterations="$(sed -n 's/.*"iterations"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
-  salt_b64="$(sed -n 's/.*"salt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
-  iv_b64="$(sed -n 's/.*"iv"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
-  ciphertext_b64="$(sed -n 's/.*"ciphertext"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
-  mac_b64="$(sed -n 's/.*"mac"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MOLD_SECRET_FILE}" | head -n1)"
+  [[ -x "${SECRET_HELPER}" ]] || fail "Secret helper not found or not executable: ${SECRET_HELPER}"
 
-  [[ -n "${iterations}" && -n "${salt_b64}" && -n "${iv_b64}" && -n "${ciphertext_b64}" && -n "${mac_b64}" ]] || fail "Invalid secret file format: ${MOLD_SECRET_FILE}"
-
-  salt_hex="$(printf '%s' "${salt_b64}" | base64 -d | raw_to_hex)"
-  iv_hex="$(printf '%s' "${iv_b64}" | base64 -d | raw_to_hex)"
-  ciphertext_hex="$(printf '%s' "${ciphertext_b64}" | base64 -d | raw_to_hex)"
-  mac_hex="$(printf '%s' "${mac_b64}" | base64 -d | raw_to_hex)"
-
-  key_iv_lines="$(openssl enc -aes-256-cbc -pbkdf2 -iter "${iterations}" -md sha256 -S "${salt_hex}" -pass file:"${SECRET_KEY_FILE}" -P 2>/dev/null)" || fail "Failed to derive key material"
-  key_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^key=//p' | head -n1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-  derived_iv_hex="$(printf '%s\n' "${key_iv_lines}" | sed -n 's/^iv *=//p' | head -n1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-  [[ "${derived_iv_hex}" == "${iv_hex}" ]] || fail "Derived IV mismatch"
-
-  mac_key_hex="$(
-    hex_to_raw "${key_hex}${salt_hex}" | openssl dgst -sha256 -binary | raw_to_hex
-  )"
-  mac_input_hex="${iv_hex}${ciphertext_hex}"
-  expected_mac_hex="$(
-    hex_to_raw "${mac_input_hex}" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${mac_key_hex}" -binary | raw_to_hex
-  )"
-  [[ "${expected_mac_hex}" == "${mac_hex}" ]] || fail "Encrypted secret MAC validation failed"
-
-  plaintext="$(
-    hex_to_raw "${ciphertext_hex}" | openssl enc -aes-256-cbc -d -K "${key_hex}" -iv "${iv_hex}" -nosalt 2>/dev/null
-  )" || fail "Failed to decrypt secret file"
-  ADMIN_SECRETKEY="${plaintext%$'\r'}"
+  ADMIN_SECRETKEY="$(SECRET_KEY_FILE="${SECRET_KEY_FILE}" "${SECRET_HELPER}" decrypt "${MOLD_SECRET_FILE}")" || \
+    fail "Failed to decrypt NetBackup secret file ${MOLD_SECRET_FILE}"
+  ADMIN_SECRETKEY="${ADMIN_SECRETKEY%$'\r'}"
   ADMIN_SECRETKEY="${ADMIN_SECRETKEY%$'\n'}"
   [[ -n "${ADMIN_SECRETKEY}" ]] || fail "Decrypted MOLD secret is empty."
 }

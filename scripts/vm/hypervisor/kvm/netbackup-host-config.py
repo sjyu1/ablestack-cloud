@@ -490,6 +490,7 @@ def write_restore_config(path: Path, args: argparse.Namespace, secret_path: Path
         f'ADMIN_APIKEY="{args.admin_apikey}"',
         f'MOLD_SECRET_FILE="{secret_path}"',
         f'SECRET_KEY_FILE="{SECRET_KEY_FILE}"',
+        'SECRET_HELPER="/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-secret-helper.sh"',
         f'LOG_FILE="{RESTORE_LOG_PATH}"',
         f'NETBACKUP_STAGING_ROOT="{BACKUP_STAGING_ROOT}"',
         "",
