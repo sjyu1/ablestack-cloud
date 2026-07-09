@@ -219,10 +219,15 @@ invoke_mold_api() {
   local command_name="$2"
   local request_key="$3"
   local external_id="$4"
+  local netbackup_job_id="${5:-}"
   local api_params signed_url response http_body http_code curl_exit
 
-  log_line "RESTORE api-call command=${command_name} method=${method} externalid=${external_id} operation=${5:-}"
-  api_params="$(build_api_params "${command_name}" "${request_key}=$(urlencode_plus "${external_id}")")"
+  log_line "RESTORE api-call command=${command_name} method=${method} externalid=${external_id} netbackup_jobid=${netbackup_job_id:-}"
+  api_params="${request_key}=$(urlencode_plus "${external_id}")"
+  if [[ -n "${netbackup_job_id}" ]]; then
+    api_params="${api_params}&jobid=$(urlencode_plus "${netbackup_job_id}")"
+  fi
+  api_params="$(build_api_params "${command_name}" "${api_params}")"
   signed_url="$(build_signed_url "${api_params}")"
   response="$(curl -sS -X "${method}" \
     -H 'Accept: application/json' \
@@ -327,12 +332,13 @@ wait_for_mold_async_job() {
 
 main() {
   if [[ $# -lt 2 ]]; then
-    fail "usage: netbackup-host-restore-notify <program_name> <external_id> [operation]"
+    fail "usage: netbackup-host-restore-notify <program_name> <external_id> [operation] [netbackup_job_id]"
   fi
 
   local program_name="$1"
   local external_id="$2"
   local operation="${3:-}"
+  local netbackup_job_id="${4:-}"
   local request_key
   local response
 
@@ -363,7 +369,7 @@ main() {
     request_key="externalid"
   fi
 
-  response="$(invoke_mold_api "${MOLD_RESTORE_API_METHOD}" "prepareNetBackupRestore" "${request_key}" "${external_id}" "${operation}")"
+  response="$(invoke_mold_api "${MOLD_RESTORE_API_METHOD}" "prepareNetBackupRestore" "${request_key}" "${external_id}" "${netbackup_job_id}")"
   should_restore="$(extract_json_value_by_key "${response}" "shouldrestore" 2>/dev/null || true)"
   skip_reason="$(extract_json_value_by_key "${response}" "skipreason" 2>/dev/null || true)"
   vm_id="$(extract_json_value_by_key "${response}" "vmid" 2>/dev/null || true)"
@@ -376,7 +382,7 @@ main() {
     return 0
   fi
 
-  response="$(invoke_mold_api "${MOLD_RESTORE_API_METHOD}" "restoreNetBackup" "${request_key}" "${external_id}" "${operation}")"
+  response="$(invoke_mold_api "${MOLD_RESTORE_API_METHOD}" "restoreNetBackup" "${request_key}" "${external_id}" "${netbackup_job_id}")"
   job_id="$(extract_json_value_by_key "${response}" "jobid" 2>/dev/null || true)"
   [[ -n "${job_id}" ]] || fail "Mold restoreNetBackup API did not return jobid for ${request_key}=${external_id}"
 

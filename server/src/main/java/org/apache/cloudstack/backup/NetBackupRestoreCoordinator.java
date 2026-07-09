@@ -442,6 +442,27 @@ public class NetBackupRestoreCoordinator extends ManagerBase {
         upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_RESTORE_CHAIN_JOB_ID, chainJobId);
     }
 
+    public BackupVO findRestoreBackupByJobId(final String jobId) {
+        if (StringUtils.isBlank(jobId)) {
+            return null;
+        }
+
+        final BackupVO chainJobBackup = findBackupByRestoreJobDetail(DETAIL_NETBACKUP_RESTORE_CHAIN_JOB_ID, jobId);
+        if (chainJobBackup != null) {
+            return chainJobBackup;
+        }
+        return findBackupByRestoreJobDetail(DETAIL_NETBACKUP_RESTORE_ROOT_JOB_ID, jobId);
+    }
+
+    private BackupVO findBackupByRestoreJobDetail(final String key, final String jobId) {
+        return backupDetailsDao.findDetails(key, jobId, false).stream()
+                .map(BackupDetailVO::getResourceId)
+                .map(backupDao::findByIdIncludingRemoved)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
     public BackupVO findActiveRestoreBackupForVm(final VMInstanceVO vm) {
         if (vm == null || StringUtils.isBlank(vm.getUuid())) {
             return null;

@@ -63,6 +63,12 @@ public class RestoreNetBackupCmd extends BaseAsyncCmd {
             description = "NetBackup backup ID")
     private String backupId;
 
+    @Parameter(name = ApiConstants.JOB_ID,
+            type = CommandType.STRING,
+            required = false,
+            description = "NetBackup restore job ID that triggered this restore request")
+    private String jobId;
+
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
     /////////////////////////////////////////////////////
@@ -73,6 +79,10 @@ public class RestoreNetBackupCmd extends BaseAsyncCmd {
 
     public String getBackupId() {
         return backupId;
+    }
+
+    public String getJobId() {
+        return jobId;
     }
 
     /////////////////////////////////////////////////////

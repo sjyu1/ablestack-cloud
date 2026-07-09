@@ -1613,6 +1613,16 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
             validateVmStoppedForNetBackupRestore(vm);
 
+            final BackupVO restoreJobBackup = netBackupRestoreCoordinator.findRestoreBackupByJobId(cmd.getJobId());
+            if (restoreJobBackup != null) {
+                final String skipMessage = String.format(
+                        "Skipping NetBackup restore request for VM [%s] using NetBackup job ID [%s] because it was created by an existing Mold restore flow on backup [%s].",
+                        vm.getInstanceName(), cmd.getJobId(), restoreJobBackup.getUuid());
+                logger.info(skipMessage);
+                CallContext.current().setEventDetails(skipMessage);
+                return true;
+            }
+
             restoreGuardToken = netBackupRestoreCoordinator.acquireRestoreGuard(vm, resolution.getRequestIdentifier());
             if (restoreGuardToken == null) {
                 final String skipMessage = String.format(
@@ -1716,6 +1726,17 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException("The Instance from which the NetBackup was taken could not be found.");
         }
         accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
+
+        final BackupVO restoreJobBackup = netBackupRestoreCoordinator.findRestoreBackupByJobId(cmd.getJobId());
+        if (restoreJobBackup != null) {
+            final String skipReason = String.format(
+                    "NetBackup restore job [%s] is already tracked by Mold restore flow on backup [%s]",
+                    cmd.getJobId(), restoreJobBackup.getUuid());
+            logger.info("NetBackup restore precheck skip by tracked restore job. vm=[{}], vmId=[{}], requestIdentifier=[{}], jobId=[{}], trackedBackup=[{}]",
+                    vm.getInstanceName(), vm.getId(), resolution.getRequestIdentifier(), cmd.getJobId(), restoreJobBackup.getUuid());
+            return new NetBackupRestorePrecheckResult(false, skipReason, vm.getId(), vm.getInstanceName(),
+                    backup.getId(), backup.getUuid(), resolution.getRequestIdentifier(), backup.getExternalId());
+        }
 
         final BackupVO activeRestoreBackup = netBackupRestoreCoordinator.findActiveRestoreBackupForVm(vm);
         if (activeRestoreBackup != null) {

@@ -3,9 +3,11 @@
 import json
 import os
 import shlex
+import socket
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
@@ -73,6 +75,8 @@ def prune_state(state: dict[str, Any]) -> None:
     cutoff = int(time.time()) - ttl
     processed = state.setdefault("processed", {})
     for job_id in list(processed.keys()):
+        if processed[job_id].get("permanent"):
+            continue
         if int(processed[job_id].get("timestamp", 0)) < cutoff:
             processed.pop(job_id, None)
 
@@ -148,7 +152,145 @@ def job_state(job: dict[str, Any]) -> str:
 
 
 def job_status_code(job: dict[str, Any]) -> str:
-    return get_nested(job, "statusCode", "statuscode", "attributes.statusCode", "attributes.statuscode")
+    return get_nested(job, "statusCode", "statuscode", "status", "attributes.statusCode", "attributes.statuscode", "attributes.status")
+
+
+def parse_timestamp(value: str) -> Optional[float]:
+    value = value.strip()
+    if not value:
+        return None
+    if value.isdigit():
+        timestamp = float(value)
+        if timestamp > 9999999999:
+            timestamp = timestamp / 1000
+        return timestamp
+    try:
+        normalized = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized).timestamp()
+    except ValueError:
+        pass
+    for pattern in ("%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+        try:
+            return datetime.strptime(value, pattern).replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+def job_reference_timestamp(job: dict[str, Any]) -> Optional[float]:
+    value = get_nested(
+        job,
+        "endTime",
+        "endtime",
+        "ended",
+        "completionTime",
+        "completeTime",
+        "updateTime",
+        "updatedTime",
+        "lastUpdateTime",
+        "startTime",
+        "attributes.endTime",
+        "attributes.endtime",
+        "attributes.ended",
+        "attributes.completionTime",
+        "attributes.completeTime",
+        "attributes.updateTime",
+        "attributes.updatedTime",
+        "attributes.lastUpdateTime",
+        "attributes.startTime",
+        "attributes.timestamps.endTime",
+        "attributes.timestamps.updateTime",
+    )
+    return parse_timestamp(value)
+
+
+def is_recent_restore_job(job: dict[str, Any], job_id_value: str) -> bool:
+    window_seconds = int(CONFIG.get("RECENT_JOB_WINDOW_SECONDS", "86400"))
+    if window_seconds <= 0:
+        return True
+    timestamp = job_reference_timestamp(job)
+    if timestamp is None:
+        return CONFIG.get("REQUIRE_JOB_TIMESTAMP", "false").lower() != "true"
+    if timestamp >= time.time() - window_seconds:
+        return True
+    log(f"Skipping old NetBackup restore jobId=[{job_id_value}] jobTimestamp=[{int(timestamp)}] windowSeconds=[{window_seconds}]")
+    return False
+
+
+def normalize_client_name(value: str) -> str:
+    return value.strip().strip('"').strip("'").lower()
+
+
+def client_name_aliases(value: str) -> set[str]:
+    normalized = normalize_client_name(value)
+    if not normalized:
+        return set()
+    aliases = {normalized}
+    if "." in normalized:
+        aliases.add(normalized.split(".", 1)[0])
+    return aliases
+
+
+def read_bp_conf_client_names() -> set[str]:
+    bp_conf = Path(CONFIG.get("NETBACKUP_BP_CONF_PATH", "/usr/openv/netbackup/bp.conf"))
+    names: set[str] = set()
+    if not bp_conf.is_file():
+        return names
+    try:
+        for raw_line in bp_conf.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if key.strip().upper() == "CLIENT_NAME":
+                names.update(client_name_aliases(value))
+    except OSError:
+        return names
+    return names
+
+
+def local_client_aliases() -> set[str]:
+    aliases: set[str] = set()
+    configured_names = CONFIG.get("NETBACKUP_CLIENT_NAME", "")
+    for value in configured_names.split(","):
+        aliases.update(client_name_aliases(value))
+    for value in (socket.gethostname(), socket.getfqdn()):
+        aliases.update(client_name_aliases(value))
+    aliases.update(read_bp_conf_client_names())
+    return aliases
+
+
+LOCAL_CLIENT_ALIASES = local_client_aliases()
+
+
+def destination_client_aliases(job: dict[str, Any]) -> set[str]:
+    destination = get_nested(
+        job,
+        "destinationClient",
+        "destinationClientName",
+        "destination.client",
+        "destination.clientName",
+        "destination.host",
+        "clientName",
+        "workloadDisplayName",
+        "attributes.destinationClient",
+        "attributes.destinationClientName",
+        "attributes.destination.client",
+        "attributes.destination.clientName",
+        "attributes.destination.host",
+        "attributes.recoveryOptions.destinationClient",
+        "attributes.job.destinationClient",
+        "attributes.clientName",
+        "attributes.workloadDisplayName",
+    )
+    return client_name_aliases(destination)
+
+
+def is_job_for_local_client(job: dict[str, Any]) -> bool:
+    destination_aliases = destination_client_aliases(job)
+    if not destination_aliases:
+        return True
+    return bool(destination_aliases & LOCAL_CLIENT_ALIASES)
 
 
 def is_successful_restore_job(job: dict[str, Any]) -> bool:
@@ -159,17 +301,61 @@ def is_successful_restore_job(job: dict[str, Any]) -> bool:
     return status_code == "0" and state not in {"active", "running", "queued", "incomplete", "failed"}
 
 
-def candidate_external_ids(job: dict[str, Any]) -> list[str]:
+def extract_staging_paths_from_strings(values: list[str]) -> list[str]:
     staging_root = CONFIG.get("NETBACKUP_STAGING_ROOT", "/tmp/mold/netbackup").rstrip("/")
-    values = []
-    for value in find_strings(job):
+    paths = []
+    for value in values:
         normalized = value.rstrip("/")
         if normalized.startswith(staging_root + "/"):
             suffix = normalized[len(staging_root) + 1:]
             parts = [part for part in suffix.split("/") if part]
             if len(parts) >= 2:
-                values.append(f"{staging_root}/{parts[0]}/{parts[1]}")
-    return sorted(set(values), key=len, reverse=True)
+                paths.append(f"{staging_root}/{parts[0]}/{parts[1]}")
+    return sorted(set(paths), key=len, reverse=True)
+
+
+def fetch_restore_job_file_list(job_id_value: str) -> list[str]:
+    if CONFIG.get("NETBACKUP_JOB_FILE_LISTS_ENABLED", "true").lower() != "true":
+        return []
+    try:
+        path = f"{CONFIG.get('NETBACKUP_JOBS_PATH', '/admin/jobs').rstrip('/')}/{job_id_value}/file-lists"
+        payload = netbackup_get(path)
+        return find_strings(payload)
+    except Exception as exc:
+        log(f"FAILED job file-list query jobId=[{job_id_value}] error=[{exc}]")
+        return []
+
+
+def candidate_restore_identifiers(job: dict[str, Any], job_id_value: str) -> list[str]:
+    file_list_paths = extract_staging_paths_from_strings(fetch_restore_job_file_list(job_id_value))
+    if file_list_paths:
+        return file_list_paths
+
+    job_paths = extract_staging_paths_from_strings(find_strings(job))
+    if job_paths:
+        return job_paths
+
+    restore_backup_ids = get_nested(job, "restoreBackupIDs", "restoreBackupIds", "attributes.restoreBackupIDs", "attributes.restoreBackupIds")
+    if restore_backup_ids:
+        return sorted(set(value.strip() for value in restore_backup_ids.splitlines() if value.strip()))
+    return []
+
+
+def is_backup_id(identifier: str) -> bool:
+    return "/" not in identifier and "\\" not in identifier
+
+
+def local_existing_restore_identifiers(identifiers: list[str]) -> list[str]:
+    return [identifier for identifier in identifiers if is_backup_id(identifier) or Path(identifier).exists()]
+
+
+def should_process_single_restore_path(external_ids: list[str], job_id_value: str) -> bool:
+    if CONFIG.get("PROCESS_SINGLE_RESTORE_PATH_ONLY", "true").lower() != "true":
+        return True
+    if len(external_ids) == 1:
+        return True
+    log(f"Skipping NetBackup restore jobId=[{job_id_value}] because it contains multiple restore paths: {external_ids}")
+    return False
 
 
 def invoke_restore_notify(external_id: str, job_id_value: str) -> bool:
@@ -180,7 +366,7 @@ def invoke_restore_notify(external_id: str, job_id_value: str) -> bool:
     if CONFIG.get("MOLD_RESTORE_API_METHOD"):
         env["MOLD_RESTORE_API_METHOD"] = CONFIG["MOLD_RESTORE_API_METHOD"]
     proc = subprocess.run(
-        [notify_script, "netbackup-host-restore-watcher", external_id, "restore"],
+        [notify_script, "netbackup-host-restore-watcher", external_id, "restore", job_id_value],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -194,7 +380,7 @@ def invoke_restore_notify(external_id: str, job_id_value: str) -> bool:
     return True
 
 
-def poll_once(state: dict[str, Any]) -> None:
+def fetch_restore_jobs() -> list[dict[str, Any]]:
     params = {}
     job_filter = CONFIG.get("NETBACKUP_JOBS_FILTER", "")
     if job_filter:
@@ -204,7 +390,39 @@ def poll_once(state: dict[str, Any]) -> None:
         params["page[limit]"] = page_limit
 
     payload = netbackup_get(CONFIG.get("NETBACKUP_JOBS_PATH", "/admin/jobs"), params)
-    jobs = extract_jobs(payload)
+    return extract_jobs(payload)
+
+
+def mark_existing_jobs_processed(state: dict[str, Any]) -> None:
+    if CONFIG.get("SKIP_EXISTING_JOBS_ON_START", "true").lower() != "true":
+        return
+    if state.get("initialJobBaselineCompleted"):
+        return
+
+    processed = state.setdefault("processed", {})
+    marked_count = 0
+    for job in fetch_restore_jobs():
+        current_job_id = job_id(job)
+        if not current_job_id or current_job_id in processed:
+            continue
+        if not is_successful_restore_job(job):
+            continue
+        identifiers = candidate_restore_identifiers(job, current_job_id)
+        if not identifiers:
+            continue
+        processed[current_job_id] = {
+            "skipped": "initialJobBaseline",
+            "externalIds": identifiers,
+            "permanent": True,
+            "timestamp": int(time.time()),
+        }
+        marked_count += 1
+    state["initialJobBaselineCompleted"] = True
+    log(f"Marked existing NetBackup restore jobs as processed on watcher startup count=[{marked_count}]")
+
+
+def poll_once(state: dict[str, Any]) -> None:
+    jobs = fetch_restore_jobs()
     processed = state.setdefault("processed", {})
     for job in jobs:
         current_job_id = job_id(job)
@@ -212,13 +430,35 @@ def poll_once(state: dict[str, Any]) -> None:
             continue
         if not is_successful_restore_job(job):
             continue
-        external_ids = candidate_external_ids(job)
-        if not external_ids:
-            continue
-        external_id = external_ids[0]
-        if invoke_restore_notify(external_id, current_job_id):
+        if not is_recent_restore_job(job, current_job_id):
             processed[current_job_id] = {
-                "externalId": external_id,
+                "skipped": "oldRestoreJob",
+                "timestamp": int(time.time()),
+            }
+            continue
+        if not is_job_for_local_client(job):
+            processed[current_job_id] = {
+                "skipped": "destinationClientMismatch",
+                "timestamp": int(time.time()),
+            }
+            continue
+        identifiers = candidate_restore_identifiers(job, current_job_id)
+        if not identifiers:
+            continue
+        if not should_process_single_restore_path(identifiers, current_job_id):
+            processed[current_job_id] = {
+                "skipped": "multipleRestorePaths",
+                "externalIds": identifiers,
+                "timestamp": int(time.time()),
+            }
+            continue
+        local_identifiers = local_existing_restore_identifiers(identifiers)
+        if not local_identifiers:
+            continue
+        restore_identifier = local_identifiers[0]
+        if invoke_restore_notify(restore_identifier, current_job_id):
+            processed[current_job_id] = {
+                "externalId": restore_identifier,
                 "timestamp": int(time.time()),
             }
 
@@ -228,6 +468,11 @@ def main() -> None:
     once = "--once" in sys.argv
     log(f"Starting NetBackup restore watcher config=[{CONFIG_FILE}] once=[{once}]")
     state = load_state()
+    try:
+        mark_existing_jobs_processed(state)
+        save_state(state)
+    except Exception as exc:
+        log(f"FAILED watcher initial baseline error=[{exc}]")
     while True:
         try:
             prune_state(state)

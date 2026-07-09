@@ -58,12 +58,22 @@ public class PrepareNetBackupRestoreCmd extends BaseCmd {
             description = "NetBackup backup ID")
     private String backupId;
 
+    @Parameter(name = ApiConstants.JOB_ID,
+            type = CommandType.STRING,
+            required = false,
+            description = "NetBackup restore job ID that triggered this restore notification")
+    private String jobId;
+
     public String getExternalId() {
         return externalId;
     }
 
     public String getBackupId() {
         return backupId;
+    }
+
+    public String getJobId() {
+        return jobId;
     }
 
     @Override
