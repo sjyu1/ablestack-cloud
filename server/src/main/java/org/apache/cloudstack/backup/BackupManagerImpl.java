@@ -1718,6 +1718,23 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException("NetBackup backup external ID or backup ID is required");
         }
 
+        final BackupVO trackedRestoreJobBackup = netBackupRestoreCoordinator.findRestoreBackupByJobId(cmd.getJobId());
+        if (trackedRestoreJobBackup != null) {
+            final VMInstanceVO trackedVm = vmInstanceDao.findByIdIncludingRemoved(trackedRestoreJobBackup.getVmId());
+            if (trackedVm == null || VirtualMachine.State.Expunging.equals(trackedVm.getState())) {
+                throw new CloudRuntimeException("The Instance from which the NetBackup was taken could not be found.");
+            }
+            accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, trackedVm);
+            final String skipReason = String.format(
+                    "NetBackup restore job [%s] is already tracked by Mold restore flow on backup [%s]",
+                    cmd.getJobId(), trackedRestoreJobBackup.getUuid());
+            logger.info("NetBackup restore precheck skip by tracked restore job before path resolution. vm=[{}], vmId=[{}], jobId=[{}], trackedBackup=[{}]",
+                    trackedVm.getInstanceName(), trackedVm.getId(), cmd.getJobId(), trackedRestoreJobBackup.getUuid());
+            return new NetBackupRestorePrecheckResult(false, skipReason, trackedVm.getId(), trackedVm.getInstanceName(),
+                    trackedRestoreJobBackup.getId(), trackedRestoreJobBackup.getUuid(),
+                    StringUtils.defaultIfBlank(cmd.getExternalId(), cmd.getBackupId()), trackedRestoreJobBackup.getExternalId());
+        }
+
         final RestoreResolution resolution = netBackupRestoreCoordinator.resolveRestoreRequest(
                 cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, true, true);
         final BackupVO backup = resolution.getBackup();
