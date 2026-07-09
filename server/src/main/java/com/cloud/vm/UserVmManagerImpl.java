@@ -10015,7 +10015,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
             if (countOfCloneVM == cnt) {
                 if (preserveVmSnapshotForLinkedClone) {
-                    logger.info("Skipping deletion of VM snapshot {} because it is used as a linked clone backing snapshot for SharedMountPoint clone.", vmSnapshot.getId());
+                    logger.info("Removing clone-only VM snapshot {} from DB view while preserving its backing files for SharedMountPoint linked clone.", vmSnapshot.getId());
+                    removeCloneOnlyVmSnapshotRecord(vmSnapshot);
                 } else {
                     _vmSnapshotMgr.deleteVMSnapshot(vmSnapshot.getId());
                 }
@@ -10130,6 +10131,30 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             vmSnapshotDetailsDao.addDetail(vmSnapshot.getId(), CLONE_VM_SNAPSHOT_BACKING_PATH + sourceVolume.getId(),
                     getCloneVmSnapshotBackingPath(vmSnapshot, sourceVolume), false);
         }
+    }
+
+    protected void removeCloneOnlyVmSnapshotRecord(VMSnapshot vmSnapshot) {
+        VMSnapshotVO cloneOnlySnapshot = _vmSnapshotDao.findById(vmSnapshot.getId());
+        if (cloneOnlySnapshot == null) {
+            return;
+        }
+
+        Transaction.execute(new TransactionCallbackNoReturn() {
+            @Override
+            public void doInTransactionWithoutResult(TransactionStatus status) {
+                Long parentSnapshotId = cloneOnlySnapshot.getParent();
+                if (parentSnapshotId != null) {
+                    VMSnapshotVO parentSnapshot = _vmSnapshotDao.findById(parentSnapshotId);
+                    if (parentSnapshot != null) {
+                        parentSnapshot.setCurrent(true);
+                        _vmSnapshotDao.update(parentSnapshot.getId(), parentSnapshot);
+                    }
+                }
+                cloneOnlySnapshot.setCurrent(false);
+                cloneOnlySnapshot.setRemoved(new Date());
+                _vmSnapshotDao.update(cloneOnlySnapshot.getId(), cloneOnlySnapshot);
+            }
+        });
     }
 
     protected String getCloneVmSnapshotBackingPath(VMSnapshot vmSnapshot, VolumeVO sourceVolume) {

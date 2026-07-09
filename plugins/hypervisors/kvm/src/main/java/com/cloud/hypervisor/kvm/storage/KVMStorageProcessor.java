@@ -2246,6 +2246,9 @@ public class KVMStorageProcessor implements StorageProcessor {
         final PrimaryDataStoreTO primaryStore = (PrimaryDataStoreTO)vol.getDataStore();
         try {
             final KVMStoragePool pool = storagePoolMgr.getStoragePool(primaryStore.getPoolType(), primaryStore.getUuid());
+            if (deleteSharedMountPointRelativePathIfNeeded(pool, vol.getPath())) {
+                return new Answer(null);
+            }
             try {
                 pool.getPhysicalDisk(vol.getPath());
             } catch (final Exception e) {
@@ -2259,6 +2262,40 @@ public class KVMStorageProcessor implements StorageProcessor {
             return new Answer(null, false, e.toString());
         } finally {
             vol.clearPassphrase();
+        }
+    }
+
+    protected boolean deleteSharedMountPointRelativePathIfNeeded(KVMStoragePool pool, String volumePath) {
+        if (pool.getType() != StoragePoolType.SharedMountPoint || StringUtils.isBlank(volumePath) || !volumePath.contains(File.separator)) {
+            return false;
+        }
+
+        Path poolPath = Paths.get(pool.getLocalPath()).toAbsolutePath().normalize();
+        Path pathToDelete = poolPath.resolve(volumePath).toAbsolutePath().normalize();
+        if (!pathToDelete.startsWith(poolPath)) {
+            throw new CloudRuntimeException("Invalid volume path " + volumePath);
+        }
+
+        try {
+            Files.deleteIfExists(pathToDelete);
+            cleanupEmptyCloneDirectories(poolPath, pathToDelete.getParent());
+            logger.info("Deleted SharedMountPoint relative volume path [{}].", pathToDelete);
+            return true;
+        } catch (IOException e) {
+            throw new CloudRuntimeException("Failed to delete SharedMountPoint relative volume path " + pathToDelete, e);
+        }
+    }
+
+    protected void cleanupEmptyCloneDirectories(Path poolPath, Path directory) throws IOException {
+        Path clonePath = poolPath.resolve("clone").toAbsolutePath().normalize();
+        Path current = directory;
+        while (current != null && current.startsWith(clonePath) && !current.equals(poolPath)) {
+            try {
+                Files.deleteIfExists(current);
+            } catch (IOException e) {
+                return;
+            }
+            current = current.getParent();
         }
     }
 
