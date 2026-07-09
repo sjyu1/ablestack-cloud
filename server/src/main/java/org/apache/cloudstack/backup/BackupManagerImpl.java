@@ -1719,7 +1719,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
 
         final RestoreResolution resolution = netBackupRestoreCoordinator.resolveRestoreRequest(
-                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, false, true);
+                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_PREPARE_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, true, true);
         final BackupVO backup = resolution.getBackup();
         final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
         if (vm == null || VirtualMachine.State.Expunging.equals(vm.getState())) {
