@@ -1591,7 +1591,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException("NetBackup backup external ID or backup ID is required");
         }
         final RestoreResolution resolution = netBackupRestoreCoordinator.resolveRestoreRequest(
-                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, false);
+                cmd.getExternalId(), cmd.getBackupId(), NETBACKUP_RESTORE_PATH_DISCOVERY_WINDOW_SECONDS, true);
         final BackupVO backup = resolution.getBackup();
         logger.info("NetBackup restore resolved. requestIdentifier=[{}], resolvedBackupUuid=[{}], resolvedExternalId=[{}], restoreHostName=[{}]",
                 resolution.getRequestIdentifier(), backup.getUuid(), backup.getExternalId(), resolution.getPreparedRestoreHostName());

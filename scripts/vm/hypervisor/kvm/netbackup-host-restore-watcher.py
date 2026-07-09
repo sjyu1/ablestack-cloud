@@ -392,7 +392,13 @@ def invoke_restore_notify(external_id: str, job_id_value: str) -> bool:
     if proc.returncode != 0:
         log(f"FAILED notify jobId=[{job_id_value}] externalId=[{external_id}] rc=[{proc.returncode}] stderr=[{proc.stderr.strip()}]")
         return False
-    log(f"Submitted Mold restore from NetBackup watcher jobId=[{job_id_value}] externalId=[{external_id}]")
+    notify_output = proc.stdout.strip()
+    if notify_output.startswith("SUBMITTED"):
+        log(f"Submitted Mold restore from NetBackup watcher jobId=[{job_id_value}] externalId=[{external_id}] result=[{notify_output}]")
+    elif notify_output.startswith("SKIPPED"):
+        log(f"Skipped Mold restore from NetBackup watcher jobId=[{job_id_value}] externalId=[{external_id}] result=[{notify_output}]")
+    else:
+        log(f"Handled NetBackup restore watcher notification jobId=[{job_id_value}] externalId=[{external_id}] stdout=[{notify_output}]")
     return True
 
 
