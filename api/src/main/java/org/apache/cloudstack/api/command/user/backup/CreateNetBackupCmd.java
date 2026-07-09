@@ -88,13 +88,6 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
             since = "4.21.0")
     private String policyId;
 
-    @Parameter(name = ApiConstants.MAX_BACKUPS,
-            type = CommandType.STRING,
-            required = false,
-            description = "max chain length for the NetBackup",
-            since = "4.21.0")
-    private String maxBackups;
-
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
     /////////////////////////////////////////////////////
@@ -117,10 +110,6 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
 
     public String getPolicyId() {
         return policyId;
-    }
-
-    public String getMaxBackups() {
-        return maxBackups;
     }
 
     /////////////////////////////////////////////////////

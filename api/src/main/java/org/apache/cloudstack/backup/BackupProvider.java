@@ -83,7 +83,7 @@ public interface BackupProvider {
         return takeBackup(vm, quiesceVM);
     }
 
-    default Pair<Boolean, Backup> takeNetBackup(VirtualMachine vm, String policyName, String maxChain) {
+    default Pair<Boolean, Backup> takeNetBackup(VirtualMachine vm, String policyName) {
         throw new UnsupportedOperationException("NetBackup is not supported by provider " + getName());
     }
 

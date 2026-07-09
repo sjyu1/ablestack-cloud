@@ -281,6 +281,15 @@ def ensure_backup_framework_configuration(zone_id: str, cluster_id: str, args: a
         print(f"Updated cluster configuration: kvm.incremental.backup=true (clusterid={cluster_id})")
         restart_required = True
 
+    if args.backup_chain_size is not None:
+        desired_chain_size = str(args.backup_chain_size)
+        log_info("Checking global configuration: backup.chain.size")
+        current = get_configuration_value("backup.chain.size", args.mold_url, args.admin_apikey, args.admin_secretkey)
+        if current != desired_chain_size:
+            log_info(f"Updating global configuration: backup.chain.size={desired_chain_size}")
+            update_configuration_value("backup.chain.size", desired_chain_size, args.mold_url, args.admin_apikey, args.admin_secretkey)
+            print(f"Updated global configuration: backup.chain.size={desired_chain_size}")
+
     log_info("Checking zone configuration: backup.framework.provider.plugin")
     current = get_configuration_value("backup.framework.provider.plugin", args.mold_url, args.admin_apikey, args.admin_secretkey, zone_id)
     updated = append_provider_if_missing(current, NETBACKUP_PROVIDER_DISPLAY_NAME)
@@ -467,7 +476,6 @@ def write_config_file(path: Path, args: argparse.Namespace) -> None:
     content = render_policy_template(POLICY_TEMPLATE_PATH, {
         "VM_INCLUDE": args.vm_include,
         "VM_EXCLUDE": args.vm_exclude,
-        "MAX_INCREMENTAL_CHAIN": str(args.max_incremental_chain),
         "MOLD_URL": args.mold_url,
         "ADMIN_APIKEY": args.admin_apikey,
     })
@@ -495,6 +503,8 @@ def write_watcher_config(path: Path, args: argparse.Namespace) -> None:
     content = "\n".join([
         f'NETBACKUP_URL="{args.netbackup_url}"',
         f'NETBACKUP_APIKEY="{args.netbackup_apikey}"',
+        'NETBACKUP_SSL_VERIFY="false"',
+        'NETBACKUP_CA_FILE=""',
         f'NETBACKUP_STAGING_ROOT="{BACKUP_STAGING_ROOT}"',
         f'RESTORE_NOTIFY_SCRIPT="{RESTORE_NOTIFY_OUTPUT_PATH}"',
         f'MOLD_CONFIG_FILE="{RESTORE_CONFIG_PATH}"',
@@ -758,7 +768,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-name")
     parser.add_argument("--vm-include")
     parser.add_argument("--vm-exclude", default="")
-    parser.add_argument("--max-incremental-chain", type=int)
+    parser.add_argument("--backup-chain-size", type=int,
+                        help="Update global backup.chain.size.")
     parser.add_argument("--mold-url", required=True)
     parser.add_argument("--admin-apikey", required=True)
     parser.add_argument("--admin-secretkey", required=True)
@@ -772,10 +783,8 @@ def validate_args(args: argparse.Namespace) -> None:
         fail("--policy-name is required")
     if not args.vm_include:
         args.vm_include = "*"
-    if args.max_incremental_chain is None:
-        args.max_incremental_chain = 10
-    if args.max_incremental_chain <= 0:
-        fail("--max-incremental-chain must be a positive integer")
+    if args.backup_chain_size is not None and args.backup_chain_size <= 0:
+        fail("--backup-chain-size must be a positive integer")
     if not args.netbackup_url:
         fail("--netbackup-url is required")
     if not args.netbackup_apikey:

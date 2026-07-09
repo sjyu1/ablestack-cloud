@@ -68,12 +68,6 @@ public class UpdateNetBackupCmd extends BaseCmd {
             description = "NetBackup policy ID")
     private String policyId;
 
-    @Parameter(name = ApiConstants.MAX_BACKUPS,
-            type = CommandType.STRING,
-            required = false,
-            description = "NetBackup max chain length")
-    private String maxBackups;
-
     @Parameter(name = ApiConstants.MEMBER_COUNT,
             type = CommandType.INTEGER,
             required = false,
@@ -101,10 +95,6 @@ public class UpdateNetBackupCmd extends BaseCmd {
 
     public String getPolicyId() {
         return policyId;
-    }
-
-    public String getMaxBackups() {
-        return maxBackups;
     }
 
     public Integer getMemberCount() {

@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -91,7 +92,7 @@ def netbackup_get(path: str, params: Optional[dict[str, str]] = None) -> Any:
         "X-API-Key": api_key,
     })
     try:
-        with urlopen(request, timeout=int(CONFIG.get("NETBACKUP_REQUEST_TIMEOUT", "60"))) as response:
+        with urlopen(request, timeout=int(CONFIG.get("NETBACKUP_REQUEST_TIMEOUT", "60")), context=netbackup_ssl_context()) as response:
             payload = response.read().decode("utf-8")
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
@@ -99,6 +100,21 @@ def netbackup_get(path: str, params: Optional[dict[str, str]] = None) -> Any:
     except URLError as exc:
         raise RuntimeError(f"NetBackup API failed: {exc}")
     return json.loads(payload) if payload.strip() else {}
+
+
+def netbackup_ssl_context() -> Optional[ssl.SSLContext]:
+    if not require_ssl_context():
+        return None
+    if CONFIG.get("NETBACKUP_SSL_VERIFY", "false").lower() == "false":
+        return ssl._create_unverified_context()
+    ca_file = CONFIG.get("NETBACKUP_CA_FILE", "")
+    if ca_file:
+        return ssl.create_default_context(cafile=ca_file)
+    return ssl.create_default_context()
+
+
+def require_ssl_context() -> bool:
+    return require_config("NETBACKUP_URL").lower().startswith("https://")
 
 
 def find_strings(node: Any) -> list[str]:
@@ -466,7 +482,7 @@ def poll_once(state: dict[str, Any]) -> None:
 def main() -> None:
     interval = int(CONFIG.get("POLL_INTERVAL_SECONDS", "60"))
     once = "--once" in sys.argv
-    log(f"Starting NetBackup restore watcher config=[{CONFIG_FILE}] once=[{once}]")
+    log(f"Starting NetBackup restore watcher config=[{CONFIG_FILE}] once=[{once}] sslVerify=[{CONFIG.get('NETBACKUP_SSL_VERIFY', 'false')}] caFile=[{CONFIG.get('NETBACKUP_CA_FILE', '')}]")
     state = load_state()
     try:
         mark_existing_jobs_processed(state)

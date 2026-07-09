@@ -99,10 +99,9 @@ update_netbackup_backup_ids() {
       "externalid" "${backup_path}" \
       "status" "${final_status}" \
       "membercount" "${member_count}" \
-      "policyid" "${POLICY_NAME}" \
-      "maxbackups" "${MAX_INCREMENTAL_CHAIN}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id} backupPath=${backup_path}"
+      "policyid" "${POLICY_NAME}")" || fail "Failed to update NetBackup backup details for vmId=${vm_id} backupPath=${backup_path}"
     updated=$((updated + 1))
-    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} backupPath=${backup_path} status=${final_status} memberCount=${member_count} policyName=${POLICY_NAME} maxChain=${MAX_INCREMENTAL_CHAIN}"
+    log -ne "Updated NetBackup backup details vmId=${vm_id} backupId=${BACKUP_ID} backupPath=${backup_path} status=${final_status} memberCount=${member_count} policyName=${POLICY_NAME}"
   done < <(list_runtime_success_vm_refs)
 
   builtin echo "${updated}"

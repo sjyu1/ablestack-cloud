@@ -37,7 +37,6 @@ BACKUP_STAGING_ROOT="${BACKUP_STAGING_ROOT:-$BACKUP_STAGING_ROOT_DEFAULT}"
 
 VM_INCLUDE="${VM_INCLUDE:-*}"
 VM_EXCLUDE="${VM_EXCLUDE:-}"
-MAX_INCREMENTAL_CHAIN="${MAX_INCREMENTAL_CHAIN:-10}"
 MOLD_URL="${MOLD_URL:-}"
 ADMIN_APIKEY="${ADMIN_APIKEY:-}"
 ADMIN_SECRETKEY="${ADMIN_SECRETKEY:-}"
@@ -424,7 +423,6 @@ load_policy_schedule_config() {
 
   VM_INCLUDE="*"
   VM_EXCLUDE=""
-  MAX_INCREMENTAL_CHAIN="10"
   MOLD_URL=""
   ADMIN_APIKEY=""
 
@@ -438,12 +436,10 @@ load_policy_schedule_config() {
 
   VM_INCLUDE="${VM_INCLUDE:-*}"
   VM_EXCLUDE="${VM_EXCLUDE:-}"
-  MAX_INCREMENTAL_CHAIN="${MAX_INCREMENTAL_CHAIN:-10}"
   MOLD_CREATE_BACKUP_API_URL="${MOLD_CREATE_BACKUP_API_URL:-${MOLD_URL}}"
   MOLD_LIST_VMS_API_URL="${MOLD_LIST_VMS_API_URL:-${MOLD_URL}}"
   MOLD_QUERY_ASYNC_JOB_API_URL="${MOLD_QUERY_ASYNC_JOB_API_URL:-${MOLD_URL}}"
 
-  [[ "${MAX_INCREMENTAL_CHAIN}" =~ ^[1-9][0-9]*$ ]] || fail "Invalid MAX_INCREMENTAL_CHAIN=${MAX_INCREMENTAL_CHAIN}. It must be a positive integer."
   [[ -n "${MOLD_CREATE_BACKUP_API_URL}" ]] || fail "MOLD_URL or MOLD_CREATE_BACKUP_API_URL must be configured."
   [[ -n "${MOLD_LIST_VMS_API_URL}" ]] || fail "MOLD_URL or MOLD_LIST_VMS_API_URL must be configured."
   [[ -n "${MOLD_QUERY_ASYNC_JOB_API_URL}" ]] || fail "MOLD_URL or MOLD_QUERY_ASYNC_JOB_API_URL must be configured."
@@ -453,7 +449,7 @@ load_policy_schedule_config() {
 
   load_admin_secretkey
 
-  log -ne "VM selection include=${VM_INCLUDE} exclude=${VM_EXCLUDE} max_incremental_chain=${MAX_INCREMENTAL_CHAIN}"
+  log -ne "VM selection include=${VM_INCLUDE} exclude=${VM_EXCLUDE}"
 }
 
 match_csv_glob() {
@@ -839,7 +835,6 @@ invoke_mold_create_backup() {
   local -a api_args=(
     "virtualmachineid" "${vm_id}"
     "policyid" "${POLICY_NAME}"
-    "maxbackups" "${MAX_INCREMENTAL_CHAIN}"
   )
 
   log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
@@ -889,7 +884,6 @@ run_stage_vm_backup() {
   api_args=(
     "virtualmachineid" "${vm_id}"
     "policyid" "${POLICY_NAME}"
-    "maxbackups" "${MAX_INCREMENTAL_CHAIN}"
   )
 
   log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"

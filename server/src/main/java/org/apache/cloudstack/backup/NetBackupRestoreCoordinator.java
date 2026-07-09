@@ -55,7 +55,6 @@ public class NetBackupRestoreCoordinator extends ManagerBase {
     public static final String DETAIL_NETBACKUP_BACKUP_ID = "netbackup.backup.id";
     public static final String DETAIL_NETBACKUP_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_NETBACKUP_MEMBER_COUNT = "netbackup.backup.member.count";
-    private static final String DETAIL_NETBACKUP_MAX_CHAIN = "netbackup.max.chain";
 
     private static final String DETAIL_NETBACKUP_RESTORE_VM_UUID = "netbackup.restore.vm.uuid";
     private static final String DETAIL_NETBACKUP_RESTORE_REQUEST_ID = "netbackup.restore.request.id";
@@ -183,9 +182,6 @@ public class NetBackupRestoreCoordinator extends ManagerBase {
         upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_BACKUP_ID, cmd.getBackupId());
         if (StringUtils.isNotBlank(cmd.getPolicyId())) {
             upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_POLICY_NAME, cmd.getPolicyId());
-        }
-        if (StringUtils.isNotBlank(cmd.getMaxBackups())) {
-            upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_MAX_CHAIN, cmd.getMaxBackups());
         }
         if (cmd.getMemberCount() != null && cmd.getMemberCount() > 0) {
             upsertBackupDetail(backup.getId(), DETAIL_NETBACKUP_MEMBER_COUNT, String.valueOf(cmd.getMemberCount()));
