@@ -54,6 +54,14 @@ log() {
   fi
 }
 
+log_unhandled_error() {
+  local status=$?
+  local line="$1"
+  log -ne "FAILED unhandled error status=[$status] line=[$line] op=[$OP] vm=[$VM] backupDir=[$BACKUP_DIR] checkpoint=[$CHECKPOINT_NAME] mountPoint=[$mount_point]"
+}
+
+trap 'log_unhandled_error "$LINENO"' ERR
+
 vercomp() {
   local IFS=.
   local i ver1=($1) ver2=($3)
@@ -136,7 +144,8 @@ backup_running_vm() {
 
   # Start push backup
   local backup_begin=0
-  if virsh -c qemu:///system backup-begin --domain "$VM" --backupxml "$dest/backup.xml" --checkpointxml "$dest/checkpoint.xml" 2>&1 > /dev/null; then
+  local backup_begin_output=""
+  if backup_begin_output=$(virsh -c qemu:///system backup-begin --domain "$VM" --backupxml "$dest/backup.xml" --checkpointxml "$dest/checkpoint.xml" 2>&1); then
     backup_begin=1;
   fi
 
@@ -149,21 +158,28 @@ backup_running_vm() {
   fi
 
   if [[ $backup_begin -ne 1 ]]; then
+    log -ne "FAILED libvirt backup-begin vm=[$VM] checkpoint=[$CHECKPOINT_NAME] output=[${backup_begin_output:-Unknown error}]"
     cleanup
     exit 1
   fi
 
   backup_domain_information "$VM"
 
+  local wait_count=0
   while true; do
     status=$(virsh -c qemu:///system domjobinfo "$VM" --completed --keep-completed | awk '/Job type:/ {print $3}')
     case "$status" in
       Completed)
         break ;;
       Failed)
+        log -ne "FAILED libvirt backup job vm=[$VM] checkpoint=[$CHECKPOINT_NAME]"
         echo "Virsh backup job failed"
         cleanup ;;
     esac
+    wait_count=$((wait_count + 1))
+    if (( wait_count % 12 == 0 )); then
+      log -ne "WAIT libvirt backup job pending vm=[$VM] checkpoint=[$CHECKPOINT_NAME] elapsedSeconds=[$((wait_count * 5))] status=[${status:-unknown}]"
+    fi
     sleep 5
   done
 
@@ -175,7 +191,8 @@ backup_running_vm() {
       backup_file=$(get_backup_file_by_index "$index" "$(basename "$target").qcow2")
       output="$dest/$backup_file"
       parent="../$(basename "$PARENT_BACKUP_DIR")/$backup_file"
-      if ! qemu-img rebase -u -F qcow2 -b "$parent" "$output" > "$logFile" 2> >(cat >&2); then
+      if ! qemu-img rebase -u -F qcow2 -b "$parent" "$output" >> "$logFile" 2> >(cat >&2); then
+        log -ne "FAILED qemu-img rebase output=[$output] parent=[$parent]"
         echo "qemu-img rebase failed for $output with parent $parent"
         cleanup
       fi
@@ -203,8 +220,8 @@ backup_rbd_volumes() {
   mkdir -p "$dest" || { echo "Failed to create backup directory $dest"; exit 1; }
 
   backup_domain_information "$VM"
-  trap cleanup_created_rbd_snapshots ERR
-  trap 'cleanup_created_rbd_snapshots; exit 1' INT TERM
+  trap 'log -ne "FAILED RBD backup unexpected error line=[$LINENO] op=[$OP] vm=[$VM] checkpoint=[$CHECKPOINT_NAME]"; cleanup_created_rbd_snapshots' ERR
+  trap 'log -ne "FAILED RBD backup interrupted op=[$OP] vm=[$VM] checkpoint=[$CHECKPOINT_NAME]"; cleanup_created_rbd_snapshots; exit 1' INT TERM
 
   local index=0
   while IFS= read -r disk; do
@@ -231,6 +248,7 @@ backup_rbd_volumes() {
     log -ne "Starting RBD backup for disk path [$disk], resolved image [$RBD_IMAGE], output [$output]"
 
     if ! timeout 30s "${RBD_CMD[@]}" info "$RBD_IMAGE" >> "$logFile" 2>&1; then
+      log -ne "FAILED RBD image access check image=[$RBD_IMAGE] timeout=[30s]"
       echo "Failed to access RBD image $RBD_IMAGE"
       cleanup_created_rbd_snapshots
       cleanup
@@ -238,6 +256,7 @@ backup_rbd_volumes() {
 
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
       if ! timeout 30s "${RBD_CMD[@]}" snap ls "$RBD_IMAGE" 2>>"$logFile" | awk 'NR>1 {print $2}' | grep -Fxq "$PARENT_CHECKPOINT_NAME"; then
+        log -ne "FAILED RBD parent snapshot check image=[$RBD_IMAGE] parentSnapshot=[$PARENT_CHECKPOINT_NAME]"
         echo "Parent RBD snapshot ${RBD_IMAGE}@${PARENT_CHECKPOINT_NAME} not found for incremental backup"
         cleanup_created_rbd_snapshots
         cleanup
@@ -245,6 +264,7 @@ backup_rbd_volumes() {
     fi
 
     if ! timeout 30s "${RBD_CMD[@]}" snap create "${RBD_IMAGE}@${current_snapshot}" >> "$logFile" 2>&1; then
+      log -ne "FAILED RBD snapshot create image=[$RBD_IMAGE] snapshot=[$current_snapshot] timeout=[30s]"
       echo "Failed to create RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
       cleanup_created_rbd_snapshots
       cleanup
@@ -252,13 +272,19 @@ backup_rbd_volumes() {
     record_created_rbd_snapshot "$disk" "$current_snapshot"
 
     if [[ "$BACKUP_TYPE" == "INCREMENTAL" && -n "$PARENT_CHECKPOINT_NAME" ]]; then
+      local export_start
+      export_start=$(date +%s)
       if ! timeout 6h "${RBD_CMD[@]}" export-diff --from-snap "$PARENT_CHECKPOINT_NAME" "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
+        log -ne "FAILED RBD export-diff image=[$RBD_IMAGE] snapshot=[$current_snapshot] output=[$output] elapsedSeconds=[$(($(date +%s) - export_start))] timeout=[6h]"
         echo "Failed to export incremental RBD diff for ${RBD_IMAGE}@${current_snapshot}"
         cleanup_created_rbd_snapshots
         cleanup
       fi
     else
+      local export_start
+      export_start=$(date +%s)
       if ! timeout 6h "${RBD_CMD[@]}" export "${RBD_IMAGE}@${current_snapshot}" "$output" >> "$logFile" 2>&1; then
+        log -ne "FAILED RBD export image=[$RBD_IMAGE] snapshot=[$current_snapshot] output=[$output] elapsedSeconds=[$(($(date +%s) - export_start))] timeout=[6h]"
         echo "Failed to export full RBD snapshot ${RBD_IMAGE}@${current_snapshot}"
         cleanup_created_rbd_snapshots
         cleanup
@@ -432,6 +458,7 @@ mount_operation() {
   if [ $? -eq 0 ]; then
       log -ne "Successfully mounted ${NAS_TYPE} store"
   else
+      log -ne "FAILED NAS mount type=[$NAS_TYPE] address=[$NAS_ADDRESS] mountPoint=[$mount_point]"
       echo "Failed to mount ${NAS_TYPE} store"
       exit 1
   fi
@@ -449,6 +476,7 @@ cleanup() {
   rmdir "$mount_point" || { echo "Failed to remove mount point $mount_point"; status=1; }
 
   if [[ $status -ne 0 ]]; then
+    log -ne "FAILED cleanup dest=[$dest] mountPoint=[$mount_point] status=[$status]"
     echo "Backup cleanup failed"
     exit $EXIT_CLEANUP_FAILED
   fi

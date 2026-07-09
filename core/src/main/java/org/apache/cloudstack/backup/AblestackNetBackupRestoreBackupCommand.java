@@ -156,6 +156,7 @@ public class AblestackNetBackupRestoreBackupCommand extends Command {
 
     public void setTimeout(final Integer timeout) {
         this.timeout = timeout;
+        setWait(timeout == null ? 0 : timeout);
     }
 
     public String getCacheMode() {

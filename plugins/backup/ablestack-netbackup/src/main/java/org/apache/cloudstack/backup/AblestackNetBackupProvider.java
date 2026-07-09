@@ -100,6 +100,7 @@ import java.util.stream.Collectors;
 import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
 import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
 import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
+import static org.apache.cloudstack.backup.BackupManager.BackupRestoreTimeout;
 import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
 public class AblestackNetBackupProvider extends AdapterBase implements BackupProvider, Configurable {
@@ -132,13 +133,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final long NETBACKUP_SYNC_DELETE_GRACE_MS = 10L * 60L * 1000L;
     private static final String NETBACKUP_OFFERING_NAME = "netbackup";
     private static final String NETBACKUP_OFFERING_EXTERNAL_ID = "netbackup";
-
-    private final ConfigKey<Integer> NetBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
-            "netbackup.restore.timeout",
-            "7200",
-            "Timeout in seconds after which NetBackup restore operations fail.",
-            true,
-            BackupFrameworkEnabled.key());
 
     private final ConfigKey<Integer> NetBackupPreparedRestorePathReadyTimeout = new ConfigKey<>("Advanced", Integer.class,
             "netbackup.prepared.restore.path.ready.timeout",
@@ -1010,7 +1004,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             restoreCommand.setVmExists(vm.getRemoved() == null);
             restoreCommand.setVmState(vm.getState());
             restoreCommand.setRestorePlan(createRestorePlan(false));
-            restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
+            restoreCommand.setTimeout(BackupRestoreTimeout.value());
 
             final BackupAnswer answer;
             try {
@@ -1111,7 +1105,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             restoreCommand.setVmState(vmNameAndState.second());
             restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
             restoreCommand.setRestorePlan(createRestorePlan(AblestackBackupFrameworkUtils.requiresRunningVmAttach(vmNameAndState.second())));
-            restoreCommand.setTimeout(NetBackupRestoreTimeout.value());
+            restoreCommand.setTimeout(BackupRestoreTimeout.value());
             restoreCommand.setCacheMode(cacheMode);
 
             final BackupAnswer answer;
@@ -1272,7 +1266,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Override
     public ConfigKey<?>[] getConfigKeys() {
         return new ConfigKey[]{
-            NetBackupRestoreTimeout,
             NetBackupPreparedRestorePathReadyTimeout,
             NetBackupUrl,
             NetBackupApiKey,

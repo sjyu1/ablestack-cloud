@@ -103,7 +103,7 @@ import javax.inject.Inject;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
 import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
-import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
+import static org.apache.cloudstack.backup.BackupManager.BackupRestoreTimeout;
 import static org.apache.cloudstack.backup.BackupManager.KvmIncrementalBackup;
 
 public class AblestackCommvaultBackupProvider extends AdapterBase implements BackupProvider, Configurable {
@@ -155,17 +155,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private ConfigKey<Integer> CommvaultApiRequestTimeout = new ConfigKey<>("Advanced", Integer.class,
             "backup.plugin.commvault.request.timeout", "300",
             "Commvault Command Center API request timeout in seconds.", true, ConfigKey.Scope.Zone);
-
-    private ConfigKey<Boolean> CommvaultClientVerboseLogs = new ConfigKey<>("Advanced", Boolean.class,
-            "backup.plugin.commvault.client.verbosity", "false",
-            "Produce Verbose logs in Hypervisor", true, ConfigKey.Scope.Zone);
-
-    private ConfigKey<Integer> CommvaultBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
-            "commvault.backup.restore.timeout",
-            "7200",
-            "Timeout in seconds after which Commvault backup restore operations fail.",
-            true,
-            BackupFrameworkEnabled.key());
 
     @Inject
     private BackupDao backupDao;
@@ -629,6 +618,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             command.setParentCheckpointXmlChain(getParentCheckpointXmlChain(latestBackup));
         }
 
+        LOG.info("Submitting Commvault backup staging command for VM [{}] on host [{}] with backup [{}], path [{}], state [{}], timeout [{}] seconds, volumes [{}]",
+                vm.getInstanceName(), vmHost.getName(), backupVO.getUuid(), backupPath, vm.getState(), command.getWait(), vmVolumes.size());
         try {
             BackupAnswer answer;
             try {
@@ -646,6 +637,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
 
             if (answer != null && answer.getResult()) {
+                LOG.info("Commvault backup staging command completed for VM [{}], backup [{}], path [{}]",
+                    vm.getInstanceName(), backupVO.getUuid(), backupPath);
                 if (BACKUP_ENGINE_QCOW2.equals(backupEngine)) {
                     String checkpointXml = readFileContentsOnHost(vmHostVO,
                             getCheckpointPath(backupPath, checkpointName, backupEngine));
@@ -1290,7 +1283,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 restoreCommand.setVmExists(vm.getRemoved() == null);
                 restoreCommand.setVmState(vm.getState());
                 restoreCommand.setRestorePlan(createRestorePlan(false));
-                restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
+                restoreCommand.setTimeout(BackupRestoreTimeout.value());
                 restoreCommand.setHostName(null);
                 restoreCommand.setBackupSourceHosts(new ArrayList<>(additionalSourceHostPaths.keySet()));
 
@@ -1494,7 +1487,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     restoreCommand.setVmState(vmNameAndState.second());
                     restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
                     restoreCommand.setRestorePlan(createRestorePlan(AblestackBackupFrameworkUtils.requiresRunningVmAttach(vmNameAndState.second())));
-                    restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
+                    restoreCommand.setTimeout(BackupRestoreTimeout.value());
                     restoreCommand.setCacheMode(cacheMode);
                     restoreCommand.setHostName(restoreHost.getName());
                     restoreCommand.setBackupSourceHosts(new ArrayList<>(additionalSourceHostPaths.keySet()));
@@ -1790,8 +1783,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 CommvaultUsername,
                 CommvaultPassword,
                 CommvaultValidateSSLSecurity,
-                CommvaultApiRequestTimeout,
-                CommvaultClientVerboseLogs
+                CommvaultApiRequestTimeout
         };
     }
 
