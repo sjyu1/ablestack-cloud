@@ -327,7 +327,7 @@ wait_for_mold_async_job() {
 
 main() {
   if [[ $# -lt 2 ]]; then
-    fail "usage: netbackup-server-restore-notify <program_name> <external_id> [operation]"
+    fail "usage: netbackup-host-restore-notify <program_name> <external_id> [operation]"
   fi
 
   local program_name="$1"
@@ -336,7 +336,7 @@ main() {
   local request_key
   local response
 
-  log_line "START script=netbackup-server-restore-notify args=$*"
+  log_line "START script=netbackup-host-restore-notify args=$*"
   require_commands openssl base64 od sed tr curl date mkdir sleep
   load_config
   load_secret

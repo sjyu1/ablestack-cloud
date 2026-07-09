@@ -23,9 +23,17 @@ HOOK_OUTPUT_DIR = Path(os.environ.get("HOOK_OUTPUT_DIR", "/usr/openv/netbackup/b
 CONFIG_OUTPUT_DIR = Path(os.environ.get("CONFIG_OUTPUT_DIR", "/etc/ablestack/netbackup"))
 SECRET_OUTPUT_DIR = Path(os.environ.get("SECRET_OUTPUT_DIR", "/etc/ablestack/netbackup/secrets"))
 BACKUP_STAGING_ROOT = Path(os.environ.get("BACKUP_STAGING_ROOT", "/tmp/mold/netbackup"))
+WATCHER_OUTPUT_PATH = Path(os.environ.get("WATCHER_OUTPUT_PATH", "/usr/local/sbin/netbackup-host-restore-watcher"))
+RESTORE_NOTIFY_OUTPUT_PATH = Path(os.environ.get("RESTORE_NOTIFY_OUTPUT_PATH", "/usr/local/sbin/netbackup-host-restore-notify"))
+WATCHER_SERVICE_PATH = Path(os.environ.get("WATCHER_SERVICE_PATH", "/etc/systemd/system/netbackup-host-restore-watcher.service"))
+LOGROTATE_CONFIG_PATH = Path(os.environ.get("LOGROTATE_CONFIG_PATH", "/etc/logrotate.d/ablestack-netbackup"))
+WATCHER_CONFIG_PATH = Path(os.environ.get("WATCHER_CONFIG_PATH", str(CONFIG_OUTPUT_DIR / "restore-watcher.conf")))
+RESTORE_CONFIG_PATH = Path(os.environ.get("RESTORE_CONFIG_PATH", str(CONFIG_OUTPUT_DIR / "restore.conf")))
 PRE_HELPER_PATH = os.environ.get("PRE_HELPER_PATH", "/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-bpstart-notify.sh")
 POST_HELPER_PATH = os.environ.get("POST_HELPER_PATH", "/usr/share/cloudstack-common/scripts/vm/hypervisor/kvm/netbackup-host-bpend-notify.sh")
 HOOK_LOG_PATH = os.environ.get("HOOK_LOG_PATH", "/var/log/netbackup-mold-hook.log")
+WATCHER_LOG_PATH = os.environ.get("WATCHER_LOG_PATH", "/var/log/netbackup-mold-restore-watcher.log")
+RESTORE_LOG_PATH = os.environ.get("RESTORE_LOG_PATH", "/var/log/netbackup-mold-restore.log")
 SECRET_KEY_FILE = Path(os.environ.get("SECRET_KEY_FILE", "/root/.ssh/ablestack.key"))
 NETBACKUP_BP_CONF_PATH = Path(os.environ.get("NETBACKUP_BP_CONF_PATH", "/usr/openv/netbackup/bp.conf"))
 NETBACKUP_SERVICE_NAME = os.environ.get("NETBACKUP_SERVICE_NAME", "netbackup")
@@ -467,6 +475,109 @@ def write_config_file(path: Path, args: argparse.Namespace) -> None:
     path.chmod(0o600)
 
 
+def write_restore_config(path: Path, args: argparse.Namespace, secret_path: Path) -> None:
+    backup_existing_file(path)
+    content = "\n".join([
+        f'MOLD_URL="{args.mold_url}"',
+        f'ADMIN_APIKEY="{args.admin_apikey}"',
+        f'MOLD_SECRET_FILE="{secret_path}"',
+        f'SECRET_KEY_FILE="{SECRET_KEY_FILE}"',
+        f'LOG_FILE="{RESTORE_LOG_PATH}"',
+        f'NETBACKUP_STAGING_ROOT="{BACKUP_STAGING_ROOT}"',
+        "",
+    ])
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o600)
+
+
+def write_watcher_config(path: Path, args: argparse.Namespace) -> None:
+    backup_existing_file(path)
+    content = "\n".join([
+        f'NETBACKUP_URL="{args.netbackup_url}"',
+        f'NETBACKUP_APIKEY="{args.netbackup_apikey}"',
+        f'NETBACKUP_STAGING_ROOT="{BACKUP_STAGING_ROOT}"',
+        f'RESTORE_NOTIFY_SCRIPT="{RESTORE_NOTIFY_OUTPUT_PATH}"',
+        f'MOLD_CONFIG_FILE="{RESTORE_CONFIG_PATH}"',
+        f'LOG_FILE="{WATCHER_LOG_PATH}"',
+        'STATE_FILE="/var/lib/ablestack/netbackup/restore-watcher-state.json"',
+        'POLL_INTERVAL_SECONDS="60"',
+        'NETBACKUP_JOBS_PATH="/admin/jobs"',
+        'NETBACKUP_JOBS_FILTER="jobType eq \'RESTORE\'"',
+        'NETBACKUP_JOBS_LIMIT="100"',
+        'PROCESSED_JOB_TTL_SECONDS="604800"',
+        "",
+    ])
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o600)
+
+
+def install_watcher_files() -> None:
+    watcher_source = SCRIPT_DIR / "netbackup-host-restore-watcher.py"
+    restore_notify_source = SCRIPT_DIR / "netbackup-host-restore-notify"
+    if not watcher_source.is_file():
+        fail(f"Required watcher source file not found: {watcher_source}")
+    if not restore_notify_source.is_file():
+        fail(f"Required restore notify source file not found: {restore_notify_source}")
+
+    WATCHER_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RESTORE_NOTIFY_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(watcher_source), str(WATCHER_OUTPUT_PATH))
+    shutil.copy2(str(restore_notify_source), str(RESTORE_NOTIFY_OUTPUT_PATH))
+    WATCHER_OUTPUT_PATH.chmod(0o755)
+    RESTORE_NOTIFY_OUTPUT_PATH.chmod(0o755)
+
+
+def write_watcher_service() -> None:
+    backup_existing_file(WATCHER_SERVICE_PATH)
+    content = f"""[Unit]
+Description=AbleStack NetBackup WebUI restore watcher
+After=network-online.target libvirtd.service mold-agent.service mold.service
+Wants=network-online.target mold-agent.service mold.service
+
+[Service]
+Type=simple
+Environment=NETBACKUP_WATCHER_CONFIG={WATCHER_CONFIG_PATH}
+ExecStart={WATCHER_OUTPUT_PATH}
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+"""
+    WATCHER_SERVICE_PATH.write_text(content, encoding="utf-8")
+    WATCHER_SERVICE_PATH.chmod(0o644)
+
+
+def write_logrotate_config() -> None:
+    backup_existing_file(LOGROTATE_CONFIG_PATH)
+    content = f"""{HOOK_LOG_PATH}
+{RESTORE_LOG_PATH}
+{WATCHER_LOG_PATH} {{
+    daily
+    maxsize 50M
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0640 root root
+}}
+"""
+    LOGROTATE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOGROTATE_CONFIG_PATH.write_text(content, encoding="utf-8")
+    LOGROTATE_CONFIG_PATH.chmod(0o644)
+
+
+def enable_watcher_service() -> None:
+    if not shutil.which("systemctl"):
+        print(f"systemctl not found. Please enable watcher manually: {WATCHER_OUTPUT_PATH}")
+        return
+    subprocess.run(["systemctl", "daemon-reload"], check=True)
+    subprocess.run(["systemctl", "enable", "--now", WATCHER_SERVICE_PATH.name], check=True)
+    print(f"Enabled and started watcher service: {WATCHER_SERVICE_PATH.name}")
+
+
 def write_encrypted_secret_file(path: Path, secret: str, secret_key_file: Path = SECRET_KEY_FILE,
                                 skip_permission_validation: bool = False) -> None:
     if not skip_permission_validation:
@@ -562,6 +673,13 @@ def apply_permissions() -> None:
             except PermissionError:
                 pass
 
+    for path in (RESTORE_CONFIG_PATH, WATCHER_CONFIG_PATH):
+        if path.is_file():
+            try:
+                path.chmod(0o600)
+            except PermissionError:
+                pass
+
     secret_path = SECRET_OUTPUT_DIR / "secret.enc"
     if secret_path.is_file():
         try:
@@ -584,10 +702,12 @@ def restart_netbackup_service() -> None:
 
 def generate_host_outputs(zone_id: str, args: argparse.Namespace) -> None:
     log_step("Generate Host Files")
-    log_info("Generating host-side NetBackup hook/config files")
+    log_info("Generating host-side NetBackup hook/config/watcher files")
     HOOK_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     SECRET_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    WATCHER_SERVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOGROTATE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     policy_safe = sanitize_name(args.policy_name)
     pre_hook = HOOK_OUTPUT_DIR / f"bpstart_notify.{policy_safe}"
@@ -599,8 +719,14 @@ def generate_host_outputs(zone_id: str, args: argparse.Namespace) -> None:
     write_hook(post_hook, f"bpend_notify.{policy_safe}", POST_HELPER_PATH, True)
     write_config_file(config_path, args)
     write_encrypted_secret_file(secret_path, args.admin_secretkey)
+    write_restore_config(RESTORE_CONFIG_PATH, args, secret_path)
+    write_watcher_config(WATCHER_CONFIG_PATH, args)
+    install_watcher_files()
+    write_watcher_service()
+    write_logrotate_config()
     ensure_backup_staging_root()
     apply_permissions()
+    enable_watcher_service()
     if apply_netbackup_bp_conf():
         restart_netbackup_service()
     else:
@@ -611,6 +737,11 @@ def generate_host_outputs(zone_id: str, args: argparse.Namespace) -> None:
     print(f"  POST hook  : {post_hook}")
     print(f"  Config     : {config_path}")
     print(f"  Secret(enc): {secret_path}")
+    print(f"  Restore cfg: {RESTORE_CONFIG_PATH}")
+    print(f"  Watcher cfg: {WATCHER_CONFIG_PATH}")
+    print(f"  Watcher    : {WATCHER_OUTPUT_PATH}")
+    print(f"  Service    : {WATCHER_SERVICE_PATH}")
+    print(f"  Logrotate  : {LOGROTATE_CONFIG_PATH}")
     print(f"  Staging dir: {BACKUP_STAGING_ROOT}")
     print(f"  Zone ID    : {zone_id}")
 
