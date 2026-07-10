@@ -789,8 +789,14 @@ cache_mold_virtual_machines() {
     return 0
   fi
 
-  log -ne "Calling Mold listVirtualMachines API url=${MOLD_LIST_VMS_API_URL}"
-  invoke_mold_api "${MOLD_LIST_VMS_API_METHOD}" "${MOLD_LIST_VMS_API_URL}" "listVirtualMachines" > "${MOLD_VM_CACHE_FILE}"
+  log -ne "Calling Mold listVirtualMachines API url=${MOLD_LIST_VMS_API_URL} listAll=true pagesize=500 page=1"
+  invoke_mold_api \
+    "${MOLD_LIST_VMS_API_METHOD}" \
+    "${MOLD_LIST_VMS_API_URL}" \
+    "listVirtualMachines" \
+    "listAll" "true" \
+    "pagesize" "500" \
+    "page" "1" > "${MOLD_VM_CACHE_FILE}"
 }
 
 lookup_mold_vm_id() {
