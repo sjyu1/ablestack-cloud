@@ -2204,13 +2204,13 @@ export default {
         // step 3: select service offering
         createVnfAppData.serviceofferingid = values.computeofferingid
         if (this.serviceOffering && this.serviceOffering.iscustomized) {
-          if (values.cpunumber) {
+          if (values.cpunumber && (this.serviceOffering.cpunumber == null || this.serviceOffering.cpunumber === undefined)) {
             createVnfAppData['details[0].cpuNumber'] = values.cpunumber
           }
-          if (values.cpuspeed) {
+          if (values.cpuspeed && (this.serviceOffering.cpuspeed == null || this.serviceOffering.cpuspeed === undefined)) {
             createVnfAppData['details[0].cpuSpeed'] = values.cpuspeed
           }
-          if (values.memory) {
+          if (values.memory && (this.serviceOffering.memory == null || this.serviceOffering.memory === undefined)) {
             createVnfAppData['details[0].memory'] = values.memory
           }
         }
