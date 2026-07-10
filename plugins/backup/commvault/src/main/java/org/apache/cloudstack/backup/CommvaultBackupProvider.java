@@ -94,7 +94,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
 
-import static org.apache.cloudstack.backup.BackupManager.BackupFrameworkEnabled;
+import static org.apache.cloudstack.backup.BackupManager.BackupCommandTimeout;
+import static org.apache.cloudstack.backup.BackupManager.BackupRestoreTimeout;
 
 public class CommvaultBackupProvider extends AdapterBase implements BackupProvider, Configurable {
 
@@ -126,29 +127,6 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
     private ConfigKey<Integer> CommvaultApiRequestTimeout = new ConfigKey<>("Advanced", Integer.class,
             "backup.plugin.commvault.request.timeout", "300",
             "Commvault Command Center API request timeout in seconds.", true, ConfigKey.Scope.Zone);
-
-    private static ConfigKey<Integer> CommvaultRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
-            "backup.plugin.commvault.restore.timeout", "600",
-            "Commvault B&R API restore backup timeout in seconds.", true, ConfigKey.Scope.Zone);
-
-    private static ConfigKey<Integer> CommvaultTaskPollInterval = new ConfigKey<>("Advanced", Integer.class,
-            "backup.plugin.commvault.task.poll.interval", "5",
-            "The time interval in seconds when the management server polls for Commvault task status.", true, ConfigKey.Scope.Zone);
-
-    private static ConfigKey<Integer> CommvaultTaskPollMaxRetry = new ConfigKey<>("Advanced", Integer.class,
-            "backup.plugin.commvault.task.poll.max.retry", "120",
-            "The max number of retrying times when the management server polls for Commvault task status.", true, ConfigKey.Scope.Zone);
-
-    private ConfigKey<Boolean> CommvaultClientVerboseLogs = new ConfigKey<>("Advanced", Boolean.class,
-            "backup.plugin.commvault.client.verbosity", "false",
-            "Produce Verbose logs in Hypervisor", true, ConfigKey.Scope.Zone);
-
-    private ConfigKey<Integer> CommvaultBackupRestoreTimeout = new ConfigKey<>("Advanced", Integer.class,
-            "commvault.backup.restore.timeout",
-            "30",
-            "Timeout in seconds after which qemu-img execute when restoring",
-            true,
-            BackupFrameworkEnabled.key());
 
     @Inject
     private BackupDao backupDao;
@@ -299,6 +277,10 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
 
         BackupVO backupVO = createBackupObject(vm, backupPath);
         CommvaultTakeBackupCommand command = new CommvaultTakeBackupCommand(vm.getInstanceName(), backupPath);
+        final int commandTimeout = BackupCommandTimeout.value();
+        if (commandTimeout > 0) {
+            command.setWait(commandTimeout);
+        }
         command.setQuiesce(quiesceVM);
         List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
@@ -310,6 +292,8 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
             command.setVolumePaths(volumePoolsAndPaths.second());
         }
 
+        LOG.info("Submitting Commvault backup staging command for VM [{}] on host [{}] with backup [{}], path [{}], state [{}], timeout [{}] seconds, volumes [{}]",
+                vm.getInstanceName(), vmHost.getName(), backupVO.getUuid(), backupPath, vm.getState(), command.getWait(), vmVolumes.size());
         BackupAnswer answer;
         try {
             answer = (BackupAnswer) agentManager.send(vmHost.getId(), command);
@@ -326,6 +310,8 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
         }
 
         if (answer != null && answer.getResult()) {
+            LOG.info("Commvault backup staging command completed for VM [{}], backup [{}], path [{}]",
+                    vm.getInstanceName(), backupVO.getUuid(), backupPath);
             int sshPort = NumbersUtil.parseInt(configDao.getValue("kvm.ssh.port"), 22);
             Ternary<String, String, String> credentials = getKVMHyperisorCredentials(vmHostVO);
             String cmd = String.format(RM_COMMAND, backupPath);
@@ -522,7 +508,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setRestoreVolumePaths(volumePoolsAndPaths.second());
                 restoreCommand.setVmExists(vm.getRemoved() == null);
                 restoreCommand.setVmState(vm.getState());
-                restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
+                restoreCommand.setTimeout(BackupRestoreTimeout.value());
                 // 복원된 호스트와 가상머신이 실행중인 호스트가 같은 경우 null, 다른 경우 추가
                 restoreCommand.setHostName(restoreHost.getId() == vmHost.getId() ? null : restoreHost.getName());
 
@@ -681,7 +667,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 restoreCommand.setVmExists(null);
                 restoreCommand.setVmState(vmNameAndState.second());
                 restoreCommand.setRestoreVolumeUUID(backupVolumeInfo.getUuid());
-                restoreCommand.setTimeout(CommvaultBackupRestoreTimeout.value());
+                restoreCommand.setTimeout(BackupRestoreTimeout.value());
                 restoreCommand.setCacheMode(cacheMode);
                 // 복원된 호스트와 가상머신이 실행중인 호스트가 같은 경우 null, 다른 경우 추가
                 restoreCommand.setHostName(restoreHost.getId() == vmHost.getId() ? null : restoreHost.getName());
@@ -848,8 +834,7 @@ public class CommvaultBackupProvider extends AdapterBase implements BackupProvid
                 CommvaultUsername,
                 CommvaultPassword,
                 CommvaultValidateSSLSecurity,
-                CommvaultApiRequestTimeout,
-                CommvaultClientVerboseLogs
+                CommvaultApiRequestTimeout
         };
     }
 

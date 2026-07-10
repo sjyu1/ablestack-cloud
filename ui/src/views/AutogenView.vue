@@ -1070,6 +1070,40 @@ export default {
     }
   },
   methods: {
+    isScheduleListRoute () {
+      return ['/snapshotpolicy', '/backupschedule'].some(path => this.$route.path.endsWith(path))
+    },
+    getScheduleSortValue (record) {
+      const schedule = String(record?.schedule || '')
+      const intervalType = record?.intervaltype
+      if (intervalType === 0 || intervalType === 'HOURLY') {
+        const minute = Number(schedule)
+        return Number.isFinite(minute) ? minute : Number.MAX_SAFE_INTEGER
+      }
+
+      const [minuteValue, hourValue] = schedule.split(':')
+      const minute = Number(minuteValue)
+      const hour = Number(hourValue)
+      if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+        return Number.MAX_SAFE_INTEGER
+      }
+      return (hour * 60) + minute
+    },
+    getColumnSorter (key) {
+      if (key === 'schedule' && this.isScheduleListRoute()) {
+        return (a, b) => this.getScheduleSortValue(a) - this.getScheduleSortValue(b)
+      }
+      if (key === 'resources') {
+        return (a, b) => {
+          const cpuCompare = Number(a.cpunumber || 0) - Number(b.cpunumber || 0)
+          if (cpuCompare !== 0) {
+            return cpuCompare
+          }
+          return Number(a.memory || 0) - Number(b.memory || 0)
+        }
+      }
+      return (a, b) => genericCompare(a[key] || '', b[key] || '')
+    },
     resetSelection () {
       this.selectedRowKeys = []
       this.selectedItems = []
@@ -1310,15 +1344,7 @@ export default {
             customRender[key] = columnKey[key]
           }
         }
-        const sorter = key === 'resources'
-          ? (a, b) => {
-            const cpuCompare = Number(a.cpunumber || 0) - Number(b.cpunumber || 0)
-            if (cpuCompare !== 0) {
-              return cpuCompare
-            }
-            return Number(a.memory || 0) - Number(b.memory || 0)
-          }
-          : (a, b) => genericCompare(a[key] || '', b[key] || '')
+        const sorter = this.getColumnSorter(key)
         this.columns.push({
           key: key,
           title: this.$t('label.' + String(title).toLowerCase()),
