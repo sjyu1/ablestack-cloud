@@ -237,8 +237,7 @@ export default {
       if (!Number.isNaN(bootH) && bootH >= 0) {
         this.autoBannerHeight = bootH
         document.documentElement.style.setProperty('--autoBannerHeight', bootH + 'px')
-        // 추가: 첫 프레임부터 --affixTopHeader를 맞춰 메뉴/헤더 정렬
-        this.updateAffixTopVars() // ← 이 한 줄을 debouncedRecalc() 이전에 호출
+        this.updateAffixTopVars()
         this.debouncedRecalc && this.debouncedRecalc()
       }
       */
