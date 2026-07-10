@@ -91,6 +91,7 @@ sanity_checks() {
 ### Operation methods ###
 
 backup_running_vm() {
+  log -ne "Starting NAS backup for running VM [$VM] to [$BACKUP_DIR]"
   mount_operation
   mkdir -p "$dest" || { echo "Failed to create backup directory $dest"; exit 1; }
 
@@ -109,6 +110,7 @@ backup_running_vm() {
       volid="${volume_uuid_arr[$disk_index]}"
     fi
     echo "<disk name='$disk' backup='yes' type='file' backupmode='full'><driver type='qcow2'/><target file='$dest/$name.$volid.qcow2' /></disk>" >> $dest/backup.xml
+    log -ne "Prepared NAS backup disk [$disk] source [$volpath] target [$dest/$name.$volid.qcow2]"
     name="datadisk"
     ((disk_index+=1))
   done
@@ -116,26 +118,35 @@ backup_running_vm() {
 
   local thaw=0
   if [[ ${QUIESCE} == "true" ]]; then
+    log -ne "Attempting filesystem freeze for VM [$VM]"
     if virsh -c qemu:///system qemu-agent-command "$VM" '{"execute":"guest-fsfreeze-freeze"}' > /dev/null 2>/dev/null; then
       thaw=1
+      log -ne "Filesystem freeze completed for VM [$VM]"
+    else
+      log -ne "Filesystem freeze skipped or failed for VM [$VM]"
     fi
   fi
 
   # Start push backup
   local backup_begin=0
-  if virsh -c qemu:///system backup-begin --domain $VM --backupxml $dest/backup.xml 2>&1 > /dev/null; then
+  log -ne "Starting libvirt backup job for VM [$VM] using [$dest/backup.xml]"
+  if backup_begin_output=$(virsh -c qemu:///system backup-begin --domain $VM --backupxml $dest/backup.xml 2>&1); then
     backup_begin=1;
+    log -ne "Libvirt backup job started for VM [$VM]"
   fi
 
   if [[ $thaw -eq 1 ]]; then
+    log -ne "Attempting filesystem thaw for VM [$VM]"
     if ! response=$(virsh -c qemu:///system qemu-agent-command "$VM" '{"execute":"guest-fsfreeze-thaw"}' 2>&1 > /dev/null); then
       echo "Failed to thaw the filesystem for vm $VM: $response"
       cleanup
       exit 1
     fi
+    log -ne "Filesystem thaw completed for VM [$VM]"
   fi
 
   if [[ $backup_begin -ne 1 ]]; then
+    echo "Failed to start libvirt backup for VM [$VM]: ${backup_begin_output:-Unknown error}"
     cleanup
     exit 1
   fi
@@ -150,6 +161,7 @@ backup_running_vm() {
     status=$(virsh -c qemu:///system domjobinfo $VM --completed --keep-completed | awk '/Job type:/ {print $3}')
     case "$status" in
       Completed)
+        log -ne "Libvirt backup job completed for VM [$VM]"
         break ;;
       Failed)
         echo "Virsh backup job failed"
@@ -167,9 +179,11 @@ backup_running_vm() {
 
   umount $mount_point
   rmdir $mount_point
+  log -ne "Finished NAS backup for running VM [$VM] to [$BACKUP_DIR]"
 }
 
 backup_stopped_vm() {
+  log -ne "Starting NAS backup for stopped VM [$VM] to [$BACKUP_DIR] with disk paths [$DISK_PATHS]"
   mount_operation
   mkdir -p "$dest" || { echo "Failed to create backup directory $dest"; exit 1; }
 
@@ -203,6 +217,7 @@ backup_stopped_vm() {
   sync
 
   ls -l --numeric-uid-gid $dest | awk '{print $5}'
+  log -ne "Finished NAS backup for stopped VM [$VM] to [$BACKUP_DIR]"
 }
 
 delete_backup() {
@@ -320,6 +335,7 @@ done
 sanity_checks
 
 if [ "$OP" = "backup" ]; then
+  log -ne "nasbackup.sh start op=[$OP] vm=[$VM] backupDir=[$BACKUP_DIR] nasType=[$NAS_TYPE] nasAddress=[$NAS_ADDRESS] quiesce=[$QUIESCE] diskPaths=[$DISK_PATHS] volumeUuids=[$VOLUME_UUIDS]"
   STATE=$(virsh -c qemu:///system list | awk -v vm="$VM" '$2 == vm {print $3}')
   if [ -n "$STATE" ] && [ "$STATE" = "running" ]; then
     backup_running_vm
