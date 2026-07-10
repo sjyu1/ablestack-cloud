@@ -122,20 +122,22 @@ cleanup_runtime_history() {
   local cleaned=0
   local runtime_dir=""
   local file=""
+  local -a runtime_files=()
 
   [[ "${max_files}" =~ ^[1-9][0-9]*$ ]] || return 0
   [[ -n "${POLICY_SAFE:-}" ]] || return 0
 
   runtime_dir="${STATE_ROOT}/runtime/${POLICY_SAFE}"
   [[ -d "${runtime_dir}" ]] || return 0
+  mapfile -d '' -t runtime_files < <(find "${runtime_dir}" -maxdepth 1 -type f -name '*.json' -print0 2>/dev/null)
+  (( ${#runtime_files[@]} > max_files )) || return 0
 
   while IFS= read -r file; do
     [[ -n "${file}" ]] || continue
     rm -f "${file}"
     cleaned=$((cleaned + 1))
     log -ne "Removed old NetBackup runtime file ${file}"
-  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name '*.json' -print0 2>/dev/null | \
-    xargs -0 ls -1t 2>/dev/null | awk -v keep="${max_files}" 'NR > keep')
+  done < <(ls -1t "${runtime_files[@]}" 2>/dev/null | awk -v keep="${max_files}" 'NR > keep')
 
   if (( cleaned > 0 )); then
     log -ne "Cleaned old NetBackup runtime files count=${cleaned} policy=${POLICY_NAME:-${POLICY_SAFE}} keep=${max_files}"
