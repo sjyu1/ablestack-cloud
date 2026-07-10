@@ -790,6 +790,7 @@ def validate_args(args: argparse.Namespace) -> None:
         fail("--netbackup-url is required")
     if not args.netbackup_apikey:
         fail("--netbackup-apikey is required")
+    validate_secret_key_file()
 
 
 def main() -> None:
