@@ -207,7 +207,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         BackupExecutionResult result = executeBackup(vm, quiesceVM, host, vmVolumes, volumePoolsAndPaths, latestBackup,
                 incrementalBackup, null);
         Backup failedIncrementalBackup = null;
-        if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
+        if (!result.success && incrementalBackup && canRetryFailedIncrementalAsFull(result) && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             failedIncrementalBackup = result.backup;
             cleanupFailedBackupForFullRetry(host, failedIncrementalBackup);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
@@ -235,7 +235,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         BackupExecutionResult result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, latestBackup,
                 incrementalBackup, policyName);
         Backup failedIncrementalBackup = null;
-        if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
+        if (!result.success && incrementalBackup && canRetryFailedIncrementalAsFull(result) && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             failedIncrementalBackup = result.backup;
             cleanupFailedBackupForFullRetry(host, failedIncrementalBackup);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
@@ -304,13 +304,17 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 if (backupDao.update(backupVO.getId(), backupVO)) {
                     return BackupExecutionResult.success(backupVO);
                 }
-                throw new CloudRuntimeException("Failed to update NetBackup backup");
+                LOG.error("NetBackup staging completed for VM [{}], but backup [{}] metadata update failed. Leaving it in Error state.",
+                        vm.getInstanceName(), backupVO.getUuid());
+                backupVO.setStatus(Backup.Status.Error);
+                backupDao.update(backupVO.getId(), backupVO);
+                return BackupExecutionResult.failure("Failed to update NetBackup backup metadata", backupVO);
             }
 
             final String details = answer != null ? answer.getDetails() : "No answer received";
             LOG.error("Failed to take NetBackup backup for VM {}: {}", vm.getInstanceName(), details);
-            cleanupFailedBackupArtifacts(vmHost, backupVO);
-            backupVO.setStatus(Backup.Status.Failed);
+            final boolean cleanupSuccessful = cleanupFailedBackupArtifacts(vmHost, backupVO);
+            backupVO.setStatus(cleanupSuccessful ? Backup.Status.Failed : Backup.Status.Error);
             backupDao.update(backupVO.getId(), backupVO);
             return BackupExecutionResult.failure(details, backupVO);
         } catch (final AgentUnavailableException e) {
@@ -420,6 +424,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return vmVolumes.size() > 1;
     }
 
+    private boolean canRetryFailedIncrementalAsFull(final BackupExecutionResult result) {
+        return result != null && (result.backup == null || !Backup.Status.Error.equals(result.backup.getStatus()));
+    }
+
     private void cleanupFailedBackupForFullRetry(final Host host, final Backup backup) {
         if (backup == null) {
             return;
@@ -431,9 +439,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 backup.getExternalId(), backup.getUuid());
     }
 
-    private void cleanupFailedBackupArtifacts(final Host host, final Backup backup) {
+    private boolean cleanupFailedBackupArtifacts(final Host host, final Backup backup) {
         if (backup == null || host == null || StringUtils.isBlank(backup.getExternalId())) {
-            return;
+            return true;
         }
         loadBackupDetailsIfNeeded(backup);
 
@@ -449,15 +457,17 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 if (answer == null || !answer.getResult()) {
                     LOG.warn("Failed to cleanup RBD snapshots for failed NetBackup backup [{}] on host [{}]: {}",
                             backup.getUuid(), host.getName(), answer != null ? answer.getDetails() : "no answer received");
+                    return false;
                 }
             } catch (final AgentUnavailableException | OperationTimedoutException e) {
                 LOG.warn("Unable to cleanup RBD snapshots for failed NetBackup backup [{}] on host [{}]: {}",
                         backup.getUuid(), host.getName(), e.getMessage(), e);
+                return false;
             }
-            return;
+            return true;
         }
 
-        cleanupBackupPathsOnHost(backup.getZoneId(), host.getName(), List.of(backup.getExternalId()));
+        return cleanupBackupPathsOnHost(backup.getZoneId(), host.getName(), List.of(backup.getExternalId()));
     }
 
     private void removeFailedBackupAfterSuccessfulFullRetry(final Backup backup) {
@@ -1525,25 +1535,28 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
     }
 
-    private void cleanupBackupPathsOnHost(final Long zoneId, final String hostName, final List<String> backupPaths) {
+    private boolean cleanupBackupPathsOnHost(final Long zoneId, final String hostName, final List<String> backupPaths) {
         if (CollectionUtils.isEmpty(backupPaths) || StringUtils.isBlank(hostName)) {
-            return;
+            return true;
         }
         final HostVO host = findRestoreHost(hostName);
         if (host == null) {
             LOG.warn("Unable to find restore host [{}] while cleaning up NetBackup restore paths {}.", hostName, backupPaths);
-            return;
+            return false;
         }
         try {
             final Answer answer = agentManager.send(host.getId(), new AblestackNetBackupCleanupCommand(backupPaths));
             if (answer == null || !answer.getResult()) {
                 LOG.warn("NetBackup restore cleanup command failed on host [{}]: {}",
                         host.getName(), answer != null ? answer.getDetails() : "no answer received");
+                return false;
             }
         } catch (final AgentUnavailableException | OperationTimedoutException e) {
             LOG.warn("Failed to execute NetBackup restore cleanup command on host [{}]: {}",
                     host.getName(), e.getMessage(), e);
+            return false;
         }
+        return true;
     }
 
     private HostVO findRestoreHost(final String restoreHostName) {

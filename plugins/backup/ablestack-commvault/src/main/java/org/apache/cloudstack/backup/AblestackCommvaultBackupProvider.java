@@ -128,6 +128,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String DETAIL_CHAIN_SEALED = "commvault.chain.sealed";
     private static final String DETAIL_CHAIN_SEAL_REASON = "commvault.chain.seal.reason";
     private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "commvault.fallback.volume.uuids";
+    private static final String DETAIL_ERROR_REASON = "commvault.error.reason";
+    private static final String ERROR_REASON_METADATA_FINALIZE = "metadata-finalize";
     private static final int BASE_MAJOR = 11;
     private static final int BASE_FR = 32;
     private static final int BASE_MT = 89;
@@ -683,15 +685,28 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                                 String jobStatus = client.getJobStatus(jobId);
                                 if (jobStatus.equalsIgnoreCase("Completed")) {
                                     String jobDetails = client.getJobDetails(jobId);
-                                    if (jobDetails != null) {
+                                    if (jobDetails == null) {
+                                        LOG.error("Commvault job [{}] completed for VM [{}], but job details could not be fetched. Leaving backup [{}] in Error state.",
+                                                jobId, vm.getInstanceName(), backupVO.getUuid());
+                                        return failCompletedCommvaultBackupMetadata(backupVO, externalId,
+                                                "Failed to get completed Commvault job details");
+                                    }
+                                    try {
                                         updateBackupAsCompleted(backupVO, externalId, jobDetails, backupDetails,
                                                 createVolumeInfoFromVolumes(vmVolumes, backupFiles));
                                         if (backupDao.update(backupVO.getId(), backupVO)) {
                                             return BackupExecutionResult.success(backupVO);
                                         }
-                                        throw new CloudRuntimeException("Failed to update backup");
+                                        LOG.error("Commvault job [{}] completed for VM [{}], but backup [{}] metadata update failed. Leaving it in Error state.",
+                                                jobId, vm.getInstanceName(), backupVO.getUuid());
+                                        return failCompletedCommvaultBackupMetadata(backupVO, externalId,
+                                                "Failed to update completed Commvault backup metadata");
+                                    } catch (RuntimeException e) {
+                                        LOG.error("Commvault job [{}] completed for VM [{}], but backup [{}] metadata could not be finalized. Leaving it in Error state.",
+                                                jobId, vm.getInstanceName(), backupVO.getUuid(), e);
+                                        return failCompletedCommvaultBackupMetadata(backupVO, externalId,
+                                                "Failed to finalize completed Commvault backup metadata");
                                     }
-                                    LOG.error("Failed to take backup for VM {} to get details job commvault api", vm.getInstanceName());
                                 } else {
                                     LOG.error("Failed to take backup for VM {} to create backup job status is {}", vm.getInstanceName(), jobStatus);
                                 }
@@ -737,6 +752,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
             throw e;
         }
+    }
+
+    private BackupExecutionResult failCompletedCommvaultBackupMetadata(BackupVO backupVO, String externalId, String details) {
+        backupVO.setExternalId(externalId);
+        backupVO.setStatus(Backup.Status.Error);
+        backupDao.update(backupVO.getId(), backupVO);
+        updateBackupDetail(backupVO, DETAIL_ERROR_REASON, ERROR_REASON_METADATA_FINALIZE);
+        return BackupExecutionResult.failure(details, backupVO);
     }
 
     private boolean shouldRetryAsFullAfterIncrementalFailure(BackupExecutionResult result, List<VolumeVO> vmVolumes) {
@@ -1830,6 +1853,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             if (Backup.Status.BackingUp.equals(backup.getStatus()) && reconcileInProgressBackupWithJob(vm, backup, client, jobId)) {
                 continue;
             }
+            if (Backup.Status.Error.equals(backup.getStatus()) && reconcileErrorBackupWithCompletedJob(vm, backup, client, jobId)) {
+                continue;
+            }
             final String path = externalIdParts.first();
             String jobDetails = client.getJobDetails(jobId);
             if (jobDetails != null) {
@@ -1967,6 +1993,59 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         LOG.debug("Keeping Commvault backup [{}] for VM [{}] in BackingUp because job [{}] is in state [{}]",
                 backupVO.getUuid(), vm.getInstanceName(), jobId, jobState);
         return true;
+    }
+
+    private boolean reconcileErrorBackupWithCompletedJob(VirtualMachine vm, Backup backup, AblestackCommvaultClient client, String jobId) {
+        if (!ERROR_REASON_METADATA_FINALIZE.equals(getBackupDetail(backup, DETAIL_ERROR_REASON))) {
+            LOG.debug("Skipping Commvault Error backup [{}] sync because the error reason [{}] is not recoverable by metadata reconciliation",
+                    backup.getUuid(), getBackupDetail(backup, DETAIL_ERROR_REASON));
+            return false;
+        }
+        String jobDetails = client.getJobDetails(jobId);
+        if (jobDetails == null) {
+            LOG.warn("Failed to get Commvault job details for Error backup [{}] and job [{}]", backup.getUuid(), jobId);
+            return false;
+        }
+
+        JSONObject jsonObject = new JSONObject(jobDetails);
+        String jobState = jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("progressInfo").optString("state");
+        if (!"Completed".equalsIgnoreCase(jobState)) {
+            LOG.debug("Keeping Commvault backup [{}] for VM [{}] in Error because job [{}] is in state [{}]",
+                    backup.getUuid(), vm.getInstanceName(), jobId, jobState);
+            return false;
+        }
+
+        BackupVO backupVO = backupDao.findById(backup.getId());
+        if (backupVO == null) {
+            return true;
+        }
+        backupDao.loadDetails(backupVO);
+
+        try {
+            List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
+            vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
+            String backupEngine = getBackupDetail(backupVO, DETAIL_BACKUP_ENGINE, BACKUP_ENGINE_QCOW2);
+            boolean incrementalBackup = BACKUP_TYPE_INCREMENTAL.equalsIgnoreCase(backupVO.getType());
+            List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
+            if (backupVO.getDetails() != null) {
+                backupVO.getDetails().remove(DETAIL_ERROR_REASON);
+            }
+            backupDetailsDao.removeDetail(backupVO.getId(), DETAIL_ERROR_REASON);
+            updateBackupAsCompleted(backupVO, backupVO.getExternalId(), jobDetails, backupVO.getDetails(),
+                    createVolumeInfoFromVolumes(vmVolumes, backupFiles));
+            if (backupDao.update(backupVO.getId(), backupVO)) {
+                LOG.info("Recovered Commvault backup [{}] for VM [{}] from Error to BackedUp using completed job [{}]",
+                        backupVO.getUuid(), vm.getInstanceName(), jobId);
+                return true;
+            }
+            LOG.warn("Failed to update recovered Commvault Error backup [{}] for VM [{}] using job [{}]",
+                    backupVO.getUuid(), vm.getInstanceName(), jobId);
+            return false;
+        } catch (RuntimeException e) {
+            LOG.warn("Failed to recover Commvault Error backup [{}] for VM [{}] using job [{}]: {}",
+                    backupVO.getUuid(), vm.getInstanceName(), jobId, e.getMessage(), e);
+            return false;
+        }
     }
 
     @Override

@@ -339,14 +339,22 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             LOG.info("Completed ABLESTACK NAS backup [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, repositoryId: {}, backupPath: {}, size: {}, elapsedMs: {}]",
                     backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
                     backupRepository.getId(), backupPath, answer.getSize(), System.currentTimeMillis() - backupStartTime);
-            backupVO.setDate(new Date());
-            backupVO.setSize(answer.getSize());
-            backupVO.setStatus(Backup.Status.BackedUp);
-            backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
-            if (backupDao.update(backupVO.getId(), backupVO)) {
-                return BackupExecutionResult.success(backupVO);
+            try {
+                backupVO.setDate(new Date());
+                backupVO.setSize(answer.getSize());
+                backupVO.setStatus(Backup.Status.BackedUp);
+                backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
+                if (backupDao.update(backupVO.getId(), backupVO)) {
+                    return BackupExecutionResult.success(backupVO);
+                }
+                LOG.error("ABLESTACK NAS backup completed for VM [{}], but backup [{}] metadata update failed. Leaving it in Error state.",
+                        vm.getInstanceName(), backupVO.getUuid());
+                return failCompletedNasBackupMetadata(backupVO, "Failed to update completed NAS backup metadata");
+            } catch (RuntimeException e) {
+                LOG.error("ABLESTACK NAS backup completed for VM [{}], but backup [{}] metadata could not be finalized. Leaving it in Error state.",
+                        vm.getInstanceName(), backupVO.getUuid(), e);
+                return failCompletedNasBackupMetadata(backupVO, "Failed to finalize completed NAS backup metadata");
             }
-            throw new CloudRuntimeException("Failed to update backup");
         }
 
         final String details = answer != null ? answer.getDetails() : "No answer received";
@@ -364,6 +372,12 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             backupVO.setStatus(Backup.Status.Failed);
             removeBackupWithDetails(backupVO.getId());
         }
+        return BackupExecutionResult.failure(details, backupVO);
+    }
+
+    private BackupExecutionResult failCompletedNasBackupMetadata(BackupVO backupVO, String details) {
+        backupVO.setStatus(Backup.Status.Error);
+        backupDao.update(backupVO.getId(), backupVO);
         return BackupExecutionResult.failure(details, backupVO);
     }
 

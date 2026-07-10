@@ -41,6 +41,7 @@ DISK_PATHS=""
 QUIESCE=""
 FORCED="false"
 logFile="/var/log/cloudstack/agent/agent.log"
+UNMOUNT_TIMEOUT=60
 CREATED_RBD_SNAPSHOTS=()
 
 EXIT_CLEANUP_FAILED=20
@@ -210,8 +211,8 @@ backup_running_vm() {
   virsh -c qemu:///system domjobinfo "$VM" --completed
   du -sb "$dest" | cut -f1
 
-  umount "$mount_point"
-  rmdir "$mount_point"
+  timeout "$UNMOUNT_TIMEOUT" umount "$mount_point" 2>>"$logFile" || { log "WARNING: umount of $mount_point failed or timed out"; true; }
+  rmdir "$mount_point" 2>>"$logFile" || { log "WARNING: rmdir of $mount_point failed"; true; }
 }
 
 backup_rbd_volumes() {
@@ -304,8 +305,8 @@ backup_rbd_volumes() {
 
   sync
   log -ne "RBD backup completed checkpoint=[$CHECKPOINT_NAME] parent=[$PARENT_CHECKPOINT_NAME]"
-  umount "$mount_point"
-  rmdir "$mount_point"
+  timeout "$UNMOUNT_TIMEOUT" umount "$mount_point" 2>>"$logFile" || { log "WARNING: umount of $mount_point failed or timed out"; true; }
+  rmdir "$mount_point" 2>>"$logFile" || { log "WARNING: rmdir of $mount_point failed"; true; }
 }
 
 backup_domain_information() {
