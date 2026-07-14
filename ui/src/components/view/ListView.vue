@@ -278,6 +278,12 @@
       <template v-if="column.key === 'status'">
         <status :text="text ? text : ''" displayText />
       </template>
+      <template v-if="column.key === 'clonefaststatus'">
+        <a-tag v-if="isFastCloneFlattenActive(record)" color="processing">
+          {{ getCloneFastStatusLabel(record) }}
+        </a-tag>
+        <span v-else>-</span>
+      </template>
       <template v-if="column.key === 'allocationstate'">
         <status :text="text ? text : ''" displayText />
       </template>
@@ -1305,6 +1311,22 @@ export default {
         return 'Unsecure'
       }
       return host.state
+    },
+    getCloneFastStatus (record) {
+      return String(record?.clonefaststatus || record?.details?.['clone.fast.status'] || '').toLowerCase()
+    },
+    isFastCloneFlattenActive (record) {
+      return ['pending', 'running'].includes(this.getCloneFastStatus(record))
+    },
+    getCloneFastStatusLabel (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'running') {
+        return this.$t('label.sharedmountpoint.clone.flatten.running')
+      }
+      if (status === 'pending') {
+        return this.$t('label.sharedmountpoint.clone.flatten.pending')
+      }
+      return ''
     },
     getColumnKey (name) {
       if (typeof name === 'object') {

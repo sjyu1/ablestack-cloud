@@ -62,6 +62,8 @@ import org.apache.cloudstack.storage.command.FlattenCmdAnswer;
 import org.apache.cloudstack.storage.command.FlattenCommand;
 import org.apache.cloudstack.storage.command.ForgetObjectCmd;
 import org.apache.cloudstack.storage.command.IntroduceObjectCmd;
+import org.apache.cloudstack.storage.command.PrepareSharedMountPointCloneCommand;
+import org.apache.cloudstack.storage.command.PrepareSharedMountPointCloneCommand.VolumeCloneSpec;
 import org.apache.cloudstack.storage.command.ResignatureAnswer;
 import org.apache.cloudstack.storage.command.ResignatureCommand;
 import org.apache.cloudstack.storage.command.SnapshotAndCopyAnswer;
@@ -148,9 +150,7 @@ import com.cloud.vm.VmDetailConstants;
 
 public class KVMStorageProcessor implements StorageProcessor {
     protected Logger logger = LogManager.getLogger(getClass());
-    private static final String CLONE_TYPE = "cloneType";
-    private static final String LINKED_CLONE_TYPE = "linked";
-    private static final String LINKED_CLONE_BACKING_PATH = "linkedCloneBackingPath";
+    private static final int VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA = 2;
     private final KVMStoragePoolManager storagePoolMgr;
     private final LibvirtComputingResource resource;
     private StorageLayer storageLayer;
@@ -1715,6 +1715,131 @@ public class KVMStorageProcessor implements StorageProcessor {
     }
 
     @Override
+    public Answer prepareSharedMountPointClone(PrepareSharedMountPointCloneCommand cmd) {
+        PrimaryDataStoreTO store = cmd.getDataStore();
+        if (store == null || store.getPoolType() != StoragePoolType.SharedMountPoint) {
+            return new Answer(cmd, false, "SharedMountPoint primary store is required.");
+        }
+
+        KVMStoragePool pool = storagePoolMgr.getStoragePool(store.getPoolType(), store.getUuid());
+        List<VolumeCloneSpec> preparedSpecs = new ArrayList<>();
+        Map<String, String> runningDiskLabels = new HashMap<>();
+        Domain vm = null;
+        Connect conn = null;
+
+        try {
+            if (cmd.isSourceVmRunning()) {
+                conn = LibvirtConnection.getConnectionByVmName(cmd.getVmName());
+                vm = resource.getDomain(conn, cmd.getVmName());
+            }
+
+            for (VolumeCloneSpec spec : cmd.getVolumeCloneSpecs()) {
+                Path sourcePath = resolveSharedMountPointPath(pool, spec.getSourceVolumePath());
+                Path overlayPath = resolveSharedMountPointPath(pool, spec.getSourceOverlayPath());
+                Path clonePath = resolveSharedMountPointPath(pool, spec.getCloneVolumePath());
+
+                if (!Files.exists(sourcePath)) {
+                    throw new CloudRuntimeException("Source volume does not exist: " + sourcePath);
+                }
+
+                Files.createDirectories(overlayPath.getParent());
+                Files.createDirectories(clonePath.getParent());
+
+                if (cmd.isSourceVmRunning()) {
+                    String diskLabel = createRunningSourceOverlay(conn, vm, cmd.getVmName(), cmd.getOperationId(), sourcePath.toString(), overlayPath.toString());
+                    runningDiskLabels.put(spec.getSourceVolumePath(), diskLabel);
+                } else {
+                    createQcow2Delta(pool, sourcePath, spec.getSourceVolumePath(), spec.getSourceOverlayPath(), spec.getSize());
+                }
+
+                createQcow2Delta(pool, sourcePath, spec.getSourceVolumePath(), spec.getCloneVolumePath(), spec.getSize());
+                preparedSpecs.add(spec);
+            }
+
+            return new Answer(cmd);
+        } catch (Exception e) {
+            logger.warn("Failed to prepare SharedMountPoint linked clone for operation [{}]. Rolling back prepared files.", cmd.getOperationId(), e);
+            rollbackPreparedSharedMountPointClone(cmd, pool, vm, runningDiskLabels, preparedSpecs);
+            return new Answer(cmd, false, e.toString());
+        } finally {
+            if (vm != null) {
+                try {
+                    vm.free();
+                } catch (LibvirtException e) {
+                    logger.trace("Ignoring libvirt error.", e);
+                }
+            }
+        }
+    }
+
+    protected String createRunningSourceOverlay(Connect conn, Domain vm, String vmName, String operationId, String sourcePath, String overlayPath) throws LibvirtException {
+        Pair<String, Set<String>> diskToSnapshotAndDisksToAvoid = getDiskToSnapshotAndDisksToAvoid(resource.getDisks(conn, vmName), sourcePath, vm);
+        String diskLabel = diskToSnapshotAndDisksToAvoid.first();
+        String disksToAvoid = diskToSnapshotAndDisksToAvoid.second().stream().map(label -> String.format(TAG_AVOID_DISK_FROM_SNAPSHOT, label)).collect(Collectors.joining());
+        String snapshotName = "clone-overlay-" + operationId + "-" + diskLabel;
+        String snapshotXml = String.format(XML_CREATE_DISK_SNAPSHOT, snapshotName, diskLabel, overlayPath, disksToAvoid);
+        vm.snapshotCreateXML(snapshotXml, VIR_DOMAIN_SNAPSHOT_CREATE_DISK_ONLY | VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA);
+        logger.info("Created running source overlay [{}] for VM [{}] disk [{}] with backing [{}].", overlayPath, vmName, diskLabel, sourcePath);
+        return diskLabel;
+    }
+
+    protected void createQcow2Delta(KVMStoragePool pool, Path backingPath, String backingRelativePath, String deltaRelativePath, long size) {
+        KVMPhysicalDisk backingDisk = new KVMPhysicalDisk(backingPath.toString(), backingRelativePath, pool);
+        backingDisk.setFormat(PhysicalDiskFormat.QCOW2);
+        backingDisk.setSize(backingPath.toFile().length());
+        backingDisk.setVirtualSize(size);
+
+        KVMPhysicalDisk disk = storagePoolMgr.createDiskWithTemplateBacking(backingDisk, deltaRelativePath, PhysicalDiskFormat.QCOW2, size, pool, _cmdsTimeout, null);
+        if (disk == null) {
+            throw new CloudRuntimeException("Failed to create qcow2 delta volume " + deltaRelativePath + " with backing " + backingPath);
+        }
+    }
+
+    protected Path resolveSharedMountPointPath(KVMStoragePool pool, String relativePath) {
+        if (StringUtils.isBlank(relativePath)) {
+            throw new CloudRuntimeException("Relative path must be specified.");
+        }
+        Path poolPath = Paths.get(pool.getLocalPath()).toAbsolutePath().normalize();
+        Path resolvedPath = poolPath.resolve(relativePath).toAbsolutePath().normalize();
+        if (!resolvedPath.startsWith(poolPath)) {
+            throw new CloudRuntimeException("Invalid SharedMountPoint relative path " + relativePath);
+        }
+        return resolvedPath;
+    }
+
+    protected void rollbackPreparedSharedMountPointClone(PrepareSharedMountPointCloneCommand cmd, KVMStoragePool pool, Domain vm, Map<String, String> runningDiskLabels,
+            List<VolumeCloneSpec> preparedSpecs) {
+        for (int i = preparedSpecs.size() - 1; i >= 0; i--) {
+            VolumeCloneSpec spec = preparedSpecs.get(i);
+            if (cmd.isSourceVmRunning() && vm != null && runningDiskLabels.containsKey(spec.getSourceVolumePath())) {
+                rollbackRunningSourceOverlay(vm, runningDiskLabels.get(spec.getSourceVolumePath()), resolveSharedMountPointPath(pool, spec.getSourceVolumePath()).toString());
+            }
+            deleteSharedMountPointFileIfExists(pool, spec.getSourceOverlayPath());
+            deleteSharedMountPointFileIfExists(pool, spec.getCloneVolumePath());
+        }
+    }
+
+    protected void rollbackRunningSourceOverlay(Domain vm, String diskLabel, String sourcePath) {
+        try {
+            String command = String.format("virsh blockcommit %s %s --base %s --active --wait --pivot", vm.getName(), diskLabel, sourcePath);
+            String result = Script.runSimpleBashScript(command);
+            if (result != null) {
+                logger.warn("Failed to rollback source overlay with command [{}]. Result: [{}].", command, result);
+            }
+        } catch (LibvirtException e) {
+            logger.warn("Failed to rollback source overlay for disk [{}].", diskLabel, e);
+        }
+    }
+
+    protected void deleteSharedMountPointFileIfExists(KVMStoragePool pool, String relativePath) {
+        try {
+            Files.deleteIfExists(resolveSharedMountPointPath(pool, relativePath));
+        } catch (IOException | CloudRuntimeException e) {
+            logger.warn("Failed to delete SharedMountPoint clone file [{}].", relativePath, e);
+        }
+    }
+
+    @Override
     public Answer createVolume(final CreateObjectCommand cmd) {
         final VolumeObjectTO volume = (VolumeObjectTO)cmd.getData();
         final PrimaryDataStoreTO primaryStore = (PrimaryDataStoreTO)volume.getDataStore();
@@ -2415,10 +2540,7 @@ public class KVMStorageProcessor implements StorageProcessor {
 
         final KVMStoragePool primaryPool = storagePoolMgr.getStoragePool(pool.getPoolType(), pool.getUuid());
 
-        KVMPhysicalDisk snapshotDisk = null;
-        if (!isLinkedCloneRequested(cmd)) {
-            snapshotDisk = srcPool.getPhysicalDisk(snapshotName);
-        }
+        KVMPhysicalDisk snapshotDisk = srcPool.getPhysicalDisk(snapshotName);
 
         if (volume.getFormat() == ImageFormat.QCOW2) {
             if (snapshotDisk != null) {
@@ -2433,27 +2555,11 @@ public class KVMStorageProcessor implements StorageProcessor {
         storagePoolMgr.connectPhysicalDisk(pool.getPoolType(), pool.getUuid(), path, details);
 
         try {
-            KVMPhysicalDisk newDisk;
-            if (isLinkedCloneRequested(cmd) && volume.getFormat() == ImageFormat.QCOW2) {
-                KVMPhysicalDisk backingDisk = getLinkedCloneBackingDisk(cmd, primaryPool);
-                newDisk = storagePoolMgr.createDiskWithTemplateBacking(backingDisk, path != null ? path : newVol.getUuid(), PhysicalDiskFormat.QCOW2, newVol.getSize(),
-                        primaryPool, cmd.getWaitInMillSeconds(), newVol.getPassphrase());
-                if (newDisk == null) {
-                    throw new CloudRuntimeException("Could not create linked clone volume from backing snapshot " + backingDisk.getPath());
-                }
-            } else {
-                newDisk = storagePoolMgr.copyPhysicalDisk(snapshotDisk, path != null ? path : newVol.getUuid(), primaryPool, cmd.getWaitInMillSeconds());
-            }
+            KVMPhysicalDisk newDisk = storagePoolMgr.copyPhysicalDisk(snapshotDisk, path != null ? path : newVol.getUuid(), primaryPool, cmd.getWaitInMillSeconds());
             return newDisk;
         } finally {
             storagePoolMgr.disconnectPhysicalDisk(pool.getPoolType(), pool.getUuid(), path);
         }
-    }
-
-    protected boolean isLinkedCloneRequested(CopyCommand cmd) {
-        Map<String, String> options = cmd.getOptions();
-        return options != null && LINKED_CLONE_TYPE.equalsIgnoreCase(options.get(CLONE_TYPE))
-                && StringUtils.isNotBlank(options.get(LINKED_CLONE_BACKING_PATH));
     }
 
     protected String getTargetVolumePath(CopyCommand cmd, String fallbackPath) {
@@ -2472,24 +2578,6 @@ public class KVMStorageProcessor implements StorageProcessor {
             throw new CloudRuntimeException("The target volume path must be specified.");
         }
         return path;
-    }
-
-    protected KVMPhysicalDisk getLinkedCloneBackingDisk(CopyCommand cmd, KVMStoragePool primaryPool) {
-        String relativeBackingPath = cmd.getOptions().get(LINKED_CLONE_BACKING_PATH);
-        Path poolPath = Paths.get(primaryPool.getLocalPath()).toAbsolutePath().normalize();
-        Path backingPath = poolPath.resolve(relativeBackingPath).toAbsolutePath().normalize();
-        if (!backingPath.startsWith(poolPath)) {
-            throw new CloudRuntimeException("Invalid linked clone backing path " + relativeBackingPath);
-        }
-        if (!Files.exists(backingPath)) {
-            throw new CloudRuntimeException("Linked clone backing file does not exist: " + backingPath);
-        }
-
-        KVMPhysicalDisk backingDisk = new KVMPhysicalDisk(backingPath.toString(), relativeBackingPath, primaryPool);
-        backingDisk.setFormat(PhysicalDiskFormat.QCOW2);
-        backingDisk.setSize(backingPath.toFile().length());
-        backingDisk.setVirtualSize(backingDisk.getSize());
-        return backingDisk;
     }
 
     private KVMPhysicalDisk createRBDvolumeFromRBDSnapshot(KVMPhysicalDisk volume, String snapshotName, String name,
@@ -2558,6 +2646,9 @@ public class KVMStorageProcessor implements StorageProcessor {
     @Override
     public Answer flattenFromRBDSnapshot(final FlattenCommand cmd) {
         final DataTO srcData = cmd.getSrcTO();
+        if (srcData instanceof VolumeObjectTO) {
+            return flattenSharedMountPointQcow2Volume(cmd, (VolumeObjectTO)srcData);
+        }
         final SnapshotObjectTO snapshot = (SnapshotObjectTO)srcData;
         final VolumeObjectTO volume = snapshot.getVolume();
         Integer cloneImageCount = 0;
@@ -2622,6 +2713,120 @@ public class KVMStorageProcessor implements StorageProcessor {
             logger.debug("Failed to Flatten Rbd Volume From Snapshot: ", e);
             return new FlattenCmdAnswer(srcData, cmd, false, e.toString());
         }
+    }
+
+    protected Answer flattenSharedMountPointQcow2Volume(FlattenCommand cmd, VolumeObjectTO volume) {
+        DataStoreTO dataStore = volume.getDataStore();
+        if (!(dataStore instanceof PrimaryDataStoreTO) || ((PrimaryDataStoreTO)dataStore).getPoolType() != StoragePoolType.SharedMountPoint) {
+            return new FlattenCmdAnswer(volume, cmd, false, "SharedMountPoint primary store is required.");
+        }
+
+        PrimaryDataStoreTO primaryStore = (PrimaryDataStoreTO)dataStore;
+        KVMStoragePool pool = storagePoolMgr.getStoragePool(primaryStore.getPoolType(), primaryStore.getUuid());
+        Path volumePath = resolveSharedMountPointPath(pool, volume.getPath());
+        String operation = cmd.getOptions() != null ? cmd.getOptions().get("operation") : null;
+        String vmName = cmd.getOptions() != null ? cmd.getOptions().get("vmName") : null;
+
+        try {
+            if ("commitSourceOverlay".equals(operation)) {
+                String backingPath = cmd.getOptions().get("backingPath");
+                if (StringUtils.isBlank(backingPath)) {
+                    throw new CloudRuntimeException("backingPath option is required for source overlay commit.");
+                }
+                commitSourceOverlay(pool, volumePath, resolveSharedMountPointPath(pool, backingPath), vmName);
+                return new FlattenCmdAnswer(volume, cmd, true, "committed");
+            }
+
+            if (StringUtils.isNotBlank(vmName)) {
+                Connect conn = LibvirtConnection.getConnectionByVmName(vmName);
+                Domain vm = resource.getDomain(conn, vmName);
+                try {
+                    if (vm.getInfo().state == DomainInfo.DomainState.VIR_DOMAIN_RUNNING) {
+                        String diskLabel = getDiskLabelForPath(conn, vm, vmName, volumePath.toString());
+                        if (StringUtils.isNotBlank(diskLabel)) {
+                            flattenRunningVolume(vm, diskLabel);
+                            logger.info("Flattened running SharedMountPoint volume [{}] for VM [{}].", volumePath, vmName);
+                            return new FlattenCmdAnswer(volume, cmd, true, "flattened");
+                        }
+                    }
+                } finally {
+                    vm.free();
+                }
+            }
+
+            flattenStoppedVolume(volumePath);
+            logger.info("Flattened offline SharedMountPoint volume [{}].", volumePath);
+            return new FlattenCmdAnswer(volume, cmd, true, "flattened");
+        } catch (Exception e) {
+            logger.warn("Failed to flatten SharedMountPoint qcow2 volume [{}].", volumePath, e);
+            return new FlattenCmdAnswer(volume, cmd, false, e.toString());
+        }
+    }
+
+    protected void commitSourceOverlay(KVMStoragePool pool, Path overlayPath, Path backingPath, String vmName) throws IOException, LibvirtException {
+        if (StringUtils.isNotBlank(vmName)) {
+            Connect conn = LibvirtConnection.getConnectionByVmName(vmName);
+            Domain vm = resource.getDomain(conn, vmName);
+            try {
+                if (vm.getInfo().state == DomainInfo.DomainState.VIR_DOMAIN_RUNNING) {
+                    String diskLabel = getDiskLabelForPath(conn, vm, vmName, overlayPath.toString());
+                    if (StringUtils.isBlank(diskLabel)) {
+                        throw new CloudRuntimeException("Could not find source overlay disk " + overlayPath + " in VM " + vmName);
+                    }
+                    String command = String.format("virsh blockcommit %s %s --base %s --active --wait --pivot", vm.getName(), diskLabel, backingPath);
+                    String result = Script.runSimpleBashScript(command);
+                    if (result != null) {
+                        throw new CloudRuntimeException("Failed to commit source overlay using command [" + command + "]. Result: " + result);
+                    }
+                    Files.deleteIfExists(overlayPath);
+                    logger.info("Committed running source overlay [{}] into backing [{}] for VM [{}].", overlayPath, backingPath, vmName);
+                    return;
+                }
+            } finally {
+                vm.free();
+            }
+        }
+
+        String command = String.format("qemu-img commit %s", shellQuote(overlayPath.toString()));
+        String result = Script.runSimpleBashScript(command);
+        if (result != null) {
+            throw new CloudRuntimeException("Failed to commit stopped source overlay using command [" + command + "]. Result: " + result);
+        }
+        Files.deleteIfExists(overlayPath);
+        logger.info("Committed stopped source overlay [{}] into backing [{}].", overlayPath, backingPath);
+    }
+
+    protected String getDiskLabelForPath(Connect conn, Domain vm, String vmName, String diskPath) throws LibvirtException {
+        for (DiskDef disk : resource.getDisks(conn, vmName)) {
+            if (StringUtils.equals(diskPath, disk.getDiskPath())) {
+                return disk.getDiskLabel();
+            }
+        }
+        logger.debug("Could not find active disk path [{}] in VM [{}]. VM XML: [{}]", diskPath, vmName, vm.getXMLDesc(0));
+        return null;
+    }
+
+    protected void flattenRunningVolume(Domain vm, String diskLabel) throws LibvirtException {
+        String command = String.format("virsh blockpull %s %s --wait --verbose", vm.getName(), diskLabel);
+        String result = Script.runSimpleBashScript(command);
+        if (result != null) {
+            throw new CloudRuntimeException("Failed to flatten running volume using command [" + command + "]. Result: " + result);
+        }
+    }
+
+    protected void flattenStoppedVolume(Path volumePath) throws IOException {
+        Path flatPath = volumePath.resolveSibling(volumePath.getFileName().toString() + ".flattening");
+        Files.deleteIfExists(flatPath);
+        String command = String.format("qemu-img convert -O qcow2 %s %s", shellQuote(volumePath.toString()), shellQuote(flatPath.toString()));
+        String result = Script.runSimpleBashScript(command);
+        if (result != null) {
+            throw new CloudRuntimeException("Failed to flatten stopped volume using command [" + command + "]. Result: " + result);
+        }
+        Files.move(flatPath, volumePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    protected String shellQuote(String value) {
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     @Override

@@ -29,6 +29,7 @@ import org.apache.cloudstack.storage.command.DettachCommand;
 import org.apache.cloudstack.storage.command.FlattenCommand;
 import org.apache.cloudstack.storage.command.ForgetObjectCmd;
 import org.apache.cloudstack.storage.command.IntroduceObjectCmd;
+import org.apache.cloudstack.storage.command.PrepareSharedMountPointCloneCommand;
 import org.apache.cloudstack.storage.command.ResignatureCommand;
 import org.apache.cloudstack.storage.command.SnapshotAndCopyCommand;
 import org.apache.cloudstack.storage.command.SyncVolumePathCommand;
@@ -88,4 +89,8 @@ public interface StorageProcessor {
     public Answer syncVolumePath(SyncVolumePathCommand cmd);
 
     public Answer flattenFromRBDSnapshot(FlattenCommand cmd);
+
+    default Answer prepareSharedMountPointClone(PrepareSharedMountPointCloneCommand cmd) {
+        return new Answer(cmd, false, "not implemented yet");
+    }
 }

@@ -125,6 +125,14 @@
             <status class="status" :text="resource.state || resource.status" displayText/>
           </div>
         </div>
+        <div class="resource-detail-item" v-if="isFastCloneFlattenActive(resource)">
+          <div class="resource-detail-item__label">{{ $t('label.sharedmountpoint.clone.flatten.status') }}</div>
+          <div class="resource-detail-item__details">
+            <a-tag color="processing">
+              {{ getCloneFastStatusLabel(resource) }}
+            </a-tag>
+          </div>
+        </div>
         <div class="resource-detail-item" v-if="resource.allocationstate">
           <div class="resource-detail-item__label">{{ $t('label.allocationstate') }}</div>
           <div class="resource-detail-item__details">
@@ -1183,6 +1191,22 @@ export default {
         }
       }
       this.getIcons()
+    },
+    getCloneFastStatus (record) {
+      return String(record?.clonefaststatus || record?.details?.['clone.fast.status'] || '').toLowerCase()
+    },
+    isFastCloneFlattenActive (record) {
+      return ['pending', 'running'].includes(this.getCloneFastStatus(record))
+    },
+    getCloneFastStatusLabel (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'running') {
+        return this.$t('label.sharedmountpoint.clone.flatten.running')
+      }
+      if (status === 'pending') {
+        return this.$t('label.sharedmountpoint.clone.flatten.pending')
+      }
+      return ''
     },
     showUploadModal (show) {
       if (show) {
