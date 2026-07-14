@@ -657,13 +657,14 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
                 .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) || Backup.Status.Restoring.equals(backup.getStatus()));
         if (hasBackupInProgress) {
-            throw new InvalidParameterValueException(String.format("Instance Snapshot %s failed because a backup or restore is currently in progress for the Instance.", operation));
+            logger.warn("Allowing Instance Snapshot {} while a backup or restore is currently in progress for VM [{}] for snapshot coexistence testing.",
+                    operation, vmId);
         }
 
         boolean hasExistingBackup = backupDao.listByVmId(null, vmId).stream()
                 .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
         if (hasExistingBackup) {
-            throw new InvalidParameterValueException(String.format("Instance Snapshot %s failed because the Instance has backups.", operation));
+            logger.warn("Allowing Instance Snapshot {} for VM [{}] with existing backups for snapshot coexistence testing.", operation, vmId);
         }
     }
 

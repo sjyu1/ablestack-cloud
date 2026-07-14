@@ -824,10 +824,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     private void validateNoKvmFileBasedVmSnapshots(final VirtualMachine vm) {
         if (hasDiskAndMemoryVmSnapshots(vm)) {
-            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has disk-and-memory VM snapshots.", vm.getUuid()));
+            LOG.warn("Allowing NetBackup operation for VM [{}] with disk-and-memory VM snapshots for snapshot coexistence testing.", vm.getUuid());
         }
         if (hasKvmFileBasedVmSnapshots(vm)) {
-            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has KVM file-based VM snapshots.", vm.getUuid()));
+            LOG.warn("Allowing NetBackup operation for VM [{}] with KVM file-based VM snapshots for snapshot coexistence testing.", vm.getUuid());
         }
     }
 
@@ -864,9 +864,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean assignVMToBackupOffering(final VirtualMachine vm, final BackupOffering backupOffering) {
-        if (hasKvmFileBasedVmSnapshots(vm)) {
-            return false;
-        }
         return Hypervisor.HypervisorType.KVM.equals(vm.getHypervisorType());
     }
 
