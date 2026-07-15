@@ -2338,7 +2338,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         logger.debug(String.format("Trying to restore volume using host private IP address: [%s].", host.getPrivateIpAddress()));
 
         final boolean netBackupRestore = isAblestackNetBackupOffering(offering);
-        if (netBackupRestore) {
+        final boolean snapshotSensitiveVolumeRestore = isSnapshotSensitiveVolumeRestoreOffering(offering);
+        if (snapshotSensitiveVolumeRestore) {
             validateNoVmSnapshotsForRestoreVolumeAttach(vm);
         }
         String[] hostPossibleValues = netBackupRestore
@@ -2393,6 +2394,11 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     "Unable to restore and attach volume to VM [%s] while Instance snapshots exist. Remove Instance snapshots before restoring and attaching the volume.",
                     vm.getInstanceName()));
         }
+    }
+
+    private boolean isSnapshotSensitiveVolumeRestoreOffering(final BackupOffering offering) {
+        return offering != null && (BackupProviderNameUtils.isNetBackupFamily(offering.getProvider()) ||
+                BackupProviderNameUtils.isNasFamily(offering.getProvider()));
     }
 
     protected Pair<Boolean, String> restoreBackedUpVolume(final Backup.VolumeInfo backupVolumeInfo, final BackupVO backup,

@@ -28,12 +28,15 @@ import com.cloud.offering.DiskOffering;
 import com.cloud.resource.ResourceManager;
 import com.cloud.storage.DataStoreRole;
 import com.cloud.storage.ScopeType;
+import com.cloud.storage.Snapshot;
+import com.cloud.storage.SnapshotVO;
 import com.cloud.storage.Storage;
 import com.cloud.storage.Volume;
 import com.cloud.storage.Volume.Type;
 import com.cloud.storage.VolumeApiServiceImpl;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
+import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.StoragePoolHostDao;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.utils.Pair;
@@ -143,6 +146,9 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Inject
     private VolumeDao volumeDao;
+
+    @Inject
+    private SnapshotDao snapshotDao;
 
     @Inject
     private StoragePoolHostDao storagePoolHostDao;
@@ -643,7 +649,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     }
 
     private Pair<Boolean, String> restoreVMBackup(VirtualMachine vm, Backup backup) {
-        validateNoKvmFileBasedVmSnapshots(vm);
+        validateNasRestoreSnapshotCompatibility(vm);
         validateRestoreChainIntegrity(backup);
         List<Backup.VolumeInfo> backupVolumes = backup.getBackedUpVolumes();
         List<String> backedVolumesUUIDs = backupVolumes.stream()
@@ -1161,6 +1167,36 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         if (hasKvmFileBasedVmSnapshots(vm)) {
             logger.warn("Allowing NAS backup operation for VM [{}] with KVM file-based VM snapshots for snapshot coexistence testing.", vm);
         }
+    }
+
+    private void validateNasRestoreSnapshotCompatibility(VirtualMachine vm) {
+        final List<VMSnapshotVO> vmSnapshots = vmSnapshotDao.findByVm(vm.getId());
+        if (CollectionUtils.isNotEmpty(vmSnapshots)) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to restore VM [%s] from NAS backup while Instance snapshots exist. Remove Instance snapshots before restoring the backup.",
+                    vm.getInstanceName()));
+        }
+
+        final List<VolumeVO> restoreVolumes = volumeDao.findByInstance(vm.getId());
+        for (final VolumeVO volume : restoreVolumes) {
+            final StoragePoolVO storagePool = primaryDataStoreDao.findById(volume.getPoolId());
+            if (storagePool == null || !Storage.StoragePoolType.RBD.equals(storagePool.getPoolType())) {
+                continue;
+            }
+            if (hasActiveVolumeSnapshot(volume)) {
+                throw new CloudRuntimeException(String.format(
+                        "Unable to restore VM [%s] from NAS backup while RBD volume snapshots exist on volume [%s]. Remove RBD volume snapshots before restoring the backup.",
+                        vm.getInstanceName(), volume.getUuid()));
+            }
+        }
+    }
+
+    private boolean hasActiveVolumeSnapshot(final VolumeVO volume) {
+        final List<SnapshotVO> snapshots = snapshotDao.listByVolumeId(volume.getId());
+        return snapshots.stream()
+                .anyMatch(snapshot -> snapshot.getRemoved() == null
+                        && !Snapshot.State.Destroyed.equals(snapshot.getState())
+                        && !Snapshot.State.Error.equals(snapshot.getState()));
     }
 
     private boolean hasDiskAndMemoryVmSnapshots(VirtualMachine vm) {
