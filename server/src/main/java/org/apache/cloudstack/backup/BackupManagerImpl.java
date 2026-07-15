@@ -2290,8 +2290,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         final VMInstanceVO vm = findVmById(vmId);
         accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
 
-        validateNoVmSnapshotsForRestoreVolumeAttach(vm);
-
         if (vm.getBackupOfferingId() != null && !BackupEnableAttachDetachVolumes.value()) {
             throw new CloudRuntimeException("The selected VM has backups, cannot restore and attach volume to the VM.");
         }
@@ -2340,6 +2338,9 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         logger.debug(String.format("Trying to restore volume using host private IP address: [%s].", host.getPrivateIpAddress()));
 
         final boolean netBackupRestore = isAblestackNetBackupOffering(offering);
+        if (netBackupRestore) {
+            validateNoVmSnapshotsForRestoreVolumeAttach(vm);
+        }
         String[] hostPossibleValues = netBackupRestore
                 ? new String[]{host.getPrivateIpAddress()}
                 : new String[]{host.getPrivateIpAddress(), host.getName()};

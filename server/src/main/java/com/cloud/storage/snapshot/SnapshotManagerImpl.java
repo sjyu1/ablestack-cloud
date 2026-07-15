@@ -79,7 +79,10 @@ import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.framework.jobs.AsyncJob;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
 import org.apache.cloudstack.backup.Backup;
+import org.apache.cloudstack.backup.BackupOfferingVO;
+import org.apache.cloudstack.backup.BackupProviderNameUtils;
 import org.apache.cloudstack.backup.dao.BackupDao;
+import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.resourcedetail.SnapshotPolicyDetailVO;
 import org.apache.cloudstack.resourcedetail.dao.SnapshotPolicyDetailsDao;
@@ -263,6 +266,8 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
     private AnnotationDao annotationDao;
     @Inject
     private BackupDao backupDao;
+    @Inject
+    private BackupOfferingDao backupOfferingDao;
 
     @Inject
     protected SnapshotHelper snapshotHelper;
@@ -1229,14 +1234,14 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
 
         Long vmId = volume.getInstanceId();
         boolean hasRestoreInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()));
+                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()) && isNetBackup(backup));
         if (hasRestoreInProgress) {
             throw new CloudRuntimeException(String.format("Unable to %s volume snapshot while a backup restore is currently in progress for VM [%s].",
                     operation, vmId));
         }
 
         boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()));
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) && isNetBackup(backup));
         if (hasBackupInProgress) {
             logger.debug("Allowing volume snapshot {} while a backup is currently in progress for VM [{}].", operation, vmId);
         }
@@ -1246,6 +1251,11 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         if (hasExistingBackup) {
             logger.debug("Allowing volume snapshot {} for VM [{}] with existing backups.", operation, vmId);
         }
+    }
+
+    private boolean isNetBackup(Backup backup) {
+        BackupOfferingVO offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+        return offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider());
     }
 
     @Override

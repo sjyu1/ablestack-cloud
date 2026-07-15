@@ -53,8 +53,11 @@ import org.apache.cloudstack.api.command.user.volume.ResizeVolumeCmd;
 import org.apache.cloudstack.api.command.user.volume.UploadVolumeCmd;
 import org.apache.cloudstack.api.response.GetUploadParamsResponse;
 import org.apache.cloudstack.backup.Backup;
+import org.apache.cloudstack.backup.BackupOfferingVO;
 import org.apache.cloudstack.backup.BackupManager;
+import org.apache.cloudstack.backup.BackupProviderNameUtils;
 import org.apache.cloudstack.backup.dao.BackupDao;
+import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.direct.download.DirectDownloadHelper;
 import org.apache.cloudstack.engine.orchestration.service.VolumeOrchestrationService;
@@ -367,6 +370,8 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
     protected StoragePoolDetailsDao storagePoolDetailsDao;
     @Inject
     private BackupDao backupDao;
+    @Inject
+    private BackupOfferingDao backupOfferingDao;
     @Inject
     private StatsCollector statsCollector;
     @Inject
@@ -4278,14 +4283,14 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
 
         Long vmId = volume.getInstanceId();
         boolean hasRestoreInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()));
+                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()) && isNetBackup(backup));
         if (hasRestoreInProgress) {
             throw new CloudRuntimeException(String.format("Unable to %s volume snapshot while a backup restore is currently in progress for VM [%s].",
                     operation, vmId));
         }
 
         boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()));
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) && isNetBackup(backup));
         if (hasBackupInProgress) {
             logger.debug("Allowing volume snapshot {} while a backup is currently in progress for VM [{}].", operation, vmId);
         }
@@ -4295,6 +4300,11 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         if (hasExistingBackup) {
             logger.debug("Allowing volume snapshot {} for VM [{}] with existing backups.", operation, vmId);
         }
+    }
+
+    private boolean isNetBackup(Backup backup) {
+        BackupOfferingVO offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+        return offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider());
     }
 
     @NotNull

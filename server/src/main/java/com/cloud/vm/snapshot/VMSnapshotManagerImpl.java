@@ -30,7 +30,10 @@ import javax.naming.ConfigurationException;
 
 import org.apache.cloudstack.annotation.AnnotationService;
 import org.apache.cloudstack.backup.Backup;
+import org.apache.cloudstack.backup.BackupOfferingVO;
+import org.apache.cloudstack.backup.BackupProviderNameUtils;
 import org.apache.cloudstack.backup.dao.BackupDao;
+import org.apache.cloudstack.backup.dao.BackupOfferingDao;
 import org.apache.cloudstack.annotation.dao.AnnotationDao;
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.command.user.vmsnapshot.ListVMSnapshotCmd;
@@ -183,6 +186,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     private AnnotationDao annotationDao;
     @Inject
     private BackupDao backupDao;
+    @Inject
+    private BackupOfferingDao backupOfferingDao;
 
     VmWorkJobHandlerProxy _jobHandlerProxy = new VmWorkJobHandlerProxy(this);
 
@@ -655,14 +660,14 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
 
     private void validateNoBackupActivityOrHistoryForVMSnapshot(Long vmId, String operation) {
         boolean hasRestoreInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()));
+                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()) && isNetBackup(backup));
         if (hasRestoreInProgress) {
             throw new CloudRuntimeException(String.format("Unable to %s Instance Snapshot while a backup restore is currently in progress for VM [%s].",
                     operation, vmId));
         }
 
         boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()));
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) && isNetBackup(backup));
         if (hasBackupInProgress && "create".equals(operation) && hasQcow2Volume(vmId)) {
             throw new CloudRuntimeException(String.format(
                     "Unable to create Instance Snapshot while a backup is currently in progress for QCOW2 VM [%s]. Please try again after the backup completes.",
@@ -679,6 +684,11 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     private boolean hasQcow2Volume(Long vmId) {
         return _volumeDao.findByInstance(vmId).stream()
                 .anyMatch(volume -> Storage.ImageFormat.QCOW2.equals(volume.getFormat()));
+    }
+
+    private boolean isNetBackup(Backup backup) {
+        BackupOfferingVO offering = backupOfferingDao.findByIdIncludingRemoved(backup.getBackupOfferingId());
+        return offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider());
     }
 
     @Override
