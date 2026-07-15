@@ -200,7 +200,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Override
     public Pair<Boolean, Backup> takeBackup(final VirtualMachine vm, final Boolean quiesceVM, final Long backupScheduleId) {
         final Host host = getVMHypervisorHostForBackup(vm);
-        logVmSnapshotCoexistenceForBackup(vm);
+        validateVmSnapshotCoexistenceForBackup(vm);
 
         final List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
@@ -228,7 +228,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Override
     public Pair<Boolean, Backup> takeNetBackup(final VirtualMachine vm, final String policyName) {
         final Host host = getVMHypervisorHostForBackup(vm);
-        logVmSnapshotCoexistenceForBackup(vm);
+        validateVmSnapshotCoexistenceForBackup(vm);
 
         final List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
@@ -827,9 +827,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return null;
     }
 
-    private void logVmSnapshotCoexistenceForBackup(final VirtualMachine vm) {
+    private void validateVmSnapshotCoexistenceForBackup(final VirtualMachine vm) {
         if (hasDiskAndMemoryVmSnapshots(vm)) {
-            LOG.debug("Allowing NetBackup backup for VM [{}] with disk-and-memory VM snapshots.", vm.getUuid());
+            LOG.warn("NetBackup backup operation is not allowed for VM [{}] with disk-and-memory VM snapshots.", vm.getUuid());
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has disk-and-memory VM snapshots.", vm.getUuid()));
         }
         if (hasKvmFileBasedVmSnapshots(vm)) {
             LOG.debug("Allowing NetBackup backup for VM [{}] with KVM file-based VM snapshots.", vm.getUuid());
@@ -869,6 +870,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean assignVMToBackupOffering(final VirtualMachine vm, final BackupOffering backupOffering) {
+        if (hasDiskAndMemoryVmSnapshots(vm)) {
+            LOG.warn("NetBackup backup offering assignment is not allowed for VM [{}] with disk-and-memory VM snapshots.", vm.getUuid());
+            return false;
+        }
         return Hypervisor.HypervisorType.KVM.equals(vm.getHypervisorType());
     }
 

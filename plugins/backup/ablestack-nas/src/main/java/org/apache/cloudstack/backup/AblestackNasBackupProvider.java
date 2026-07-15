@@ -1153,6 +1153,10 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     @Override
     public boolean assignVMToBackupOffering(VirtualMachine vm, BackupOffering backupOffering) {
+        if (hasDiskAndMemoryVmSnapshots(vm)) {
+            logger.warn("NAS backup offering assignment is not allowed for VM [{}] with disk-and-memory VM snapshots.", vm);
+            return false;
+        }
         if (hasKvmFileBasedVmSnapshots(vm)) {
             logger.warn("Allowing NAS backup offering assignment for VM [{}] with KVM file-based VM snapshots for snapshot coexistence testing.", vm);
         }
@@ -1162,7 +1166,8 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
 
     private void validateNoKvmFileBasedVmSnapshots(VirtualMachine vm) {
         if (hasDiskAndMemoryVmSnapshots(vm)) {
-            logger.warn("Allowing NAS backup operation for VM [{}] with disk-and-memory VM snapshots for snapshot coexistence testing.", vm);
+            logger.warn("NAS backup operation is not allowed for VM [{}] with disk-and-memory VM snapshots.", vm);
+            throw new CloudRuntimeException(String.format("Cannot take backup of VM [%s] as it has disk-and-memory VM snapshots.", vm.getUuid()));
         }
         if (hasKvmFileBasedVmSnapshots(vm)) {
             logger.warn("Allowing NAS backup operation for VM [{}] with KVM file-based VM snapshots for snapshot coexistence testing.", vm);

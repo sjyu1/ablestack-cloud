@@ -2398,7 +2398,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
     private boolean isSnapshotSensitiveVolumeRestoreOffering(final BackupOffering offering) {
         return offering != null && (BackupProviderNameUtils.isNetBackupFamily(offering.getProvider()) ||
-                BackupProviderNameUtils.isNasFamily(offering.getProvider()));
+                BackupProviderNameUtils.isNasFamily(offering.getProvider()) ||
+                BackupProviderNameUtils.isCommvaultFamily(offering.getProvider()));
     }
 
     protected Pair<Boolean, String> restoreBackedUpVolume(final Backup.VolumeInfo backupVolumeInfo, final BackupVO backup,
