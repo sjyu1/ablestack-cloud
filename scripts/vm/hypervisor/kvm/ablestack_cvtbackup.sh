@@ -597,8 +597,55 @@ delete_libvirt_checkpoint_if_unreferenced() {
 
   if virsh -c qemu:///system dominfo "$vm_name" > /dev/null 2>&1 \
       && virsh -c qemu:///system checkpoint-info --domain "$vm_name" --checkpointname "$checkpoint_name" > /dev/null 2>&1; then
-    log -ne "Deleting libvirt checkpoint metadata [$checkpoint_name] from VM [$vm_name]"
-    virsh -c qemu:///system checkpoint-delete --domain "$vm_name" --checkpointname "$checkpoint_name" --metadata >> "$logFile" 2>&1 || true
+    log -ne "Deleting libvirt checkpoint [$checkpoint_name] from VM [$vm_name]"
+    if ! virsh -c qemu:///system checkpoint-delete --domain "$vm_name" --checkpointname "$checkpoint_name" >> "$logFile" 2>&1; then
+      log -ne "Failed to delete libvirt checkpoint [$checkpoint_name] from VM [$vm_name]; removing metadata only"
+      virsh -c qemu:///system checkpoint-delete --domain "$vm_name" --checkpointname "$checkpoint_name" --metadata >> "$logFile" 2>&1 || true
+    fi
+  fi
+
+  delete_qcow2_bitmap_if_present "$vm_name" "$checkpoint_name"
+}
+
+delete_qcow2_bitmap_if_present() {
+  local vm_name="$1"
+  local checkpoint_name="$2"
+  local removed=0
+  local node
+
+  [[ -z "$vm_name" || -z "$checkpoint_name" ]] && return 0
+
+  while IFS= read -r node; do
+    [[ -z "$node" ]] && continue
+    if virsh -c qemu:///system qemu-monitor-command "$vm_name" \
+        "{\"execute\":\"block-dirty-bitmap-remove\",\"arguments\":{\"node\":\"$node\",\"name\":\"$checkpoint_name\"}}" \
+        > /dev/null 2>>"$logFile"; then
+      removed=$((removed + 1))
+    else
+      log -ne "Failed to remove qcow2 bitmap [$checkpoint_name] on node [$node] (non-fatal)"
+    fi
+  done < <(
+    virsh -c qemu:///system qemu-monitor-command "$vm_name" '{"execute":"query-block"}' 2>/dev/null | python3 -c '
+import sys, json
+target = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+seen = set()
+for dev in data.get("return", []) or []:
+    inserted = dev.get("inserted") or {}
+    node = inserted.get("node-name")
+    if not node or node in seen:
+        continue
+    if any((bitmap or {}).get("name") == target for bitmap in (inserted.get("dirty-bitmaps") or [])):
+        seen.add(node)
+        print(node)
+' "$checkpoint_name" 2>/dev/null || true
+  )
+
+  if [[ "$removed" -gt 0 ]]; then
+    log -ne "Removed qcow2 bitmap [$checkpoint_name] from [$removed] disk(s)"
   fi
 }
 
