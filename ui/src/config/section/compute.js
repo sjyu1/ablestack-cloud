@@ -19,6 +19,7 @@ import { shallowRef, defineAsyncComponent } from 'vue'
 import store from '@/store'
 
 const activeFastCloneStatuses = ['pending', 'running']
+const runningFastCloneStatuses = ['running']
 const fastCloneOperationBlockedLabel = 'message.sharedmountpoint.clone.flatten.in.progress'
 
 const getFastCloneStatus = (record) => {
@@ -29,16 +30,32 @@ const isFastCloneFlattenActive = (record) => {
   return activeFastCloneStatuses.includes(getFastCloneStatus(record))
 }
 
+const isFastCloneFlattenRunning = (record) => {
+  return runningFastCloneStatuses.includes(getFastCloneStatus(record))
+}
+
 const hasFastCloneFlattenSelection = (selectedItems) => {
   return Array.isArray(selectedItems) && selectedItems.some(item => isFastCloneFlattenActive(item))
+}
+
+const hasFastCloneFlattenRunningSelection = (selectedItems) => {
+  return Array.isArray(selectedItems) && selectedItems.some(item => isFastCloneFlattenRunning(item))
 }
 
 const disableDuringFastCloneFlatten = (record, store, selectedItems) => {
   return isFastCloneFlattenActive(record) || hasFastCloneFlattenSelection(selectedItems)
 }
 
+const disableDuringFastCloneFlattenRunning = (record, store, selectedItems) => {
+  return isFastCloneFlattenRunning(record) || hasFastCloneFlattenRunningSelection(selectedItems)
+}
+
 const getFastCloneOperationTooltip = (record, store, selectedItems, fallbackLabel) => {
   return disableDuringFastCloneFlatten(record, store, selectedItems) ? fastCloneOperationBlockedLabel : fallbackLabel
+}
+
+const getFastCloneRunningOperationTooltip = (record, store, selectedItems, fallbackLabel) => {
+  return disableDuringFastCloneFlattenRunning(record, store, selectedItems) ? fastCloneOperationBlockedLabel : fallbackLabel
 }
 
 export default {
@@ -69,7 +86,7 @@ export default {
         return filters
       },
       columns: () => {
-        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', { field: 'clonefaststatus', customTitle: 'sharedmountpoint.clone.flatten.status' }, { field: 'resources', customTitle: 'compute.resources' }, 'qemuagentversion', 'ipaddress', 'templatetype', 'backupofferingname']
+        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', { field: 'resources', customTitle: 'compute.resources' }, 'qemuagentversion', 'ipaddress', 'templatetype', 'backupofferingname']
         const metricsFields = ['cpunumber', 'cputotal', 'cpuused', 'memorytotal',
           {
             memoryused: (record) => {
@@ -162,8 +179,8 @@ export default {
             return []
           },
           show: (record) => { return ['Stopped'].includes(record.state) },
-          disabled: disableDuringFastCloneFlatten,
-          tooltip: (record, store, selectedItems) => getFastCloneOperationTooltip(record, store, selectedItems, 'label.action.start.instance'),
+          disabled: disableDuringFastCloneFlattenRunning,
+          tooltip: (record, store, selectedItems) => getFastCloneRunningOperationTooltip(record, store, selectedItems, 'label.action.start.instance'),
           component: shallowRef(defineAsyncComponent(() => import('@/views/compute/StartVirtualMachine.vue')))
         },
         {

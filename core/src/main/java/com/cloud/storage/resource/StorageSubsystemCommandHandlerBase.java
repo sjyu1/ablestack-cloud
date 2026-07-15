@@ -28,6 +28,7 @@ import org.apache.cloudstack.storage.command.CreateObjectCommand;
 import org.apache.cloudstack.storage.command.DeleteCommand;
 import org.apache.cloudstack.storage.command.DettachCommand;
 import org.apache.cloudstack.storage.command.FlattenCommand;
+import org.apache.cloudstack.storage.command.FlattenSharedMountPointCommand;
 import org.apache.cloudstack.storage.command.IntroduceObjectCmd;
 import org.apache.cloudstack.storage.command.PrepareSharedMountPointCloneCommand;
 import org.apache.cloudstack.storage.command.QuerySnapshotZoneCopyAnswer;
@@ -87,6 +88,8 @@ public class StorageSubsystemCommandHandlerBase implements StorageSubsystemComma
             return processor.syncVolumePath((SyncVolumePathCommand) command);
         } else if (command instanceof QuerySnapshotZoneCopyCommand) {
             return execute((QuerySnapshotZoneCopyCommand)command);
+        } else if (command instanceof FlattenSharedMountPointCommand) {
+            return processor.flattenSharedMountPointVolume((FlattenSharedMountPointCommand)command);
         } else if (command instanceof FlattenCommand) {
             return execute((FlattenCommand)command);
         } else if (command instanceof PrepareSharedMountPointCloneCommand) {

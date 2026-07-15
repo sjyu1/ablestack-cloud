@@ -567,7 +567,7 @@ public enum Config {
             "60",
             "The interval (in seconds) to wait before running the flatten thread.",
             null),
-    FlattenWorkers("Advanced", UserVmManager.class, Integer.class, "flatten.workers", "3", "Number of workers performing flatten ", null),
+    FlattenWorkers("Advanced", UserVmManager.class, Integer.class, "flatten.workers", "1", "Number of workers performing flatten ", null),
     ExtractURLCleanUpInterval(
             "Advanced",
             ManagementServer.class,

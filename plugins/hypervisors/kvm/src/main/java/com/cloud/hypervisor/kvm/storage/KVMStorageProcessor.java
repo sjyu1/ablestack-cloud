@@ -60,6 +60,7 @@ import org.apache.cloudstack.storage.command.DettachAnswer;
 import org.apache.cloudstack.storage.command.DettachCommand;
 import org.apache.cloudstack.storage.command.FlattenCmdAnswer;
 import org.apache.cloudstack.storage.command.FlattenCommand;
+import org.apache.cloudstack.storage.command.FlattenSharedMountPointCommand;
 import org.apache.cloudstack.storage.command.ForgetObjectCmd;
 import org.apache.cloudstack.storage.command.IntroduceObjectCmd;
 import org.apache.cloudstack.storage.command.PrepareSharedMountPointCloneCommand;
@@ -95,6 +96,7 @@ import org.libvirt.Connect;
 import org.libvirt.Domain;
 import org.libvirt.DomainInfo;
 import org.libvirt.DomainSnapshot;
+import org.libvirt.Error.ErrorNumber;
 import org.libvirt.LibvirtException;
 
 import com.ceph.rados.IoCTX;
@@ -150,7 +152,8 @@ import com.cloud.vm.VmDetailConstants;
 
 public class KVMStorageProcessor implements StorageProcessor {
     protected Logger logger = LogManager.getLogger(getClass());
-    private static final int VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA = 2;
+    private static final int VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA = 4;
+    private static final int SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB = 20;
     private final KVMStoragePoolManager storagePoolMgr;
     private final LibvirtComputingResource resource;
     private StorageLayer storageLayer;
@@ -2646,9 +2649,6 @@ public class KVMStorageProcessor implements StorageProcessor {
     @Override
     public Answer flattenFromRBDSnapshot(final FlattenCommand cmd) {
         final DataTO srcData = cmd.getSrcTO();
-        if (srcData instanceof VolumeObjectTO) {
-            return flattenSharedMountPointQcow2Volume(cmd, (VolumeObjectTO)srcData);
-        }
         final SnapshotObjectTO snapshot = (SnapshotObjectTO)srcData;
         final VolumeObjectTO volume = snapshot.getVolume();
         Integer cloneImageCount = 0;
@@ -2715,7 +2715,12 @@ public class KVMStorageProcessor implements StorageProcessor {
         }
     }
 
-    protected Answer flattenSharedMountPointQcow2Volume(FlattenCommand cmd, VolumeObjectTO volume) {
+    @Override
+    public Answer flattenSharedMountPointVolume(FlattenSharedMountPointCommand cmd) {
+        return flattenSharedMountPointQcow2Volume(cmd, cmd.getVolume());
+    }
+
+    protected Answer flattenSharedMountPointQcow2Volume(FlattenSharedMountPointCommand cmd, VolumeObjectTO volume) {
         DataStoreTO dataStore = volume.getDataStore();
         if (!(dataStore instanceof PrimaryDataStoreTO) || ((PrimaryDataStoreTO)dataStore).getPoolType() != StoragePoolType.SharedMountPoint) {
             return new FlattenCmdAnswer(volume, cmd, false, "SharedMountPoint primary store is required.");
@@ -2737,26 +2742,37 @@ public class KVMStorageProcessor implements StorageProcessor {
                 return new FlattenCmdAnswer(volume, cmd, true, "committed");
             }
 
-            if (StringUtils.isNotBlank(vmName)) {
+            if (!"flattenCloneVolume".equals(operation)) {
+                return new FlattenCmdAnswer(volume, cmd, false, "Unsupported SharedMountPoint flatten operation: " + operation);
+            }
+
+            if (StringUtils.isBlank(vmName)) {
+                return new FlattenCmdAnswer(volume, cmd, false, "Running VM name is required for SharedMountPoint clone flatten.");
+            }
+
+            try {
                 Connect conn = LibvirtConnection.getConnectionByVmName(vmName);
                 Domain vm = resource.getDomain(conn, vmName);
                 try {
-                    if (vm.getInfo().state == DomainInfo.DomainState.VIR_DOMAIN_RUNNING) {
-                        String diskLabel = getDiskLabelForPath(conn, vm, vmName, volumePath.toString());
-                        if (StringUtils.isNotBlank(diskLabel)) {
-                            flattenRunningVolume(vm, diskLabel);
-                            logger.info("Flattened running SharedMountPoint volume [{}] for VM [{}].", volumePath, vmName);
-                            return new FlattenCmdAnswer(volume, cmd, true, "flattened");
-                        }
+                    if (vm.getInfo().state != DomainInfo.DomainState.VIR_DOMAIN_RUNNING) {
+                        return new FlattenCmdAnswer(volume, cmd, false, "VM is not running.");
                     }
+                    String diskLabel = getDiskLabelForPath(conn, vm, vmName, volumePath.toString());
+                    if (StringUtils.isBlank(diskLabel)) {
+                        return new FlattenCmdAnswer(volume, cmd, false, "Could not find active disk for volume " + volumePath + " in VM " + vmName);
+                    }
+                    flattenRunningVolume(vm, diskLabel);
+                    logger.info("Flattened running SharedMountPoint volume [{}] for VM [{}].", volumePath, vmName);
+                    return new FlattenCmdAnswer(volume, cmd, true, "flattened");
                 } finally {
                     vm.free();
                 }
+            } catch (LibvirtException e) {
+                if (!isLibvirtNoDomain(e)) {
+                    throw e;
+                }
+                return new FlattenCmdAnswer(volume, cmd, false, "Domain " + vmName + " was not found.");
             }
-
-            flattenStoppedVolume(volumePath);
-            logger.info("Flattened offline SharedMountPoint volume [{}].", volumePath);
-            return new FlattenCmdAnswer(volume, cmd, true, "flattened");
         } catch (Exception e) {
             logger.warn("Failed to flatten SharedMountPoint qcow2 volume [{}].", volumePath, e);
             return new FlattenCmdAnswer(volume, cmd, false, e.toString());
@@ -2806,23 +2822,16 @@ public class KVMStorageProcessor implements StorageProcessor {
         return null;
     }
 
+    protected boolean isLibvirtNoDomain(LibvirtException e) {
+        return e.getError() != null && ErrorNumber.VIR_ERR_NO_DOMAIN.equals(e.getError().getCode());
+    }
+
     protected void flattenRunningVolume(Domain vm, String diskLabel) throws LibvirtException {
-        String command = String.format("virsh blockpull %s %s --wait --verbose", vm.getName(), diskLabel);
+        String command = String.format("virsh blockpull %s %s %d --wait --verbose", vm.getName(), diskLabel, SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB);
         String result = Script.runSimpleBashScript(command);
         if (result != null) {
             throw new CloudRuntimeException("Failed to flatten running volume using command [" + command + "]. Result: " + result);
         }
-    }
-
-    protected void flattenStoppedVolume(Path volumePath) throws IOException {
-        Path flatPath = volumePath.resolveSibling(volumePath.getFileName().toString() + ".flattening");
-        Files.deleteIfExists(flatPath);
-        String command = String.format("qemu-img convert -O qcow2 %s %s", shellQuote(volumePath.toString()), shellQuote(flatPath.toString()));
-        String result = Script.runSimpleBashScript(command);
-        if (result != null) {
-            throw new CloudRuntimeException("Failed to flatten stopped volume using command [" + command + "]. Result: " + result);
-        }
-        Files.move(flatPath, volumePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 
     protected String shellQuote(String value) {

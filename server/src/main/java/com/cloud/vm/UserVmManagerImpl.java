@@ -135,7 +135,7 @@ import org.apache.cloudstack.reservation.dao.ReservationDao;
 import org.apache.cloudstack.snapshot.SnapshotHelper;
 import org.apache.cloudstack.storage.command.DeleteCommand;
 import org.apache.cloudstack.storage.command.DettachCommand;
-import org.apache.cloudstack.storage.command.FlattenCommand;
+import org.apache.cloudstack.storage.command.FlattenSharedMountPointCommand;
 import org.apache.cloudstack.storage.command.PrepareSharedMountPointCloneCommand;
 import org.apache.cloudstack.storage.command.PrepareSharedMountPointCloneCommand.VolumeCloneSpec;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
@@ -2489,8 +2489,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
         _executor = Executors.newScheduledThreadPool(wrks, new NamedThreadFactory("UserVm-Scavenger"));
 
-        String flattenWorkers = configs.get("flatten.workers");
-        int fwrks = NumbersUtil.parseInt(flattenWorkers, 1);
+        int fwrks = 1;
         _flattenInterval = NumbersUtil.parseInt(configs.get("flatten.interval"), 300);
 
         _flattenExecutor = Executors.newScheduledThreadPool(fwrks, new NamedThreadFactory("FlattenCloneImage-Scavenger"));
@@ -10245,8 +10244,14 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
     protected void checkFastCloneOperationAllowed(long vmId, String operation) {
         UserVmDetailVO detail = userVmDetailsDao.findDetail(vmId, FAST_CLONE_STATUS);
-        if (detail != null && (FAST_CLONE_FLATTEN_PENDING.equalsIgnoreCase(detail.getValue()) || FAST_CLONE_FLATTEN_RUNNING.equalsIgnoreCase(detail.getValue()))) {
-            throw new CloudRuntimeException(String.format("Unable to %s VM while SharedMountPoint clone flatten is pending or running.", operation));
+        if (detail == null) {
+            return;
+        }
+        if (FAST_CLONE_FLATTEN_RUNNING.equalsIgnoreCase(detail.getValue())) {
+            throw new CloudRuntimeException(String.format("Unable to %s VM while SharedMountPoint clone flatten is running.", operation));
+        }
+        if (FAST_CLONE_FLATTEN_PENDING.equalsIgnoreCase(detail.getValue()) && !"start".equals(operation)) {
+            throw new CloudRuntimeException(String.format("Unable to %s VM while SharedMountPoint clone flatten is pending.", operation));
         }
     }
 
@@ -10267,30 +10272,48 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             return false;
         }
 
-        VolumeDetailVO pendingDetail = pendingDetails.get(0);
-        long volumeId = pendingDetail.getResourceId();
-        VolumeVO volume = _volsDao.findById(volumeId);
-        if (volume == null) {
-            volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS);
+        for (VolumeDetailVO pendingDetail : pendingDetails) {
+            long volumeId = pendingDetail.getResourceId();
+            VolumeVO volume = _volsDao.findById(volumeId);
+            if (volume == null) {
+                volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS);
+                return true;
+            }
+
+            Long vmId = volume.getInstanceId();
+            UserVmVO vm = vmId != null ? _vmDao.findById(vmId) : null;
+            if (vm == null || vm.getRemoved() != null) {
+                volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS);
+                return true;
+            }
+            if (vm.getState() != State.Running) {
+                logger.debug("Skipping SharedMountPoint clone volume [{}] flatten because VM [{}] is [{}].", volume, vm, vm.getState());
+                continue;
+            }
+
+            VolumeDetailVO operationDetail = volumeDetailsDao.findDetail(volumeId, FAST_CLONE_OPERATION_ID);
+            String operationId = operationDetail != null ? operationDetail.getValue() : null;
+            setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_RUNNING);
+            markFastCloneVmStatus(vm.getId(), FAST_CLONE_FLATTEN_RUNNING, operationId);
+            try {
+                Answer answer = sendSharedMountPointFlattenCommand(volume, "flattenCloneVolume", null);
+                if (answer == null || !answer.getResult()) {
+                    throw new CloudRuntimeException(answer == null ? "No answer from KVM agent while flattening SharedMountPoint clone volume." : answer.getDetails());
+                }
+                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_DONE);
+                if (StringUtils.isNotBlank(operationId)) {
+                    markFastCloneVmStatus(vm.getId(), hasPendingFastCloneVolumes(operationId) ? FAST_CLONE_FLATTEN_PENDING : FAST_CLONE_FLATTEN_DONE, operationId);
+                }
+                logger.info("Flattened SharedMountPoint clone volume [{}].", volume);
+                tryCommitFastCloneSourceOverlay(operationId);
+            } catch (Exception e) {
+                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING);
+                markFastCloneVmStatus(vm.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
+                logger.warn("Failed to flatten SharedMountPoint clone volume [{}]. It will be retried by the next flatten task.", volume, e);
+            }
             return true;
         }
-
-        VolumeDetailVO operationDetail = volumeDetailsDao.findDetail(volumeId, FAST_CLONE_OPERATION_ID);
-        String operationId = operationDetail != null ? operationDetail.getValue() : null;
-        setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_RUNNING);
-        try {
-            Answer answer = sendSharedMountPointFlattenCommand(volume, "flattenCloneVolume", null);
-            if (answer == null || !answer.getResult()) {
-                throw new CloudRuntimeException(answer == null ? "No answer from KVM agent while flattening SharedMountPoint clone volume." : answer.getDetails());
-            }
-            setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_DONE);
-            logger.info("Flattened SharedMountPoint clone volume [{}].", volume);
-            tryCommitFastCloneSourceOverlay(operationId);
-        } catch (Exception e) {
-            setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING);
-            logger.warn("Failed to flatten SharedMountPoint clone volume [{}]. It will be retried by the next flatten task.", volume, e);
-        }
-        return true;
+        return false;
     }
 
     protected void setFastCloneVolumeDetail(long volumeId, String key, String value) {
@@ -10301,7 +10324,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     protected Answer sendSharedMountPointFlattenCommand(VolumeVO volume, String operation, String backingPath) throws Exception {
         VolumeInfo volumeInfo = volFactory.getVolume(volume.getId());
         VolumeObjectTO volumeTO = new VolumeObjectTO(volumeInfo);
-        FlattenCommand flattenCommand = new FlattenCommand(volumeTO);
+        FlattenSharedMountPointCommand flattenCommand = new FlattenSharedMountPointCommand(volumeTO);
         Map<String, String> options = new HashMap<>();
         options.put("operation", operation);
         if (StringUtils.isNotBlank(backingPath)) {
@@ -10314,7 +10337,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             VolumeDetailVO hostDetail = volumeDetailsDao.findDetail(volume.getId(), FAST_CLONE_HOST_ID);
             hostId = hostDetail != null ? Long.valueOf(hostDetail.getValue()) : null;
         }
-        if (vm != null) {
+        if (vm != null && vm.getState() == State.Running) {
             options.put("vmName", vm.getInstanceName());
         }
         if (hostId == null) {
