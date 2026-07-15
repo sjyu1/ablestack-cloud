@@ -184,6 +184,8 @@ import com.cloud.vm.VmDiskInfo;
 import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VMInstanceDao;
 import com.cloud.vm.dao.VMInstanceDetailsDao;
+import com.cloud.vm.snapshot.VMSnapshotVO;
+import com.cloud.vm.snapshot.dao.VMSnapshotDao;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -201,6 +203,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private BackupOfferingDetailsDao backupOfferingDetailsDao;
     @Inject
     private VMInstanceDao vmInstanceDao;
+    @Inject
+    private VMSnapshotDao vmSnapshotDao;
     @Inject
     private AccountService accountService;
     @Inject
@@ -2286,6 +2290,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         final VMInstanceVO vm = findVmById(vmId);
         accountManager.checkAccess(CallContext.current().getCallingAccount(), null, true, vm);
 
+        validateNoVmSnapshotsForRestoreVolumeAttach(vm);
+
         if (vm.getBackupOfferingId() != null && !BackupEnableAttachDetachVolumes.value()) {
             throw new CloudRuntimeException("The selected VM has backups, cannot restore and attach volume to the VM.");
         }
@@ -2377,6 +2383,15 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw e;
         }
         return true;
+    }
+
+    private void validateNoVmSnapshotsForRestoreVolumeAttach(final VMInstanceVO vm) {
+        final List<VMSnapshotVO> vmSnapshots = vmSnapshotDao.findByVm(vm.getId());
+        if (CollectionUtils.isNotEmpty(vmSnapshots)) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to restore and attach volume to VM [%s] while Instance snapshots exist. Remove Instance snapshots before restoring and attaching the volume.",
+                    vm.getInstanceName()));
+        }
     }
 
     protected Pair<Boolean, String> restoreBackedUpVolume(final Backup.VolumeInfo backupVolumeInfo, final BackupVO backup,

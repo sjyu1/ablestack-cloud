@@ -1228,17 +1228,23 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         }
 
         Long vmId = volume.getInstanceId();
+        boolean hasRestoreInProgress = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()));
+        if (hasRestoreInProgress) {
+            throw new CloudRuntimeException(String.format("Unable to %s volume snapshot while a backup restore is currently in progress for VM [%s].",
+                    operation, vmId));
+        }
+
         boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) || Backup.Status.Restoring.equals(backup.getStatus()));
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()));
         if (hasBackupInProgress) {
-            logger.warn("Allowing volume snapshot {} while a backup or restore is currently in progress for VM [{}] for snapshot coexistence testing.",
-                    operation, vmId);
+            logger.debug("Allowing volume snapshot {} while a backup is currently in progress for VM [{}].", operation, vmId);
         }
 
         boolean hasExistingBackup = backupDao.listByVmId(null, vmId).stream()
                 .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
         if (hasExistingBackup) {
-            logger.warn("Allowing volume snapshot {} for VM [{}] with existing backups for snapshot coexistence testing.", operation, vmId);
+            logger.debug("Allowing volume snapshot {} for VM [{}] with existing backups.", operation, vmId);
         }
     }
 

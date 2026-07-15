@@ -654,18 +654,31 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
     }
 
     private void validateNoBackupActivityOrHistoryForVMSnapshot(Long vmId, String operation) {
+        boolean hasRestoreInProgress = backupDao.listByVmId(null, vmId).stream()
+                .anyMatch(backup -> Backup.Status.Restoring.equals(backup.getStatus()));
+        if (hasRestoreInProgress) {
+            throw new CloudRuntimeException(String.format("Unable to %s Instance Snapshot while a backup restore is currently in progress for VM [%s].",
+                    operation, vmId));
+        }
+
         boolean hasBackupInProgress = backupDao.listByVmId(null, vmId).stream()
-                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()) || Backup.Status.Restoring.equals(backup.getStatus()));
-        if (hasBackupInProgress) {
-            logger.warn("Allowing Instance Snapshot {} while a backup or restore is currently in progress for VM [{}] for snapshot coexistence testing.",
-                    operation, vmId);
+                .anyMatch(backup -> Backup.Status.BackingUp.equals(backup.getStatus()));
+        if (hasBackupInProgress && "create".equals(operation) && hasQcow2Volume(vmId)) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to create Instance Snapshot while a backup is currently in progress for QCOW2 VM [%s]. Please try again after the backup completes.",
+                    vmId));
         }
 
         boolean hasExistingBackup = backupDao.listByVmId(null, vmId).stream()
                 .anyMatch(backup -> Backup.Status.BackedUp.equals(backup.getStatus()));
         if (hasExistingBackup) {
-            logger.warn("Allowing Instance Snapshot {} for VM [{}] with existing backups for snapshot coexistence testing.", operation, vmId);
+            logger.debug("Allowing Instance Snapshot {} for VM [{}] with existing backups.", operation, vmId);
         }
+    }
+
+    private boolean hasQcow2Volume(Long vmId) {
+        return _volumeDao.findByInstance(vmId).stream()
+                .anyMatch(volume -> Storage.ImageFormat.QCOW2.equals(volume.getFormat()));
     }
 
     @Override

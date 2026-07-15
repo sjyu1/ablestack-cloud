@@ -29,11 +29,14 @@ import com.cloud.offering.DiskOffering;
 import com.cloud.resource.ResourceManager;
 import com.cloud.storage.DataStoreRole;
 import com.cloud.storage.ScopeType;
+import com.cloud.storage.Snapshot;
+import com.cloud.storage.SnapshotVO;
 import com.cloud.storage.Storage;
 import com.cloud.storage.Volume;
 import com.cloud.storage.VolumeApiServiceImpl;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
+import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.utils.Pair;
 import com.cloud.utils.component.AdapterBase;
@@ -167,6 +170,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Inject
     private VolumeDao volumeDao;
     @Inject
+    private SnapshotDao snapshotDao;
+    @Inject
     private VMSnapshotDao vmSnapshotDao;
     @Inject
     private VMSnapshotDetailsDao vmSnapshotDetailsDao;
@@ -195,7 +200,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Override
     public Pair<Boolean, Backup> takeBackup(final VirtualMachine vm, final Boolean quiesceVM, final Long backupScheduleId) {
         final Host host = getVMHypervisorHostForBackup(vm);
-        validateNoKvmFileBasedVmSnapshots(vm);
+        logVmSnapshotCoexistenceForBackup(vm);
 
         final List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
@@ -223,7 +228,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     @Override
     public Pair<Boolean, Backup> takeNetBackup(final VirtualMachine vm, final String policyName) {
         final Host host = getVMHypervisorHostForBackup(vm);
-        validateNoKvmFileBasedVmSnapshots(vm);
+        logVmSnapshotCoexistenceForBackup(vm);
 
         final List<VolumeVO> vmVolumes = volumeDao.findByInstance(vm.getId());
         vmVolumes.sort(Comparator.comparing(Volume::getDeviceId));
@@ -822,12 +827,12 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         return null;
     }
 
-    private void validateNoKvmFileBasedVmSnapshots(final VirtualMachine vm) {
+    private void logVmSnapshotCoexistenceForBackup(final VirtualMachine vm) {
         if (hasDiskAndMemoryVmSnapshots(vm)) {
-            LOG.warn("Allowing NetBackup operation for VM [{}] with disk-and-memory VM snapshots for snapshot coexistence testing.", vm.getUuid());
+            LOG.debug("Allowing NetBackup backup for VM [{}] with disk-and-memory VM snapshots.", vm.getUuid());
         }
         if (hasKvmFileBasedVmSnapshots(vm)) {
-            LOG.warn("Allowing NetBackup operation for VM [{}] with KVM file-based VM snapshots for snapshot coexistence testing.", vm.getUuid());
+            LOG.debug("Allowing NetBackup backup for VM [{}] with KVM file-based VM snapshots.", vm.getUuid());
         }
     }
 
@@ -928,9 +933,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
     private Pair<Boolean, String> restoreVirtualMachine(final VirtualMachine vm, final Backup backup, final String restoreHostIp,
             final boolean restoreSourcesAlreadyPrepared) {
-        validateNoKvmFileBasedVmSnapshots(vm);
         loadBackupDetailsIfNeeded(backup);
         validateRestoreChainIntegrity(backup);
+        validateNetBackupRestoreSnapshotCompatibility(vm);
         final Host host = resolveRestoreHost(vm, backup, restoreHostIp);
         final List<Backup> restoreChain = getRestoreChainForBackup(backup);
         final List<Backup> stagedRestoreChain = getStagedRestoreChainForBackup(backup);
@@ -1008,6 +1013,36 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         } finally {
             cleanupRestoreSourcesOnStageHosts(vm.getDataCenterId(), host.getName(), restoreSourcesToPrepare);
         }
+    }
+
+    private void validateNetBackupRestoreSnapshotCompatibility(final VirtualMachine vm) {
+        final List<VMSnapshotVO> vmSnapshots = vmSnapshotDao.findByVm(vm.getId());
+        if (CollectionUtils.isNotEmpty(vmSnapshots)) {
+            throw new CloudRuntimeException(String.format(
+                    "Unable to restore VM [%s] from NetBackup while Instance snapshots exist. Remove Instance snapshots before restoring the backup.",
+                    vm.getInstanceName()));
+        }
+
+        final List<VolumeVO> restoreVolumes = volumeDao.findByInstance(vm.getId());
+        for (final VolumeVO volume : restoreVolumes) {
+            final StoragePoolVO storagePool = primaryDataStoreDao.findById(volume.getPoolId());
+            if (storagePool == null || !Storage.StoragePoolType.RBD.equals(storagePool.getPoolType())) {
+                continue;
+            }
+            if (hasActiveVolumeSnapshot(volume)) {
+                throw new CloudRuntimeException(String.format(
+                        "Unable to restore VM [%s] from NetBackup while RBD volume snapshots exist on volume [%s]. Remove RBD volume snapshots before restoring the backup.",
+                        vm.getInstanceName(), volume.getUuid()));
+            }
+        }
+    }
+
+    private boolean hasActiveVolumeSnapshot(final VolumeVO volume) {
+        final List<SnapshotVO> snapshots = snapshotDao.listByVolumeId(volume.getId());
+        return snapshots.stream()
+                .anyMatch(snapshot -> snapshot.getRemoved() == null
+                        && !Snapshot.State.Destroyed.equals(snapshot.getState())
+                        && !Snapshot.State.Error.equals(snapshot.getState()));
     }
 
     @Override
