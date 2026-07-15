@@ -129,6 +129,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_POLICY_NAME = "netbackup.policy.name";
     private static final String DETAIL_RESTORE_ROOT_JOB_ID = "netbackup.restore.root.job.id";
     private static final String DETAIL_RESTORE_CHAIN_JOB_ID = "netbackup.restore.chain.job.id";
+    private static final String DETAIL_FAILURE_PHASE = "netbackup.failure.phase";
+    private static final String DETAIL_FAILURE_REASON = "netbackup.failure.reason";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String MISSING_PARENT_QCOW2_BITMAP_ERROR = "Parent qcow2 bitmap";
     private static final long STALE_BACKUP_THRESHOLD_MS = 24L * 60L * 60L * 1000L;
@@ -311,6 +313,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 }
                 LOG.error("NetBackup staging completed for VM [{}], but backup [{}] metadata update failed. Leaving it in Error state.",
                         vm.getInstanceName(), backupVO.getUuid());
+                markBackupFailure(backupVO, "metadata-update", "Failed to update NetBackup backup metadata");
                 backupVO.setStatus(Backup.Status.Error);
                 backupDao.update(backupVO.getId(), backupVO);
                 return BackupExecutionResult.failure("Failed to update NetBackup backup metadata", backupVO);
@@ -318,19 +321,23 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
 
             final String details = answer != null ? answer.getDetails() : "No answer received";
             LOG.error("Failed to take NetBackup backup for VM {}: {}", vm.getInstanceName(), details);
+            markBackupFailure(backupVO, "agent-answer", details);
             final boolean cleanupSuccessful = cleanupFailedBackupArtifacts(vmHost, backupVO);
             backupVO.setStatus(cleanupSuccessful ? Backup.Status.Failed : Backup.Status.Error);
             backupDao.update(backupVO.getId(), backupVO);
             return BackupExecutionResult.failure(details, backupVO);
         } catch (final AgentUnavailableException e) {
+            markBackupFailure(backupVO, "agent-send", "Unable to contact backend control plane to initiate NetBackup backup");
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.update(backupVO.getId(), backupVO);
             throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup backup", e);
         } catch (final OperationTimedoutException e) {
+            markBackupFailure(backupVO, "agent-send-timeout", "Operation to initiate NetBackup backup timed out");
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.update(backupVO.getId(), backupVO);
             throw new CloudRuntimeException("Operation to initiate NetBackup backup timed out, please try again", e);
         } catch (final RuntimeException e) {
+            markBackupFailure(backupVO, "unexpected-runtime", e.getMessage());
             try {
                 final Backup existingBackup = backupDao.findById(backupVO.getId());
                 if (existingBackup != null) {
@@ -726,6 +733,31 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private String getBackupDetail(final Backup backup, final String key, final String defaultValue) {
         final String value = getBackupDetail(backup, key);
         return value == null ? defaultValue : value;
+    }
+
+    private void updateBackupDetail(final Backup backup, final String key, final String value) {
+        if (backup == null || StringUtils.isBlank(key)) {
+            return;
+        }
+        backupDetailsDao.removeDetail(backup.getId(), key);
+        backupDetailsDao.addDetail(backup.getId(), key, value, false);
+        if (backup instanceof BackupVO) {
+            backupDao.loadDetails((BackupVO) backup);
+        }
+    }
+
+    private void markBackupFailure(final Backup backup, final String phase, final String reason) {
+        if (backup == null) {
+            return;
+        }
+        if (StringUtils.isNotBlank(getBackupDetail(backup, DETAIL_FAILURE_PHASE))) {
+            return;
+        }
+        final String safeReason = StringUtils.defaultIfBlank(reason, "Unknown failure");
+        updateBackupDetail(backup, DETAIL_FAILURE_PHASE, phase);
+        updateBackupDetail(backup, DETAIL_FAILURE_REASON, StringUtils.abbreviate(safeReason, 1024));
+        LOG.warn("Recorded NetBackup backup failure context [backupId: {}, backupUuid: {}, phase: {}, reason: {}]",
+                backup.getId(), backup.getUuid(), phase, safeReason);
     }
 
     private void removeBackupWithDetails(final long backupId) {

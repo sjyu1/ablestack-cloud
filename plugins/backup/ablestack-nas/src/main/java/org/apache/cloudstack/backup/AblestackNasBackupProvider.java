@@ -108,6 +108,8 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_CHAIN_SEALED = "nas.chain.sealed";
     private static final String DETAIL_CHAIN_SEAL_REASON = "nas.chain.seal.reason";
     private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "nas.fallback.volume.uuids";
+    private static final String DETAIL_FAILURE_PHASE = "nas.failure.phase";
+    private static final String DETAIL_FAILURE_REASON = "nas.failure.reason";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String MISSING_PARENT_QCOW2_BITMAP_ERROR = "Parent qcow2 bitmap";
     private static final long STALE_BACKUP_THRESHOLD_MS = TimeUnit.DAYS.toMillis(1);
@@ -328,6 +330,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             logger.error("Unable to contact backend control plane to initiate ABLESTACK NAS backup [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, hostId: {}, repositoryId: {}, repositoryAddress: {}]",
                     backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
                     host.getId(), backupRepository.getId(), backupRepository.getAddress(), e);
+            markBackupFailure(backupVO, "agent-send", "Unable to contact backend control plane to initiate backup");
             backupVO.setStatus(Backup.Status.Failed);
             removeBackupWithDetails(backupVO.getId());
             throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
@@ -336,6 +339,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                     backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
                     host.getId(), backupRepository.getId(), backupRepository.getAddress(), System.currentTimeMillis() - backupStartTime,
                     commandTimeout > 0 ? commandTimeout : command.getWait(), e);
+            markBackupFailure(backupVO, "agent-send-timeout", "Operation to initiate backup timed out");
             backupVO.setStatus(Backup.Status.Failed);
             removeBackupWithDetails(backupVO.getId());
             throw new CloudRuntimeException("Operation to initiate backup timed out, please try again");
@@ -367,6 +371,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         logger.error("Failed to take ABLESTACK NAS backup [backupId: {}, backupUuid: {}, vmId: {}, vmName: {}, backupType: {}, backupEngine: {}, repositoryId: {}, backupPath: {}, elapsedMs: {}]: {}",
                 backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
                 backupRepository.getId(), backupPath, System.currentTimeMillis() - backupStartTime, details);
+        markBackupFailure(backupVO, "agent-answer", details);
         if (retryAsFullOnFailure) {
             backupVO.setStatus(Backup.Status.Failed);
             removeBackupWithDetails(backupVO.getId());
@@ -382,6 +387,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     }
 
     private BackupExecutionResult failCompletedNasBackupMetadata(BackupVO backupVO, String details) {
+        markBackupFailure(backupVO, "metadata-finalize", details);
         backupVO.setStatus(Backup.Status.Error);
         backupDao.update(backupVO.getId(), backupVO);
         return BackupExecutionResult.failure(details, backupVO);
@@ -577,6 +583,20 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         if (backup instanceof BackupVO) {
             backupDao.loadDetails((BackupVO) backup);
         }
+    }
+
+    private void markBackupFailure(Backup backup, String phase, String reason) {
+        if (backup == null) {
+            return;
+        }
+        if (StringUtils.isNotBlank(getBackupDetail(backup, DETAIL_FAILURE_PHASE))) {
+            return;
+        }
+        final String safeReason = StringUtils.defaultIfBlank(reason, "Unknown failure");
+        updateBackupDetail(backup, DETAIL_FAILURE_PHASE, phase);
+        updateBackupDetail(backup, DETAIL_FAILURE_REASON, StringUtils.abbreviate(safeReason, 1024));
+        LOG.warn("Recorded NAS backup failure context [backupId: {}, backupUuid: {}, phase: {}, reason: {}]",
+                backup.getId(), backup.getUuid(), phase, safeReason);
     }
 
     private void removeBackupWithDetails(long backupId) {

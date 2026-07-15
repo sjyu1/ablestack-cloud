@@ -132,6 +132,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String DETAIL_CHAIN_SEAL_REASON = "commvault.chain.seal.reason";
     private static final String DETAIL_FALLBACK_VOLUME_UUIDS = "commvault.fallback.volume.uuids";
     private static final String DETAIL_ERROR_REASON = "commvault.error.reason";
+    private static final String DETAIL_FAILURE_PHASE = "commvault.failure.phase";
+    private static final String DETAIL_FAILURE_REASON = "commvault.failure.reason";
     private static final String ERROR_REASON_METADATA_FINALIZE = "metadata-finalize";
     private static final int BASE_MAJOR = 11;
     private static final int BASE_FR = 32;
@@ -490,6 +492,20 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
     }
 
+    private void markBackupFailure(Backup backup, String phase, String reason) {
+        if (backup == null) {
+            return;
+        }
+        if (StringUtils.isNotBlank(getBackupDetail(backup, DETAIL_FAILURE_PHASE))) {
+            return;
+        }
+        final String safeReason = StringUtils.defaultIfBlank(reason, "Unknown failure");
+        updateBackupDetail(backup, DETAIL_FAILURE_PHASE, phase);
+        updateBackupDetail(backup, DETAIL_FAILURE_REASON, StringUtils.abbreviate(safeReason, 1024));
+        LOG.warn("Recorded Commvault backup failure context [backupId: {}, backupUuid: {}, phase: {}, reason: {}]",
+                backup.getId(), backup.getUuid(), phase, safeReason);
+    }
+
     private void removeBackupWithDetails(long backupId) {
         backupDetailsDao.removeDetails(backupId);
         backupDao.remove(backupId);
@@ -634,11 +650,13 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 answer = (BackupAnswer) agentManager.send(vmHost.getId(), command);
             } catch (AgentUnavailableException e) {
                 LOG.error("Unable to contact backend control plane to initiate backup for VM {}", vm.getInstanceName());
+                markBackupFailure(backupVO, "agent-send", "Unable to contact backend control plane to initiate backup");
                 backupVO.setStatus(Backup.Status.Failed);
                 removeBackupWithDetails(backupVO.getId());
                 throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
             } catch (OperationTimedoutException e) {
                 LOG.error("Operation to initiate backup timed out for VM {}", vm.getInstanceName());
+                markBackupFailure(backupVO, "agent-send-timeout", "Operation to initiate backup timed out");
                 backupVO.setStatus(Backup.Status.Failed);
                 removeBackupWithDetails(backupVO.getId());
                 throw new CloudRuntimeException("Operation to initiate backup timed out, please try again");
@@ -658,6 +676,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 String subClientEntity = client.getSubclient(clientId, vm.getInstanceName());
                 if (subClientEntity == null) {
                     LOG.error("Failed to take backup for VM {} to get subclient info commvault api", vm.getInstanceName());
+                    markBackupFailure(backupVO, "commvault-subclient", "Failed to get Commvault subclient information");
                 } else {
                     JSONObject jsonObject = new JSONObject(subClientEntity);
                     String subclientId = String.valueOf(jsonObject.get("subclientId"));
@@ -681,6 +700,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                         String storagePolicyId = client.getStoragePolicyId(planName);
                         if (planName == null || storagePolicyId == null) {
                             LOG.error("Failed to take backup for VM {} to get storage policy id commvault api", vm.getInstanceName());
+                            markBackupFailure(backupVO, "commvault-storage-policy", "Failed to get Commvault storage policy information");
                         } else {
                             String jobId = client.createBackup(subclientId, storagePolicyId, displayName, commCellName, clientId, companyId, companyName, instanceName, appName,
                                     applicationId, clientName, backupsetId, instanceId, subclientGUID, subclientName, csGUID, backupsetName, requestedBackupType);
@@ -715,15 +735,19 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                                     }
                                 } else {
                                     LOG.error("Failed to take backup for VM {} to create backup job status is {}", vm.getInstanceName(), jobStatus);
+                                    markBackupFailure(backupVO, "commvault-job", "Commvault backup job status is " + jobStatus);
                                 }
                             } else {
                                 LOG.error("Failed to take backup for VM {} to create backup job commvault api", vm.getInstanceName());
+                                markBackupFailure(backupVO, "commvault-create-job", "Failed to create Commvault backup job");
                             }
                         }
                     } else {
                         LOG.error("Failed to take backup for VM {} to update backupset content path commvault api", vm.getInstanceName());
+                        markBackupFailure(backupVO, "commvault-update-backupset", "Failed to update Commvault backupset content path");
                     }
                 }
+                markBackupFailure(backupVO, "commvault-job", "Failed to complete Commvault backup job");
                 backupVO.setStatus(Backup.Status.Failed);
                 removeBackupWithDetails(backupVO.getId());
                 cleanupBackupPathsOnHost(vmHostVO, Collections.singletonList(backupPath));
@@ -732,6 +756,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
             final String details = answer != null ? answer.getDetails() : "No answer received";
             LOG.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
+            markBackupFailure(backupVO, "agent-answer", details);
             if (retryAsFullOnFailure) {
                 backupVO.setStatus(Backup.Status.Failed);
                 removeBackupWithDetails(backupVO.getId());
@@ -747,6 +772,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         } catch (RuntimeException e) {
             LOG.error("Unexpected failure while executing Commvault backup for VM {}. Cleaning up incomplete backup entry [{}].",
                     vm.getInstanceName(), backupVO.getUuid(), e);
+            markBackupFailure(backupVO, "unexpected-runtime", e.getMessage());
             try {
                 Backup existingBackup = backupDao.findById(backupVO.getId());
                 if (existingBackup != null) {
@@ -762,6 +788,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     private BackupExecutionResult failCompletedCommvaultBackupMetadata(BackupVO backupVO, String externalId, String details) {
         backupVO.setExternalId(externalId);
+        markBackupFailure(backupVO, "metadata-finalize", details);
         backupVO.setStatus(Backup.Status.Error);
         backupDao.update(backupVO.getId(), backupVO);
         updateBackupDetail(backupVO, DETAIL_ERROR_REASON, ERROR_REASON_METADATA_FINALIZE);
