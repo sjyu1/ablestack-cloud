@@ -652,10 +652,12 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
     private ScheduledExecutorService _executor = null;
     private ScheduledExecutorService _flattenExecutor = null;
+    private ScheduledExecutorService _flattenProgressExecutor = null;
     private ScheduledExecutorService _vmIpFetchExecutor = null;
     private int _expungeInterval;
     private int _expungeDelay;
     private int _flattenInterval;
+    private int _flattenProgressInterval;
     private boolean _dailyOrHourly = false;
     private int capacityReleaseInterval;
     private ExecutorService _vmIpFetchThreadExecutor;
@@ -2494,8 +2496,10 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
         int fwrks = 1;
         _flattenInterval = NumbersUtil.parseInt(configs.get("flatten.interval"), 300);
+        _flattenProgressInterval = NumbersUtil.parseInt(configs.get("flatten.progress.interval"), 30);
 
         _flattenExecutor = Executors.newScheduledThreadPool(fwrks, new NamedThreadFactory("FlattenCloneImage-Scavenger"));
+        _flattenProgressExecutor = Executors.newScheduledThreadPool(1, new NamedThreadFactory("FlattenCloneProgress-Scavenger"));
 
         String vmIpWorkers = configs.get(VmIpFetchTaskWorkers.value());
         int vmipwrks = NumbersUtil.parseInt(vmIpWorkers, 10);
@@ -2541,6 +2545,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         _vmIpFetchExecutor.scheduleWithFixedDelay(new VmIpFetchTask(), VmIpFetchWaitInterval.value(), VmIpFetchWaitInterval.value(), TimeUnit.SECONDS);
         loadVmDetailsInMapForExternalDhcpIp();
         _flattenExecutor.scheduleWithFixedDelay(new FlattenTask(), _flattenInterval, _flattenInterval, TimeUnit.SECONDS);
+        _flattenProgressExecutor.scheduleWithFixedDelay(new FlattenProgressTask(), _flattenProgressInterval, _flattenProgressInterval, TimeUnit.SECONDS);
         return true;
     }
 
@@ -2574,6 +2579,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         _executor.shutdown();
         _vmIpFetchExecutor.shutdown();
         _flattenExecutor.shutdown();
+        _flattenProgressExecutor.shutdown();
         return true;
     }
 
@@ -2850,6 +2856,29 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                         }
                     } catch (Exception e) {
                         logger.error("Caught the following Exception", e);
+                    } finally {
+                        scanLock.unlock();
+                    }
+                }
+            } finally {
+                scanLock.releaseRef();
+            }
+        }
+    }
+
+    private class FlattenProgressTask extends ManagedContextRunnable {
+        public FlattenProgressTask() {
+        }
+
+        @Override
+        protected void runInContext() {
+            GlobalLock scanLock = GlobalLock.getInternLock("FlattenFullCloneImage");
+            try {
+                if (scanLock.lock(ACQUIRE_GLOBAL_LOCK_TIMEOUT_FOR_COOPERATION)) {
+                    try {
+                        checkOneRunningSharedMountPointFastCloneVolume();
+                    } catch (Exception e) {
+                        logger.error("Caught the following Exception while checking SharedMountPoint clone flatten progress", e);
                     } finally {
                         scanLock.unlock();
                     }

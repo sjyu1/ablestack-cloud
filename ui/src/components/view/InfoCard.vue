@@ -132,9 +132,6 @@
               <a-tag color="processing">
                 {{ getCloneFastStatusLabel(resource) }}
               </a-tag>
-              <a-tag v-if="hasCloneFastFlattenProgress(resource)" color="blue">
-                {{ getCloneFastFlattenProgress(resource).toFixed(2) }}%
-              </a-tag>
             </div>
             <a-progress
               v-if="hasCloneFastFlattenProgress(resource)"

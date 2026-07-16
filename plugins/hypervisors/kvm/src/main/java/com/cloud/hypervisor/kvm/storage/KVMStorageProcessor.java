@@ -91,6 +91,7 @@ import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
@@ -2859,12 +2860,33 @@ public class KVMStorageProcessor implements StorageProcessor {
             return SHARED_MOUNT_POINT_FLATTENED;
         }
 
-        String command = String.format("virsh blockpull %s %s %d", vm.getName(), diskLabel, SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB);
-        int exitValue = Script.runSimpleBashScriptForExitValue(command);
-        if (exitValue != 0) {
-            throw new CloudRuntimeException("Failed to start running volume flatten using command [" + command + "]. Exit value: " + exitValue);
+        String command = String.format("virsh blockpull %s %s --bandwidth %d", shellQuote(vm.getName()), shellQuote(diskLabel), SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB);
+        Pair<Integer, String> result = runBashCommand(command);
+        if (result.first() != 0) {
+            blockJobInfo = getBlockJobInfo(vm.getName(), diskLabel);
+            if (isBlockJobActive(blockJobInfo)) {
+                return getRunningBlockPullStatus(blockJobInfo);
+            }
+            throw new CloudRuntimeException("Failed to start running volume flatten using command [" + command + "]. Exit value: " + result.first() + ". Result: " + result.second());
         }
         return SHARED_MOUNT_POINT_FLATTEN_RUNNING_DETAIL_PREFIX + "0";
+    }
+
+    protected Pair<Integer, String> runBashCommand(String command) {
+        String marker = "__cloudstack_exit_value__:";
+        String result = Script.runBashScriptIgnoreExitValue(String.format("%s 2>&1; printf '\\n%s%%s' $?", command, marker), 0);
+        if (StringUtils.isBlank(result)) {
+            return new Pair<>(-1, null);
+        }
+
+        int markerIndex = result.lastIndexOf(marker);
+        if (markerIndex < 0) {
+            return new Pair<>(-1, result);
+        }
+
+        String output = StringUtils.trim(result.substring(0, markerIndex));
+        String exitValue = StringUtils.trim(result.substring(markerIndex + marker.length()));
+        return new Pair<>(NumberUtils.toInt(exitValue, -1), output);
     }
 
     protected boolean isBlockJobActive(String vmName, String diskLabel) {
@@ -2872,7 +2894,7 @@ public class KVMStorageProcessor implements StorageProcessor {
     }
 
     protected String getBlockJobInfo(String vmName, String diskLabel) {
-        String command = String.format("virsh blockjob %s %s --info --bytes 2>&1 || true", vmName, diskLabel);
+        String command = String.format("virsh blockjob %s %s --info --bytes 2>&1 || true", shellQuote(vmName), shellQuote(diskLabel));
         String result = Script.runSimpleBashScript(command);
         if (StringUtils.containsIgnoreCase(result, "error:")) {
             throw new CloudRuntimeException("Failed to check block job using command [" + command + "]. Result: " + result);
