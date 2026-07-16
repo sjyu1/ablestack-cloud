@@ -576,6 +576,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return details;
     }
 
+    private String getBackupPathFromExternalId(final Backup backup) {
+        return backup == null ? null : parseExternalId(backup.getExternalId()).first();
+    }
+
     private String getCheckpointPath(String backupPath, String checkpointName, String backupEngine) {
         if (BACKUP_ENGINE_RBD_DIFF.equals(backupEngine)) {
             return String.format("%s/checkpoints/%s.meta", backupPath, checkpointName);
@@ -634,8 +638,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         command.setCheckpointName(checkpointName);
         command.setBackupFiles(backupFiles);
         if (incrementalBackup && latestBackup != null) {
-            command.setParentBackupPath(getBackupDetail(latestBackup, DETAIL_PARENT_BACKUP_PATH,
-                    latestBackup.getExternalId().substring(0, latestBackup.getExternalId().lastIndexOf(','))));
+            command.setParentBackupPath(getBackupPathFromExternalId(latestBackup));
             command.setParentCheckpointName(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_NAME));
             command.setParentCheckpointPath(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
             command.setParentCheckpointXml(getBackupDetail(latestBackup, DETAIL_CHECKPOINT_XML));
@@ -721,6 +724,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                                         updateBackupAsCompleted(backupVO, externalId, jobDetails, backupDetails,
                                                 createVolumeInfoFromVolumes(vmVolumes, backupFiles));
                                         if (backupDao.update(backupVO.getId(), backupVO)) {
+                                            cleanupBackupPathsAfterSuccessfulBackup(vmHostVO, Collections.singletonList(backupPath), backupVO);
                                             return BackupExecutionResult.success(backupVO);
                                         }
                                         LOG.error("Commvault job [{}] completed for VM [{}], but backup [{}] metadata update failed. Leaving it in Error state.",
@@ -1218,6 +1222,15 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 LOG.warn("Failed to cleanup Commvault restore source paths {} on host [{}]", entry.getValue(), hostName, e);
             }
         }
+    }
+
+    private void cleanupBackupPathsAfterSuccessfulBackup(HostVO host, List<String> backupPaths, Backup backup) {
+        if (host == null || CollectionUtils.isEmpty(backupPaths)) {
+            return;
+        }
+        LOG.info("Cleaning up Commvault staging paths after successful backup [{}] on host [{}]: {}",
+                backup != null ? backup.getUuid() : null, host.getName(), backupPaths);
+        cleanupBackupPathsOnHost(host, backupPaths);
     }
 
     private void cleanupBackupPathsOnHost(HostVO host, List<String> backupPaths) {
