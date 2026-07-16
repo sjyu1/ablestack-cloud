@@ -1696,6 +1696,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     @Override
     public boolean deleteBackup(Backup backup, boolean forced) {
         loadBackupDetailsIfNeeded(backup);
+        final VirtualMachine vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
         if (!forced && hasDependentBackups(backup)) {
             throw new CloudRuntimeException(String.format("Backup [%s] cannot be deleted because one or more incremental backups depend on it.", backup.getUuid()));
         }
@@ -1716,7 +1717,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             String backupsetId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("backupsetId"));
             boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
             if (result) {
-                cleanupBackupPathOnStageHost(clientName, path, forced, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+                cleanupBackupPathOnStageHost(clientName, path, forced, vm != null ? vm.getInstanceName() : null,
+                        getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
             }
             return result;
         } else {
@@ -1956,7 +1958,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     String backupsetId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("backupsetId"));
                     boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
                     if (result) {
-                        cleanupBackupPathOnStageHost(clientName, path, false, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+                        cleanupBackupPathOnStageHost(clientName, path, false, vm.getInstanceName(),
+                                getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
                         removeBackupWithDetails(backup.getId());
                     }
                 }
@@ -1994,7 +1997,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
         LOG.warn("Removing stale Commvault backup [{}] for VM [{}] stuck in BackingUp before job details were saved. Stage host: [{}], path: [{}]",
                 backup.getUuid(), vm.getInstanceName(), stageHostName, backupPath);
-        cleanupBackupPathOnStageHost(stageHostName, backupPath, false, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME),
+        cleanupBackupPathOnStageHost(stageHostName, backupPath, false, vm.getInstanceName(), getBackupDetail(backup, DETAIL_CHECKPOINT_NAME),
                 getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
         removeBackupWithDetails(backup.getId());
         return true;
@@ -2321,13 +2324,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return new Ternary<>(username, password, null);
     }
 
-    private void cleanupBackupPathOnStageHost(String clientName, String path, boolean forced, String checkpointName, String diskPaths) {
+    private void cleanupBackupPathOnStageHost(String clientName, String path, boolean forced, String vmName, String checkpointName, String diskPaths) {
         HostVO stageHost = hostDao.findByName(clientName);
         if (stageHost == null) {
             throw new CloudRuntimeException(String.format("Unable to find stage host [%s] for backup cleanup", clientName));
         }
         AblestackDeleteBackupCommand command = new AblestackDeleteBackupCommand(path, null, null, null, forced);
         command.setBackupProvider("ablestack-commvault");
+        command.setVmName(vmName);
         command.setCheckpointName(checkpointName);
         command.setDiskPaths(diskPaths);
         try {

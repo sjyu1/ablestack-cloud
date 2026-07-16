@@ -1138,6 +1138,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         AblestackDeleteBackupCommand command = new AblestackDeleteBackupCommand(backup.getExternalId(), backupRepository.getType(),
                 backupRepository.getAddress(), backupRepository.getMountOptions(), forced);
         command.setBackupProvider("ablestack-nas");
+        command.setVmName(vm != null ? vm.getInstanceName() : null);
         command.setCheckpointName(getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
         command.setDiskPaths(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
 

@@ -394,7 +394,7 @@ delete_libvirt_checkpoint_if_unreferenced() {
     return 0
   fi
 
-  vm_name="$(basename "$(dirname "$dest")")"
+  vm_name="${VM:-$(basename "$(dirname "$dest")")}"
   if [[ -z "$vm_name" ]]; then
     return 0
   fi

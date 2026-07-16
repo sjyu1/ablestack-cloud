@@ -27,6 +27,7 @@ public class AblestackDeleteBackupCommand extends Command {
     private String backupRepoType;
     private String backupRepoAddress;
     private String backupProvider;
+    private String vmName;
     private String checkpointName;
     private String diskPaths;
     private boolean forced;
@@ -72,6 +73,14 @@ public class AblestackDeleteBackupCommand extends Command {
 
     public void setBackupProvider(String backupProvider) {
         this.backupProvider = backupProvider;
+    }
+
+    public String getVmName() {
+        return vmName;
+    }
+
+    public void setVmName(String vmName) {
+        this.vmName = vmName;
     }
 
     public String getCheckpointName() {

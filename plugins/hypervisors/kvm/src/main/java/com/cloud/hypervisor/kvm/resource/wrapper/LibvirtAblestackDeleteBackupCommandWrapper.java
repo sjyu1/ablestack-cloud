@@ -41,6 +41,7 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
         final String backupRepoAddress = command.getBackupRepoAddress();
         final String mountOptions = command.getMountOptions();
         final String backupProvider = command.getBackupProvider();
+        final String vmName = command.getVmName();
         final String checkpointName = command.getCheckpointName();
         final String diskPaths = command.getDiskPaths();
         final boolean forced = command.isForced();
@@ -53,6 +54,10 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
             deleteCommand.add("delete");
             deleteCommand.add("-p");
             deleteCommand.add(backupPath);
+            if (StringUtils.isNotBlank(vmName)) {
+                deleteCommand.add("-v");
+                deleteCommand.add(vmName);
+            }
             deleteCommand.add("-x");
             deleteCommand.add(Boolean.toString(forced));
             if (StringUtils.isNotBlank(checkpointName)) {
@@ -71,6 +76,10 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
             deleteCommand.add("delete");
             deleteCommand.add("-p");
             deleteCommand.add(backupPath);
+            if (StringUtils.isNotBlank(vmName)) {
+                deleteCommand.add("-v");
+                deleteCommand.add(vmName);
+            }
             deleteCommand.add("-x");
             deleteCommand.add(Boolean.toString(forced));
             if (StringUtils.isNotBlank(checkpointName)) {
@@ -95,6 +104,10 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
             deleteCommand.add(mountOptions);
             deleteCommand.add("-p");
             deleteCommand.add(backupPath);
+            if (StringUtils.isNotBlank(vmName)) {
+                deleteCommand.add("-v");
+                deleteCommand.add(vmName);
+            }
             deleteCommand.add("-x");
             deleteCommand.add(Boolean.toString(forced));
             if (StringUtils.isNotBlank(checkpointName)) {
