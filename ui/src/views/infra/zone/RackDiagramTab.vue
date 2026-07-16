@@ -913,7 +913,7 @@
 
     <a-modal
       v-model:visible="rackModalVisible"
-      :title="rackModalMode === 'add' ? t('rackDiagram.addRack') : t('rackDiagram.editRack')"
+      :title="rackModalMode === 'add' ? t('rackDiagram.addRack') : t('label.edit')"
       :ok-text="t('label.ok')"
       :cancel-text="t('label.cancel')"
       @ok="submitRackModal"
