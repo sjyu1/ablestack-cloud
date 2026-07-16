@@ -90,6 +90,7 @@ import java.util.HashSet;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -529,6 +530,41 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 .filter(candidate -> !Objects.equals(candidate.getId(), backup.getId()))
                 .peek(backupDao::loadDetails)
                 .anyMatch(candidate -> Objects.equals(getBackupDetail(candidate, DETAIL_PARENT_BACKUP_UUID), backup.getUuid()));
+    }
+
+    private String getUnreferencedQcow2CheckpointNamesAfterDelete(Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        if (!BACKUP_ENGINE_QCOW2.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            return null;
+        }
+
+        final Set<String> cleanupCandidates = new LinkedHashSet<>();
+        addIfNotBlank(cleanupCandidates, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+        addIfNotBlank(cleanupCandidates, getBackupDetail(backup, DETAIL_PARENT_CHECKPOINT_NAME));
+        if (cleanupCandidates.isEmpty()) {
+            return null;
+        }
+
+        final Set<String> remainingReferences = new HashSet<>();
+        backupDao.listByVmId(null, backup.getVmId()).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(candidate -> !Objects.equals(candidate.getId(), backup.getId()))
+                .filter(this::isBackupManagedByThisProvider)
+                .forEach(candidate -> {
+                    backupDao.loadDetails(candidate);
+                    addIfNotBlank(remainingReferences, getBackupDetail(candidate, DETAIL_CHECKPOINT_NAME));
+                    addIfNotBlank(remainingReferences, getBackupDetail(candidate, DETAIL_PARENT_CHECKPOINT_NAME));
+                });
+
+        cleanupCandidates.removeAll(remainingReferences);
+        return cleanupCandidates.isEmpty() ? null : StringUtils.join(cleanupCandidates, ",");
+    }
+
+    private void addIfNotBlank(Set<String> values, String value) {
+        if (StringUtils.isNotBlank(value)) {
+            values.add(value);
+        }
     }
 
     private BackupVO createBackupObject(VirtualMachine vm, String backupPath, String backupType, Map<String, String> details) {
@@ -1718,7 +1754,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
             if (result) {
                 cleanupBackupPathOnStageHost(clientName, path, forced, vm != null ? vm.getInstanceName() : null,
-                        getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+                        getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getUnreferencedQcow2CheckpointNamesAfterDelete(backup),
+                        getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
             }
             return result;
         } else {
@@ -1959,7 +1996,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
                     if (result) {
                         cleanupBackupPathOnStageHost(clientName, path, false, vm.getInstanceName(),
-                                getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+                                getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getUnreferencedQcow2CheckpointNamesAfterDelete(backup),
+                                getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
                         removeBackupWithDetails(backup.getId());
                     }
                 }
@@ -1998,6 +2036,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         LOG.warn("Removing stale Commvault backup [{}] for VM [{}] stuck in BackingUp before job details were saved. Stage host: [{}], path: [{}]",
                 backup.getUuid(), vm.getInstanceName(), stageHostName, backupPath);
         cleanupBackupPathOnStageHost(stageHostName, backupPath, false, vm.getInstanceName(), getBackupDetail(backup, DETAIL_CHECKPOINT_NAME),
+                getUnreferencedQcow2CheckpointNamesAfterDelete(backup),
                 getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
         removeBackupWithDetails(backup.getId());
         return true;
@@ -2324,7 +2363,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         return new Ternary<>(username, password, null);
     }
 
-    private void cleanupBackupPathOnStageHost(String clientName, String path, boolean forced, String vmName, String checkpointName, String diskPaths) {
+    private void cleanupBackupPathOnStageHost(String clientName, String path, boolean forced, String vmName, String checkpointName,
+            String cleanupCheckpointNames, String diskPaths) {
         HostVO stageHost = hostDao.findByName(clientName);
         if (stageHost == null) {
             throw new CloudRuntimeException(String.format("Unable to find stage host [%s] for backup cleanup", clientName));
@@ -2333,6 +2373,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         command.setBackupProvider("ablestack-commvault");
         command.setVmName(vmName);
         command.setCheckpointName(checkpointName);
+        command.setCleanupCheckpointNames(cleanupCheckpointNames);
         command.setDiskPaths(diskPaths);
         try {
             BackupAnswer answer = (BackupAnswer) agentManager.send(stageHost.getId(), command);

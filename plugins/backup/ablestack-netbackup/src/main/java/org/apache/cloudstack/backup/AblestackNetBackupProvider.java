@@ -1857,6 +1857,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
         command.setVmName(vm != null ? vm.getInstanceName() : null);
         command.setCheckpointName(checkpointName);
+        command.setCleanupCheckpointNames(getUnreferencedQcow2CheckpointNamesAfterDelete(backup, backupIdsToRemove));
         if (BACKUP_ENGINE_RBD_DIFF.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
             command.setDiskPaths(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
         }
@@ -1883,6 +1884,42 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 .map(backupDao::findById)
                 .filter(Objects::nonNull)
                 .anyMatch(childBackup -> Backup.Status.BackedUp.equals(childBackup.getStatus()));
+    }
+
+    private String getUnreferencedQcow2CheckpointNamesAfterDelete(final Backup backup, final Set<Long> backupIdsToRemove) {
+        loadBackupDetailsIfNeeded(backup);
+        if (!BACKUP_ENGINE_QCOW2.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            return null;
+        }
+
+        final Set<String> cleanupCandidates = new LinkedHashSet<>();
+        addIfNotBlank(cleanupCandidates, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+        addIfNotBlank(cleanupCandidates, getBackupDetail(backup, DETAIL_PARENT_CHECKPOINT_NAME));
+        if (cleanupCandidates.isEmpty()) {
+            return null;
+        }
+
+        final Set<String> remainingReferences = new HashSet<>();
+        backupDao.listByVmId(backup.getZoneId(), backup.getVmId()).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(candidate -> !Objects.equals(candidate.getId(), backup.getId()))
+                .filter(candidate -> backupIdsToRemove == null || !backupIdsToRemove.contains(candidate.getId()))
+                .filter(this::isNetBackupBackup)
+                .forEach(candidate -> {
+                    backupDao.loadDetails(candidate);
+                    addIfNotBlank(remainingReferences, getBackupDetail(candidate, DETAIL_CHECKPOINT_NAME));
+                    addIfNotBlank(remainingReferences, getBackupDetail(candidate, DETAIL_PARENT_CHECKPOINT_NAME));
+                });
+
+        cleanupCandidates.removeAll(remainingReferences);
+        return cleanupCandidates.isEmpty() ? null : StringUtils.join(cleanupCandidates, ",");
+    }
+
+    private void addIfNotBlank(final Set<String> values, final String value) {
+        if (StringUtils.isNotBlank(value)) {
+            values.add(value);
+        }
     }
 
     private Host resolveBackupCleanupHost(final Backup backup) {

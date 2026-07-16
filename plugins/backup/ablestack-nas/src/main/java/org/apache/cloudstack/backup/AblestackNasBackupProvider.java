@@ -73,6 +73,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
@@ -614,6 +615,41 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
                 .anyMatch(candidate -> Objects.equals(getBackupDetail(candidate, DETAIL_PARENT_BACKUP_UUID), backup.getUuid()));
     }
 
+    private String getUnreferencedQcow2CheckpointNamesAfterDelete(Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        if (!BACKUP_ENGINE_QCOW2.equals(getBackupDetail(backup, DETAIL_BACKUP_ENGINE))) {
+            return null;
+        }
+
+        final Set<String> cleanupCandidates = new LinkedHashSet<>();
+        addIfNotBlank(cleanupCandidates, getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+        addIfNotBlank(cleanupCandidates, getBackupDetail(backup, DETAIL_PARENT_CHECKPOINT_NAME));
+        if (cleanupCandidates.isEmpty()) {
+            return null;
+        }
+
+        final Set<String> remainingReferences = new HashSet<>();
+        backupDao.listByVmIdAndOffering(backup.getZoneId(), backup.getVmId(), backup.getBackupOfferingId()).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(candidate -> !Objects.equals(candidate.getId(), backup.getId()))
+                .filter(this::isBackupManagedByThisProvider)
+                .forEach(candidate -> {
+                    backupDao.loadDetails(candidate);
+                    addIfNotBlank(remainingReferences, getBackupDetail(candidate, DETAIL_CHECKPOINT_NAME));
+                    addIfNotBlank(remainingReferences, getBackupDetail(candidate, DETAIL_PARENT_CHECKPOINT_NAME));
+                });
+
+        cleanupCandidates.removeAll(remainingReferences);
+        return cleanupCandidates.isEmpty() ? null : StringUtils.join(cleanupCandidates, ",");
+    }
+
+    private void addIfNotBlank(Set<String> values, String value) {
+        if (StringUtils.isNotBlank(value)) {
+            values.add(value);
+        }
+    }
+
     private String getBackupDetail(Backup backup, String key) {
         Map<String, String> details = backup.getDetails();
         return details != null ? details.get(key) : null;
@@ -1140,6 +1176,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         command.setBackupProvider("ablestack-nas");
         command.setVmName(vm != null ? vm.getInstanceName() : null);
         command.setCheckpointName(getBackupDetail(backup, DETAIL_CHECKPOINT_NAME));
+        command.setCleanupCheckpointNames(getUnreferencedQcow2CheckpointNamesAfterDelete(backup));
         command.setDiskPaths(getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
 
         BackupAnswer answer;

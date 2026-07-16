@@ -37,6 +37,7 @@ PARENT_CHECKPOINT_NAME=""
 PARENT_CHECKPOINT_PATH=""
 BACKUP_FILES=""
 FORCED="false"
+CLEANUP_CHECKPOINT_NAMES=""
 logFile="/var/log/cloudstack/agent/agent.log"
 CREATED_RBD_SNAPSHOTS=()
 
@@ -708,6 +709,22 @@ for dev in data.get("return", []) or []:
   fi
 }
 
+cleanup_unreferenced_qcow2_bitmaps() {
+  local vm_name
+  local checkpoint_name
+
+  [[ -z "$CLEANUP_CHECKPOINT_NAMES" ]] && return 0
+
+  vm_name="${VM:-$(basename "$(dirname "$dest")")}"
+  [[ -z "$vm_name" ]] && return 0
+
+  while IFS= read -r checkpoint_name; do
+    [[ -z "$checkpoint_name" ]] && continue
+    log -ne "Cleaning up unreferenced qcow2 bitmap [$checkpoint_name] from VM [$vm_name]"
+    delete_qcow2_bitmap_if_present "$vm_name" "$checkpoint_name"
+  done < <(split_csv "$CLEANUP_CHECKPOINT_NAMES")
+}
+
 delete_backup() {
   if [[ -f "$dest/rbd-backup.meta" ]]; then
     source "$dest/rbd-backup.meta"
@@ -728,6 +745,7 @@ delete_backup() {
     delete_libvirt_checkpoint_if_unreferenced "$CHECKPOINT_NAME"
   fi
 
+  cleanup_unreferenced_qcow2_bitmaps
   rm -frv "$dest"
   sync
 }
@@ -752,6 +770,7 @@ while [[ $# -gt 0 ]]; do
     -f|--backupfiles) BACKUP_FILES="$2"; shift; shift ;;
     -q|--quiesce) QUIESCE="$2"; shift; shift ;;
     -d|--diskpaths) DISK_PATHS="$2"; shift; shift ;;
+    -C|--cleanupcheckpoints) CLEANUP_CHECKPOINT_NAMES="$2"; shift; shift ;;
     -x|--forced) FORCED="$2"; shift; shift ;;
     -h|--help) usage ;;
     *) echo "Invalid option: $1"; usage ;;

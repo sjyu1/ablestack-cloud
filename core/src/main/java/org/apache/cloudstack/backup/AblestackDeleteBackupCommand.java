@@ -29,6 +29,7 @@ public class AblestackDeleteBackupCommand extends Command {
     private String backupProvider;
     private String vmName;
     private String checkpointName;
+    private String cleanupCheckpointNames;
     private String diskPaths;
     private boolean forced;
     @LogLevel(LogLevel.Log4jLevel.Off)
@@ -89,6 +90,14 @@ public class AblestackDeleteBackupCommand extends Command {
 
     public void setCheckpointName(String checkpointName) {
         this.checkpointName = checkpointName;
+    }
+
+    public String getCleanupCheckpointNames() {
+        return cleanupCheckpointNames;
+    }
+
+    public void setCleanupCheckpointNames(String cleanupCheckpointNames) {
+        this.cleanupCheckpointNames = cleanupCheckpointNames;
     }
 
     public String getDiskPaths() {

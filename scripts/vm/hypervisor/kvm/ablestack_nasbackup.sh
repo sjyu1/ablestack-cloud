@@ -40,6 +40,7 @@ BACKUP_FILES=""
 DISK_PATHS=""
 QUIESCE=""
 FORCED="false"
+CLEANUP_CHECKPOINT_NAMES=""
 logFile="/var/log/cloudstack/agent/agent.log"
 UNMOUNT_TIMEOUT=60
 CREATED_RBD_SNAPSHOTS=()
@@ -453,6 +454,22 @@ for dev in data.get("return", []) or []:
   fi
 }
 
+cleanup_unreferenced_qcow2_bitmaps() {
+  local vm_name
+  local checkpoint_name
+
+  [[ -z "$CLEANUP_CHECKPOINT_NAMES" ]] && return 0
+
+  vm_name="${VM:-$(basename "$(dirname "$dest")")}"
+  [[ -z "$vm_name" ]] && return 0
+
+  while IFS= read -r checkpoint_name; do
+    [[ -z "$checkpoint_name" ]] && continue
+    log -ne "Cleaning up unreferenced qcow2 bitmap [$checkpoint_name] from VM [$vm_name]"
+    delete_qcow2_bitmap_if_present "$vm_name" "$checkpoint_name"
+  done < <(split_csv "$CLEANUP_CHECKPOINT_NAMES")
+}
+
 delete_backup() {
   mount_operation
 
@@ -477,6 +494,7 @@ delete_backup() {
     delete_libvirt_checkpoint_if_unreferenced "$CHECKPOINT_NAME"
   fi
 
+  cleanup_unreferenced_qcow2_bitmaps
   rm -frv "$dest" || { echo "Failed to delete $dest"; exit 1; }
   if [[ -e "$dest" ]]; then
     echo "Backup directory still exists after delete: $dest"
@@ -840,6 +858,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     -x|--forced)
       FORCED="$2"
+      shift
+      shift
+      ;;
+    -C|--cleanupcheckpoints)
+      CLEANUP_CHECKPOINT_NAMES="$2"
       shift
       shift
       ;;

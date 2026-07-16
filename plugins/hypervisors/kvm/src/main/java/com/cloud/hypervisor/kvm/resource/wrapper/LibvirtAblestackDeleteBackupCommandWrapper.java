@@ -43,6 +43,7 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
         final String backupProvider = command.getBackupProvider();
         final String vmName = command.getVmName();
         final String checkpointName = command.getCheckpointName();
+        final String cleanupCheckpointNames = command.getCleanupCheckpointNames();
         final String diskPaths = command.getDiskPaths();
         final boolean forced = command.isForced();
 
@@ -63,6 +64,10 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
             if (StringUtils.isNotBlank(checkpointName)) {
                 deleteCommand.add("-c");
                 deleteCommand.add(checkpointName);
+            }
+            if (StringUtils.isNotBlank(cleanupCheckpointNames)) {
+                deleteCommand.add("-C");
+                deleteCommand.add(cleanupCheckpointNames);
             }
             if (StringUtils.isNotBlank(diskPaths)) {
                 deleteCommand.add("-d");
@@ -85,6 +90,10 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
             if (StringUtils.isNotBlank(checkpointName)) {
                 deleteCommand.add("-c");
                 deleteCommand.add(checkpointName);
+            }
+            if (StringUtils.isNotBlank(cleanupCheckpointNames)) {
+                deleteCommand.add("-C");
+                deleteCommand.add(cleanupCheckpointNames);
             }
             if (StringUtils.isNotBlank(diskPaths)) {
                 deleteCommand.add("-d");
@@ -113,6 +122,10 @@ public class LibvirtAblestackDeleteBackupCommandWrapper extends CommandWrapper<A
             if (StringUtils.isNotBlank(checkpointName)) {
                 deleteCommand.add("-c");
                 deleteCommand.add(checkpointName);
+            }
+            if (StringUtils.isNotBlank(cleanupCheckpointNames)) {
+                deleteCommand.add("-C");
+                deleteCommand.add(cleanupCheckpointNames);
             }
             if (StringUtils.isNotBlank(diskPaths)) {
                 deleteCommand.add("-d");
