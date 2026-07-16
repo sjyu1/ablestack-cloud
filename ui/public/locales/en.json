@@ -5344,5 +5344,7 @@
 "rackDiagram.totalFreeU": "Free U",
 "rackDiagram.cardView": "Card",
 "rackDiagram.listView": "List",
-"rackDiagram.countSuffix": ""
+"rackDiagram.countSuffix": "",
+"rackDiagram.expandView": "Expand rack visualization",
+"rackDiagram.restoreSplitView": "Show summary panel"
 }

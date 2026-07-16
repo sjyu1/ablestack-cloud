@@ -5347,5 +5347,7 @@
 "rackDiagram.totalFreeU": "\uc5ec\uc720 U",
 "rackDiagram.cardView": "\uce74\ub4dc\ud615",
 "rackDiagram.listView": "\ubaa9\ub85d\ud615",
-"rackDiagram.countSuffix": "\uac1c"
+"rackDiagram.countSuffix": "\uac1c",
+"rackDiagram.expandView": "\ub799 \uc2dc\uac01\ud654 \ud655\uc7a5",
+"rackDiagram.restoreSplitView": "\uc694\uc57d \uc601\uc5ed \ud45c\uc2dc"
 }
