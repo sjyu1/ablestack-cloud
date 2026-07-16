@@ -1402,6 +1402,27 @@ const { proxy, emit } = getCurrentInstance()
 const t = (key, args) => proxy?.$t ? proxy.$t(key, args) : key
 const isDarkMode = computed(() => !!store.getters.darkMode)
 const RACK_UNIT_HEIGHT = 52
+const MAX_RACK_COUNT = 20
+// The backend accepts up to 1 MiB while rackml_config.content uses MEDIUMTEXT.
+const MAX_RACK_LAYOUT_BYTES = 1024 * 1024
+
+const getRackLayoutSize = (racks) => new Blob([JSON.stringify(racks)]).size
+
+const validateRackLayoutSize = (racks) => {
+  if (getRackLayoutSize(racks) <= MAX_RACK_LAYOUT_BYTES) return true
+
+  message.error(t('rackDiagram.msg.layoutSizeExceeded', { max: '1MB' }))
+  return false
+}
+
+const validateRackCount = (racks) => {
+  if (racks.length <= MAX_RACK_COUNT) return true
+
+  message.warning(t('rackDiagram.msg.rackCountExceeded', { max: MAX_RACK_COUNT }))
+  return false
+}
+
+const validateRackLayoutLimits = (racks) => validateRackCount(racks) && validateRackLayoutSize(racks)
 
 const toggleExpandedView = () => {
   isExpanded.value = !isExpanded.value
@@ -2296,10 +2317,12 @@ const saveRackData = () => {
     applyInlineDeviceChangesToRack()
   }
 
+  if (!validateRackLayoutLimits(parsedRacks.value)) return Promise.resolve(false)
+
   saving.value = true
   const jsonContent = JSON.stringify(parsedRacks.value)
 
-  return api('updateRackLayout', {
+  return api('updateRackLayout', {}, 'POST', {
     zoneid: currentZoneId.value,
     name: 'default',
     content: jsonContent
@@ -2361,6 +2384,8 @@ watch(() => rackForm.totalHeight, () => {
 })
 
 const openRackModal = (mode, index = -1) => {
+  if (mode === 'add' && !validateRackCount([...parsedRacks.value, {}])) return
+
   clearRackFormErrors()
   rackModalMode.value = mode
   targetRackIndex.value = index
@@ -2479,6 +2504,7 @@ const handleImport = (event) => {
 
       // 2. 간단한 유효성 검사 (배열 형태인지 확인)
       if (Array.isArray(importedData)) {
+        if (!validateRackLayoutLimits(importedData)) return
         parsedRacks.value = importedData // 화면 갱신
         message.success(t('rackDiagram.msg.importSuccess'))
       } else {
@@ -2507,7 +2533,10 @@ const cloneRack = (rIndex) => {
     createDate: undefined,
     items: targetRack.items.map(item => ({ ...item }))
   }
-  parsedRacks.value.push(newRack)
+  const nextRacks = [...parsedRacks.value, newRack]
+  if (!validateRackLayoutLimits(nextRacks)) return
+
+  parsedRacks.value = nextRacks
   message.success(t('rackDiagram.msg.rackCloned'))
 }
 
@@ -2519,15 +2548,19 @@ const submitRackModal = () => {
   const rackLocation = String(rackForm.location || '').trim()
 
   if (rackModalMode.value === 'add') {
-    parsedRacks.value.push({
+    const newRack = {
       name: rackName,
       totalHeight: rackForm.totalHeight,
       location: rackLocation,
       createdAt: rackForm.createdAt || new Date().toISOString(),
       items: [{ type: 'gap', height: rackForm.totalHeight }]
-    })
+    }
+    const nextRacks = [...parsedRacks.value, newRack]
+    if (!validateRackLayoutLimits(nextRacks)) return
+    parsedRacks.value = nextRacks
   } else {
     const targetRack = parsedRacks.value[targetRackIndex.value]
+    const originalRack = JSON.parse(JSON.stringify(targetRack))
     const currentItemsHeight = targetRack.items.reduce((sum, item) => sum + item.height, 0)
     const diff = rackForm.totalHeight - currentItemsHeight
 
@@ -2579,6 +2612,11 @@ const submitRackModal = () => {
       // 높이는 그대로고 이름만 변경된 경우
       targetRack.name = rackName
       targetRack.location = rackLocation
+    }
+
+    if (!validateRackLayoutLimits(parsedRacks.value)) {
+      parsedRacks.value.splice(targetRackIndex.value, 1, originalRack)
+      return
     }
   }
   closeRackModal()

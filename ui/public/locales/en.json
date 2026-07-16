@@ -5285,6 +5285,8 @@
 "rackDiagram.msg.noChangesToSave": "No changes to save.",
 "rackDiagram.msg.rackSaved": "Rack layout saved.",
 "rackDiagram.msg.rackSaveFailed": "Failed to save rack layout.",
+"rackDiagram.msg.rackCountExceeded": "You can create up to {max} racks per zone.",
+"rackDiagram.msg.layoutSizeExceeded": "Rack layout exceeds the maximum save size ({max}). Remove racks or reduce device details.",
 "rackDiagram.msg.noRackToSaveImage": "No rack layout to save.",
 "rackDiagram.msg.exportingImage": "Converting image...",
 "rackDiagram.msg.imageSaved": "Image saved.",
