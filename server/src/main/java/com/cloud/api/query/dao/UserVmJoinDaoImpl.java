@@ -94,6 +94,7 @@ import com.cloud.vm.dao.VbmcDao;
 @Component
 public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJoinVO, UserVmResponse> implements UserVmJoinDao {
     private static final String FAST_CLONE_STATUS = "clone.fast.status";
+    private static final String FAST_CLONE_FLATTEN_PROGRESS = "clone.fast.flatten.progress";
 
     @Inject
     private ConfigurationDao _configDao;
@@ -176,6 +177,10 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
         UserVmDetailVO fastCloneStatus = _userVmDetailsDao.findDetail(userVm.getId(), FAST_CLONE_STATUS);
         if (fastCloneStatus != null) {
             userVmResponse.setCloneFastStatus(fastCloneStatus.getValue());
+        }
+        UserVmDetailVO fastCloneFlattenProgress = _userVmDetailsDao.findDetail(userVm.getId(), FAST_CLONE_FLATTEN_PROGRESS);
+        if (fastCloneFlattenProgress != null) {
+            userVmResponse.setCloneFastFlattenProgress(fastCloneFlattenProgress.getValue());
         }
 
         User user = _userDao.getUser(userVm.getUserId());

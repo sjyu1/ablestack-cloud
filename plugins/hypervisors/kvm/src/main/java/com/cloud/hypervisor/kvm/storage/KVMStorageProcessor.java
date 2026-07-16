@@ -39,6 +39,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.naming.ConfigurationException;
@@ -153,7 +155,13 @@ import com.cloud.vm.VmDetailConstants;
 public class KVMStorageProcessor implements StorageProcessor {
     protected Logger logger = LogManager.getLogger(getClass());
     private static final int VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA = 4;
-    private static final int SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB = 20;
+    private static final int SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB = 1000;
+    private static final String SHARED_MOUNT_POINT_FLATTEN_OPERATION = "flattenCloneVolume";
+    private static final String SHARED_MOUNT_POINT_FLATTEN_CHECK_OPERATION = "checkFlattenCloneVolume";
+    private static final String SHARED_MOUNT_POINT_FLATTEN_RUNNING = "running";
+    private static final String SHARED_MOUNT_POINT_FLATTEN_RUNNING_DETAIL_PREFIX = SHARED_MOUNT_POINT_FLATTEN_RUNNING + ":";
+    private static final String SHARED_MOUNT_POINT_FLATTENED = "flattened";
+    private static final Pattern BLOCK_JOB_PROGRESS_PATTERN = Pattern.compile("\\[\\s*([0-9]+(?:\\.[0-9]+)?)\\s*%\\]");
     private final KVMStoragePoolManager storagePoolMgr;
     private final LibvirtComputingResource resource;
     private StorageLayer storageLayer;
@@ -2742,7 +2750,7 @@ public class KVMStorageProcessor implements StorageProcessor {
                 return new FlattenCmdAnswer(volume, cmd, true, "committed");
             }
 
-            if (!"flattenCloneVolume".equals(operation)) {
+            if (!SHARED_MOUNT_POINT_FLATTEN_OPERATION.equals(operation) && !SHARED_MOUNT_POINT_FLATTEN_CHECK_OPERATION.equals(operation)) {
                 return new FlattenCmdAnswer(volume, cmd, false, "Unsupported SharedMountPoint flatten operation: " + operation);
             }
 
@@ -2761,9 +2769,12 @@ public class KVMStorageProcessor implements StorageProcessor {
                     if (StringUtils.isBlank(diskLabel)) {
                         return new FlattenCmdAnswer(volume, cmd, false, "Could not find active disk for volume " + volumePath + " in VM " + vmName);
                     }
-                    flattenRunningVolume(vm, diskLabel);
-                    logger.info("Flattened running SharedMountPoint volume [{}] for VM [{}].", volumePath, vmName);
-                    return new FlattenCmdAnswer(volume, cmd, true, "flattened");
+                    if (SHARED_MOUNT_POINT_FLATTEN_CHECK_OPERATION.equals(operation)) {
+                        return checkRunningVolumeFlattenStatus(volume, cmd, volumePath, vm, diskLabel);
+                    }
+                    String status = startFlattenRunningVolume(vm, diskLabel, volumePath);
+                    logger.info("SharedMountPoint volume [{}] flatten status for VM [{}] is [{}].", volumePath, vmName, status);
+                    return new FlattenCmdAnswer(volume, cmd, true, status);
                 } finally {
                     vm.free();
                 }
@@ -2826,12 +2837,76 @@ public class KVMStorageProcessor implements StorageProcessor {
         return e.getError() != null && ErrorNumber.VIR_ERR_NO_DOMAIN.equals(e.getError().getCode());
     }
 
-    protected void flattenRunningVolume(Domain vm, String diskLabel) throws LibvirtException {
-        String command = String.format("virsh blockpull %s %s %d --wait --verbose", vm.getName(), diskLabel, SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB);
-        String result = Script.runSimpleBashScript(command);
-        if (result != null) {
-            throw new CloudRuntimeException("Failed to flatten running volume using command [" + command + "]. Result: " + result);
+    protected FlattenCmdAnswer checkRunningVolumeFlattenStatus(VolumeObjectTO volume, FlattenSharedMountPointCommand cmd, Path volumePath, Domain vm, String diskLabel)
+            throws LibvirtException, QemuImgException {
+        String blockJobInfo = getBlockJobInfo(vm.getName(), diskLabel);
+        if (isBlockJobActive(blockJobInfo)) {
+            return new FlattenCmdAnswer(volume, cmd, true, getRunningBlockPullStatus(blockJobInfo));
         }
+        if (!hasBackingFile(volumePath)) {
+            logger.info("Flattened running SharedMountPoint volume [{}] for VM [{}].", volumePath, vm.getName());
+            return new FlattenCmdAnswer(volume, cmd, true, SHARED_MOUNT_POINT_FLATTENED);
+        }
+        return new FlattenCmdAnswer(volume, cmd, false, "No active blockpull job found and backing file still exists for volume " + volumePath);
+    }
+
+    protected String startFlattenRunningVolume(Domain vm, String diskLabel, Path volumePath) throws LibvirtException, QemuImgException {
+        String blockJobInfo = getBlockJobInfo(vm.getName(), diskLabel);
+        if (isBlockJobActive(blockJobInfo)) {
+            return getRunningBlockPullStatus(blockJobInfo);
+        }
+        if (!hasBackingFile(volumePath)) {
+            return SHARED_MOUNT_POINT_FLATTENED;
+        }
+
+        String command = String.format("virsh blockpull %s %s %d", vm.getName(), diskLabel, SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB);
+        int exitValue = Script.runSimpleBashScriptForExitValue(command);
+        if (exitValue != 0) {
+            throw new CloudRuntimeException("Failed to start running volume flatten using command [" + command + "]. Exit value: " + exitValue);
+        }
+        return SHARED_MOUNT_POINT_FLATTEN_RUNNING_DETAIL_PREFIX + "0";
+    }
+
+    protected boolean isBlockJobActive(String vmName, String diskLabel) {
+        return isBlockJobActive(getBlockJobInfo(vmName, diskLabel));
+    }
+
+    protected String getBlockJobInfo(String vmName, String diskLabel) {
+        String command = String.format("virsh blockjob %s %s --info --bytes 2>&1 || true", vmName, diskLabel);
+        String result = Script.runSimpleBashScript(command);
+        if (StringUtils.containsIgnoreCase(result, "error:")) {
+            throw new CloudRuntimeException("Failed to check block job using command [" + command + "]. Result: " + result);
+        }
+        return result;
+    }
+
+    protected boolean isBlockJobActive(String result) {
+        if (StringUtils.isBlank(result) || StringUtils.containsIgnoreCase(result, "No current block job")) {
+            return false;
+        }
+        return true;
+    }
+
+    protected String getRunningBlockPullStatus(String blockJobInfo) {
+        String progress = getBlockJobProgress(blockJobInfo);
+        if (StringUtils.isBlank(progress)) {
+            return SHARED_MOUNT_POINT_FLATTEN_RUNNING;
+        }
+        return SHARED_MOUNT_POINT_FLATTEN_RUNNING_DETAIL_PREFIX + progress;
+    }
+
+    protected String getBlockJobProgress(String blockJobInfo) {
+        if (StringUtils.isBlank(blockJobInfo)) {
+            return null;
+        }
+        Matcher matcher = BLOCK_JOB_PROGRESS_PATTERN.matcher(blockJobInfo);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    protected boolean hasBackingFile(Path volumePath) throws LibvirtException, QemuImgException {
+        QemuImg qemu = new QemuImg(_cmdsTimeout);
+        Map<String, String> info = qemu.info(new QemuImgFile(volumePath.toString()));
+        return StringUtils.isNotBlank(info.get(QemuImg.BACKING_FILE));
     }
 
     protected String shellQuote(String value) {

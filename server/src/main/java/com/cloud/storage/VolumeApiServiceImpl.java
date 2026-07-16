@@ -3016,6 +3016,11 @@ public class VolumeApiServiceImpl extends ManagerBase implements VolumeApiServic
         if (volume == null) {
             throw new InvalidParameterValueException("Unable to find volume with ID: " + volumeId);
         }
+        VolumeDetailVO fastCloneFlattenStatus = _volsDetailsDao.findDetail(volume.getId(), "clone.fast.flatten.status");
+        if (fastCloneFlattenStatus != null &&
+                ("pending".equalsIgnoreCase(fastCloneFlattenStatus.getValue()) || "running".equalsIgnoreCase(fastCloneFlattenStatus.getValue()))) {
+            throw new InvalidParameterValueException("Volume has an active SharedMountPoint clone flatten task, unable to detach it.");
+        }
 
         Long vmId = null;
 

@@ -127,10 +127,22 @@
         </div>
         <div class="resource-detail-item" v-if="isFastCloneFlattenActive(resource)">
           <div class="resource-detail-item__label">{{ $t('label.sharedmountpoint.clone.flatten.status') }}</div>
-          <div class="resource-detail-item__details">
-            <a-tag color="processing">
-              {{ getCloneFastStatusLabel(resource) }}
-            </a-tag>
+          <div class="resource-detail-item__details resource-detail-item__details--column">
+            <div class="clone-fast-flatten-status">
+              <a-tag color="processing">
+                {{ getCloneFastStatusLabel(resource) }}
+              </a-tag>
+              <a-tag v-if="hasCloneFastFlattenProgress(resource)" color="blue">
+                {{ getCloneFastFlattenProgress(resource).toFixed(2) }}%
+              </a-tag>
+            </div>
+            <a-progress
+              v-if="hasCloneFastFlattenProgress(resource)"
+              class="progress-bar clone-fast-flatten-progress"
+              size="small"
+              :status="getCloneFastStatus(resource) === 'running' ? 'active' : 'normal'"
+              :percent="getCloneFastFlattenProgress(resource)"
+              :format="percent => parseFloat(percent).toFixed(2) + '%'" />
           </div>
         </div>
         <div class="resource-detail-item" v-if="resource.allocationstate">
@@ -1208,6 +1220,17 @@ export default {
       }
       return ''
     },
+    hasCloneFastFlattenProgress (record) {
+      return this.getCloneFastFlattenProgress(record) !== null
+    },
+    getCloneFastFlattenProgress (record) {
+      const rawProgress = record?.clonefastflattenprogress || record?.details?.['clone.fast.flatten.progress']
+      const progress = Number.parseFloat(rawProgress)
+      if (!Number.isFinite(progress)) {
+        return null
+      }
+      return Math.min(Math.max(progress, 0), 100)
+    },
     showUploadModal (show) {
       if (show) {
         if (this.$showIcon()) {
@@ -1540,6 +1563,11 @@ export default {
 
     }
 
+    &--column {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
   }
 
   .anticon {
@@ -1588,6 +1616,15 @@ export default {
 .progress-bar {
   padding-right: 60px;
   width: 100%;
+}
+
+.clone-fast-flatten-status {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.clone-fast-flatten-progress {
+  max-width: 260px;
 }
 
 .upload-icon {

@@ -681,6 +681,9 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private static final String FAST_CLONE_FLATTEN_PENDING = "pending";
     private static final String FAST_CLONE_FLATTEN_RUNNING = "running";
     private static final String FAST_CLONE_FLATTEN_DONE = "done";
+    private static final String FAST_CLONE_FLATTENED = "flattened";
+    private static final String FAST_CLONE_FLATTEN_PROGRESS = "clone.fast.flatten.progress";
+    private static final String FAST_CLONE_FLATTEN_RUNNING_DETAIL_PREFIX = FAST_CLONE_FLATTEN_RUNNING + ":";
     private static final String FAST_CLONE_HOST_ID = "clone.fast.host.id";
 
     private static final int MAX_HTTP_GET_LENGTH = 2 * MAX_USER_DATA_LENGTH_BYTES;
@@ -10162,6 +10165,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             volumeDetailsDao.addDetail(cloneVolume.getId(), FAST_CLONE_OPERATION_ID, operationId, false);
             volumeDetailsDao.addDetail(cloneVolume.getId(), FAST_CLONE_BACKING_PATH, spec.getSourceVolumePath(), false);
             volumeDetailsDao.addDetail(cloneVolume.getId(), FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING, false);
+            volumeDetailsDao.addDetail(cloneVolume.getId(), FAST_CLONE_FLATTEN_PROGRESS, "0.00", false);
             volumeDetailsDao.addDetail(cloneVolume.getId(), FAST_CLONE_HOST_ID, String.valueOf(hostId), false);
         }
     }
@@ -10227,12 +10231,19 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         userVmDetailsDao.removeDetail(vmId, FAST_CLONE_OPERATION_ID);
         userVmDetailsDao.addDetail(vmId, FAST_CLONE_STATUS, status, false);
         userVmDetailsDao.addDetail(vmId, FAST_CLONE_OPERATION_ID, operationId, false);
+        if (FAST_CLONE_FLATTEN_DONE.equalsIgnoreCase(status)) {
+            setFastCloneVmFlattenProgress(vmId, "100.00");
+        } else if (FAST_CLONE_FLATTEN_PENDING.equalsIgnoreCase(status) ||
+                (FAST_CLONE_FLATTEN_RUNNING.equalsIgnoreCase(status) && userVmDetailsDao.findDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS) == null)) {
+            setFastCloneVmFlattenProgress(vmId, "0.00");
+        }
     }
 
     protected void clearFastCloneVmStatus(long vmId) {
         userVmDetailsDao.removeDetail(vmId, FAST_CLONE_STATUS);
         userVmDetailsDao.removeDetail(vmId, FAST_CLONE_OPERATION_ID);
         userVmDetailsDao.removeDetail(vmId, FAST_CLONE_SOURCE_VM_ID);
+        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS);
     }
 
     protected void checkNoActiveFastCloneOperation(long vmId) {
@@ -10267,6 +10278,10 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     }
 
     protected boolean flattenOneSharedMountPointFastCloneVolume() {
+        if (checkOneRunningSharedMountPointFastCloneVolume()) {
+            return true;
+        }
+
         List<VolumeDetailVO> pendingDetails = volumeDetailsDao.findDetails(FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING, false);
         if (CollectionUtils.isEmpty(pendingDetails)) {
             return false;
@@ -10294,20 +10309,22 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             VolumeDetailVO operationDetail = volumeDetailsDao.findDetail(volumeId, FAST_CLONE_OPERATION_ID);
             String operationId = operationDetail != null ? operationDetail.getValue() : null;
             setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_RUNNING);
+            setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_PROGRESS, "0.00");
             markFastCloneVmStatus(vm.getId(), FAST_CLONE_FLATTEN_RUNNING, operationId);
             try {
                 Answer answer = sendSharedMountPointFlattenCommand(volume, "flattenCloneVolume", null);
                 if (answer == null || !answer.getResult()) {
                     throw new CloudRuntimeException(answer == null ? "No answer from KVM agent while flattening SharedMountPoint clone volume." : answer.getDetails());
                 }
-                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_DONE);
-                if (StringUtils.isNotBlank(operationId)) {
-                    markFastCloneVmStatus(vm.getId(), hasPendingFastCloneVolumes(operationId) ? FAST_CLONE_FLATTEN_PENDING : FAST_CLONE_FLATTEN_DONE, operationId);
+                updateSharedMountPointFastCloneFlattenProgress(volumeId, vm.getId(), answer.getDetails());
+                if (FAST_CLONE_FLATTENED.equalsIgnoreCase(answer.getDetails())) {
+                    finishSharedMountPointFastCloneVolumeFlatten(volume, vm, operationId);
+                } else {
+                    logger.info("Started SharedMountPoint clone volume [{}] flatten.", volume);
                 }
-                logger.info("Flattened SharedMountPoint clone volume [{}].", volume);
-                tryCommitFastCloneSourceOverlay(operationId);
             } catch (Exception e) {
                 setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING);
+                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_PROGRESS, "0.00");
                 markFastCloneVmStatus(vm.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
                 logger.warn("Failed to flatten SharedMountPoint clone volume [{}]. It will be retried by the next flatten task.", volume, e);
             }
@@ -10316,9 +10333,100 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         return false;
     }
 
+    protected boolean checkOneRunningSharedMountPointFastCloneVolume() {
+        List<VolumeDetailVO> runningDetails = volumeDetailsDao.findDetails(FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_RUNNING, false);
+        if (CollectionUtils.isEmpty(runningDetails)) {
+            return false;
+        }
+
+        for (VolumeDetailVO runningDetail : runningDetails) {
+            long volumeId = runningDetail.getResourceId();
+            VolumeVO volume = _volsDao.findById(volumeId);
+            if (volume == null) {
+                volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS);
+                return true;
+            }
+
+            Long vmId = volume.getInstanceId();
+            UserVmVO vm = vmId != null ? _vmDao.findById(vmId) : null;
+            VolumeDetailVO operationDetail = volumeDetailsDao.findDetail(volumeId, FAST_CLONE_OPERATION_ID);
+            String operationId = operationDetail != null ? operationDetail.getValue() : null;
+            if (vm == null || vm.getRemoved() != null) {
+                volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS);
+                return true;
+            }
+            if (vm.getState() != State.Running) {
+                logger.debug("Resetting SharedMountPoint clone volume [{}] flatten to pending because VM [{}] is [{}].", volume, vm, vm.getState());
+                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING);
+                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_PROGRESS, "0.00");
+                markFastCloneVmStatus(vm.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
+                return true;
+            }
+
+            try {
+                Answer answer = sendSharedMountPointFlattenCommand(volume, "checkFlattenCloneVolume", null);
+                if (answer == null || !answer.getResult()) {
+                    throw new CloudRuntimeException(answer == null ? "No answer from KVM agent while checking SharedMountPoint clone volume flatten." : answer.getDetails());
+                }
+                updateSharedMountPointFastCloneFlattenProgress(volumeId, vm.getId(), answer.getDetails());
+                if (FAST_CLONE_FLATTENED.equalsIgnoreCase(answer.getDetails())) {
+                    finishSharedMountPointFastCloneVolumeFlatten(volume, vm, operationId);
+                } else {
+                    logger.debug("SharedMountPoint clone volume [{}] flatten is still running.", volume);
+                }
+            } catch (Exception e) {
+                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING);
+                setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_PROGRESS, "0.00");
+                markFastCloneVmStatus(vm.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
+                logger.warn("Failed to check SharedMountPoint clone volume [{}] flatten. It will be retried by the next flatten task.", volume, e);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    protected void finishSharedMountPointFastCloneVolumeFlatten(VolumeVO volume, UserVmVO vm, String operationId) {
+        setFastCloneVolumeDetail(volume.getId(), FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_DONE);
+        setFastCloneVolumeDetail(volume.getId(), FAST_CLONE_FLATTEN_PROGRESS, "100.00");
+        if (StringUtils.isNotBlank(operationId)) {
+            markFastCloneVmStatus(vm.getId(), hasPendingFastCloneVolumes(operationId) ? FAST_CLONE_FLATTEN_PENDING : FAST_CLONE_FLATTEN_DONE, operationId);
+        }
+        logger.info("Flattened SharedMountPoint clone volume [{}].", volume);
+        tryCommitFastCloneSourceOverlay(operationId);
+    }
+
     protected void setFastCloneVolumeDetail(long volumeId, String key, String value) {
         volumeDetailsDao.removeDetail(volumeId, key);
         volumeDetailsDao.addDetail(volumeId, key, value, false);
+    }
+
+    protected void setFastCloneVmFlattenProgress(long vmId, String progress) {
+        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS);
+        if (StringUtils.isNotBlank(progress)) {
+            userVmDetailsDao.addDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS, progress, false);
+        }
+    }
+
+    protected void updateSharedMountPointFastCloneFlattenProgress(long volumeId, long vmId, String details) {
+        String progress = getSharedMountPointFastCloneFlattenProgress(details);
+        if (StringUtils.isBlank(progress)) {
+            return;
+        }
+        setFastCloneVolumeDetail(volumeId, FAST_CLONE_FLATTEN_PROGRESS, progress);
+        setFastCloneVmFlattenProgress(vmId, progress);
+    }
+
+    protected String getSharedMountPointFastCloneFlattenProgress(String details) {
+        if (!StringUtils.startsWithIgnoreCase(details, FAST_CLONE_FLATTEN_RUNNING_DETAIL_PREFIX)) {
+            return null;
+        }
+        String progress = StringUtils.trim(StringUtils.substringAfter(details, FAST_CLONE_FLATTEN_RUNNING_DETAIL_PREFIX));
+        if (!NumberUtils.isNumber(progress)) {
+            return null;
+        }
+        double progressValue = NumberUtils.toDouble(progress, 0);
+        progressValue = Math.max(0, Math.min(100, progressValue));
+        return String.format(Locale.ROOT, "%.2f", progressValue);
     }
 
     protected Answer sendSharedMountPointFlattenCommand(VolumeVO volume, String operation, String backingPath) throws Exception {
@@ -10420,6 +10528,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_BACKING_PATH);
         volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_OVERLAY_PATH);
         volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_FLATTEN_STATUS);
+        volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_FLATTEN_PROGRESS);
         volumeDetailsDao.removeDetail(volumeId, FAST_CLONE_HOST_ID);
     }
 

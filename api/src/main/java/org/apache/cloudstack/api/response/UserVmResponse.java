@@ -308,6 +308,10 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
     @Param(description = "SharedMountPoint fast clone flatten status of the virtual machine.")
     private String cloneFastStatus;
 
+    @SerializedName("clonefastflattenprogress")
+    @Param(description = "SharedMountPoint fast clone flatten progress percentage of the virtual machine.")
+    private String cloneFastFlattenProgress;
+
     @SerializedName("readonlydetails")
     @Param(description = "List of read-only Vm details as comma separated string.", since = "4.16.0")
     private String readOnlyDetails;
@@ -1003,6 +1007,10 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
         this.cloneFastStatus = cloneFastStatus;
     }
 
+    public void setCloneFastFlattenProgress(String cloneFastFlattenProgress) {
+        this.cloneFastFlattenProgress = cloneFastFlattenProgress;
+    }
+
     public void setReadOnlyDetails(String readOnlyDetails) {
         this.readOnlyDetails = readOnlyDetails;
     }
@@ -1029,6 +1037,10 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
 
     public String getCloneFastStatus() {
         return cloneFastStatus;
+    }
+
+    public String getCloneFastFlattenProgress() {
+        return cloneFastFlattenProgress;
     }
 
     public String getReadOnlyDetails() {
