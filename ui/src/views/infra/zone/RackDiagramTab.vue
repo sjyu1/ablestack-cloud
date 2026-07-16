@@ -4476,6 +4476,17 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.zoom-input :deep(.ant-input-number-input-wrap) {
+  height: 100%;
+}
+
+.zoom-input :deep(.ant-input-number-input) {
+  height: 30px !important;
+  padding: 0 8px !important;
+  line-height: 30px !important;
+  text-align: center;
+}
+
 .zoom-slider-wrap {
   width: 144px;
   flex-shrink: 0;
