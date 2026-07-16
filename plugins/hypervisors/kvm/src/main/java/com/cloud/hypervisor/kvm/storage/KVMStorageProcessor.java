@@ -162,6 +162,9 @@ public class KVMStorageProcessor implements StorageProcessor {
     private static final String SHARED_MOUNT_POINT_FLATTEN_RUNNING = "running";
     private static final String SHARED_MOUNT_POINT_FLATTEN_RUNNING_DETAIL_PREFIX = SHARED_MOUNT_POINT_FLATTEN_RUNNING + ":";
     private static final String SHARED_MOUNT_POINT_FLATTENED = "flattened";
+    private static final String BLOCK_JOB_ALREADY_ACTIVE = "already in active block job";
+    private static final String BLOCK_PULL_JOB = "Block Pull";
+    private static final String NO_CURRENT_BLOCK_JOB = "No current block job";
     private static final Pattern BLOCK_JOB_PROGRESS_PATTERN = Pattern.compile("\\[\\s*([0-9]+(?:\\.[0-9]+)?)\\s*%\\]");
     private final KVMStoragePoolManager storagePoolMgr;
     private final LibvirtComputingResource resource;
@@ -2848,7 +2851,10 @@ public class KVMStorageProcessor implements StorageProcessor {
             logger.info("Flattened running SharedMountPoint volume [{}] for VM [{}].", volumePath, vm.getName());
             return new FlattenCmdAnswer(volume, cmd, true, SHARED_MOUNT_POINT_FLATTENED);
         }
-        return new FlattenCmdAnswer(volume, cmd, false, "No active blockpull job found and backing file still exists for volume " + volumePath);
+
+        logger.warn("No active blockpull job was found for SharedMountPoint volume [{}] on VM [{}] disk [{}], but backing file still exists. " +
+                "Attempting to start or recover the flatten job. Block job output: [{}].", volumePath, vm.getName(), diskLabel, blockJobInfo);
+        return new FlattenCmdAnswer(volume, cmd, true, startFlattenRunningVolume(vm, diskLabel, volumePath));
     }
 
     protected String startFlattenRunningVolume(Domain vm, String diskLabel, Path volumePath) throws LibvirtException, QemuImgException {
@@ -2866,6 +2872,10 @@ public class KVMStorageProcessor implements StorageProcessor {
             blockJobInfo = getBlockJobInfo(vm.getName(), diskLabel);
             if (isBlockJobActive(blockJobInfo)) {
                 return getRunningBlockPullStatus(blockJobInfo);
+            }
+            if (StringUtils.containsIgnoreCase(result.second(), BLOCK_JOB_ALREADY_ACTIVE)) {
+                logger.info("SharedMountPoint volume [{}] flatten block job is already active for VM [{}] disk [{}].", volumePath, vm.getName(), diskLabel);
+                return SHARED_MOUNT_POINT_FLATTEN_RUNNING;
             }
             throw new CloudRuntimeException("Failed to start running volume flatten using command [" + command + "]. Exit value: " + result.first() + ". Result: " + result.second());
         }
@@ -2894,19 +2904,21 @@ public class KVMStorageProcessor implements StorageProcessor {
     }
 
     protected String getBlockJobInfo(String vmName, String diskLabel) {
-        String command = String.format("virsh blockjob %s %s --info --bytes 2>&1 || true", shellQuote(vmName), shellQuote(diskLabel));
-        String result = Script.runSimpleBashScript(command);
-        if (StringUtils.containsIgnoreCase(result, "error:")) {
-            throw new CloudRuntimeException("Failed to check block job using command [" + command + "]. Result: " + result);
+        String command = String.format("virsh blockjob %s %s --info --bytes", shellQuote(vmName), shellQuote(diskLabel));
+        Pair<Integer, String> result = runBashCommand(command);
+        String output = result.second();
+        logger.debug("Checked block job for VM [{}] disk [{}]. Exit value [{}], output [{}].", vmName, diskLabel, result.first(), output);
+        if (result.first() != 0 && !StringUtils.containsIgnoreCase(output, NO_CURRENT_BLOCK_JOB)) {
+            throw new CloudRuntimeException("Failed to check block job using command [" + command + "]. Exit value: " + result.first() + ". Result: " + output);
         }
-        return result;
+        return output;
     }
 
     protected boolean isBlockJobActive(String result) {
-        if (StringUtils.isBlank(result) || StringUtils.containsIgnoreCase(result, "No current block job")) {
+        if (StringUtils.isBlank(result) || StringUtils.containsIgnoreCase(result, NO_CURRENT_BLOCK_JOB)) {
             return false;
         }
-        return true;
+        return StringUtils.containsIgnoreCase(result, BLOCK_PULL_JOB);
     }
 
     protected String getRunningBlockPullStatus(String blockJobInfo) {

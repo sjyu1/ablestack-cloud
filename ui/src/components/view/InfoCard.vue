@@ -128,18 +128,23 @@
         <div class="resource-detail-item" v-if="isFastCloneFlattenActive(resource)">
           <div class="resource-detail-item__label">{{ $t('label.sharedmountpoint.clone.flatten.status') }}</div>
           <div class="resource-detail-item__details resource-detail-item__details--column">
-            <div class="clone-fast-flatten-status">
-              <a-tag color="processing">
+            <div class="clone-fast-flatten-status-row">
+              <a-tag :color="getCloneFastStatusTagColor(resource)" class="clone-fast-flatten-status">
                 {{ getCloneFastStatusLabel(resource) }}
               </a-tag>
+              <span
+                v-if="hasCloneFastFlattenProgress(resource)"
+                class="clone-fast-flatten-percent">
+                {{ formatCloneFastFlattenProgress(resource) }}
+              </span>
             </div>
             <a-progress
               v-if="hasCloneFastFlattenProgress(resource)"
               class="progress-bar clone-fast-flatten-progress"
               size="small"
+              :show-info="false"
               :status="getCloneFastStatus(resource) === 'running' ? 'active' : 'normal'"
-              :percent="getCloneFastFlattenProgress(resource)"
-              :format="percent => parseFloat(percent).toFixed(2) + '%'" />
+              :percent="getCloneFastFlattenProgress(resource)" />
           </div>
         </div>
         <div class="resource-detail-item" v-if="resource.allocationstate">
@@ -1217,6 +1222,9 @@ export default {
       }
       return ''
     },
+    getCloneFastStatusTagColor (record) {
+      return this.getCloneFastStatus(record) === 'running' ? 'processing' : 'default'
+    },
     hasCloneFastFlattenProgress (record) {
       return this.getCloneFastFlattenProgress(record) !== null
     },
@@ -1227,6 +1235,10 @@ export default {
         return null
       }
       return Math.min(Math.max(progress, 0), 100)
+    },
+    formatCloneFastFlattenProgress (record) {
+      const progress = this.getCloneFastFlattenProgress(record)
+      return progress === null ? '' : progress.toFixed(2) + '%'
     },
     showUploadModal (show) {
       if (show) {
@@ -1615,13 +1627,29 @@ export default {
   width: 100%;
 }
 
-.clone-fast-flatten-status {
+.clone-fast-flatten-status-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  max-width: 260px;
+  width: 100%;
+}
+
+.clone-fast-flatten-status {
+  margin-right: 0;
+}
+
+.clone-fast-flatten-percent {
+  color: #606266;
+  font-size: 12px;
+  line-height: 22px;
+  white-space: nowrap;
 }
 
 .clone-fast-flatten-progress {
   max-width: 260px;
+  padding-right: 0;
 }
 
 .upload-icon {
