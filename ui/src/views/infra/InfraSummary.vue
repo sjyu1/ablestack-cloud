@@ -148,8 +148,8 @@
       </a-card>
     </a-col>
     <a-col :xs="24">
-      <div class="infra-summary-layout">
-        <div class="summary-cards-pane">
+      <div class="infra-summary-layout" :class="{ 'is-rack-expanded': rackVisualizationExpanded }">
+        <div class="summary-cards-pane" :aria-hidden="rackVisualizationExpanded">
           <div
             v-for="group in visibleSummaryGroups"
             :key="group.key"
@@ -181,8 +181,10 @@
         </div>
         <div class="rack-visualization-pane">
           <a-card :bordered="false" class="rack-visualization-card">
-            <template #title>랙 시각화</template>
-            <rack-diagram-tab />
+            <template #title>{{ $t('rackDiagram.title') }}</template>
+            <rack-diagram-tab
+              @toggle-expand="rackVisualizationExpanded = $event"
+            />
           </a-card>
         </div>
       </div>
@@ -211,6 +213,7 @@ export default {
   data () {
     return {
       loading: true,
+      rackVisualizationExpanded: false,
       routes: {},
       sections: ['zones', 'pods', 'clusters', 'hosts', 'storagepools', 'imagestores', 'objectstores', 'systemvms', 'routers', 'cpusockets', 'managementservers', 'alerts', 'ilbvms', 'metrics'],
       summaryGroups: [
@@ -401,15 +404,46 @@ export default {
     display: flex;
     align-items: flex-start;
     gap: 12px;
+    transition: gap 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .summary-cards-pane {
     width: 34%;
+    max-width: 34%;
     flex: 0 0 34%;
+    max-height: 5000px;
     padding: 10px;
+    overflow: hidden;
     border-radius: 12px;
     border: 1px solid #dfe3e8;
     background: linear-gradient(180deg, #f8f9fb 0%, #f3f5f8 100%);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    transition:
+      width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      max-width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      flex-basis 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      padding 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.2s ease,
+      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear;
+  }
+
+  .infra-summary-layout.is-rack-expanded {
+    gap: 0;
+  }
+
+  .infra-summary-layout.is-rack-expanded .summary-cards-pane {
+    width: 0;
+    max-width: 0;
+    flex: 0 0 0;
+    max-height: 0;
+    padding: 0;
+    border-width: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-16px);
+    transition-delay: 0s, 0s, 0s, 0s, 0s, 0s, 0s, 0.28s;
   }
   .summary-group {
     padding: 10px 10px 0;
@@ -481,6 +515,14 @@ export default {
     width: 66%;
     flex: 0 0 66%;
     min-width: 320px;
+    transition:
+      width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      flex-basis 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .infra-summary-layout.is-rack-expanded .rack-visualization-pane {
+    width: 100%;
+    flex: 1 1 100%;
+    min-width: 0;
   }
   .chart-card-inner {
     text-align: center;
@@ -528,8 +570,17 @@ export default {
     .summary-cards-pane,
     .rack-visualization-pane {
       width: 100%;
+      max-width: 100%;
       flex: 1 1 100%;
       min-width: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .infra-summary-layout,
+    .summary-cards-pane,
+    .rack-visualization-pane {
+      transition: none;
     }
   }
   .intermediate-certificate {

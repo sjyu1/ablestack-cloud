@@ -91,13 +91,33 @@
               {{ t('label.actions') }}
             </a-button>
           </a-dropdown>
+          <span class="toolbar-expand-divider" aria-hidden="true"></span>
+          <a-tooltip :title="t(isExpanded ? 'rackDiagram.restoreSplitView' : 'rackDiagram.expandView')">
+            <a-button
+              type="default"
+              class="toolbar-expand-btn"
+              :aria-label="t(isExpanded ? 'rackDiagram.restoreSplitView' : 'rackDiagram.expandView')"
+              :aria-pressed="isExpanded"
+              @click="toggleExpandedView"
+            >
+              <template #icon>
+                <CompressOutlined v-if="isExpanded" />
+                <FullscreenOutlined v-else />
+              </template>
+            </a-button>
+          </a-tooltip>
         </a-space>
       </div>
 
     </div>
     <a-spin :spinning="loading || saving">
       <div v-if="showRackList" class="rack-list-view">
-        <a-empty v-if="!parsedRacks.length" :description="t('rackDiagram.emptyRack')" style="margin-top: 50px;" />
+        <div v-if="!parsedRacks.length" class="rack-list-grid rack-list-grid--empty">
+          <button type="button" class="rack-list-add-card" @click="openRackModal('add')">
+            <span class="rack-list-add-icon"><PlusOutlined /></span>
+            <span>{{ t('rackDiagram.addRack') }}</span>
+          </button>
+        </div>
         <template v-else>
           <a-card class="rack-list-summary-card" :bordered="false">
             <div class="rack-list-summary-metrics">
@@ -332,7 +352,10 @@
         </template>
       </div>
       <div v-else class="rack-canvas">
-        <div class="rack-detail-layout" ref="rackDetailLayoutRef">
+        <div
+          class="rack-detail-layout"
+          ref="rackDetailLayoutRef"
+        >
         <div class="rack-main-pane" ref="rackMainPaneRef">
         <div class="rack-zoom-wrapper" :style="zoomWrapperStyle">
 
@@ -346,14 +369,14 @@
                   <div class="rack-header-title-group">
                     <a-tooltip
                       placement="top"
-                      :title="getOverflowTitle(`detail-${rIndex}`, `${rack.name} (${rack.totalHeight}U)`)"
+                      :title="getOverflowTitle(`detail-${rIndex}`, rack.name)"
                     >
                       <span
                         class="rack-header-title"
                         :ref="setOverflowTitleRef(`detail-${rIndex}`)"
                         @mouseenter="updateOverflowTitle(`detail-${rIndex}`)"
                       >
-                        {{ rack.name }} ({{ rack.totalHeight }}U)
+                        {{ rack.name }}
                       </span>
                     </a-tooltip>
                   </div>
@@ -443,7 +466,13 @@
                     <div
                       v-else
                       class="device-content"
-                      :class="[`device-${item.type}`, { 'device-content-selected': isSelectedItem(rIndex, iIndex) }]"
+                      :class="[
+                        `device-${item.type}`,
+                        {
+                          'device-content-selected': isSelectedItem(rIndex, iIndex),
+                          'device-content-compact': Number(item.height) === 1
+                        }
+                      ]"
                       draggable="true"
                       @dragstart="onDragStart(rIndex, iIndex)"
                       @click="selectDevice(rIndex, iIndex)"
@@ -532,6 +561,12 @@
           </div>
         </div>
         </div>
+        <transition
+          name="rack-inspector"
+          @before-enter="handleSidePaneBeforeEnter"
+          @after-enter="handleSidePaneAfterEnter"
+          @after-leave="handleSidePaneAfterLeave"
+        >
         <div
           v-if="selectedDevice"
           ref="rackSidePaneSlotRef"
@@ -541,8 +576,7 @@
             ref="rackSidePaneRef"
             class="rack-side-pane"
             :class="{
-              'is-fixed': sidePaneMode === 'fixed',
-              'is-bottom': sidePaneMode === 'bottom'
+              'is-fixed': sidePaneMode === 'fixed'
             }"
             :style="sidePaneInlineStyle"
           >
@@ -694,16 +728,18 @@
                       </div>
                       <div v-for="(row, idx) in visibleDeviceSpecRows" :key="row.id" class="device-memo-table-row">
                         <template v-if="activeInlineField === 'specs'">
-                          <a-auto-complete
+                          <a-select
                             v-model:value="row.key"
                             :options="deviceSpecKeyOptions"
+                            :show-search="true"
+                            option-filter-prop="value"
                             :filter-option="filterDeviceSpecKeyOption"
                             size="small"
                             :placeholder="t('rackDiagram.deviceSpecKeyPlaceholder')"
                             style="width: 100%"
                             @click.stop
+                            @mousedown.stop
                             @change="markInlineDraftChanged"
-                            @select="markInlineDraftChanged"
                             @keydown.enter.stop="finishInlineEdit"
                           />
                           <span v-if="isNumericDeviceSpecRow(row)" class="device-spec-number-wrap" @click.stop @mousedown.stop>
@@ -870,13 +906,14 @@
           </a-card>
           </div>
         </div>
+        </transition>
         </div>
       </div>
     </a-spin>
 
     <a-modal
       v-model:visible="rackModalVisible"
-      :title="rackModalMode === 'add' ? t('rackDiagram.addRack') : t('rackDiagram.editRack')"
+      :title="rackModalMode === 'add' ? t('rackDiagram.addRack') : t('label.edit')"
       :ok-text="t('label.ok')"
       :cancel-text="t('label.cancel')"
       @ok="submitRackModal"
@@ -1110,9 +1147,11 @@
             >
               <template #bodyCell="{ column, record, index }">
                 <template v-if="column.key === 'key'">
-                  <a-auto-complete
+                  <a-select
                     v-model:value="record.key"
                     :options="deviceSpecKeyOptions"
+                    :show-search="true"
+                    option-filter-prop="value"
                     :filter-option="filterDeviceSpecKeyOption"
                     :placeholder="t('rackDiagram.deviceSpecKeyPlaceholder')"
                     style="width: 100%"
@@ -1241,6 +1280,7 @@
         :placeholder="t('rackDiagram.selectHost')"
         allow-clear
         style="width: 100%"
+        @change="handleAssetLinkDraftChange"
       />
     </a-modal>
     <a-modal
@@ -1326,34 +1366,80 @@ import {
   PieChartOutlined,
   DatabaseOutlined,
   InboxOutlined,
-  DownOutlined
+  DownOutlined,
+  FullscreenOutlined,
+  CompressOutlined
 } from '@ant-design/icons-vue'
 
 // 전역 상태
 const loading = ref(false)
 const saving = ref(false)
+const isExpanded = ref(false)
 const zoomLevel = ref(0.65)
 const AUTO_ZOOM_MIN = 0.65
 const NORMAL_ZOOM_LEVEL = 0.96
 const AUTO_ZOOM_MAX = NORMAL_ZOOM_LEVEL
+const INSPECTOR_ZOOM_MIN = NORMAL_ZOOM_LEVEL * 0.4
+const INSPECTOR_FIT_GUTTER = 8
 const isAutoZoomEnabled = ref(true)
 const rackMainPaneRef = ref(null)
 const rackDetailLayoutRef = ref(null)
 const rackSidePaneSlotRef = ref(null)
 const rackSidePaneRef = ref(null)
-const sidePaneMode = ref('static') // static | fixed | bottom
+const sidePaneMode = ref('static') // static | fixed
 const sidePaneLeft = ref(0)
 const sidePaneWidth = ref(0)
 const SIDE_PANE_TOP = 64
 let resizeDebounceTimer = null
 let zoomRafId = 0
 let zoomApplyRafId = 0
+let zoomTransitionRafId = 0
+let rackMainPaneResizeObserver = null
+let expandedLayoutZoomTimer = null
 const router = useRouter()
 const store = useStore()
-const { proxy } = getCurrentInstance()
+const { proxy, emit } = getCurrentInstance()
 const t = (key, args) => proxy?.$t ? proxy.$t(key, args) : key
 const isDarkMode = computed(() => !!store.getters.darkMode)
 const RACK_UNIT_HEIGHT = 52
+const MAX_RACK_COUNT = 20
+// The backend accepts up to 1 MiB while rackml_config.content uses MEDIUMTEXT.
+const MAX_RACK_LAYOUT_BYTES = 1024 * 1024
+
+const getRackLayoutSize = (racks) => new Blob([JSON.stringify(racks)]).size
+
+const validateRackLayoutSize = (racks) => {
+  if (getRackLayoutSize(racks) <= MAX_RACK_LAYOUT_BYTES) return true
+
+  message.error(t('rackDiagram.msg.layoutSizeExceeded', { max: '1MB' }))
+  return false
+}
+
+const validateRackCount = (racks) => {
+  if (racks.length <= MAX_RACK_COUNT) return true
+
+  message.warning(t('rackDiagram.msg.rackCountExceeded', { max: MAX_RACK_COUNT }))
+  return false
+}
+
+const validateRackLayoutLimits = (racks) => validateRackCount(racks) && validateRackLayoutSize(racks)
+
+const toggleExpandedView = () => {
+  isExpanded.value = !isExpanded.value
+  emit('toggle-expand', isExpanded.value)
+
+  if (expandedLayoutZoomTimer) clearTimeout(expandedLayoutZoomTimer)
+  nextTick(() => {
+    // 요약 패널 전환이 끝난 실제 너비를 기준으로 상세 랙 배율을 다시 맞춥니다.
+    expandedLayoutZoomTimer = setTimeout(() => {
+      expandedLayoutZoomTimer = null
+      if (showRackList.value) return
+      isAutoZoomEnabled.value = true
+      applyResponsiveZoom(true, true)
+      updateSidePanePosition()
+    }, 320)
+  })
+}
 
 // 슬라이더 및 입력창과 연동할 퍼센트 단위 변수
 const zoomPercent = computed({
@@ -1377,10 +1463,48 @@ const clampZoomPercent = (val) => {
 }
 
 const scheduleZoomApply = (percent) => {
+  if (zoomTransitionRafId) {
+    cancelAnimationFrame(zoomTransitionRafId)
+    zoomTransitionRafId = 0
+  }
   if (zoomApplyRafId) cancelAnimationFrame(zoomApplyRafId)
   zoomApplyRafId = requestAnimationFrame(() => {
     zoomPercent.value = percent
   })
+}
+
+const animateZoomLevel = (target, duration = 360) => {
+  if (zoomTransitionRafId) cancelAnimationFrame(zoomTransitionRafId)
+
+  const start = Number(zoomLevel.value || target)
+  const distance = target - start
+  if (Math.abs(distance) < 0.005) {
+    zoomLevel.value = target
+    zoomTransitionRafId = 0
+    return
+  }
+
+  const startedAt = performance.now()
+  let lastAppliedAt = 0
+  const step = (now) => {
+    const progress = Math.min(1, (now - startedAt) / duration)
+    const eased = 1 - Math.pow(1 - progress, 3)
+
+    // CSS zoom의 연속 재배치를 줄이기 위해 약 30fps로 제한합니다.
+    if (now - lastAppliedAt >= 32 || progress === 1) {
+      zoomLevel.value = start + distance * eased
+      lastAppliedAt = now
+    }
+
+    if (progress < 1) {
+      zoomTransitionRafId = requestAnimationFrame(step)
+    } else {
+      zoomLevel.value = target
+      zoomTransitionRafId = 0
+    }
+  }
+
+  zoomTransitionRafId = requestAnimationFrame(step)
 }
 
 const onZoomSliderChange = (val) => {
@@ -1409,11 +1533,6 @@ const sidePaneInlineStyle = computed(() => {
     return {
       left: `${Math.round(sidePaneLeft.value)}px`,
       top: `${SIDE_PANE_TOP}px`,
-      width: `${Math.round(sidePaneWidth.value)}px`
-    }
-  }
-  if (sidePaneMode.value === 'bottom') {
-    return {
       width: `${Math.round(sidePaneWidth.value)}px`
     }
   }
@@ -1985,8 +2104,17 @@ const closeAssetLinkModal = () => {
   assetLinkModalVisible.value = false
 }
 
+const handleAssetLinkDraftChange = (value) => {
+  if (!value) return
+  const selected = inventoryOptions.value.find(o => o.value === value)
+  if (!selected) return
+  selectedDeviceDraft.label = selected.meta?.name || selected.label || selectedDeviceDraft.label
+}
+
 const submitAssetLinkModal = async () => {
+  const before = JSON.stringify(getSideDraftSnapshot())
   selectedDeviceDraft.sourceRef = assetLinkDraft.value || null
+  handleAssetLinkDraftChange(selectedDeviceDraft.sourceRef)
   selectedDeviceHost.value = null
   if (selectedDeviceDraft.sourceRef && String(selectedDeviceDraft.sourceRef).startsWith('host:')) {
     const hostId = String(selectedDeviceDraft.sourceRef).split(':')[1] || ''
@@ -1997,6 +2125,10 @@ const submitAssetLinkModal = async () => {
         selectedDeviceHost.value = null
       }
     }
+  }
+  applyInlineDeviceChangesToRack()
+  if (before !== JSON.stringify(getSideDraftSnapshot())) {
+    isDirty.value = true
   }
   closeAssetLinkModal()
 }
@@ -2016,8 +2148,6 @@ const updateSidePanePosition = () => {
 
   const layoutRect = layout.getBoundingClientRect()
   const slotRect = slot.getBoundingClientRect()
-  const paneHeight = pane.offsetHeight
-  const limitBottom = layoutRect.bottom - SIDE_PANE_TOP
 
   sidePaneWidth.value = slotRect.width
 
@@ -2026,13 +2156,31 @@ const updateSidePanePosition = () => {
     return
   }
 
-  if (limitBottom <= paneHeight) {
-    sidePaneMode.value = 'bottom'
-    return
-  }
-
   sidePaneLeft.value = slotRect.left
   sidePaneMode.value = 'fixed'
+}
+
+const handleSidePaneBeforeEnter = (element) => {
+  if (!isAutoZoomEnabled.value) return
+  const layoutWidth = rackDetailLayoutRef.value?.clientWidth || 0
+  const measuredWidth = Number.parseFloat(window.getComputedStyle(element).width) || 0
+  const responsiveWidth = window.matchMedia('(max-width: 980px)').matches
+    ? 280
+    : Math.min(460, Math.max(320, layoutWidth * 0.42))
+  const inspectorWidth = measuredWidth > 1 ? measuredWidth : responsiveWidth
+  const targetMainPaneWidth = Math.max(0, layoutWidth - inspectorWidth - 12)
+  applyResponsiveZoom(false, true, targetMainPaneWidth)
+}
+
+const handleSidePaneAfterEnter = () => {
+  nextTick(() => {
+    applyResponsiveZoom(false, true)
+    updateSidePanePosition()
+  })
+}
+
+const handleSidePaneAfterLeave = () => {
+  nextTick(() => applyResponsiveZoom(false, true))
 }
 // 데이터 변경 여부 추적
 const isDirty = ref(false)
@@ -2050,6 +2198,10 @@ watch(selectedDevice, async (device) => {
   nextTick(() => updateSidePanePosition())
   selectedDeviceHost.value = null
   deviceInfoActiveTab.value = 'summary'
+  if (!device) {
+    activeInlineField.value = ''
+    return
+  }
   syncSelectedDeviceDraft(device)
   syncSideMemoFields(device)
   const sourceRef = String(device?.sourceRef || '')
@@ -2064,7 +2216,12 @@ watch(selectedDevice, async (device) => {
   }
 })
 
-watch(showRackList, () => nextTick(() => updateSidePanePosition()))
+watch(showRackList, () => {
+  nextTick(() => {
+    updateSidePanePosition()
+    syncRackMainPaneResizeObserver()
+  })
+})
 
 // 페이지 이탈 방지 이벤트 핸들러
 const handleBeforeUnload = (e) => {
@@ -2120,15 +2277,12 @@ const fetchRackData = () => {
 
     // DB에 저장된 데이터가 있고, 내용(content)이 존재하는 경우
     if (layouts && layouts.length > 0 && layouts[0].content) {
-      parsedRacks.value = JSON.parse(layouts[0].content)
+      parsedRacks.value = normalizeLoadedRackLayouts(JSON.parse(layouts[0].content))
       message.success(t('rackDiagram.msg.rackLoaded'))
     } else {
-      // DB에 데이터가 전혀 없는 경우 (최초 접속) -> 기본 빈 랙 생성
-      parsedRacks.value = [{
-        name: t('rackDiagram.defaultRackName'),
-        totalHeight: 42,
-        items: [{ type: 'gap', height: 42 }]
-      }]
+      // 최초 배포/접속 시에는 임의 랙을 만들지 않는다.
+      // 사용자가 명시적으로 "새 랙 추가"를 눌렀을 때만 생성일/위치가 있는 랙을 만든다.
+      parsedRacks.value = []
     }
     // 데이터를 방금 불러왔으므로 미저장 상태(isDirty) 초기화 (빈 줄 삭제함)
     nextTick(() => { isDirty.value = false })
@@ -2140,6 +2294,20 @@ const fetchRackData = () => {
   })
 }
 
+const isLegacyAutoEmptyRack = (rack) => {
+  if (!rack || String(rack.name || '') !== t('rackDiagram.defaultRackName')) return false
+  if (Number(rack.totalHeight) !== 42) return false
+  if (rack.createdAt || rack.created || rack.createDate || rack.location || rack.room || rack.position) return false
+  const items = Array.isArray(rack.items) ? rack.items : []
+  return items.length === 1 && items[0]?.type === 'gap' && Number(items[0]?.height) === 42
+}
+
+const normalizeLoadedRackLayouts = (layouts) => {
+  if (!Array.isArray(layouts)) return []
+  if (layouts.length === 1 && isLegacyAutoEmptyRack(layouts[0])) return []
+  return layouts
+}
+
 const saveRackData = () => {
   if (!currentZoneId.value) {
     message.error(t('rackDiagram.msg.noZoneToSave'))
@@ -2149,10 +2317,12 @@ const saveRackData = () => {
     applyInlineDeviceChangesToRack()
   }
 
+  if (!validateRackLayoutLimits(parsedRacks.value)) return Promise.resolve(false)
+
   saving.value = true
   const jsonContent = JSON.stringify(parsedRacks.value)
 
-  return api('updateRackLayout', {
+  return api('updateRackLayout', {}, 'POST', {
     zoneid: currentZoneId.value,
     name: 'default',
     content: jsonContent
@@ -2214,6 +2384,8 @@ watch(() => rackForm.totalHeight, () => {
 })
 
 const openRackModal = (mode, index = -1) => {
+  if (mode === 'add' && !validateRackCount([...parsedRacks.value, {}])) return
+
   clearRackFormErrors()
   rackModalMode.value = mode
   targetRackIndex.value = index
@@ -2332,6 +2504,7 @@ const handleImport = (event) => {
 
       // 2. 간단한 유효성 검사 (배열 형태인지 확인)
       if (Array.isArray(importedData)) {
+        if (!validateRackLayoutLimits(importedData)) return
         parsedRacks.value = importedData // 화면 갱신
         message.success(t('rackDiagram.msg.importSuccess'))
       } else {
@@ -2360,7 +2533,10 @@ const cloneRack = (rIndex) => {
     createDate: undefined,
     items: targetRack.items.map(item => ({ ...item }))
   }
-  parsedRacks.value.push(newRack)
+  const nextRacks = [...parsedRacks.value, newRack]
+  if (!validateRackLayoutLimits(nextRacks)) return
+
+  parsedRacks.value = nextRacks
   message.success(t('rackDiagram.msg.rackCloned'))
 }
 
@@ -2372,15 +2548,19 @@ const submitRackModal = () => {
   const rackLocation = String(rackForm.location || '').trim()
 
   if (rackModalMode.value === 'add') {
-    parsedRacks.value.push({
+    const newRack = {
       name: rackName,
       totalHeight: rackForm.totalHeight,
       location: rackLocation,
       createdAt: rackForm.createdAt || new Date().toISOString(),
       items: [{ type: 'gap', height: rackForm.totalHeight }]
-    })
+    }
+    const nextRacks = [...parsedRacks.value, newRack]
+    if (!validateRackLayoutLimits(nextRacks)) return
+    parsedRacks.value = nextRacks
   } else {
     const targetRack = parsedRacks.value[targetRackIndex.value]
+    const originalRack = JSON.parse(JSON.stringify(targetRack))
     const currentItemsHeight = targetRack.items.reduce((sum, item) => sum + item.height, 0)
     const diff = rackForm.totalHeight - currentItemsHeight
 
@@ -2433,6 +2613,11 @@ const submitRackModal = () => {
       targetRack.name = rackName
       targetRack.location = rackLocation
     }
+
+    if (!validateRackLayoutLimits(parsedRacks.value)) {
+      parsedRacks.value.splice(targetRackIndex.value, 1, originalRack)
+      return
+    }
   }
   closeRackModal()
 }
@@ -2465,18 +2650,38 @@ const backToRackList = () => {
   showRackList.value = true
 }
 
-const applyResponsiveZoom = (force = false) => {
+const getRackNaturalWidth = () => {
+  const rackWrapper = rackMainPaneRef.value?.querySelector('.rack-wrapper')
+  if (!rackWrapper) return 0
+  return Number.parseFloat(window.getComputedStyle(rackWrapper).width) || rackWrapper.offsetWidth || 0
+}
+
+const applyResponsiveZoom = (force = false, animate = false, availableWidth = 0) => {
   if (showRackList.value) return
   if (!force && !isAutoZoomEnabled.value) return
 
-  const mainPaneWidth = rackMainPaneRef.value?.clientWidth || 0
+  const mainPaneWidth = availableWidth || rackMainPaneRef.value?.clientWidth || 0
   if (!mainPaneWidth) return
 
-  // 랙 1개 상세 기준의 대략적 기준폭(헤더/스크롤 여유 포함)
-  const baseWidth = 1280
-  const ratio = mainPaneWidth / baseWidth
-  const nextZoom = Math.max(AUTO_ZOOM_MIN, Math.min(AUTO_ZOOM_MAX, Number(ratio.toFixed(2))))
-  zoomLevel.value = nextZoom
+  let nextZoom
+  if (selectedDevice.value) {
+    const rackNaturalWidth = getRackNaturalWidth()
+    if (!rackNaturalWidth) return
+    const fitWidth = Math.max(0, mainPaneWidth - INSPECTOR_FIT_GUTTER)
+    const fitRatio = fitWidth / rackNaturalWidth
+    nextZoom = Math.max(INSPECTOR_ZOOM_MIN, Math.min(AUTO_ZOOM_MAX, Number(fitRatio.toFixed(3))))
+  } else {
+    // 장비 패널이 닫힌 상태에서는 기존 상세 화면의 여백 비율을 유지합니다.
+    const baseWidth = 1280
+    const ratio = mainPaneWidth / baseWidth
+    nextZoom = Math.max(AUTO_ZOOM_MIN, Math.min(AUTO_ZOOM_MAX, Number(ratio.toFixed(2))))
+  }
+
+  if (animate) {
+    animateZoomLevel(nextZoom)
+  } else {
+    zoomLevel.value = nextZoom
+  }
 }
 
 const handleResponsiveResize = () => {
@@ -2484,10 +2689,21 @@ const handleResponsiveResize = () => {
   resizeDebounceTimer = setTimeout(() => {
     if (zoomRafId) cancelAnimationFrame(zoomRafId)
     zoomRafId = requestAnimationFrame(() => {
-      applyResponsiveZoom(false)
+      applyResponsiveZoom(false, !!selectedDevice.value)
       updateSidePanePosition()
     })
   }, 120)
+}
+
+const syncRackMainPaneResizeObserver = () => {
+  if (rackMainPaneResizeObserver) {
+    rackMainPaneResizeObserver.disconnect()
+    rackMainPaneResizeObserver = null
+  }
+  if (showRackList.value || !rackMainPaneRef.value || typeof ResizeObserver === 'undefined') return
+
+  rackMainPaneResizeObserver = new ResizeObserver(() => handleResponsiveResize())
+  rackMainPaneResizeObserver.observe(rackMainPaneRef.value)
 }
 
 const selectDevice = (rIndex, iIndex) => {
@@ -3978,6 +4194,7 @@ onMounted(() => {
   nextTick(() => {
     applyResponsiveZoom(true)
     updateSidePanePosition()
+    syncRackMainPaneResizeObserver()
   })
 })
 
@@ -3988,11 +4205,20 @@ onBeforeUnmount(() => {
   if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer)
   if (zoomRafId) cancelAnimationFrame(zoomRafId)
   if (zoomApplyRafId) cancelAnimationFrame(zoomApplyRafId)
+  if (zoomTransitionRafId) cancelAnimationFrame(zoomTransitionRafId)
+  if (rackMainPaneResizeObserver) rackMainPaneResizeObserver.disconnect()
+  if (expandedLayoutZoomTimer) clearTimeout(expandedLayoutZoomTimer)
 })
 
 </script>
 
 <style scoped>
+.rack-diagram-root {
+  --rack-brand-primary: #1890ff;
+  --rack-brand-primary-bg: rgba(24, 144, 255, 0.08);
+  --rack-brand-primary-bg-strong: rgba(24, 144, 255, 0.18);
+}
+
 /* 툴바 전체 컨테이너 (좌우 양끝 정렬) */
 .toolbar-container {
   display: flex !important;
@@ -4047,6 +4273,28 @@ onBeforeUnmount(() => {
 
 .rack-save-tooltip-wrap {
   display: inline-flex;
+}
+
+.toolbar-expand-divider {
+  display: block;
+  width: 1px;
+  height: 20px;
+  background: #e5e7eb;
+}
+
+.toolbar-expand-btn {
+  width: 32px;
+  min-width: 32px;
+  padding: 0 !important;
+  color: #64748b;
+  border-radius: 6px;
+}
+
+.toolbar-expand-btn:hover,
+.toolbar-expand-btn:focus {
+  color: #1677ff;
+  border-color: #91caff;
+  background: #e6f4ff;
 }
 
 .toolbar-zoom {
@@ -4264,6 +4512,17 @@ onBeforeUnmount(() => {
   width: 70px;
   text-align: center;
   flex-shrink: 0;
+}
+
+.zoom-input :deep(.ant-input-number-input-wrap) {
+  height: 100%;
+}
+
+.zoom-input :deep(.ant-input-number-input) {
+  height: 30px !important;
+  padding: 0 8px !important;
+  line-height: 30px !important;
+  text-align: center;
 }
 
 .zoom-slider-wrap {
@@ -4883,7 +5142,7 @@ onBeforeUnmount(() => {
 
 .rack-detail-layout {
   display: flex;
-  gap: 12px;
+  gap: 0;
   align-items: flex-start;
   position: relative;
   min-width: 0;
@@ -4897,14 +5156,57 @@ onBeforeUnmount(() => {
   padding-bottom: 8px;
 }
 
+.rack-main-pane .rack-zoom-wrapper {
+  display: block;
+  margin-right: auto;
+  margin-left: auto;
+}
+
 .rack-side-pane-slot {
-  width: clamp(300px, 24vw, 420px);
-  flex: 0 0 clamp(300px, 24vw, 420px);
+  width: clamp(320px, 42%, 460px);
+  flex: 0 0 clamp(320px, 42%, 460px);
+  margin-left: 12px;
   position: relative;
   align-self: flex-start;
 }
 
+.rack-inspector-enter-active,
+.rack-inspector-leave-active {
+  overflow: hidden;
+  will-change: width, flex-basis, transform, opacity;
+  transition:
+    width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    flex-basis 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    margin-left 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease,
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rack-inspector-enter-from,
+.rack-inspector-leave-to {
+  width: 0 !important;
+  flex-basis: 0 !important;
+  margin-left: 0;
+  opacity: 0;
+  transform: translateX(28px);
+}
+
+.rack-inspector-enter-to,
+.rack-inspector-leave-from {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rack-inspector-enter-active,
+  .rack-inspector-leave-active {
+    transition: none;
+  }
+}
+
 .rack-side-pane {
+  --device-scrollbar-thumb: rgba(100, 116, 139, 0.28);
+  --device-scrollbar-thumb-hover: rgba(100, 116, 139, 0.48);
   width: 100%;
   position: -webkit-sticky;
   position: sticky;
@@ -4912,6 +5214,7 @@ onBeforeUnmount(() => {
   align-self: flex-start;
   display: flex;
   flex-direction: column;
+  height: calc(100vh - 80px);
   max-height: calc(100vh - 80px);
   overflow: visible;
   max-width: 100%;
@@ -4923,14 +5226,6 @@ onBeforeUnmount(() => {
   z-index: 40;
 }
 
-.rack-side-pane.is-bottom {
-  position: absolute !important;
-  top: auto !important;
-  left: 0;
-  right: 0;
-  bottom: 0;
-}
-
 .rack-side-pane-card {
   border-radius: 8px;
   border-color: rgba(0,0,0,0.06);
@@ -4938,6 +5233,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  height: 100%;
   max-height: inherit;
   min-height: 0;
 }
@@ -5063,10 +5359,12 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .device-info-tabs :deep(.ant-tabs-content-holder) {
   flex: 1 1 auto;
+  height: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -5078,8 +5376,39 @@ onBeforeUnmount(() => {
 }
 
 .device-info-tabs :deep(.ant-tabs-tabpane) {
-  overflow: auto;
-  padding-right: 2px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 6px 14px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--device-scrollbar-thumb) transparent;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.device-info-tabs :deep(.ant-tabs-tabpane::-webkit-scrollbar) {
+  width: 6px;
+  height: 6px;
+}
+
+.device-info-tabs :deep(.ant-tabs-tabpane::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+.device-info-tabs :deep(.ant-tabs-tabpane::-webkit-scrollbar-thumb) {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--device-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.device-info-tabs :deep(.ant-tabs-tabpane::-webkit-scrollbar-thumb:hover) {
+  background: var(--device-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.device-info-tabs :deep(.ant-tabs-tabpane::-webkit-scrollbar-corner) {
+  background: transparent;
 }
 
 .device-info-tabs :deep(.ant-tabs-tab) {
@@ -5666,12 +5995,14 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
+  min-height: 42px;
 }
 
 .rack-header-title-group {
   display: flex;
   align-items: center;
+  align-self: stretch;
   flex: 1 1 auto;
   min-width: 0;
   gap: 10px;
@@ -5693,14 +6024,14 @@ onBeforeUnmount(() => {
 .rack-header-actions {
   display: flex !important;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex-shrink: 0;
 }
 
 .rack-header-action-group {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
 .rack-header-action-separator {
@@ -5824,11 +6155,11 @@ onBeforeUnmount(() => {
 }
 
 .ruler-number-selected {
-  color: #1677ff;
-  background: rgba(22, 119, 255, 0.06);
-  border-left: 1px solid #1677ff;
-  border-top: 1px solid #1677ff;
-  border-bottom: 1px solid #1677ff;
+  color: var(--rack-brand-primary);
+  background: var(--rack-brand-primary-bg);
+  border-left: 1px solid var(--rack-brand-primary);
+  border-top: 1px solid var(--rack-brand-primary);
+  border-bottom: 1px solid var(--rack-brand-primary);
 }
 
 /* 랙 내부 프레임 */
@@ -5863,8 +6194,8 @@ onBeforeUnmount(() => {
 
 .rack-item-selected,
 .rack-item-selected:hover {
-  border: 1px solid #1677ff;
-  background: rgba(22, 119, 255, 0.06);
+  border: 1px solid var(--rack-brand-primary);
+  background: var(--rack-brand-primary-bg);
   z-index: 3;
 }
 
@@ -5934,11 +6265,11 @@ onBeforeUnmount(() => {
 
 .device-content-selected,
 .device-content-selected:hover {
-  background: rgba(22, 119, 255, 0.06) !important;
+  background: var(--rack-brand-primary-bg) !important;
 }
 
 .device-content-selected .device-name-tag {
-  color: #1677ff;
+  color: var(--rack-brand-primary);
 }
 
 .device-content::before {
@@ -6158,6 +6489,34 @@ onBeforeUnmount(() => {
   border: 1px solid #d9d9d9;
 }
 
+/* 1U 장비는 내부 요소의 밀도를 낮춰 상하 여백을 확보합니다. */
+.device-content-compact .device-pattern {
+  top: 8px;
+  bottom: 8px;
+}
+
+.device-content-compact .device-icon-overlay {
+  width: 24px;
+  height: 24px;
+}
+
+.device-content-compact .device-name-tag {
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.device-content-compact .tag-content {
+  min-width: 100px;
+  padding: 2px 8px;
+  gap: 6px;
+}
+
+.device-content-compact .tag-badge {
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 14px;
+}
+
 /* 액션 버튼 (호버 시에만 표시) */
 .device-actions {
   /* 버튼을 장비 둥둥 띄우는 핵심 코드 (이게 빠져서 안 보였던 겁니다!) */
@@ -6337,6 +6696,23 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .toolbar-divider {
   background-color: #4a515a !important;
+}
+
+.rack-diagram-root.is-dark .toolbar-expand-divider {
+  background: #4a515a;
+}
+
+.rack-diagram-root.is-dark .toolbar-expand-btn {
+  color: rgba(255, 255, 255, 0.72);
+  border-color: #4a515a;
+  background: #22282f;
+}
+
+.rack-diagram-root.is-dark .toolbar-expand-btn:hover,
+.rack-diagram-root.is-dark .toolbar-expand-btn:focus {
+  color: #69b1ff;
+  border-color: #3c89e8;
+  background: rgba(105, 177, 255, 0.12);
 }
 
 .rack-diagram-root.is-dark .toolbar-zoom {
@@ -6569,6 +6945,11 @@ onBeforeUnmount(() => {
   background: #151b24;
 }
 
+.rack-diagram-root.is-dark .rack-side-pane {
+  --device-scrollbar-thumb: rgba(203, 213, 225, 0.20);
+  --device-scrollbar-thumb-hover: rgba(203, 213, 225, 0.38);
+}
+
 .rack-diagram-root.is-dark .device-summary-header,
 .rack-diagram-root.is-dark .device-info-section,
 .rack-diagram-root.is-dark .device-info-actions,
@@ -6786,9 +7167,9 @@ onBeforeUnmount(() => {
 }
 
 .rack-diagram-root.is-dark .ruler-number-selected {
-  color: #8cc8ff;
-  background: rgba(22, 119, 255, 0.20);
-  border-color: #4c93ff;
+  color: var(--rack-brand-primary);
+  background: var(--rack-brand-primary-bg-strong);
+  border-color: var(--rack-brand-primary);
 }
 
 .rack-diagram-root.is-dark .rack-frame {
@@ -6815,9 +7196,9 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .rack-item-selected,
 .rack-diagram-root.is-dark .rack-item-selected:hover {
-  border-color: #4c93ff;
-  background: rgba(22, 119, 255, 0.20);
-  box-shadow: inset 44px 0 0 rgba(22, 119, 255, 0.20);
+  border-color: var(--rack-brand-primary);
+  background: var(--rack-brand-primary-bg-strong);
+  box-shadow: inset 44px 0 0 var(--rack-brand-primary-bg-strong);
 }
 
 .rack-diagram-root.is-dark .device-content {
@@ -6826,7 +7207,7 @@ onBeforeUnmount(() => {
 
 .rack-diagram-root.is-dark .device-content-selected,
 .rack-diagram-root.is-dark .device-content-selected:hover {
-  background: linear-gradient(90deg, rgba(22, 119, 255, 0.24) 0, rgba(22, 119, 255, 0.24) 74px, rgba(22, 119, 255, 0.14) 74px, rgba(22, 119, 255, 0.14) 100%) !important;
+  background: linear-gradient(90deg, rgba(24, 144, 255, 0.22) 0, rgba(24, 144, 255, 0.22) 74px, rgba(24, 144, 255, 0.12) 74px, rgba(24, 144, 255, 0.12) 100%) !important;
 }
 
 .rack-diagram-root.is-dark .gap-content {

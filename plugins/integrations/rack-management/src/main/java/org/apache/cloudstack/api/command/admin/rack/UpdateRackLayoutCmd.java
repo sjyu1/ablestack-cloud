@@ -56,8 +56,8 @@ public class UpdateRackLayoutCmd extends BaseCmd {
             description = "name of the layout. Defaults to 'default' if not specified.")
     private String name;
 
-    // JSON 길이가 길 수 있으므로 length를 넉넉히 잡아줍니다.
-    @Parameter(name = "content", type = CommandType.STRING, required = true, length = 65535,
+    // Keep the API below the MEDIUMTEXT capacity while allowing multi-rack layouts.
+    @Parameter(name = "content", type = CommandType.STRING, required = true, length = 1048576,
             description = "JSON string representing the rack diagram layout")
     private String content;
 
