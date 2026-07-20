@@ -706,41 +706,49 @@ public class AblestackCommvaultClient {
     }
 
     private String extractClientReadinessDetails(JsonNode root) {
-        JsonNode summary = root.get("summary");
-        if (summary != null && summary.isArray()) {
+        JsonNode summary = root.path("summary");
+        if (summary.isArray()) {
             List<String> details = new ArrayList<>();
             for (JsonNode entity : summary) {
-                String role = findText(entity, "role", "name", "displayName", "entityName");
-                String status = findText(entity, "status", "readinessStatus");
-                String reason = findText(entity, "reason", "cause", "message", "description", "errorMessage");
+                String role = entity.path("entity").path("entityName").asText("unknown");
+                String status = normalizeReadinessText(entity.path("status").asText("unknown"));
                 details.add(String.format("role=[%s], status=[%s], reason=[%s]",
-                        StringUtils.defaultIfBlank(role, "unknown"),
-                        StringUtils.defaultIfBlank(status, "unknown"),
-                        StringUtils.defaultIfBlank(reason, "unknown")));
+                        StringUtils.defaultIfBlank(role, "unknown"), StringUtils.defaultIfBlank(status, "unknown"),
+                        getReadinessReason(root)));
             }
             if (!details.isEmpty()) {
                 return String.join("; ", details);
             }
         }
-
-        String status = findText(root, "status", "readinessStatus");
-        String reason = findText(root, "reason", "cause", "message", "description", "errorMessage");
-        return String.format("status=[%s], reason=[%s]",
-                StringUtils.defaultIfBlank(status, "unknown"),
-                StringUtils.defaultIfBlank(reason, "unknown"));
+        return "status=[unknown], reason=[unknown]";
     }
 
-    private String findText(JsonNode node, String... fieldNames) {
-        if (node == null) {
-            return null;
+    private String getReadinessReason(JsonNode root) {
+        JsonNode detail = root.path("detail");
+        if (!detail.isArray()) {
+            return "unknown";
         }
-        for (String fieldName : fieldNames) {
-            JsonNode value = node.findValue(fieldName);
-            if (value != null && !value.isMissingNode() && value.isValueNode() && StringUtils.isNotBlank(value.asText())) {
-                return value.asText();
+        List<String> reasons = new ArrayList<>();
+        for (JsonNode item : detail) {
+            String status = normalizeReadinessText(item.path("ReadinessStatus").asText(null));
+            if (StringUtils.isNotBlank(status) && !StringUtils.equalsIgnoreCase(status, "Ready.")) {
+                reasons.add(status);
+                continue;
+            }
+            JsonNode subclient = item.path("Subclient").path("entityName");
+            if (StringUtils.isNotBlank(subclient.asText(null))) {
+                reasons.add(String.format("subclient=[%s], readinessStatus=[%s]",
+                        subclient.asText(), StringUtils.defaultIfBlank(status, "unknown")));
             }
         }
-        return null;
+        if (!reasons.isEmpty()) {
+            return String.join("; ", reasons);
+        }
+        return "Ready.";
+    }
+
+    private String normalizeReadinessText(String value) {
+        return StringUtils.trimToEmpty(value).replaceAll("\\s+", " ");
     }
 
     // GET https://<commserveIp>/commandcenter/api/plan/<planId>
