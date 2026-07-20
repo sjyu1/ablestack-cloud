@@ -3087,7 +3087,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 logger.debug("Can't find any VM to sync backups in zone {}", dataCenter);
                 return;
             }
-
             if (backupProvider.supportsBackupMetricsSync()) {
                 backupProvider.syncBackupMetrics(dataCenter.getId());
             }
