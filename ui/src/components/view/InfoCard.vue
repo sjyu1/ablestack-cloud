@@ -128,31 +128,40 @@
         <div class="resource-detail-item" v-if="isFastCloneFlattenActive(resource)">
           <div class="resource-detail-item__label">{{ $t('label.sharedmountpoint.clone.flatten.status') }}</div>
           <div class="resource-detail-item__details resource-detail-item__details--column">
-            <div class="clone-fast-flatten-status-row">
-              <a-tag :color="getCloneFastStatusTagColor(resource)" class="clone-fast-flatten-status">
-                {{ getCloneFastStatusLabel(resource) }}
-              </a-tag>
-              <span
-                v-if="getCloneFastFlattenVolumeInfo(resource)"
-                class="clone-fast-flatten-volume"
-                :title="getCloneFastFlattenVolumeInfo(resource)">
-                {{ getCloneFastFlattenVolumeInfo(resource) }}
-              </span>
-            </div>
-            <div
-              v-if="hasCloneFastFlattenProgress(resource)"
-              class="clone-fast-flatten-progress-row">
-              <a-progress
-                class="progress-bar clone-fast-flatten-progress"
-                size="small"
-                :show-info="false"
-                :status="getCloneFastStatus(resource) === 'running' ? 'active' : 'normal'"
-                :percent="getCloneFastFlattenProgress(resource)" />
-              <span
-                class="clone-fast-flatten-percent">
-                {{ formatCloneFastFlattenProgress(resource) }}
-              </span>
-            </div>
+            <a-tooltip placement="topLeft">
+              <template #title>
+                <div class="clone-fast-flatten-tooltip">
+                  <div
+                    v-for="item in getCloneFastFlattenTooltipItems(resource)"
+                    :key="item.label"
+                    class="clone-fast-flatten-tooltip-row">
+                    <span class="clone-fast-flatten-tooltip-label">{{ item.label }} :</span>
+                    <span class="clone-fast-flatten-tooltip-value">{{ item.value }}</span>
+                  </div>
+                </div>
+              </template>
+              <div class="clone-fast-flatten-tooltip-area">
+                <div class="clone-fast-flatten-status-row">
+                  <a-tag :color="getCloneFastStatusTagColor(resource)" class="clone-fast-flatten-status">
+                    {{ getCloneFastStatusLabel(resource) }}
+                  </a-tag>
+                </div>
+                <div
+                  v-if="hasCloneFastFlattenProgress(resource)"
+                  class="clone-fast-flatten-progress-row">
+                  <a-progress
+                    class="progress-bar clone-fast-flatten-progress"
+                    size="small"
+                    :show-info="false"
+                    :status="getCloneFastStatus(resource) === 'running' ? 'active' : 'normal'"
+                    :percent="getCloneFastFlattenProgress(resource)" />
+                  <span
+                    class="clone-fast-flatten-percent">
+                    {{ formatCloneFastFlattenProgress(resource) }}
+                  </span>
+                </div>
+              </div>
+            </a-tooltip>
           </div>
         </div>
         <div class="resource-detail-item" v-if="resource.allocationstate">
@@ -1248,21 +1257,16 @@ export default {
       const progress = this.getCloneFastFlattenProgress(record)
       return progress === null ? '' : progress.toFixed(2) + '%'
     },
-    getCloneFastFlattenVolumeInfo (record) {
+    getCloneFastFlattenVolumeTypeLabel (record) {
       const volumeType = record?.clonefastflattenvolumetype
-      const volumeName = record?.clonefastflattenvolumename
-      const deviceId = record?.clonefastflattendeviceid
-      const volumeInfo = []
-      if (volumeType) {
-        volumeInfo.push(volumeType)
-      }
-      if (volumeName) {
-        volumeInfo.push(volumeName)
-      }
-      if (deviceId !== undefined && deviceId !== null && deviceId !== '') {
-        volumeInfo.push('device ' + deviceId)
-      }
-      return volumeInfo.join(' · ')
+      return volumeType ? volumeType + ' ' + this.$t('label.volume') : ''
+    },
+    getCloneFastFlattenTooltipItems (record) {
+      return [
+        { label: this.$t('label.type'), value: this.getCloneFastFlattenVolumeTypeLabel(record) },
+        { label: this.$t('label.name'), value: record?.clonefastflattenvolumename },
+        { label: this.$t('label.deviceid'), value: record?.clonefastflattendeviceid }
+      ].filter(item => item.value !== undefined && item.value !== null && item.value !== '')
     },
     showUploadModal (show) {
       if (show) {
@@ -1666,14 +1670,33 @@ export default {
   margin-right: 0;
 }
 
-.clone-fast-flatten-volume {
-  color: #606266;
-  font-size: 12px;
-  line-height: 22px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.clone-fast-flatten-tooltip-area {
+  cursor: default;
+  display: inline-flex;
+  flex-direction: column;
+  max-width: 320px;
+  width: 100%;
+}
+
+.clone-fast-flatten-tooltip {
+  min-width: 220px;
+}
+
+.clone-fast-flatten-tooltip-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  line-height: 20px;
+}
+
+.clone-fast-flatten-tooltip-label {
+  color: rgba(255, 255, 255, 0.85);
   white-space: nowrap;
+}
+
+.clone-fast-flatten-tooltip-value {
+  color: #fff;
+  overflow-wrap: anywhere;
 }
 
 .clone-fast-flatten-percent {
