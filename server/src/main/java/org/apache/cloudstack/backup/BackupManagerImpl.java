@@ -3088,22 +3088,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 return;
             }
 
-            if (backupProvider.supportsProviderManagedBackupAgents()) {
-                final boolean hasAssignedVmForProvider = hasAssignedVmForBackupProvider(vms, backupProvider);
-                if (hasAssignedVmForProvider) {
-                    boolean check = backupProvider.checkBackupAgent(dataCenter.getId());
-                    if (!check) {
-                        boolean install = false;
-                        while(!install) {
-                            logger.info("Commvault Backup Agent will attempt to install....");
-                            install = backupProvider.installBackupAgent(dataCenter.getId());
-                        }
-                    }
-                } else {
-                    logger.debug("Skipping provider-managed backup agent check for provider [{}] in zone [{}] because no VM is assigned to this provider.",
-                            backupProvider.getName(), dataCenter.getId());
-                }
-            }
             if (backupProvider.supportsBackupMetricsSync()) {
                 backupProvider.syncBackupMetrics(dataCenter.getId());
             }
@@ -3131,20 +3115,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     logger.error("Failed to sync backup usage metrics and out-of-band backups of VM [{}] due to: [{}].", vm, e.getMessage(), e);
                 }
             }
-        }
-
-        private boolean hasAssignedVmForBackupProvider(final List<VMInstanceVO> vms, final BackupProvider backupProvider) {
-            for (final VMInstanceVO vm : vms) {
-                final Long backupOfferingId = vm.getBackupOfferingId();
-                if (backupOfferingId == null) {
-                    continue;
-                }
-                final BackupOfferingVO offering = backupOfferingDao.findById(backupOfferingId);
-                if (offering != null && backupProvider.getName().equalsIgnoreCase(offering.getProvider())) {
-                    return true;
-                }
-            }
-            return false;
         }
 
         private void updateBackupUsageRecords(final BackupProvider backupProvider, DataCenter dataCenter) {
