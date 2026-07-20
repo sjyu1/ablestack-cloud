@@ -122,13 +122,21 @@
         <div class="resource-detail-item" v-if="(resource.state || resource.status) && $route.meta.name !== 'zone'">
           <div class="resource-detail-item__label">{{ $t('label.status') }}</div>
           <div class="resource-detail-item__details">
-            <status class="status" :text="resource.state || resource.status" displayText/>
+            <status v-if="isFastCloneSourceFlattenActive(resource)" class="status" :text="resource.state || resource.status" displayText>
+              <template #tooltip>
+                <div class="clone-fast-flatten-source-tooltip">
+                  <div class="clone-fast-flatten-source-tooltip-title">{{ getCloneFastSourceTooltipTitle(resource) }}</div>
+                  <div class="clone-fast-flatten-source-tooltip-description">{{ getCloneFastSourceTooltipDescription(resource) }}</div>
+                </div>
+              </template>
+            </status>
+            <status v-else class="status" :text="resource.state || resource.status" displayText/>
           </div>
         </div>
         <div class="resource-detail-item" v-if="isFastCloneFlattenActive(resource)">
           <div class="resource-detail-item__label">{{ $t('label.sharedmountpoint.clone.flatten.status') }}</div>
           <div class="resource-detail-item__details resource-detail-item__details--column">
-            <a-tooltip placement="topLeft">
+            <a-tooltip v-if="isFastCloneFlattenVisible(resource)" placement="topLeft">
               <template #title>
                 <div class="clone-fast-flatten-tooltip">
                   <div
@@ -160,6 +168,19 @@
                     {{ formatCloneFastFlattenProgress(resource) }}
                   </span>
                 </div>
+              </div>
+            </a-tooltip>
+            <a-tooltip v-else-if="isFastCloneSourceFlattenActive(resource)" placement="topLeft">
+              <template #title>
+                <div class="clone-fast-flatten-source-tooltip">
+                  <div class="clone-fast-flatten-source-tooltip-title">{{ getCloneFastSourceTooltipTitle(resource) }}</div>
+                  <div class="clone-fast-flatten-source-tooltip-description">{{ getCloneFastSourceTooltipDescription(resource) }}</div>
+                </div>
+              </template>
+              <div class="clone-fast-flatten-source-status-area">
+                <a-tag :color="getCloneFastStatusTagColor(resource)" class="clone-fast-flatten-status">
+                  {{ getCloneFastStatusLabel(resource) }}
+                </a-tag>
               </div>
             </a-tooltip>
           </div>
@@ -1229,6 +1250,19 @@ export default {
     isFastCloneFlattenActive (record) {
       return ['pending', 'running'].includes(this.getCloneFastStatus(record))
     },
+    hasCloneFastFlattenVolumeInfo (record) {
+      return [
+        record?.clonefastflattenvolumetype,
+        record?.clonefastflattenvolumename,
+        record?.clonefastflattendeviceid
+      ].some(value => value !== undefined && value !== null && value !== '')
+    },
+    isFastCloneFlattenVisible (record) {
+      return this.isFastCloneFlattenActive(record) && this.hasCloneFastFlattenVolumeInfo(record)
+    },
+    isFastCloneSourceFlattenActive (record) {
+      return this.isFastCloneFlattenActive(record) && !this.hasCloneFastFlattenVolumeInfo(record)
+    },
     getCloneFastStatusLabel (record) {
       const status = this.getCloneFastStatus(record)
       if (status === 'running') {
@@ -1238,6 +1272,20 @@ export default {
         return this.$t('label.sharedmountpoint.clone.flatten.pending')
       }
       return ''
+    },
+    getCloneFastSourceTooltipTitle (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'pending') {
+        return this.$t('message.sharedmountpoint.clone.source.flatten.pending.summary')
+      }
+      return this.$t('message.sharedmountpoint.clone.source.flatten.running.summary')
+    },
+    getCloneFastSourceTooltipDescription (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'pending') {
+        return this.$t('message.sharedmountpoint.clone.source.flatten.pending')
+      }
+      return this.$t('message.sharedmountpoint.clone.source.flatten.running')
     },
     getCloneFastStatusTagColor (record) {
       return this.getCloneFastStatus(record) === 'running' ? 'processing' : 'default'
@@ -1697,6 +1745,28 @@ export default {
 .clone-fast-flatten-tooltip-value {
   color: #fff;
   overflow-wrap: anywhere;
+}
+
+.clone-fast-flatten-source-tooltip {
+  max-width: 280px;
+}
+
+.clone-fast-flatten-source-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.clone-fast-flatten-source-tooltip-description {
+  line-height: 20px;
+}
+
+.clone-fast-flatten-source-status-area {
+  align-items: center;
+  cursor: default;
+  display: inline-flex;
+  gap: 6px;
+  max-width: 320px;
+  min-width: 0;
 }
 
 .clone-fast-flatten-percent {
