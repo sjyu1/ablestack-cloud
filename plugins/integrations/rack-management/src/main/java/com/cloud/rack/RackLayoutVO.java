@@ -44,7 +44,7 @@ public class RackLayoutVO implements InternalIdentity {
     @Column(name = "name")
     private String name;
 
-    @Column(name = "content", length = 65535)
+    @Column(name = "content", length = 1048576)
     private String content;
 
     @Temporal(TemporalType.TIMESTAMP)
