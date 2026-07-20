@@ -133,18 +133,26 @@
                 {{ getCloneFastStatusLabel(resource) }}
               </a-tag>
               <span
-                v-if="hasCloneFastFlattenProgress(resource)"
+                v-if="getCloneFastFlattenVolumeInfo(resource)"
+                class="clone-fast-flatten-volume"
+                :title="getCloneFastFlattenVolumeInfo(resource)">
+                {{ getCloneFastFlattenVolumeInfo(resource) }}
+              </span>
+            </div>
+            <div
+              v-if="hasCloneFastFlattenProgress(resource)"
+              class="clone-fast-flatten-progress-row">
+              <a-progress
+                class="progress-bar clone-fast-flatten-progress"
+                size="small"
+                :show-info="false"
+                :status="getCloneFastStatus(resource) === 'running' ? 'active' : 'normal'"
+                :percent="getCloneFastFlattenProgress(resource)" />
+              <span
                 class="clone-fast-flatten-percent">
                 {{ formatCloneFastFlattenProgress(resource) }}
               </span>
             </div>
-            <a-progress
-              v-if="hasCloneFastFlattenProgress(resource)"
-              class="progress-bar clone-fast-flatten-progress"
-              size="small"
-              :show-info="false"
-              :status="getCloneFastStatus(resource) === 'running' ? 'active' : 'normal'"
-              :percent="getCloneFastFlattenProgress(resource)" />
           </div>
         </div>
         <div class="resource-detail-item" v-if="resource.allocationstate">
@@ -1240,6 +1248,22 @@ export default {
       const progress = this.getCloneFastFlattenProgress(record)
       return progress === null ? '' : progress.toFixed(2) + '%'
     },
+    getCloneFastFlattenVolumeInfo (record) {
+      const volumeType = record?.clonefastflattenvolumetype
+      const volumeName = record?.clonefastflattenvolumename
+      const deviceId = record?.clonefastflattendeviceid
+      const volumeInfo = []
+      if (volumeType) {
+        volumeInfo.push(volumeType)
+      }
+      if (volumeName) {
+        volumeInfo.push(volumeName)
+      }
+      if (deviceId !== undefined && deviceId !== null && deviceId !== '') {
+        volumeInfo.push('device ' + deviceId)
+      }
+      return volumeInfo.join(' · ')
+    },
     showUploadModal (show) {
       if (show) {
         if (this.$showIcon()) {
@@ -1630,25 +1654,48 @@ export default {
 .clone-fast-flatten-status-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  max-width: 260px;
+  justify-content: flex-start;
+  gap: 6px;
+  max-width: 320px;
   width: 100%;
+  min-width: 0;
 }
 
 .clone-fast-flatten-status {
+  flex: 0 0 auto;
   margin-right: 0;
+}
+
+.clone-fast-flatten-volume {
+  color: #606266;
+  font-size: 12px;
+  line-height: 22px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clone-fast-flatten-percent {
   color: #606266;
+  flex: 0 0 auto;
   font-size: 12px;
   line-height: 22px;
   white-space: nowrap;
 }
 
+.clone-fast-flatten-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  width: 100%;
+}
+
 .clone-fast-flatten-progress {
-  max-width: 260px;
+  flex: 1 1 auto;
+  max-width: none;
+  min-width: 0;
   padding-right: 0;
 }
 

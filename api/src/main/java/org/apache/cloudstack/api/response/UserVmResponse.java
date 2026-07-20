@@ -312,6 +312,18 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
     @Param(description = "SharedMountPoint fast clone flatten progress percentage of the virtual machine.")
     private String cloneFastFlattenProgress;
 
+    @SerializedName("clonefastflattenvolumetype")
+    @Param(description = "type of the volume currently being flattened by SharedMountPoint fast clone.")
+    private String cloneFastFlattenVolumeType;
+
+    @SerializedName("clonefastflattenvolumename")
+    @Param(description = "name of the volume currently being flattened by SharedMountPoint fast clone.")
+    private String cloneFastFlattenVolumeName;
+
+    @SerializedName("clonefastflattendeviceid")
+    @Param(description = "device ID of the volume currently being flattened by SharedMountPoint fast clone.")
+    private Long cloneFastFlattenDeviceId;
+
     @SerializedName("readonlydetails")
     @Param(description = "List of read-only Vm details as comma separated string.", since = "4.16.0")
     private String readOnlyDetails;
@@ -1011,6 +1023,18 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
         this.cloneFastFlattenProgress = cloneFastFlattenProgress;
     }
 
+    public void setCloneFastFlattenVolumeType(String cloneFastFlattenVolumeType) {
+        this.cloneFastFlattenVolumeType = cloneFastFlattenVolumeType;
+    }
+
+    public void setCloneFastFlattenVolumeName(String cloneFastFlattenVolumeName) {
+        this.cloneFastFlattenVolumeName = cloneFastFlattenVolumeName;
+    }
+
+    public void setCloneFastFlattenDeviceId(Long cloneFastFlattenDeviceId) {
+        this.cloneFastFlattenDeviceId = cloneFastFlattenDeviceId;
+    }
+
     public void setReadOnlyDetails(String readOnlyDetails) {
         this.readOnlyDetails = readOnlyDetails;
     }
@@ -1041,6 +1065,18 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
 
     public String getCloneFastFlattenProgress() {
         return cloneFastFlattenProgress;
+    }
+
+    public String getCloneFastFlattenVolumeType() {
+        return cloneFastFlattenVolumeType;
+    }
+
+    public String getCloneFastFlattenVolumeName() {
+        return cloneFastFlattenVolumeName;
+    }
+
+    public Long getCloneFastFlattenDeviceId() {
+        return cloneFastFlattenDeviceId;
     }
 
     public String getReadOnlyDetails() {
