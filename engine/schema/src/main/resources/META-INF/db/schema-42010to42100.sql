@@ -19,6 +19,9 @@
 -- Schema upgrade from 4.20.1.0 to 4.21.0.0
 --;
 
+-- Re-apply schema change that may be missing from earlier 4.21 installations.
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.op_ha_work', 'reason', 'varchar(32) DEFAULT NULL COMMENT "Reason for the HA work"');
+
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backup_schedule', 'max_backups', 'INT(8) UNSIGNED NOT NULL DEFAULT 0 COMMENT ''Maximum number of backups to be retained''');
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backups', 'backup_schedule_id', 'BIGINT(20) UNSIGNED');
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backup_schedule', 'quiescevm', 'tinyint(1) default NULL COMMENT "Quiesce VM before taking backup"');
@@ -338,8 +341,15 @@ INSERT IGNORE INTO `cloud`.`counter` (uuid, provider, source, name, value, creat
 INSERT IGNORE INTO `cloud`.`counter` (uuid, provider, source, name, value, created) VALUES (UUID(), 'Netris', 'memory', 'VM Memory - average percentage', 'vm.memory.average.percentage', NOW());
 
 -- Rename user_vm_details to vm_instance_details
-SET @sql := (SELECT IF(COUNT(*)>0,'RENAME TABLE `cloud`.`user_vm_details` TO `cloud`.`vm_instance_details`','SELECT 1') FROM information_schema.TABLES WHERE TABLE_SCHEMA='cloud' AND TABLE_NAME='user_vm_details'); PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-SET @sql := (SELECT IF(COUNT(*)>0,'ALTER TABLE `cloud`.`vm_instance_details` DROP FOREIGN KEY `fk_user_vm_details__vm_id`','SELECT 1') FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='cloud' AND TABLE_NAME='vm_instance_details' AND CONSTRAINT_NAME='fk_user_vm_details__vm_id' AND CONSTRAINT_TYPE='FOREIGN KEY'); PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+SET @sql := (SELECT IF(COUNT(*)>0,'RENAME TABLE `cloud`.`user_vm_details` TO `cloud`.`vm_instance_details`','SELECT 1') FROM information_schema.TABLES WHERE TABLE_SCHEMA='cloud' AND TABLE_NAME='user_vm_details');
+PREPARE s FROM @sql;
+EXECUTE s;
+DEALLOCATE PREPARE s;
+
+SET @sql := (SELECT IF(COUNT(*)>0,'ALTER TABLE `cloud`.`vm_instance_details` DROP FOREIGN KEY `fk_user_vm_details__vm_id`','SELECT 1') FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='cloud' AND TABLE_NAME='vm_instance_details' AND CONSTRAINT_NAME='fk_user_vm_details__vm_id' AND CONSTRAINT_TYPE='FOREIGN KEY');
+PREPARE s FROM @sql;
+EXECUTE s;
+DEALLOCATE PREPARE s;
 CALL `cloud`.`IDEMPOTENT_ADD_FOREIGN_KEY`('cloud.vm_instance_details', 'fk_vm_instance_details__vm_id', '(vm_id)', '`vm_instance`(`id`)');
 
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.backup_schedule', 'uuid', 'VARCHAR(40) NOT NULL');
