@@ -1181,7 +1181,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     vmId, ApiCommandResourceType.VirtualMachine.toString(),
                     true, 0);
 
-            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getPolicyId());
+            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getPolicyId(), cmd.getNetBackupSchedule());
             if (!result.first()) {
                 throw new CloudRuntimeException("Failed to create VM backup for NetBackup");
             }
