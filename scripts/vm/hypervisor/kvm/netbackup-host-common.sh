@@ -843,7 +843,6 @@ invoke_mold_create_backup() {
   local -a api_args=(
     "virtualmachineid" "${vm_id}"
     "policyid" "${POLICY_NAME}"
-    "netbackupschedule" "${SCHEDULE_NAME}"
   )
 
   log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"
@@ -893,7 +892,6 @@ run_stage_vm_backup() {
   api_args=(
     "virtualmachineid" "${vm_id}"
     "policyid" "${POLICY_NAME}"
-    "netbackupschedule" "${SCHEDULE_NAME}"
   )
 
   log -ne "Calling Mold createNetBackup API for vm=${vm_name} vmId=${vm_id} url=${MOLD_CREATE_BACKUP_API_URL}"

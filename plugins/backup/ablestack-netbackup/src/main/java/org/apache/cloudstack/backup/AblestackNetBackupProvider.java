@@ -127,8 +127,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_BACKUP_ID = "netbackup.backup.id";
     private static final String DETAIL_MEMBER_COUNT = "netbackup.backup.member.count";
     private static final String DETAIL_POLICY_NAME = "netbackup.policy.name";
-    private static final String DETAIL_SCHEDULE_NAME = "netbackup.schedule.name";
-    private static final String DETAIL_TRIGGER_TYPE = "netbackup.trigger.type";
     private static final String DETAIL_RESTORE_ROOT_JOB_ID = "netbackup.restore.root.job.id";
     private static final String DETAIL_RESTORE_CHAIN_JOB_ID = "netbackup.restore.chain.job.id";
     private static final String DETAIL_FAILURE_PHASE = "netbackup.failure.phase";
@@ -230,7 +228,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     @Override
-    public Pair<Boolean, Backup> takeNetBackup(final VirtualMachine vm, final String policyName, final String scheduleName) {
+    public Pair<Boolean, Backup> takeNetBackup(final VirtualMachine vm, final String policyName) {
         final Host host = getVMHypervisorHostForBackup(vm);
         validateVmSnapshotCoexistenceForBackup(vm);
 
@@ -242,14 +240,14 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         final BackupVO latestBackup = getLatestBackedUpBackup(vm);
         final boolean incrementalBackup = shouldUseIncrementalBackupForNetBackup(vm, latestBackup);
         BackupExecutionResult result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, latestBackup,
-                incrementalBackup, policyName, scheduleName);
+                incrementalBackup, policyName);
         Backup failedIncrementalBackup = null;
         if (!result.success && incrementalBackup && canRetryFailedIncrementalAsFull(result) && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             failedIncrementalBackup = result.backup;
             cleanupFailedBackupForFullRetry(host, failedIncrementalBackup);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
             result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, null, false,
-                    policyName, scheduleName);
+                    policyName);
             if (result.success && failedIncrementalBackup != null) {
                 removeFailedBackupAfterSuccessfulFullRetry(failedIncrementalBackup);
             }
@@ -260,19 +258,13 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private BackupExecutionResult executeBackup(final VirtualMachine vm, final Boolean quiesceVM, final Host vmHost,
             final List<VolumeVO> vmVolumes, final Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths,
             final Backup latestBackup, final boolean incrementalBackup, final String policyName) {
-        return executeBackup(vm, quiesceVM, vmHost, vmVolumes, volumePoolsAndPaths, latestBackup, incrementalBackup, policyName, null);
-    }
-
-    private BackupExecutionResult executeBackup(final VirtualMachine vm, final Boolean quiesceVM, final Host vmHost,
-            final List<VolumeVO> vmVolumes, final Pair<List<PrimaryDataStoreTO>, List<String>> volumePoolsAndPaths,
-            final Backup latestBackup, final boolean incrementalBackup, final String policyName, final String scheduleName) {
         final String backupPath = buildBackupPath(vm);
         final String checkpointName = backupPath.substring(backupPath.lastIndexOf("/") + 1);
         final String backupEngine = areAllVolumesOnRbdPool(volumePoolsAndPaths.first()) ? BACKUP_ENGINE_RBD_DIFF : BACKUP_ENGINE_QCOW2;
         final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
         final Map<String, String> backupDetails = getBackupDetails(vm, backupPath, checkpointName, backupEngine, latestBackup,
-                incrementalBackup, policyName, scheduleName);
+                incrementalBackup, policyName);
 
         final BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType, backupDetails);
         AblestackNetBackupTakeBackupCommand command = new AblestackNetBackupTakeBackupCommand(vm.getInstanceName(), backupPath);
@@ -530,7 +522,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     private Map<String, String> getBackupDetails(final VirtualMachine vm, final String backupPath, final String checkpointName, final String backupEngine,
-            final Backup latestBackup, final boolean incrementalBackup, final String policyName, final String scheduleName) {
+            final Backup latestBackup, final boolean incrementalBackup, final String policyName) {
         final Map<String, String> details = new HashMap<>();
         final Map<String, String> backupDetailsFromVm = backupManager.getBackupDetailsFromVM(vm);
         if (backupDetailsFromVm != null) {
@@ -539,10 +531,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         if (StringUtils.isNotBlank(policyName)) {
             details.put(DETAIL_POLICY_NAME, policyName);
         }
-        if (StringUtils.isNotBlank(scheduleName)) {
-            details.put(DETAIL_SCHEDULE_NAME, scheduleName);
-        }
-        details.put(DETAIL_TRIGGER_TYPE, resolveNetBackupTriggerType(scheduleName));
         details.put(DETAIL_BACKUP_ENGINE, backupEngine);
         details.put(DETAIL_CHECKPOINT_NAME, checkpointName);
         details.put(DETAIL_CHECKPOINT_PATH, getCheckpointPath(backupPath, checkpointName, backupEngine));
@@ -556,13 +544,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             details.put(DETAIL_PARENT_CHECKPOINT_PATH, getBackupDetail(latestBackup, DETAIL_CHECKPOINT_PATH));
         }
         return details;
-    }
-
-    private String resolveNetBackupTriggerType(final String scheduleName) {
-        if (StringUtils.isBlank(scheduleName) || "manual".equalsIgnoreCase(scheduleName)) {
-            return "NETBACKUP_MANUAL";
-        }
-        return "NETBACKUP_POLICY_SCHEDULE";
     }
 
     private String getCheckpointPath(final String backupPath, final String checkpointName, final String backupEngine) {

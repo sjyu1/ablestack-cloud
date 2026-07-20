@@ -88,13 +88,6 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
             since = "4.21.0")
     private String policyId;
 
-    @Parameter(name = "netbackupschedule",
-            type = CommandType.STRING,
-            required = false,
-            description = "the schedule name that triggered the NetBackup job",
-            since = "4.22.0")
-    private String netBackupSchedule;
-
     /////////////////////////////////////////////////////
     /////////////////// Accessors ///////////////////////
     /////////////////////////////////////////////////////
@@ -117,10 +110,6 @@ public class CreateNetBackupCmd extends BaseAsyncCreateCmd {
 
     public String getPolicyId() {
         return policyId;
-    }
-
-    public String getNetBackupSchedule() {
-        return netBackupSchedule;
     }
 
     /////////////////////////////////////////////////////

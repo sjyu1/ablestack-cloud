@@ -1181,7 +1181,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     vmId, ApiCommandResourceType.VirtualMachine.toString(),
                     true, 0);
 
-            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getPolicyId(), cmd.getNetBackupSchedule());
+            Pair<Boolean, Backup> result = backupProvider.takeNetBackup(vm, cmd.getPolicyId());
             if (!result.first()) {
                 throw new CloudRuntimeException("Failed to create VM backup for NetBackup");
             }
@@ -3420,7 +3420,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         response.setSize(backup.getSize());
         response.setProtectedSize(backup.getProtectedSize());
         response.setStatus(backup.getStatus());
-        response.setIntervalType("MANUAL");
+        response.setIntervalType(offering != null && BackupProviderNameUtils.isNetBackupFamily(offering.getProvider()) ? "EXTERNAL" : "MANUAL");
         if (backup.getBackupScheduleId() != null) {
             BackupScheduleVO scheduleVO = backupScheduleDao.findById(backup.getBackupScheduleId());
             if (scheduleVO != null) {

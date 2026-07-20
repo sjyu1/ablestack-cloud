@@ -84,10 +84,6 @@ public interface BackupProvider {
     }
 
     default Pair<Boolean, Backup> takeNetBackup(VirtualMachine vm, String policyName) {
-        return takeNetBackup(vm, policyName, null);
-    }
-
-    default Pair<Boolean, Backup> takeNetBackup(VirtualMachine vm, String policyName, String scheduleName) {
         throw new UnsupportedOperationException("NetBackup is not supported by provider " + getName());
     }
 
