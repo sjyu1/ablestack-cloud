@@ -28,6 +28,7 @@ import org.apache.cloudstack.api.ApiErrorCode;
 import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.utils.security.SSLUtils;
 import org.apache.cloudstack.backup.BackupOffering;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
@@ -687,6 +688,59 @@ public class AblestackCommvaultClient {
             checkResponseTimeOut(e);
         }
         return false;
+    }
+
+    public String getClientCheckReadinessDetails(String clientId) {
+        try {
+            final HttpResponse response = get("/client/" + clientId + "/CheckReadiness?network=true&resourceCapacity=true&includeDisabledClients=false&NeedXmlResp=true&ApplicationReadinessOption=1");
+            checkResponseOK(response);
+            String jsonString = EntityUtils.toString(response.getEntity(), "UTF-8");
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(jsonString);
+            return extractClientReadinessDetails(root);
+        } catch (final IOException e) {
+            LOG.error("Failed to request getClientCheckReadinessDetails commvault api due to : ", e);
+            checkResponseTimeOut(e);
+            return "Unable to read Commvault client readiness details: " + e.getMessage();
+        }
+    }
+
+    private String extractClientReadinessDetails(JsonNode root) {
+        JsonNode summary = root.get("summary");
+        if (summary != null && summary.isArray()) {
+            List<String> details = new ArrayList<>();
+            for (JsonNode entity : summary) {
+                String role = findText(entity, "role", "name", "displayName", "entityName");
+                String status = findText(entity, "status", "readinessStatus");
+                String reason = findText(entity, "reason", "cause", "message", "description", "errorMessage");
+                details.add(String.format("role=[%s], status=[%s], reason=[%s]",
+                        StringUtils.defaultIfBlank(role, "unknown"),
+                        StringUtils.defaultIfBlank(status, "unknown"),
+                        StringUtils.defaultIfBlank(reason, "unknown")));
+            }
+            if (!details.isEmpty()) {
+                return String.join("; ", details);
+            }
+        }
+
+        String status = findText(root, "status", "readinessStatus");
+        String reason = findText(root, "reason", "cause", "message", "description", "errorMessage");
+        return String.format("status=[%s], reason=[%s]",
+                StringUtils.defaultIfBlank(status, "unknown"),
+                StringUtils.defaultIfBlank(reason, "unknown"));
+    }
+
+    private String findText(JsonNode node, String... fieldNames) {
+        if (node == null) {
+            return null;
+        }
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.findValue(fieldName);
+            if (value != null && !value.isMissingNode() && value.isValueNode() && StringUtils.isNotBlank(value.asText())) {
+                return value.asText();
+            }
+        }
+        return null;
     }
 
     // GET https://<commserveIp>/commandcenter/api/plan/<planId>

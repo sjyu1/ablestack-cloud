@@ -1285,6 +1285,32 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         }
     }
 
+    private void cleanupBackupStagingPathFromDetails(Backup backup) {
+        if (backup == null || StringUtils.isBlank(backup.getExternalId())) {
+            return;
+        }
+        final String stageHostName = getBackupDetail(backup, DETAIL_STAGE_HOST);
+        if (StringUtils.isBlank(stageHostName)) {
+            LOG.warn("Skipping Commvault staging cleanup for backup [{}] because stage host detail is missing", backup.getUuid());
+            return;
+        }
+        final String backupPath;
+        try {
+            backupPath = backup.getExternalId().contains(",") ? parseExternalId(backup.getExternalId()).first() : backup.getExternalId();
+        } catch (CloudRuntimeException e) {
+            LOG.warn("Skipping Commvault staging cleanup for backup [{}] due to invalid externalId [{}]",
+                    backup.getUuid(), backup.getExternalId());
+            return;
+        }
+        HostVO stageHost = hostDao.findByName(stageHostName);
+        if (stageHost == null) {
+            LOG.warn("Skipping Commvault staging cleanup for backup [{}] because stage host [{}] was not found",
+                    backup.getUuid(), stageHostName);
+            return;
+        }
+        cleanupBackupPathsOnHost(stageHost, Collections.singletonList(backupPath));
+    }
+
     private boolean isSameHost(HostVO firstHost, HostVO secondHost) {
         return firstHost != null && secondHost != null && Objects.equals(firstHost.getId(), secondHost.getId());
     }
@@ -2103,6 +2129,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             updateBackupAsCompleted(backupVO, backupVO.getExternalId(), jobDetails, backupVO.getDetails(),
                     createVolumeInfoFromVolumes(vmVolumes, backupFiles));
             backupDao.update(backupVO.getId(), backupVO);
+            cleanupBackupStagingPathFromDetails(backupVO);
             LOG.info("Recovered Commvault backup [{}] for VM [{}] from BackingUp to BackedUp using job [{}]",
                     backupVO.getUuid(), vm.getInstanceName(), jobId);
             return true;
@@ -2112,6 +2139,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             LOG.warn("Removing incomplete Commvault backup [{}] for VM [{}] due to terminal job [{}] state [{}]",
                     backupVO.getUuid(), vm.getInstanceName(), jobId, jobState);
             backupVO.setStatus(Backup.Status.Failed);
+            cleanupBackupStagingPathFromDetails(backupVO);
             removeBackupWithDetails(backupVO.getId());
             return true;
         }
@@ -2160,6 +2188,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             updateBackupAsCompleted(backupVO, backupVO.getExternalId(), jobDetails, backupVO.getDetails(),
                     createVolumeInfoFromVolumes(vmVolumes, backupFiles));
             if (backupDao.update(backupVO.getId(), backupVO)) {
+                cleanupBackupStagingPathFromDetails(backupVO);
                 LOG.info("Recovered Commvault backup [{}] for VM [{}] from Error to BackedUp using completed job [{}]",
                         backupVO.getUuid(), vm.getInstanceName(), jobId);
                 return true;
@@ -2246,9 +2275,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     // 호스트가 클라이언트에는 등록되었지만 구성이 정상적으로 되지 않은 경우 준비 상태 체크
                     boolean checkInstall = client.getClientCheckReadiness(checkHost);
                     if (!checkInstall) {
-                        LOG.error("The host is registered with the client, but the readiness status is not normal and you must manually check the client status.");
-                        ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_HOST_AGENT_INSTALL,
-                            "Failed check readiness the commvault client agent on the host : " + host.getPrivateIpAddress(), User.UID_SYSTEM, ApiCommandResourceType.Host.toString());
+                        String readinessDetails = client.getClientCheckReadinessDetails(checkHost);
+                        LOG.error("The host is registered with the client, but the readiness status is not normal and you must manually check the client status. host=[{}], clientId=[{}], details=[{}]",
+                                host.getPrivateIpAddress(), checkHost, readinessDetails);
                         return false;
                     }
                 }
