@@ -208,7 +208,7 @@ public class AblestackCommvaultClient {
         final HttpResponse response = httpClient.execute(request);
         checkAuthFailure(response);
 
-        LOG.debug(String.format("Response received in GET request is: [%s] for URL: [%s].", response.toString(), url));
+        LOG.debug("Response received in GET request. statusCode=[{}], URL=[{}].", response.getStatusLine().getStatusCode(), url);
         return response;
     }
 
@@ -220,7 +220,7 @@ public class AblestackCommvaultClient {
         final HttpResponse response = httpClient.execute(request);
         checkAuthFailure(response);
 
-        LOG.debug(String.format("Response received in DELETE request is: [%s] for URL [%s].", response.toString(), url));
+        LOG.debug("Response received in DELETE request. statusCode=[{}], URL=[{}].", response.getStatusLine().getStatusCode(), url);
         return response;
     }
 
