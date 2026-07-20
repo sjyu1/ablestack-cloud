@@ -60,6 +60,7 @@ import com.cloud.vm.snapshot.VMSnapshotVO;
 import com.cloud.vm.snapshot.dao.VMSnapshotDao;
 import com.cloud.vm.snapshot.dao.VMSnapshotDetailsDao;
 import org.apache.cloudstack.api.ApiCommandResourceType;
+import org.apache.cloudstack.api.ServerApiException;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.datastore.db.SnapshotDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
@@ -1855,10 +1856,15 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             if (host.getHypervisorType() == Hypervisor.HypervisorType.KVM) {
                 String backupSetId = client.getVmBackupSetId(host.getName(), vm.getInstanceName());
                 if (backupSetId != null) {
-                    boolean deleted = client.deleteBackupSet(backupSetId);
-                    if (!deleted) {
-                        allDeleted = false;
-                        LOG.error("Failed to delete backupSetId: " + backupSetId +" for VM: " + vm.getInstanceName());
+                    try {
+                        boolean deleted = client.deleteBackupSet(backupSetId);
+                        if (!deleted) {
+                            allDeleted = false;
+                            LOG.error("Failed to delete backupSetId: " + backupSetId +" for VM: " + vm.getInstanceName());
+                        }
+                    } catch (ServerApiException e) {
+                        throw new CloudRuntimeException(String.format("Failed to delete Commvault backupSet [%s] for VM [%s] on host [%s]. %s",
+                                backupSetId, vm.getInstanceName(), host.getName(), e.getMessage()), e);
                     }
                 }
             }

@@ -173,8 +173,24 @@ public class AblestackCommvaultClient {
         if (!(response.getStatusLine().getStatusCode() == HttpStatus.SC_OK ||
                 response.getStatusLine().getStatusCode() == HttpStatus.SC_ACCEPTED) &&
                 response.getStatusLine().getStatusCode() != HttpStatus.SC_NO_CONTENT) {
-            LOG.debug(String.format("HTTP request failed, status code is [%s], response is: [%s].", response.getStatusLine().getStatusCode(), response));
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Got invalid API status code returned by the Commvault server");
+            String responseBody = getResponseBody(response);
+            LOG.debug(String.format("HTTP request failed, status code is [%s], response is: [%s], response body is: [%s].",
+                    response.getStatusLine().getStatusCode(), response, responseBody));
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, String.format(
+                    "Got invalid API status code returned by the Commvault server. statusCode=%s, responseBody=%s",
+                    response.getStatusLine().getStatusCode(), responseBody));
+        }
+    }
+
+    private String getResponseBody(final HttpResponse response) {
+        if (response == null || response.getEntity() == null) {
+            return "";
+        }
+        try {
+            return EntityUtils.toString(response.getEntity(), "UTF-8");
+        } catch (final IOException e) {
+            LOG.warn("Failed to read Commvault API response body", e);
+            return "";
         }
     }
 
@@ -822,6 +838,9 @@ public class AblestackCommvaultClient {
             final HttpResponse response = delete("/backupset/" + backupSetId);
             checkResponseOK(response);
             return true;
+        } catch (final ServerApiException e) {
+            LOG.error("Failed to delete Commvault backupSet [{}]: {}", backupSetId, e.getMessage(), e);
+            throw e;
         } catch (final IOException e) {
             LOG.error("Failed to request deleteBackupSet commvault api due to : ", e);
             checkResponseTimeOut(e);
