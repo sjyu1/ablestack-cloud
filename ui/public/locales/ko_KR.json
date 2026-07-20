@@ -5885,5 +5885,9 @@
   "rackDiagram.totalFreeU": "여유 U",
   "rackDiagram.cardView": "카드형",
   "rackDiagram.listView": "목록형",
-  "rackDiagram.countSuffix": "개"
+  "rackDiagram.countSuffix": "개",
+  "rackDiagram.msg.rackCountExceeded": "Zone당 랙은 최대 {max}개까지 생성할 수 있습니다.",
+  "rackDiagram.msg.layoutSizeExceeded": "랙 구성이 최대 저장 크기({max})를 초과했습니다. 랙을 삭제하거나 장비 상세 정보를 줄여주세요.",
+  "rackDiagram.expandView": "랙 시각화 확장",
+  "rackDiagram.restoreSplitView": "요약 영역 표시"
 }

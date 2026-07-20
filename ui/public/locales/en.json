@@ -5885,5 +5885,9 @@
   "rackDiagram.totalFreeU": "Free U",
   "rackDiagram.cardView": "Card",
   "rackDiagram.listView": "List",
-  "rackDiagram.countSuffix": ""
+  "rackDiagram.countSuffix": "",
+  "rackDiagram.msg.rackCountExceeded": "You can create up to {max} racks per zone.",
+  "rackDiagram.msg.layoutSizeExceeded": "Rack layout exceeds the maximum save size ({max}). Remove racks or reduce device details.",
+  "rackDiagram.expandView": "Expand rack visualization",
+  "rackDiagram.restoreSplitView": "Show summary panel"
 }

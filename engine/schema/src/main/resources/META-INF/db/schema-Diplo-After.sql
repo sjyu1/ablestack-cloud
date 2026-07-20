@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS `rackml_config` (
     `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'primary key',
     `zone_id` bigint unsigned NOT NULL COMMENT 'foreign key to data_center.id',
     `name` varchar(100) NOT NULL COMMENT 'config name (e.g. default)',
-    `content` text NOT NULL COMMENT 'RackML content',
+    `content` mediumtext NOT NULL COMMENT 'RackML content',
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'last update time',
 PRIMARY KEY (`id`),
 UNIQUE KEY `uc_rackml_zone_name` (`zone_id`, `name`),
@@ -63,6 +63,12 @@ CONSTRAINT `fk_rackml__zone` FOREIGN KEY (`zone_id`) REFERENCES `data_center` (`
                                                           ON DELETE RESTRICT
                                                           ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb3;
+CALL `cloud`.`IDEMPOTENT_CHANGE_COLUMN`(
+    'cloud.rackml_config',
+    'content',
+    'content',
+    'MEDIUMTEXT NOT NULL COMMENT ''RackML content'''
+);
 CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.host', 'migration_ip', 'VARCHAR(45)');
 
 -- backup offering table update
