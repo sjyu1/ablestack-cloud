@@ -2496,7 +2496,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
         int fwrks = 1;
         _flattenInterval = NumbersUtil.parseInt(configs.get("flatten.interval"), 300);
-        _flattenProgressInterval = NumbersUtil.parseInt(configs.get("flatten.progress.interval"), 30);
+        _flattenProgressInterval = NumbersUtil.parseInt(configs.get("flatten.progress.interval"), 15);
 
         _flattenExecutor = Executors.newScheduledThreadPool(fwrks, new NamedThreadFactory("FlattenCloneImage-Scavenger"));
         _flattenProgressExecutor = Executors.newScheduledThreadPool(1, new NamedThreadFactory("FlattenCloneProgress-Scavenger"));
