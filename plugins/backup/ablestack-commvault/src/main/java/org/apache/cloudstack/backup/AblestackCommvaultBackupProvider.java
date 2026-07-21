@@ -1876,6 +1876,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     @Override
     public boolean removeVMFromBackupOffering(VirtualMachine vm) {
         final AblestackCommvaultClient client = getClient(vm.getDataCenterId());
+        final List<BackupVO> backupsToCleanup = listCommvaultBackupsForOfferingRemoval(vm);
         List<HostVO> Hosts = hostDao.findByDataCenterId(vm.getDataCenterId());
         boolean allDeleted = true;
         for (final HostVO host : Hosts) {
@@ -1895,7 +1896,44 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 }
             }
         }
+        if (allDeleted) {
+            cleanupCommvaultBackupsForOfferingRemoval(vm, client, backupsToCleanup);
+        }
         return allDeleted;
+    }
+
+    private List<BackupVO> listCommvaultBackupsForOfferingRemoval(VirtualMachine vm) {
+        return backupDao.listByVmId(null, vm.getId()).stream()
+                .filter(BackupVO.class::isInstance)
+                .map(BackupVO.class::cast)
+                .filter(this::isBackupManagedByThisProvider)
+                .peek(backupDao::loadDetails)
+                .sorted(Comparator.comparing(BackupVO::getDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .collect(Collectors.toList());
+    }
+
+    private void cleanupCommvaultBackupsForOfferingRemoval(VirtualMachine vm, AblestackCommvaultClient client, List<BackupVO> backups) {
+        for (BackupVO backup : backups) {
+            final Pair<String, String> externalIdParts = parseExternalId(backup.getExternalId());
+            final String path = externalIdParts.first();
+            final String stageHostName = getStageHostNameForCleanup(backup, client, externalIdParts.second());
+            cleanupBackupPathOnStageHost(stageHostName, path, true, vm.getInstanceName(),
+                    getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getUnreferencedQcow2CheckpointNamesAfterDelete(backup),
+                    getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
+        }
+    }
+
+    private String getStageHostNameForCleanup(Backup backup, AblestackCommvaultClient client, String jobId) {
+        final String stageHostName = getBackupDetail(backup, DETAIL_STAGE_HOST);
+        if (StringUtils.isNotBlank(stageHostName)) {
+            return stageHostName;
+        }
+        final String jobDetails = client.getJobDetails(jobId);
+        if (jobDetails != null) {
+            JSONObject jsonObject = new JSONObject(jobDetails);
+            return String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("clientName"));
+        }
+        throw new CloudRuntimeException(String.format("Unable to resolve stage host for Commvault backup [%s]", backup.getUuid()));
     }
 
     // BackupSet 삭제 시 해당 VM 백업본의 복원 가능성도 함께 영향을 받으므로 Mold 백업 이력도 정리
