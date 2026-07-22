@@ -1739,6 +1739,7 @@ public class KVMStorageProcessor implements StorageProcessor {
         KVMStoragePool pool = storagePoolMgr.getStoragePool(store.getPoolType(), store.getUuid());
         List<VolumeCloneSpec> preparedSpecs = new ArrayList<>();
         Map<String, String> runningDiskLabels = new HashMap<>();
+        Set<String> preparedSourceVolumePaths = new HashSet<>();
         Domain vm = null;
         Connect conn = null;
 
@@ -1760,15 +1761,17 @@ public class KVMStorageProcessor implements StorageProcessor {
                 Files.createDirectories(overlayPath.getParent());
                 Files.createDirectories(clonePath.getParent());
 
-                if (cmd.isSourceVmRunning()) {
-                    String diskLabel = createRunningSourceOverlay(conn, vm, cmd.getVmName(), cmd.getOperationId(), sourcePath.toString(), overlayPath.toString());
-                    runningDiskLabels.put(spec.getSourceVolumePath(), diskLabel);
-                } else {
-                    createQcow2Delta(pool, sourcePath, spec.getSourceVolumePath(), spec.getSourceOverlayPath(), spec.getSize());
+                if (preparedSourceVolumePaths.add(spec.getSourceVolumePath())) {
+                    if (cmd.isSourceVmRunning()) {
+                        String diskLabel = createRunningSourceOverlay(conn, vm, cmd.getVmName(), cmd.getOperationId(), sourcePath.toString(), overlayPath.toString());
+                        runningDiskLabels.put(spec.getSourceVolumePath(), diskLabel);
+                    } else {
+                        createQcow2Delta(pool, sourcePath, spec.getSourceVolumePath(), spec.getSourceOverlayPath(), spec.getSize());
+                    }
                 }
 
-                createQcow2Delta(pool, sourcePath, spec.getSourceVolumePath(), spec.getCloneVolumePath(), spec.getSize());
                 preparedSpecs.add(spec);
+                createQcow2Delta(pool, sourcePath, spec.getSourceVolumePath(), spec.getCloneVolumePath(), spec.getSize());
             }
 
             return new Answer(cmd);
@@ -1824,9 +1827,11 @@ public class KVMStorageProcessor implements StorageProcessor {
 
     protected void rollbackPreparedSharedMountPointClone(PrepareSharedMountPointCloneCommand cmd, KVMStoragePool pool, Domain vm, Map<String, String> runningDiskLabels,
             List<VolumeCloneSpec> preparedSpecs) {
+        Set<String> rolledBackSourceVolumePaths = new HashSet<>();
         for (int i = preparedSpecs.size() - 1; i >= 0; i--) {
             VolumeCloneSpec spec = preparedSpecs.get(i);
-            if (cmd.isSourceVmRunning() && vm != null && runningDiskLabels.containsKey(spec.getSourceVolumePath())) {
+            if (cmd.isSourceVmRunning() && vm != null && runningDiskLabels.containsKey(spec.getSourceVolumePath()) &&
+                    rolledBackSourceVolumePaths.add(spec.getSourceVolumePath())) {
                 rollbackRunningSourceOverlay(vm, runningDiskLabels.get(spec.getSourceVolumePath()), resolveSharedMountPointPath(pool, spec.getSourceVolumePath()).toString());
             }
             deleteSharedMountPointFileIfExists(pool, spec.getSourceOverlayPath());

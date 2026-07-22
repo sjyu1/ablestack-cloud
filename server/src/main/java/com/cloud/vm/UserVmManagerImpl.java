@@ -10094,20 +10094,30 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
         Integer countOfCloneVM = cmd.getCount();
         UserVm lastCloneVm = null;
-        for (int cnt = 1; cnt <= countOfCloneVM; cnt++) {
-            String operationId = UUID.randomUUID().toString();
-            cmd.setName(orgName + (countOfCloneVM > 1 ? Integer.toString(cnt) : ""));
-            markFastCloneVmStatus(curVm.getId(), FAST_CLONE_FLATTEN_RUNNING, operationId);
+        String operationId = UUID.randomUUID().toString();
+        markFastCloneVmStatus(curVm.getId(), FAST_CLONE_FLATTEN_RUNNING, operationId);
 
-            List<VolumeVO> cloneVolumes = new ArrayList<>();
-            List<VolumeCloneSpec> volumeCloneSpecs = new ArrayList<>();
-            VolumeVO rootVolume = null;
-            boolean preparedPersisted = false;
+        List<List<VolumeVO>> cloneVolumesByVm = new ArrayList<>();
+        List<VolumeVO> cloneRootVolumes = new ArrayList<>();
+        List<String> cloneVmNames = new ArrayList<>();
+        List<VolumeVO> allCloneVolumes = new ArrayList<>();
+        List<VolumeVO> cloneVolumesToCleanup = new ArrayList<>();
+        List<VolumeCloneSpec> volumeCloneSpecs = new ArrayList<>();
+        boolean preparedPersisted = false;
 
-            try {
+        try {
+            for (int cnt = 1; cnt <= countOfCloneVM; cnt++) {
+                String cloneVmName = orgName + (countOfCloneVM > 1 ? Integer.toString(cnt) : "");
+                cmd.setName(cloneVmName);
+                cloneVmNames.add(cloneVmName);
+
+                List<VolumeVO> cloneVolumes = new ArrayList<>();
+                VolumeVO rootVolume = null;
                 for (VolumeVO sourceVolume : sourceVolumes) {
                     VolumeVO cloneVolume = allocateFastCloneVolume(cmd, curVmAccount, zoneId, sourceVolume);
                     cloneVolumes.add(cloneVolume);
+                    allCloneVolumes.add(cloneVolume);
+                    cloneVolumesToCleanup.add(cloneVolume);
                     if (sourceVolume.getVolumeType() == Volume.Type.ROOT) {
                         rootVolume = cloneVolume;
                     }
@@ -10115,18 +10125,32 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                             cloneVolume.getId(), cloneVolume.getUuid(), sourceVolume.getSize()));
                 }
 
-                PrepareSharedMountPointCloneCommand prepareCommand = new PrepareSharedMountPointCloneCommand(primaryStore, curVm.getInstanceName(), sourceVmRunning, operationId, volumeCloneSpecs);
-                Answer answer = _agentMgr.send(hostId, prepareCommand);
-                if (answer == null || !answer.getResult()) {
-                    throw new CloudRuntimeException(answer == null ? "No answer from KVM agent while preparing SharedMountPoint linked clone." : answer.getDetails());
+                cloneVolumesByVm.add(cloneVolumes);
+                cloneRootVolumes.add(rootVolume);
+            }
+
+            PrepareSharedMountPointCloneCommand prepareCommand = new PrepareSharedMountPointCloneCommand(primaryStore, curVm.getInstanceName(), sourceVmRunning, operationId, volumeCloneSpecs);
+            Answer answer = _agentMgr.send(hostId, prepareCommand);
+            if (answer == null || !answer.getResult()) {
+                throw new CloudRuntimeException(answer == null ? "No answer from KVM agent while preparing SharedMountPoint linked clone." : answer.getDetails());
+            }
+
+            persistPreparedFastCloneVolumes(storagePool.getId(), sourceVolumes, allCloneVolumes, volumeCloneSpecs, operationId, hostId);
+            preparedPersisted = true;
+
+            for (int index = 0; index < cloneVolumesByVm.size(); index++) {
+                cmd.setName(cloneVmNames.get(index));
+                List<VolumeVO> cloneVolumes = cloneVolumesByVm.get(index);
+                VolumeVO rootVolume = cloneRootVolumes.get(index);
+                if (rootVolume == null) {
+                    throw new CloudRuntimeException("Unable to find root volume for SharedMountPoint linked clone.");
                 }
 
-                persistPreparedFastCloneVolumes(storagePool.getId(), sourceVolumes, cloneVolumes, volumeCloneSpecs, operationId, hostId);
-                preparedPersisted = true;
                 UserVm cloneVM = createCloneVM(cmd, rootVolume.getId());
                 if (cloneVM == null) {
                     throw new CloudRuntimeException("Unable to record the VM to DB!");
                 }
+                cloneVolumesToCleanup.removeAll(cloneVolumes);
                 cmd.setEntityUuid(cloneVM.getUuid());
                 cmd.setEntityId(cloneVM.getId());
                 markFastCloneVmStatus(cloneVM.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
@@ -10143,15 +10167,18 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 Map<VirtualMachineProfile.Param, Object> additonalParams = getCloneVmAdditionalParams(curVm);
                 Map<Long, DiskOffering> diskOfferingMap = new HashMap<>();
                 lastCloneVm = cmd.getStartVm() ? startVirtualMachine(cmd.getEntityId(), podId, clusterId, hostId, diskOfferingMap, additonalParams, null) : getUserVm(cmd.getEntityId());
-            } catch (Exception e) {
-                cleanupFailedFastCloneVolumes(cloneVolumes);
-                if (preparedPersisted) {
-                    tryCommitFastCloneSourceOverlay(operationId);
-                } else {
-                    clearFastCloneVmStatus(curVm.getId());
-                }
-                throw new CloudRuntimeException("Failed to create SharedMountPoint linked clone: " + e.getMessage(), e);
             }
+        } catch (Exception e) {
+            cleanupFailedFastCloneVolumes(cloneVolumesToCleanup);
+            for (VolumeVO cloneVolume : cloneVolumesToCleanup) {
+                clearFastCloneVolumeDetails(cloneVolume.getId());
+            }
+            if (preparedPersisted) {
+                tryCommitFastCloneSourceOverlay(operationId);
+            } else {
+                clearFastCloneVmStatus(curVm.getId());
+            }
+            throw new CloudRuntimeException("Failed to create SharedMountPoint linked clone: " + e.getMessage(), e);
         }
 
         return Optional.ofNullable(lastCloneVm);
@@ -10170,7 +10197,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
     protected void persistPreparedFastCloneVolumes(long poolId, List<VolumeVO> sourceVolumes, List<VolumeVO> cloneVolumes, List<VolumeCloneSpec> volumeCloneSpecs,
             String operationId, long hostId) {
-        Map<Long, VolumeCloneSpec> specsBySourceVolumeId = volumeCloneSpecs.stream().collect(Collectors.toMap(VolumeCloneSpec::getSourceVolumeId, spec -> spec));
+        Map<Long, VolumeCloneSpec> specsBySourceVolumeId = volumeCloneSpecs.stream().collect(Collectors.toMap(VolumeCloneSpec::getSourceVolumeId, spec -> spec,
+                (existing, replacement) -> existing));
         for (VolumeVO sourceVolume : sourceVolumes) {
             VolumeCloneSpec spec = specsBySourceVolumeId.get(sourceVolume.getId());
             volumeDetailsDao.addDetail(sourceVolume.getId(), FAST_CLONE_ROLE, FAST_CLONE_ROLE_SOURCE, false);
