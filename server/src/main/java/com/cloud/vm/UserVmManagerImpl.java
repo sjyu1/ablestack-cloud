@@ -10474,7 +10474,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         setFastCloneVolumeDetail(volume.getId(), FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_DONE);
         setFastCloneVolumeDetail(volume.getId(), FAST_CLONE_FLATTEN_PROGRESS, "100.00");
         if (StringUtils.isNotBlank(operationId)) {
-            markFastCloneVmStatus(vm.getId(), hasPendingFastCloneVolumes(operationId) ? FAST_CLONE_FLATTEN_PENDING : FAST_CLONE_FLATTEN_DONE, operationId);
+            markFastCloneVmStatus(vm.getId(), hasPendingFastCloneVolumesForVm(vm.getId()) ? FAST_CLONE_FLATTEN_PENDING : FAST_CLONE_FLATTEN_DONE, operationId);
         }
         logger.info("Flattened SharedMountPoint clone volume [{}].", volume);
         tryCommitFastCloneSourceOverlay(operationId);
@@ -10583,6 +10583,22 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             long volumeId = operationDetail.getResourceId();
             VolumeDetailVO role = volumeDetailsDao.findDetail(volumeId, FAST_CLONE_ROLE);
             VolumeDetailVO status = volumeDetailsDao.findDetail(volumeId, FAST_CLONE_FLATTEN_STATUS);
+            if (role != null && FAST_CLONE_ROLE_CLONE.equals(role.getValue()) && status != null &&
+                    (FAST_CLONE_FLATTEN_PENDING.equals(status.getValue()) || FAST_CLONE_FLATTEN_RUNNING.equals(status.getValue()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected boolean hasPendingFastCloneVolumesForVm(long vmId) {
+        List<VolumeVO> volumes = _volsDao.findByInstance(vmId);
+        if (CollectionUtils.isEmpty(volumes)) {
+            return false;
+        }
+        for (VolumeVO volume : volumes) {
+            VolumeDetailVO role = volumeDetailsDao.findDetail(volume.getId(), FAST_CLONE_ROLE);
+            VolumeDetailVO status = volumeDetailsDao.findDetail(volume.getId(), FAST_CLONE_FLATTEN_STATUS);
             if (role != null && FAST_CLONE_ROLE_CLONE.equals(role.getValue()) && status != null &&
                     (FAST_CLONE_FLATTEN_PENDING.equals(status.getValue()) || FAST_CLONE_FLATTEN_RUNNING.equals(status.getValue()))) {
                 return true;
