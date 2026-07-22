@@ -57,7 +57,7 @@ write_files:
       log "Skipping legacy SharedFS resize. Storage Service QGA commands resize backing volumes and filesystems."
 
   - path: /etc/systemd/system/resize-sharedfs@.service
-    permissions: '0700'
+    permissions: '0644'
     owner: root:root
     content: |
       [Unit]
@@ -75,7 +75,7 @@ write_files:
     owner: root:root
     content: |
       [Unit]
-      Description=CloudStack DHCP client for %i
+      Description=ABLESTACK DHCP client for %i
       After=network-pre.target
       Wants=network-pre.target
 
@@ -91,6 +91,35 @@ write_files:
       Restart=always
       RestartSec=5
 
+  - path: /usr/local/bin/sharedfs/configure-network-ownership
+    permissions: '0700'
+    owner: root:root
+    content: |
+      #!/bin/bash -e
+
+      source /usr/local/bin/sharedfs/common
+
+      primary_interface="${1:-eth0}"
+      for attempt in $(seq 1 30); do
+        if ip -4 -o addr show dev "$primary_interface" scope global | grep -q ' inet '; then
+          break
+        fi
+        sleep 1
+      done
+      if ! ip -4 -o addr show dev "$primary_interface" scope global | grep -q ' inet '; then
+        log "Persistent DHCP did not configure a global IPv4 on $primary_interface"
+        exit 1
+      fi
+
+      cat > /etc/network/interfaces <<'EOF'
+      # Managed by ABLESTACK Storage Service. NICs are owned by cloud-dhclient@.service.
+      auto lo
+      iface lo inet loopback
+      EOF
+      systemctl disable networking.service >/dev/null 2>&1 || true
+      systemctl reset-failed networking.service >/dev/null 2>&1 || true
+      log "Persistent DHCP owns Storage Service NICs; legacy networking.service disabled"
+
   - path: /usr/local/bin/sharedfs/fsvm-setup
     permissions: '0700'
     owner: root:root
@@ -104,6 +133,8 @@ write_files:
         sudo systemctl enable --now cloud-dhclient@$interface.service
       done
       log "Existing network interfaces configured"
+
+      /usr/local/bin/sharedfs/configure-network-ownership eth0
 
       UDEV_ADD_NIC_RULE="ACTION==\"add\", SUBSYSTEM==\"net\", DRIVERS==\"?*\", ENV{SYSTEMD_WANTS}=\"cloud-dhclient@%k.service\""
 

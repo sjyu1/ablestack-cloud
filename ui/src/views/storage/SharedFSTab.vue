@@ -61,6 +61,19 @@
             </a-space>
           </div>
           <template v-if="storageService.instance">
+            <a-alert
+              v-if="storageIdentityDrift"
+              class="storage-service__alert"
+              type="warning"
+              show-icon
+              :message="$t('message.storage.service.nic.identity.drift')"
+              :description="storageIdentityWarning" />
+            <div v-if="canRepairStorageIdentity" class="storage-identity-repair-action">
+              <a-button size="small" :loading="identityRepair.loading" @click="openStorageIdentityRepair">
+                <template #icon><SafetyCertificateOutlined /></template>
+                {{ $t('label.storage.service.nic.identity.repair') }}
+              </a-button>
+            </div>
             <div class="storage-protocol-grid">
               <section class="storage-panel storage-panel--connection">
                 <div class="storage-panel__title">{{ $t('label.storage.service.connection.info') }}</div>
@@ -83,6 +96,41 @@
                 </dl>
               </section>
             </div>
+
+            <section class="storage-table-section">
+              <div class="storage-table-section__header">
+                <div>
+                  <h4>{{ $t('label.storage.service.listener.groups') }}</h4>
+                  <p>{{ $t('message.storage.service.listener.groups.table', { protocol: 'NFS' }) }}</p>
+                </div>
+              </div>
+              <a-table
+                class="storage-data-table"
+                size="small"
+                rowKey="key"
+                :columns="protocolListenerColumns"
+                :dataSource="nfsListenerRows"
+                :pagination="false"
+                :scroll="{ x: 1260 }"
+                :locale="storageTableLocale('message.storage.service.no.listeners')">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'state'">
+                    <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger :disabled="!record.canDelete" :title="record.deleteDisabledReason || ''" @click="openDeleteConfirm('protocolListener', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        {{ $t('label.delete') }}
+                      </a-button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
+                  </template>
+                </template>
+              </a-table>
+            </section>
 
             <a-alert
               v-if="nfsFailedExportMessages.length"
@@ -213,7 +261,7 @@
                   <template v-else-if="column.key === 'actions'">
                     <div class="storage-table-actions">
                       <a-space class="storage-table-actions__space">
-                        <a-button size="small" :disabled="!record.exportId" @click="openActionModal('resizeVolume', { id: record.exportId, volumeid: record.id })">
+                        <a-button size="small" :disabled="!record.resizeAllowed" :title="record.resizeDisabledReason || ''" @click="openActionModal('resizeBackingVolume', record)">
                           <template #icon><ExpandAltOutlined /></template>
                           {{ $t('label.storage.service.resize.volume') }}
                         </a-button>
@@ -302,6 +350,19 @@
           </div>
           <template v-if="storageService.instance">
             <a-alert
+              v-if="storageIdentityDrift"
+              class="storage-service__alert"
+              type="warning"
+              show-icon
+              :message="$t('message.storage.service.nic.identity.drift')"
+              :description="storageIdentityWarning" />
+            <div v-if="canRepairStorageIdentity" class="storage-identity-repair-action">
+              <a-button size="small" :loading="identityRepair.loading" @click="openStorageIdentityRepair">
+                <template #icon><SafetyCertificateOutlined /></template>
+                {{ $t('label.storage.service.nic.identity.repair') }}
+              </a-button>
+            </div>
+            <a-alert
               v-if="smbSetupIncomplete"
               class="storage-service__alert"
               type="warning"
@@ -343,6 +404,41 @@
                 </dl>
               </section>
             </div>
+
+            <section class="storage-table-section">
+              <div class="storage-table-section__header">
+                <div>
+                  <h4>{{ $t('label.storage.service.listener.groups') }}</h4>
+                  <p>{{ $t('message.storage.service.listener.groups.table', { protocol: 'SMB' }) }}</p>
+                </div>
+              </div>
+              <a-table
+                class="storage-data-table"
+                size="small"
+                rowKey="key"
+                :columns="protocolListenerColumns"
+                :dataSource="smbListenerRows"
+                :pagination="false"
+                :scroll="{ x: 1260 }"
+                :locale="storageTableLocale('message.storage.service.no.listeners')">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'state'">
+                    <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger :disabled="!record.canDelete" :title="record.deleteDisabledReason || ''" @click="openDeleteConfirm('protocolListener', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        {{ $t('label.delete') }}
+                      </a-button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
+                  </template>
+                </template>
+              </a-table>
+            </section>
 
             <section class="storage-table-section">
               <div class="storage-table-section__header">
@@ -531,7 +627,7 @@
                   </template>
                   <template v-else-if="column.key === 'actions'">
                     <div class="storage-table-actions">
-                      <a-button size="small" @click="openActionModal('resizeVolume', { id: record.shareId, volumeid: record.id })">
+                      <a-button size="small" :disabled="!record.resizeAllowed" :title="record.resizeDisabledReason || ''" @click="openActionModal('resizeBackingVolume', record)">
                         <template #icon><ExpandAltOutlined /></template>
                         {{ $t('label.storage.service.resize.volume') }}
                       </a-button>
@@ -610,6 +706,19 @@
             </a-space>
           </div>
           <template v-if="storageService.instance">
+            <a-alert
+              v-if="storageIdentityDrift"
+              class="storage-service__alert"
+              type="warning"
+              show-icon
+              :message="$t('message.storage.service.nic.identity.drift')"
+              :description="storageIdentityWarning" />
+            <div v-if="canRepairStorageIdentity" class="storage-identity-repair-action">
+              <a-button size="small" :loading="identityRepair.loading" @click="openStorageIdentityRepair">
+                <template #icon><SafetyCertificateOutlined /></template>
+                {{ $t('label.storage.service.nic.identity.repair') }}
+              </a-button>
+            </div>
             <div class="storage-protocol-grid">
               <section class="storage-panel storage-panel--connection">
                 <div class="storage-panel__title">{{ $t('label.storage.service.connection.info') }}</div>
@@ -622,7 +731,7 @@
                 <div class="storage-panel__title">{{ $t('label.storage.service.status.summary') }}</div>
                 <dl class="storage-kv storage-kv--compact">
                   <dt>{{ $t('label.storage.service.endpoint') }}</dt>
-                  <dd><ellipsis-text :value="`${serviceEndpoint || '<service-ip>'}:3260`" code /></dd>
+                  <dd><ellipsis-text :value="iscsiEndpointSummary" code /></dd>
                   <dt>{{ $t('label.storage.service.monitor.cache') }}</dt>
                   <dd><a-tag :color="monitorCacheColor">{{ monitorCacheLabel }}</a-tag></dd>
                   <dt>{{ $t('label.storage.service.last.refresh') }}</dt>
@@ -630,6 +739,40 @@
                 </dl>
               </section>
             </div>
+            <section class="storage-table-section">
+              <div class="storage-table-section__header">
+                <div>
+                  <h4>{{ $t('label.storage.service.listener.groups') }}</h4>
+                  <p>{{ $t('message.storage.service.listener.groups.table', { protocol: 'iSCSI' }) }}</p>
+                </div>
+              </div>
+              <a-table
+                class="storage-data-table"
+                size="small"
+                rowKey="key"
+                :columns="protocolListenerColumns"
+                :dataSource="iscsiListenerRows"
+                :pagination="false"
+                :scroll="{ x: 1260 }"
+                :locale="storageTableLocale('message.storage.service.no.listeners')">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'state'">
+                    <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger :disabled="!record.canDelete" :title="record.deleteDisabledReason || ''" @click="openDeleteConfirm('protocolListener', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        {{ $t('label.delete') }}
+                      </a-button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
+                  </template>
+                </template>
+              </a-table>
+            </section>
             <section class="storage-table-section">
               <div class="storage-table-section__header">
                 <div>
@@ -736,7 +879,7 @@
                   </template>
                   <template v-else-if="column.key === 'actions'">
                     <div class="storage-table-actions">
-                      <a-button size="small" @click="openActionModal('resizeVolume', { id: record.targetId, volumeid: record.id })">
+                      <a-button size="small" :disabled="!record.resizeAllowed" :title="record.resizeDisabledReason || ''" @click="openActionModal('resizeBackingVolume', record)">
                         <template #icon><ExpandAltOutlined /></template>
                         {{ $t('label.storage.service.resize.volume') }}
                       </a-button>
@@ -774,6 +917,13 @@
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'state'">
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'authVerification'">
+                    <a-tag
+                      :color="iscsiAuthVerificationColor(record.authVerification)"
+                      :title="record.authVerificationTooltip || ''">
+                      {{ record.authVerificationLabel }}
+                    </a-tag>
                   </template>
                   <template v-else-if="column.key === 'actions'">
                     <div class="storage-table-actions">
@@ -814,6 +964,10 @@
                 <template #icon><PlusOutlined /></template>
                 {{ $t('label.storage.service.create.nvme.subsystem') }}
               </a-button>
+              <a-button @click="openActionModal('nvmeNamespace')">
+                <template #icon><PlusOutlined /></template>
+                {{ $t('label.storage.service.create.nvme.namespace') }}
+              </a-button>
               <a-button @click="openActionModal('nvmeHostAcl')">
                 <template #icon><SafetyCertificateOutlined /></template>
                 {{ $t('label.storage.service.create.nvme.host.acl') }}
@@ -825,6 +979,19 @@
             </a-space>
           </div>
           <template v-if="storageService.instance">
+            <a-alert
+              v-if="storageIdentityDrift"
+              class="storage-service__alert"
+              type="warning"
+              show-icon
+              :message="$t('message.storage.service.nic.identity.drift')"
+              :description="storageIdentityWarning" />
+            <div v-if="canRepairStorageIdentity" class="storage-identity-repair-action">
+              <a-button size="small" :loading="identityRepair.loading" @click="openStorageIdentityRepair">
+                <template #icon><SafetyCertificateOutlined /></template>
+                {{ $t('label.storage.service.nic.identity.repair') }}
+              </a-button>
+            </div>
             <a-alert
               v-if="!nvmeDhChapSupported"
               class="storage-service__alert"
@@ -843,7 +1010,7 @@
                 <div class="storage-panel__title">{{ $t('label.storage.service.status.summary') }}</div>
                 <dl class="storage-kv storage-kv--compact">
                   <dt>{{ $t('label.storage.service.endpoint') }}</dt>
-                  <dd><ellipsis-text :value="`${serviceEndpoint || '<service-ip>'}:4420`" code /></dd>
+                  <dd><ellipsis-text :value="nvmeEndpointSummary" code /></dd>
                   <dt>{{ $t('label.storage.service.monitor.cache') }}</dt>
                   <dd><a-tag :color="monitorCacheColor">{{ monitorCacheLabel }}</a-tag></dd>
                   <dt>{{ $t('label.storage.service.last.refresh') }}</dt>
@@ -853,6 +1020,41 @@
                 </dl>
               </section>
             </div>
+            <section class="storage-table-section">
+              <div class="storage-table-section__header">
+                <div>
+                  <h4>{{ $t('label.storage.service.nvme.listener.groups') }}</h4>
+                  <p>{{ $t('message.storage.service.nvme.listener.groups.table') }}</p>
+                </div>
+              </div>
+              <a-table
+                class="storage-data-table"
+                size="small"
+                rowKey="key"
+                :columns="nvmeListenerColumns"
+                :dataSource="nvmeListenerRows"
+                :pagination="false"
+                :scroll="{ x: 1360 }"
+                :locale="storageTableLocale('message.storage.service.no.nvme.listeners')">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'state'">
+                    <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-button size="small" danger :disabled="!record.canDelete" :title="record.deleteDisabledReason || ''" @click="openDeleteConfirm('nvmeListener', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        {{ $t('label.delete') }}
+                      </a-button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
+                  </template>
+                </template>
+              </a-table>
+            </section>
+
             <section class="storage-table-section">
               <div class="storage-table-section__header">
                 <div>
@@ -867,11 +1069,119 @@
                 :columns="nvmeSubsystemColumns"
                 :dataSource="nvmeSubsystemRows"
                 :pagination="false"
-                :scroll="{ x: 1500 }"
+                :scroll="{ x: 1690 }"
                 :locale="storageTableLocale('message.storage.service.no.nvme.subsystems')">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'state'">
                     <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'hostPolicyLabel'">
+                    <a-tag :color="record.hostPolicyColor || 'default'">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-space class="storage-table-actions__space">
+                        <a-button size="small" @click="openActionModal('editNvmeSubsystem', record)">
+                          <template #icon><EditOutlined /></template>
+                          {{ $t('label.edit') }}
+                        </a-button>
+                        <a-button size="small" danger :disabled="!record.canDelete" :title="record.deleteDisabledReason || ''" @click="openDeleteConfirm('nvmeSubsystem', record)">
+                          <template #icon><DeleteOutlined /></template>
+                          {{ $t('label.delete') }}
+                        </a-button>
+                      </a-space>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
+                  </template>
+                </template>
+              </a-table>
+            </section>
+
+            <section class="storage-table-section">
+              <div class="storage-table-section__header">
+                <div>
+                  <h4>{{ $t('label.storage.service.nvme.namespaces') }}</h4>
+                  <p>{{ $t('message.storage.service.nvme.namespaces.table') }}</p>
+                </div>
+                <a-space class="storage-section-actions">
+                  <a-button @click="openActionModal('nvmeNamespace')">
+                    <template #icon><PlusOutlined /></template>
+                    {{ $t('label.storage.service.create.nvme.namespace') }}
+                  </a-button>
+                </a-space>
+              </div>
+              <a-table
+                class="storage-data-table"
+                size="small"
+                rowKey="key"
+                :columns="nvmeNamespaceColumns"
+                :dataSource="nvmeNamespaceRows"
+                :pagination="false"
+                :scroll="{ x: 1690 }"
+                :locale="storageTableLocale('message.storage.service.no.nvme.namespaces')">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'state'">
+                    <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'hostPolicyLabel'">
+                    <a-tag :color="record.hostPolicyColor || 'default'">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-space class="storage-table-actions__space">
+                        <a-button size="small" @click="openActionModal('editNvmeNamespace', record)">
+                          <template #icon><EditOutlined /></template>
+                          {{ $t('label.edit') }}
+                        </a-button>
+                        <a-button size="small" danger @click="openDeleteConfirm('nvmeNamespace', record)">
+                          <template #icon><DeleteOutlined /></template>
+                          {{ $t('label.delete') }}
+                        </a-button>
+                      </a-space>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
+                  </template>
+                </template>
+              </a-table>
+            </section>
+
+            <section class="storage-table-section">
+              <div class="storage-table-section__header">
+                <div>
+                  <h4>{{ $t('label.storage.service.backing.volumes') }}</h4>
+                  <p>{{ $t('message.storage.service.nvme.volumes.table') }}</p>
+                </div>
+              </div>
+              <a-table
+                class="storage-data-table"
+                size="small"
+                rowKey="key"
+                :columns="nvmeVolumeColumns"
+                :dataSource="nvmeVolumeRows"
+                :pagination="false"
+                :scroll="{ x: 1730 }"
+                :locale="storageTableLocale('message.storage.service.no.backing.volumes')">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'state'">
+                    <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="storage-table-actions">
+                      <a-space class="storage-table-actions__space">
+                        <a-button size="small" :disabled="!record.resizeAllowed" :title="record.resizeDisabledReason || ''" @click="openActionModal('resizeBackingVolume', record)">
+                          <template #icon><ExpandAltOutlined /></template>
+                          {{ $t('label.storage.service.resize.volume') }}
+                        </a-button>
+                        <a-button size="small" danger :disabled="!record.detachAllowed" :title="record.detachDisabledReason || ''" @click="openActionModal('detachBackingVolume', record)">
+                          <template #icon><DisconnectOutlined /></template>
+                          {{ $t('label.storage.service.detach.backing.volume') }}
+                        </a-button>
+                      </a-space>
+                    </div>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -904,7 +1214,23 @@
                 :locale="storageTableLocale('message.storage.service.no.access.rules')">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'state'">
-                    <a-tag :color="runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                    <a-tag :color="record.policyRow ? 'green' : runtimeColor(record)">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'policySource'">
+                    <a-tag :color="record.policyRow ? 'green' : 'blue'">{{ storageCellValue(record, column) }}</a-tag>
+                  </template>
+                  <template v-else-if="column.key === 'actions'">
+                    <span v-if="record.policyRow" class="storage-muted-text">{{ $t('label.storage.service.inherited.policy') }}</span>
+                    <a-space v-else class="storage-row-actions">
+                      <a-button size="small" @click="openActionModal('editNvmeHostAcl', record)" :disabled="record.subsystemAllowAnyHost">
+                        <template #icon><EditOutlined /></template>
+                        {{ $t('label.edit') }}
+                      </a-button>
+                      <a-button size="small" danger @click="openDeleteConfirm('nvmeHostAcl', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        {{ $t('label.delete') }}
+                      </a-button>
+                    </a-space>
                   </template>
                   <template v-else>
                     <ellipsis-text :value="storageCellValue(record, column)" :code="column.code" />
@@ -927,7 +1253,7 @@
                 :columns="nvmeSessionColumns"
                 :dataSource="nvmeSessionRows"
                 :pagination="false"
-                :scroll="{ x: 1160 }"
+                :scroll="{ x: 2700 }"
                 :locale="storageTableLocale('message.storage.service.no.sessions')">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'state'">
@@ -935,7 +1261,12 @@
                   </template>
                   <template v-else-if="column.key === 'actions'">
                     <div class="storage-table-actions">
-                      <a-button size="small" danger @click="openActionModal('disconnectSession', record)">
+                      <a-button
+                        size="small"
+                        danger
+                        :disabled="!record.canDisconnect"
+                        :title="record.canDisconnect ? $t('label.storage.service.disconnect.session') : record.disconnectDisabledReason"
+                        @click="openActionModal('disconnectSession', record)">
                         <template #icon><DisconnectOutlined /></template>
                         {{ $t('label.storage.service.disconnect.session') }}
                       </a-button>
@@ -1025,6 +1356,18 @@ wrapClassName="storage-service-action-modal"
               :max="65535"
               :disabled="isEnableProtocolNfsDualMode" />
           </a-form-item>
+          <a-alert
+            v-if="enableProtocolListenerConflictMessage"
+            type="warning"
+            show-icon
+            class="storage-service-inline-alert"
+            :message="enableProtocolListenerConflictMessage" />
+          <a-alert
+            v-if="enableProtocolListenerCoveredMessage"
+            type="info"
+            show-icon
+            class="storage-service-inline-alert"
+            :message="enableProtocolListenerCoveredMessage" />
           <a-form-item v-if="forms.enableProtocol.protocol === 'NFS'" required>
             <template #label>
               <tooltip-label :title="$t('label.storage.service.nfs.protocol.mode')" :tooltip="$t('message.storage.service.nfs.protocol.mode.help')" />
@@ -1618,35 +1961,171 @@ wrapClassName="storage-service-action-modal"
           </section>
         </div>
         <div v-if="actionModal.type === 'nvmePrepare'" class="storage-action-form storage-action-form--vertical">
-          <a-row :gutter="16">
-            <a-col :xs="24" :md="8"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.engine')" :tooltip="$t('message.storage.service.nvme.engine.help')" /></template><a-select v-model:value="forms.nvmePrepare.engine"><a-select-option value="KERNEL_NVMET">KERNEL_NVMET</a-select-option><a-select-option value="SPDK">SPDK</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="8"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.transport')" :tooltip="$t('message.storage.service.nvme.transport.help')" /></template><a-select v-model:value="forms.nvmePrepare.transport"><a-select-option value="tcp">tcp</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="8"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.validate.only')" :tooltip="$t('message.storage.service.validate.only.help')" /></template><a-switch v-model:checked="forms.nvmePrepare.validateonly" /></a-form-item></a-col>
-          </a-row>
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.nvme.prepare.runtime') }}</div>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.engine')" :tooltip="$t('message.storage.service.nvme.engine.help')" /></template>
+              <a-select v-model:value="forms.nvmePrepare.engine">
+                <a-select-option value="KERNEL_NVMET">KERNEL_NVMET</a-select-option>
+                <a-select-option value="SPDK">SPDK</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.transport')" :tooltip="$t('message.storage.service.nvme.transport.help')" /></template>
+              <a-select v-model:value="forms.nvmePrepare.transport">
+                <a-select-option value="tcp">tcp</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item>
+              <template #label><tooltip-label :title="$t('label.storage.service.validate.only')" :tooltip="$t('message.storage.service.validate.only.help')" /></template>
+              <a-switch v-model:checked="forms.nvmePrepare.validateonly" />
+            </a-form-item>
+          </section>
         </div>
-        <div v-if="actionModal.type === 'nvmeSubsystem'" class="storage-action-form storage-action-form--vertical">
-          <a-row :gutter="16">
-            <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.subsystem.nqn')" :tooltip="$t('message.storage.service.subsystem.nqn.help')" /></template><a-input v-model:value="forms.nvmeSubsystem.subsystemnqn" /></a-form-item></a-col>
-            <a-col :xs="24" :md="6"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.engine')" :tooltip="$t('message.storage.service.nvme.engine.help')" /></template><a-select v-model:value="forms.nvmeSubsystem.engine"><a-select-option value="KERNEL_NVMET">KERNEL_NVMET</a-select-option><a-select-option value="SPDK">SPDK</a-select-option></a-select></a-form-item></a-col>
-            <a-col :xs="24" :md="6"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.allow.any.host')" :tooltip="$t('message.storage.service.allow.any.host.help')" /></template><a-switch v-model:checked="forms.nvmeSubsystem.allowanyhost" /></a-form-item></a-col>
-          </a-row>
+        <div v-if="actionModal.type === 'nvmeSubsystem' || actionModal.type === 'editNvmeSubsystem'" class="storage-action-form storage-action-form--vertical">
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.nvme.subsystem.settings') }}</div>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.subsystem.nqn')" :tooltip="$t('message.storage.service.subsystem.nqn.help')" /></template>
+              <a-input v-model:value="forms.nvmeSubsystem.subsystemnqn" />
+            </a-form-item>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.engine')" :tooltip="$t('message.storage.service.nvme.engine.help')" /></template>
+              <a-select v-model:value="forms.nvmeSubsystem.engine">
+                <a-select-option value="KERNEL_NVMET">KERNEL_NVMET</a-select-option>
+                <a-select-option value="SPDK">SPDK</a-select-option>
+              </a-select>
+            </a-form-item>
+            <div class="storage-action-policy-box">
+              <div class="storage-action-policy-box__title">{{ $t('label.storage.service.nvme.host.policy') }}</div>
+              <div class="storage-action-policy-box__row">
+                <tooltip-label :title="$t('label.storage.service.allow.any.host')" :tooltip="$t('message.storage.service.allow.any.host.help')" />
+                <a-switch v-model:checked="forms.nvmeSubsystem.allowanyhost" />
+              </div>
+            </div>
+          </section>
         </div>
-        <a-row :gutter="16" v-if="actionModal.type === 'nvmeHostAcl'">
-          <a-col :xs="24">
-            <a-alert
-              v-if="!nvmeDhChapSupported"
-              class="storage-service__alert"
-              type="warning"
-              show-icon
-              :message="nvmeDhChapUnsupportedMessage" />
-          </a-col>
-          <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.nvme.subsystem')" :tooltip="$t('message.storage.service.nvme.subsystem.help')" /></template><a-select v-model:value="forms.nvmeHostAcl.subsystemid" show-search optionFilterProp="label"><a-select-option v-for="target in storageService.nvmeSubsystems" :key="target.id" :value="target.id" :label="targetLabel(target)">{{ targetLabel(target) }}</a-select-option></a-select></a-form-item></a-col>
-          <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.allowed.host.nqn')" :tooltip="$t('message.storage.service.allowed.host.nqn.help')" /></template><a-input v-model:value="forms.nvmeHostAcl.hostnqn" /></a-form-item></a-col>
-          <a-col :xs="24" :md="12"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.dhchap.enabled')" :tooltip="$t('message.storage.service.dhchap.enabled.help')" /></template><a-switch v-model:checked="forms.nvmeHostAcl.dhchapenabled" :disabled="!nvmeDhChapSupported" /></a-form-item></a-col>
-          <a-col :xs="24" :md="12"><a-form-item><template #label><tooltip-label :title="$t('label.storage.service.dhchap.controller.enabled')" :tooltip="$t('message.storage.service.dhchap.controller.enabled.help')" /></template><a-switch v-model:checked="forms.nvmeHostAcl.dhchapctrlenabled" :disabled="!nvmeDhChapSupported || !nvmeDhChapCtrlSupported || !forms.nvmeHostAcl.dhchapenabled" /></a-form-item></a-col>
-          <a-col :xs="24" :md="12" v-if="forms.nvmeHostAcl.dhchapenabled"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.dhchap.key')" :tooltip="$t('message.storage.service.dhchap.key.help')" /></template><a-input-password v-model:value="forms.nvmeHostAcl.dhchapkey" /></a-form-item></a-col>
-          <a-col :xs="24" :md="12" v-if="forms.nvmeHostAcl.dhchapenabled && forms.nvmeHostAcl.dhchapctrlenabled"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.dhchap.controller.key')" :tooltip="$t('message.storage.service.dhchap.controller.key.help')" /></template><a-input-password v-model:value="forms.nvmeHostAcl.dhchapctrlkey" /></a-form-item></a-col>
-        </a-row>
+        <div v-if="actionModal.type === 'nvmeNamespace' || actionModal.type === 'editNvmeNamespace'" class="storage-action-form storage-action-form--vertical">
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.nvme.subsystem')" :tooltip="$t('message.storage.service.nvme.subsystem.help')" /></template>
+            <a-select v-model:value="forms.nvmeNamespace.subsystemid" show-search optionFilterProp="label" :disabled="actionModal.type === 'editNvmeNamespace'">
+              <a-select-option v-for="target in nvmeSubsystemTargets" :key="target.id" :value="target.id" :label="targetLabel(target)">
+                {{ targetLabel(target) }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-alert
+            v-if="selectedNvmeNamespaceHostPolicyMessage"
+            class="storage-service-inline-alert"
+            show-icon
+            :type="selectedNvmeNamespaceHostPolicyType"
+            :message="selectedNvmeNamespaceHostPolicyMessage" />
+          <a-form-item required>
+            <template #label><tooltip-label :title="$t('label.storage.service.namespace.id')" :tooltip="$t('message.storage.service.nvme.namespace.id.help')" /></template>
+            <a-input v-model:value="forms.nvmeNamespace.namespaceid" />
+          </a-form-item>
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.backing.volume') }}</div>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.volume.mode')" :tooltip="$t('message.storage.service.volume.mode.help')" /></template>
+              <a-radio-group v-model:value="forms.nvmeNamespace.volumemode" :disabled="actionModal.type === 'editNvmeNamespace'">
+                <a-radio value="CURRENT">{{ $t('label.storage.service.current.volume') }}</a-radio>
+                <a-radio value="EXISTING">{{ $t('label.storage.service.existing.volume.select') }}</a-radio>
+                <a-radio value="NEW">{{ $t('label.storage.service.new.volume') }}</a-radio>
+              </a-radio-group>
+            </a-form-item>
+            <a-form-item v-if="forms.nvmeNamespace.volumemode === 'CURRENT'" required>
+              <template #label><tooltip-label :title="$t('label.storage.service.current.backing.volume')" :tooltip="$t('message.storage.service.current.volume.select.help')" /></template>
+              <a-select v-model:value="forms.nvmeNamespace.volumeid" :loading="volumeLoading" show-search optionFilterProp="label" :disabled="actionModal.type === 'editNvmeNamespace'">
+                <a-select-option v-for="volume in currentNvmeBlockVolumes" :key="volume.id" :value="volume.id" :label="formatCurrentBackingVolumeOption(volume)">
+                  {{ formatCurrentBackingVolumeOption(volume) }}
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+            <volume-select
+              v-if="forms.nvmeNamespace.volumemode === 'EXISTING'"
+              v-model:value="forms.nvmeNamespace.volumeid"
+              :volumes="availableVolumes"
+              :loading="volumeLoading"
+              :formatter="formatVolumeOption"
+              required
+              :tooltip="$t('message.storage.service.existing.volume.select.help')" />
+            <template v-if="forms.nvmeNamespace.volumemode === 'NEW'">
+              <a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.new.volume.name')" :tooltip="$t('message.storage.service.new.volume.name.help')" /></template><a-input v-model:value="forms.nvmeNamespace.newvolumename" /></a-form-item>
+              <a-form-item required><template #label><tooltip-label :title="$t('label.diskoffering')" :tooltip="$t('message.storage.service.new.volume.diskoffering.help')" /></template><a-select v-model:value="forms.nvmeNamespace.diskofferingid" :loading="diskOfferingLoading" show-search optionFilterProp="label" @change="reconcileNvmeNewVolumeStorage"><a-select-option v-for="offering in diskOfferings" :key="offering.id" :value="offering.id" :label="offering.displaytext || offering.name">{{ offering.displaytext || offering.name }}</a-select-option></a-select></a-form-item>
+              <a-form-item required><template #label><tooltip-label :title="$t('label.primary.storage')" :tooltip="$t('message.storage.service.new.volume.storage.help')" /></template><a-select v-model:value="forms.nvmeNamespace.storageid" :loading="storagePoolLoading" show-search optionFilterProp="label"><a-select-option v-for="pool in filteredNvmeNewVolumeStoragePools" :key="pool.id" :value="pool.id" :label="storagePoolLabel(pool)">{{ storagePoolLabel(pool) }}</a-select-option></a-select></a-form-item>
+              <a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.volume.size.gib')" :tooltip="$t('message.storage.service.volume.size.help')" /></template><a-input-number v-model:value="forms.nvmeNamespace.newvolumesize" class="storage-input-number" :min="1" /></a-form-item>
+            </template>
+          </section>
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.nvme.listener.groups') }}</div>
+            <a-alert type="info" show-icon class="storage-service-inline-alert" :message="$t('message.storage.service.nvme.listener.group.help')" />
+            <a-form-item required>
+              <template #label><tooltip-label :title="storageLabel('label.storage.service.listener.ports', '수신 포트 그룹')" :tooltip="$t('message.storage.service.nvme.listener.group.help')" /></template>
+              <a-select v-model:value="forms.nvmeNamespace.listenerports" mode="multiple" show-search optionFilterProp="label">
+                <a-select-option v-for="group in nvmeListenerGroupOptions" :key="group.value" :value="group.value" :label="group.label">
+                  <div class="storage-listener-option">
+                    <span>{{ group.label }}</span>
+                    <small>{{ group.endpoints }}</small>
+                  </div>
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+            <div class="storage-action-summary-box storage-action-summary-box--compact">
+              <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.nvme.namespace.port.groups') }}</span><code>{{ formatNvmeListenerGroupLabel(forms.nvmeNamespace.listenerports) }}</code></div>
+              <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.nvme.namespace.endpoints') }}</span><code>{{ formatNvmeListenerGroupEndpoints(forms.nvmeNamespace.listenerports) }}</code></div>
+            </div>
+          </section>
+        </div>
+        <div v-if="['nvmeHostAcl', 'editNvmeHostAcl'].includes(actionModal.type)" class="storage-action-form storage-action-form--vertical">
+          <a-alert
+            v-if="!nvmeDhChapSupported"
+            class="storage-service__alert"
+            type="warning"
+            show-icon
+            :message="nvmeDhChapUnsupportedMessage" />
+          <a-alert
+            v-if="selectedNvmeHostAclAllowsAnyHost"
+            class="storage-service__alert"
+            type="warning"
+            show-icon
+            :message="$t('message.storage.service.nvme.host.acl.allow.any.host.blocked')" />
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.nvme.host.access') }}</div>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.nvme.subsystem')" :tooltip="$t('message.storage.service.nvme.subsystem.help')" /></template>
+              <a-select v-model:value="forms.nvmeHostAcl.subsystemid" show-search optionFilterProp="label" :disabled="actionModal.type === 'editNvmeHostAcl'">
+                <a-select-option v-for="target in nvmeSubsystemTargets" :key="target.id" :value="target.id" :label="targetLabel(target)" :disabled="nvmeSubsystemAllowAnyHost(target)">
+                  {{ targetLabel(target) }}
+                  <span v-if="nvmeSubsystemAllowAnyHost(target)"> - {{ $t('label.storage.service.nvme.access.any.host') }}</span>
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item required>
+              <template #label><tooltip-label :title="$t('label.storage.service.allowed.host.nqn')" :tooltip="$t('message.storage.service.allowed.host.nqn.help')" /></template>
+              <a-input v-model:value="forms.nvmeHostAcl.hostnqn" />
+            </a-form-item>
+          </section>
+          <section class="storage-action-section">
+            <div class="storage-action-section__title">{{ $t('label.storage.service.nvme.auth.host') }}</div>
+            <a-form-item>
+              <template #label><tooltip-label :title="$t('label.storage.service.dhchap.enabled')" :tooltip="$t('message.storage.service.dhchap.enabled.help')" /></template>
+              <a-switch v-model:checked="forms.nvmeHostAcl.dhchapenabled" :disabled="!nvmeDhChapSupported" />
+            </a-form-item>
+            <a-form-item>
+              <template #label><tooltip-label :title="$t('label.storage.service.dhchap.controller.enabled')" :tooltip="$t('message.storage.service.dhchap.controller.enabled.help')" /></template>
+              <a-switch v-model:checked="forms.nvmeHostAcl.dhchapctrlenabled" :disabled="!nvmeDhChapSupported || !nvmeDhChapCtrlSupported || !forms.nvmeHostAcl.dhchapenabled" />
+            </a-form-item>
+            <a-form-item required v-if="forms.nvmeHostAcl.dhchapenabled">
+              <template #label><tooltip-label :title="$t('label.storage.service.dhchap.key')" :tooltip="$t('message.storage.service.dhchap.key.help')" /></template>
+              <a-input-password v-model:value="forms.nvmeHostAcl.dhchapkey" />
+            </a-form-item>
+            <a-form-item required v-if="forms.nvmeHostAcl.dhchapenabled && forms.nvmeHostAcl.dhchapctrlenabled">
+              <template #label><tooltip-label :title="$t('label.storage.service.dhchap.controller.key')" :tooltip="$t('message.storage.service.dhchap.controller.key.help')" /></template>
+              <a-input-password v-model:value="forms.nvmeHostAcl.dhchapctrlkey" />
+            </a-form-item>
+          </section>
+        </div>
         <div v-if="actionModal.type === 'attachVolume'" class="storage-action-form storage-action-form--vertical">
           <a-row :gutter="16">
             <a-col :xs="24" :md="12"><a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.file.share')" :tooltip="$t('message.storage.service.select.share')" /></template><a-select v-model:value="forms.attachVolume.id" show-search optionFilterProp="label"><a-select-option v-for="share in fileShares" :key="share.id" :value="share.id" :label="shareLabel(share)">{{ shareLabel(share) }}</a-select-option></a-select></a-form-item></a-col>
@@ -1668,9 +2147,17 @@ wrapClassName="storage-service-action-modal"
           <a-form-item><template #label><tooltip-label :title="$t('label.storage.service.volume.size.gib')" :tooltip="$t('message.storage.service.volume.size.help')" /></template><a-input-number v-model:value="forms.resizeShare.size" class="storage-input-number" /></a-form-item>
           <capacity-input :label="$t('label.storage.service.file.share.capacity.limit')" :tooltip="$t('message.storage.service.quota.bytes.help')" v-model:amount="forms.resizeShare.quotaamount" v-model:unit="forms.resizeShare.quotaunit" :units="capacityUnits" />
         </div>
-        <div v-if="actionModal.type === 'resizeVolume'" class="storage-action-form storage-action-form--vertical">
-          <a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.file.share')" :tooltip="$t('message.storage.service.select.share')" /></template><a-select v-model:value="forms.resizeShare.id" show-search optionFilterProp="label"><a-select-option v-for="share in fileShares" :key="share.id" :value="share.id" :label="shareLabel(share)">{{ shareLabel(share) }}</a-select-option></a-select></a-form-item>
-          <a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.volume.size.gib')" :tooltip="$t('message.storage.service.volume.size.help')" /></template><a-input-number v-model:value="forms.resizeShare.size" class="storage-input-number" /></a-form-item>
+        <div v-if="actionModal.type === 'resizeBackingVolume'" class="storage-action-form storage-action-form--vertical">
+          <a-alert class="storage-service__alert" type="info" show-icon :message="$t('message.storage.service.resize.backing.volume.help')" />
+          <div class="storage-action-summary-box storage-action-summary-box--compact">
+            <div class="storage-action-summary-row"><span>{{ $t('label.volumename') }}</span><code>{{ forms.resizeBackingVolume.name || '-' }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.volumeid') }}</span><code>{{ forms.resizeBackingVolume.volumeid || '-' }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.size') }}</span><code>{{ forms.resizeBackingVolume.currentSize || '-' }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.diskoffering') }}</span><code>{{ forms.resizeBackingVolume.diskOffering || '-' }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.storagepool') }}</span><code>{{ forms.resizeBackingVolume.storagePool || '-' }}</code></div>
+            <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.connected.resource') }}</span><code>{{ forms.resizeBackingVolume.resourceName || '-' }}</code></div>
+          </div>
+          <a-form-item required><template #label><tooltip-label :title="$t('label.storage.service.new.volume.size.gib')" :tooltip="$t('message.storage.service.resize.backing.volume.size.help')" /></template><a-input-number v-model:value="forms.resizeBackingVolume.size" class="storage-input-number" :min="forms.resizeBackingVolume.minSizeGiB" :precision="0" /></a-form-item>
         </div>
         <div v-if="actionModal.type === 'detachBackingVolume'" class="storage-action-form storage-action-form--vertical">
           <a-alert type="warning" show-icon :message="$t('message.storage.service.detach.volume.warning')" />
@@ -1694,6 +2181,32 @@ wrapClassName="storage-service-action-modal"
           </a-row>
         </div>
       </a-form></div>
+    </a-modal>
+    <a-modal
+      :visible="identityRepair.visible"
+      :title="$t('label.storage.service.nic.identity.repair')"
+      :confirmLoading="identityRepair.loading"
+      :maskClosable="false"
+      :centered="true"
+      :okText="$t('label.storage.service.nic.identity.repair.apply')"
+      :cancelText="$t('label.cancel')"
+      :okButtonProps="{ disabled: !identityRepair.eligible }"
+      wrapClassName="storage-service-action-modal"
+      @ok="applyStorageIdentityRepair"
+      @cancel="closeStorageIdentityRepair">
+      <div class="storage-action-form storage-action-form--vertical">
+        <a-alert
+          class="storage-service__alert"
+          :type="identityRepair.eligible ? 'warning' : 'error'"
+          show-icon
+          :message="identityRepair.eligible ? $t('message.storage.service.nic.identity.repair.warning') : $t('message.storage.service.nic.identity.repair.ineligible')" />
+        <div class="storage-action-summary-box storage-action-summary-box--compact">
+          <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.nic.persisted.primary') }}</span><code>{{ identityRepair.persistedPrimaryIp || '-' }}</code></div>
+          <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.nic.runtime.primary') }}</span><code>{{ identityRepair.runtimePrimaryIp || '-' }}</code></div>
+          <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.nic.aliases') }}</span><code>{{ identityRepair.aliases.join(', ') || '-' }}</code></div>
+          <div class="storage-action-summary-row"><span>{{ $t('label.storage.service.nic.identity.repair.reason') }}</span><code>{{ identityRepair.reason || '-' }}</code></div>
+        </div>
+      </div>
     </a-modal>
   </a-spin>
 </template>
@@ -1980,12 +2493,14 @@ export default {
         smbShares: [],
         iscsiTargets: [],
         nvmeSubsystems: [],
+        nvmeNamespaces: [],
         nfsAcls: [],
         smbAcls: [],
         iscsiAcls: [],
         nvmeHostAcls: [],
         backingVolumes: []
       },
+      storageRefreshGeneration: 0,
       diskOfferings: [],
       diskOfferingLoading: false,
       actionModal: {
@@ -1995,6 +2510,15 @@ export default {
         loading: false
       },
       actionLoading: {},
+      identityRepair: {
+        visible: false,
+        loading: false,
+        eligible: false,
+        persistedPrimaryIp: '',
+        runtimePrimaryIp: '',
+        aliases: [],
+        reason: ''
+      },
       capacityUnits: [
         { value: 'B', label: 'B', multiplier: 1 },
         { value: 'MiB', label: 'MiB', multiplier: 1024 * 1024 },
@@ -2128,7 +2652,21 @@ export default {
           engine: 'KERNEL_NVMET',
           transport: 'tcp'
         },
+        nvmeNamespace: {
+          id: '',
+          subsystemid: '',
+          namespaceid: '1',
+          volumeid: '',
+          volumemode: 'CURRENT',
+          newvolumename: '',
+          diskofferingid: '',
+          storageid: '',
+          newvolumesize: null,
+          backingpath: '',
+          listenerports: [4420]
+        },
         nvmeHostAcl: {
+          id: '',
           subsystemid: '',
           hostnqn: '',
           dhchapenabled: false,
@@ -2149,6 +2687,18 @@ export default {
           quotaamount: null,
           quotaunit: 'GiB',
           resizevolume: true
+        },
+        resizeBackingVolume: {
+          volumeid: '',
+          size: null,
+          currentSizeBytes: null,
+          currentSizeGiB: null,
+          minSizeGiB: 1,
+          name: '',
+          currentSize: '',
+          diskOffering: '',
+          storagePool: '',
+          resourceName: ''
         },
         detachBackingVolume: {
           volumeid: '',
@@ -2180,6 +2730,24 @@ export default {
     hasStorageServiceApi () {
       return 'listStorageServiceInstances' in this.$store.getters.apis
     },
+    storageIdentityDriftProtocols () {
+      return (this.storageService.protocols || []).filter(protocol =>
+        String(protocol.identitystatus || protocol.identityStatus || '').toUpperCase() === 'DRIFT')
+    },
+    storageIdentityDrift () {
+      return this.storageIdentityDriftProtocols.length > 0
+    },
+    canRepairStorageIdentity () {
+      const apiMap = this.$store.getters.apis || {}
+      return this.storageIdentityDrift && !!this.storageService.instance && 'repairStorageServiceNicIdentity' in apiMap
+    },
+    storageIdentityWarning () {
+      const protocol = this.storageIdentityDriftProtocols[0] || {}
+      return this.$t('message.storage.service.nic.identity.drift.description', {
+        persisted: protocol.primaryip || protocol.primaryIp || '-',
+        runtime: protocol.runtimeprimaryip || protocol.runtimePrimaryIp || '-'
+      })
+    },
     fileShares () {
       return [
         ...this.storageService.nfsExports,
@@ -2209,6 +2777,27 @@ export default {
       }
       return volumes
     },
+    nfsBackingVolumes () {
+      const volumeIds = new Set()
+      this.storageService.nfsExports.forEach(share => {
+        [share.volumeid, share.volumeId, share.volumeuuid, share.volumeUuid]
+          .filter(Boolean)
+          .forEach(value => volumeIds.add(String(value)))
+      })
+      if (!volumeIds.size) {
+        return []
+      }
+      const seen = new Set()
+      return this.currentBackingVolumes.filter(volume => {
+        const ids = [volume.id, volume.uuid].filter(Boolean).map(value => String(value))
+        const canonicalId = String(volume.id || volume.uuid || '')
+        if (!ids.some(id => volumeIds.has(id)) || !canonicalId || seen.has(canonicalId)) {
+          return false
+        }
+        seen.add(canonicalId)
+        return true
+      })
+    },
     currentIscsiBlockVolumes () {
       const used = new Set()
       const addUsed = value => {
@@ -2219,13 +2808,28 @@ export default {
       this.storageService.nfsExports.forEach(share => addUsed(share.volumeid || share.volumeId))
       this.storageService.smbShares.forEach(share => addUsed(share.volumeid || share.volumeId))
       this.storageService.iscsiTargets.forEach(target => addUsed(target.volumeid || target.volumeId))
-      this.storageService.nvmeSubsystems.forEach(target => addUsed(target.volumeid || target.volumeId))
+      this.storageService.nvmeNamespaces.forEach(target => addUsed(target.volumeid || target.volumeId))
       return this.currentBackingVolumes.filter(volume => {
         if (used.has(String(volume.id)) || used.has(String(volume.uuid))) {
           return false
         }
         const mountPath = this.currentBackingVolumeMountPath(volume)
         return !mountPath || mountPath === '-'
+      })
+    },
+    currentNvmeBlockVolumes () {
+      return this.currentIscsiBlockVolumes
+    },
+    nvmeSubsystemTargets () {
+      return this.storageService.nvmeSubsystems.filter(target => {
+        const config = this.parseStorageConfig(target.config)
+        return (config.type || '').toLowerCase() === 'subsystem' || !(target.volumeid || target.volumeId)
+      })
+    },
+    nvmeNamespaceTargets () {
+      return this.storageService.nvmeNamespaces.filter(target => {
+        const config = this.parseStorageConfig(target.config)
+        return (config.type || '').toLowerCase() === 'namespace' || !!(target.volumeid || target.volumeId)
       })
     },
     selectedCurrentBackingVolume () {
@@ -2248,6 +2852,22 @@ export default {
         return null
       }
       return this.currentIscsiBlockVolumes.find(volume => String(volume.id) === selected || String(volume.uuid) === selected) || null
+    },
+    selectedNvmeDiskOffering () {
+      return this.diskOfferings.find(offering => offering.id === this.forms.nvmeNamespace.diskofferingid)
+    },
+    selectedNvmeDiskOfferingTags () {
+      return this.extractStorageTags(this.selectedNvmeDiskOffering)
+    },
+    filteredNvmeNewVolumeStoragePools () {
+      const requiredTags = this.selectedNvmeDiskOfferingTags.map(tag => tag.toLowerCase())
+      if (!requiredTags.length) {
+        return this.storagePools
+      }
+      return this.storagePools.filter(pool => {
+        const poolTags = this.extractStorageTags(pool).map(tag => tag.toLowerCase())
+        return requiredTags.every(tag => poolTags.includes(tag))
+      })
     },
     selectedIscsiAclTarget () {
       const selected = String(this.forms.iscsiAcl.targetid || '')
@@ -2280,6 +2900,16 @@ export default {
       }
       const config = this.parseStorageConfig(target.config)
       return target.endpoints || target.endpoint || this.formatIscsiListenerGroupEndpoints(this.normalizeListenerPorts(target.listenerports || target.listenerPorts || config.listenerGroupPorts || config.listenerports || 3260))
+    },
+    selectedNvmeHostAclSubsystem () {
+      const selected = String(this.forms.nvmeHostAcl.subsystemid || '')
+      if (!selected) {
+        return null
+      }
+      return this.nvmeSubsystemTargets.find(target => String(target.id || '') === selected || String(target.uuid || '') === selected) || null
+    },
+    selectedNvmeHostAclAllowsAnyHost () {
+      return this.nvmeSubsystemAllowAnyHost(this.selectedNvmeHostAclSubsystem)
     },
     selectedNfsDiskOffering () {
       return this.diskOfferings.find(offering => offering.id === this.forms.nfsExport.diskofferingid)
@@ -2473,6 +3103,32 @@ export default {
         label: `${this.$t('label.port')} ${port} / ${this.formatIscsiListenerGroupEndpoints([port])}`
       }))
     },
+    nvmeListenerGroupOptions () {
+      const ports = new Set([4420])
+      const addPorts = value => this.normalizeListenerPorts(value).forEach(port => ports.add(port))
+      const addConfigPorts = config => {
+        if (!config || typeof config !== 'object') return
+        addPorts(config.listenerGroupPorts ?? config.listenergroupports ?? config.listenerPorts ?? config.listenerports)
+      }
+      const protocols = this.storageService.protocols || []
+      protocols.forEach(protocol => {
+        if (String(protocol.protocol || protocol.name || '').toUpperCase() === 'NVME_OF') {
+          addPorts(protocol?.port ?? protocol?.listenPort ?? protocol?.listenport ?? protocol?.endpointPort)
+          addConfigPorts(this.parseStorageConfig(protocol.config))
+        }
+      })
+      this.nvmeNamespaceTargets.forEach(target => addConfigPorts(this.parseStorageConfig(target.config)))
+      const statusMap = this.nvmeHealthPortStatusMap()
+      return Array.from(ports).sort((a, b) => a - b).map(port => {
+        const statusLabel = this.nvmePortStatusLabel(statusMap[port])
+        const summary = this.nvmeListenerGroupSummary([port])
+        return {
+          value: port,
+          label: `${summary.listenerGroupLabel}${statusLabel ? ` / ${statusLabel}` : ''}`,
+          endpoints: summary.effectiveEndpoints
+        }
+      })
+    },
     serviceEndpoint () {
       const nic = this.serviceListenIps.find(item => item.kind === 'PRIMARY' && item.ipaddress) || this.serviceListenIps.find(item => item.ipaddress) || {}
       return nic.ipaddress || this.vm.ipaddress || this.resource.ipaddress || this.resource.serviceip || this.resource.ip || ''
@@ -2527,6 +3183,61 @@ export default {
       }
       return this.$t('message.storage.service.nvme.dhchap.unsupported')
     },
+    nvmeProtocolListenerEntries () {
+      return this.protocolListenerEntries('NVME_OF').map(entry => {
+        const effectiveEndpoints = this.nvmeEffectiveEndpointsForListener(entry)
+        const state = this.nvmeListenerState(entry)
+        return {
+          key: `${entry.listenIp}:${entry.port}`,
+          listenIp: entry.listenIp,
+          port: entry.port,
+          wildcard: this.isWildcardListenIp(entry.listenIp),
+          effectiveEndpoints,
+          state,
+          status: state
+        }
+      })
+    },
+    nvmeEndpointSummary () {
+      const endpoints = []
+      this.nvmeProtocolListenerEntries.forEach(entry => {
+        entry.effectiveEndpoints.forEach(item => {
+          if (item.endpoint && !endpoints.includes(item.endpoint)) {
+            endpoints.push(item.endpoint)
+          }
+        })
+      })
+      return endpoints.length ? endpoints.join(', ') : `${this.serviceEndpoint || '<service-ip>'}:4420`
+    },
+    primaryNvmeEndpoint () {
+      return this.nvmeEndpointSummary.split(',').map(item => item.trim()).filter(Boolean)[0] || `${this.serviceEndpoint || '<service-ip>'}:4420`
+    },
+    nvmeListenerColumns () {
+      return this.protocolListenerColumns
+    },
+    protocolListenerColumns () {
+      return [
+        { title: this.$t('label.storage.service.listen.ip'), dataIndex: 'listenIp', key: 'listenIp', fixed: 'left', width: 190, code: true },
+        { title: this.$t('label.port'), dataIndex: 'port', key: 'port', width: 110, code: true },
+        { title: this.$t('label.storage.service.listener.type'), dataIndex: 'type', key: 'type', width: 160 },
+        { title: this.$t('label.storage.service.accessible.endpoints'), dataIndex: 'effectiveEndpoints', key: 'effectiveEndpoints', width: 420, code: true },
+        { title: this.$t('label.storage.service.linked.resources'), dataIndex: 'linkedResourceCount', key: 'linkedResourceCount', width: 140 },
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 140, align: 'right', className: 'storage-table-actions-column' }
+      ]
+    },
+    nvmeListenerRows () {
+      return this.protocolListenerRows('NVME_OF')
+    },
+    nfsListenerRows () {
+      return this.protocolListenerRows('NFS')
+    },
+    smbListenerRows () {
+      return this.protocolListenerRows('SMB')
+    },
+    iscsiListenerRows () {
+      return this.protocolListenerRows('ISCSI')
+    },
     latestHealth () {
       return {
         success: this.parsedHealth.success !== false,
@@ -2544,36 +3255,48 @@ export default {
     },
     iscsiSessionRuntimeWarning () {
       const runtime = this.sessionsRuntime || {}
-      const status = String(runtime.status || '').toLowerCase()
       const observed = Number(runtime.observedIscsiTcpCount || runtime.observediscsiTcpCount || 0)
-      const warnings = Array.isArray(runtime.warnings) ? runtime.warnings.filter(Boolean) : []
-      if (!['degraded', 'error'].includes(status) && !observed) {
+      const sessions = this.protocolSessions('ISCSI')
+      const hasUnmappedSession = sessions.some(session => String(session.mappingStatus || session.mappingstatus || '').toUpperCase() === 'UNMAPPED')
+      if (!observed || (sessions.length > 0 && !hasUnmappedSession)) {
         return ''
       }
-      const detail = warnings.length ? warnings.join(' ') : ''
-      return this.$t('message.storage.service.iscsi.sessions.degraded', {
-        count: observed || 0,
-        detail: detail || '-'
+      return this.$t('message.storage.service.iscsi.sessions.incomplete', {
+        count: observed
       })
     },
     activeServiceTypes () {
       const protocols = []
-      if (this.storageService.nfsExports.length > 0) protocols.push('NFS')
-      if (this.storageService.smbShares.length > 0) protocols.push('SMB')
-      if (this.storageService.iscsiTargets.length > 0) protocols.push('iSCSI')
-      if (this.storageService.nvmeSubsystems.length > 0) protocols.push('NVMe-oF')
+      const enabled = new Set((this.storageService.protocols || [])
+        .filter(item => item.enabled === undefined || this.boolValue(item.enabled))
+        .map(item => String(item.protocol || item.name || '').toUpperCase()))
+      if (enabled.has('NFS') || this.storageService.nfsExports.length > 0) protocols.push('NFS')
+      if (enabled.has('SMB') || this.storageService.smbShares.length > 0) protocols.push('SMB')
+      if (enabled.has('ISCSI') || this.storageService.iscsiTargets.length > 0) protocols.push('iSCSI')
+      if (enabled.has('NVME_OF') || this.storageService.nvmeSubsystems.length > 0) protocols.push('NVMe-oF')
       return protocols
     },
     nfsConnectionCommands () {
-      const runtimeEndpoints = this.nfsRuntimeEndpointDetails()
+      const runtimeEndpoints = this.nfsRuntimeProtocolEntries()
       const runtimeMode = this.nfsRuntimeProtocolMode()
-      const runtimeEndpoint = runtimeEndpoints[0] || {}
-      const uniquePorts = [...new Set(runtimeEndpoints.map(entry => entry.port).filter(port => port !== undefined && port !== null && port !== ''))]
-      const endpointIp = runtimeEndpoints.length === 1
-        ? runtimeEndpoint.listenIp || this.serviceEndpoint || `<${this.$t('label.storage.service.endpoint.ip.placeholder')}>`
+      const listenerEndpoints = this.protocolEndpointValues(this.nfsListenerRows)
+      const legacyEndpoints = []
+      runtimeEndpoints.forEach(entry => {
+        const port = Number(entry.port || this.nfsRuntimePort() || this.defaultProtocolPort('NFS'))
+        if (this.isWildcardListenIp(entry.listenIp)) {
+          this.serviceEndpoints.forEach(ip => legacyEndpoints.push(`${ip}:${port}`))
+        } else if (entry.listenIp) {
+          legacyEndpoints.push(`${entry.listenIp}:${port}`)
+        }
+      })
+      const endpoints = listenerEndpoints.length ? listenerEndpoints : [...new Set(legacyEndpoints)]
+      const endpointParts = endpoints.map(endpoint => this.splitEndpointValue(endpoint))
+      const uniquePorts = [...new Set(endpointParts.map(entry => entry.port).filter(Boolean))]
+      const endpointIp = endpointParts.length === 1
+        ? endpointParts[0].ip
         : `<${this.$t('label.storage.service.endpoint.ip.placeholder')}>`
       const endpointPort = uniquePorts.length === 1
-        ? uniquePorts[0] || this.nfsRuntimePort() || this.defaultProtocolPort('NFS')
+        ? uniquePorts[0]
         : '<port>'
       const exportName = `<${this.$t('label.storage.service.export.name.placeholder')}>`
       const mountPath = `<${this.$t('label.storage.service.local.mount.path.placeholder')}>`
@@ -2609,30 +3332,32 @@ export default {
       return ports.length ? ports : [this.defaultProtocolPort('SMB')]
     },
     smbEffectiveEndpointPairs () {
-      const ips = []
-      const addIp = value => {
-        const ip = String(value || '').trim()
-        if (!ip || this.isWildcardListenIp(ip) || ips.includes(ip)) return
-        ips.push(ip)
-      }
-      this.smbProtocolRows.forEach(protocol => {
-        addIp(protocol.listenip || protocol.listenIp || protocol.ipaddress || protocol.ipAddress)
-        const config = this.parseStorageConfig(protocol.config || protocol.configjson || protocol.configJson)
-        addIp(config.listenIp || config.listenip || config.ipaddress || config.ipAddress)
-      })
-      if (this.isProtocolEnabled('SMB') || this.smbProtocolRows.length || this.storageService.smbShares.length) {
-        this.serviceEndpoints.forEach(addIp)
-      }
-      if (!ips.length) addIp(this.serviceEndpoint)
       const pairs = []
-      ips.forEach(ip => {
-        this.smbEffectivePorts.forEach(port => {
-          const key = `${ip}:${port}`
-          if (!pairs.some(pair => pair.key === key)) {
-            pairs.push({ key, ip, port })
-          }
-        })
+      const addPair = (ipValue, portValue) => {
+        const ip = String(ipValue || '').trim()
+        const port = Number(portValue)
+        if (!ip || this.isWildcardListenIp(ip) || !Number.isFinite(port) || port <= 0) return
+        const key = `${ip}:${port}`
+        if (!pairs.some(pair => pair.key === key)) pairs.push({ key, ip, port })
+      }
+      const listeners = this.protocolListenerEntries('SMB')
+      listeners.forEach(listener => {
+        const apiEndpoints = Array.isArray(listener.effectiveEndpoints) ? listener.effectiveEndpoints : []
+        if (apiEndpoints.length) {
+          apiEndpoints.forEach(endpoint => addPair(
+            endpoint?.ipaddress || endpoint?.ipAddress || endpoint?.ip,
+            endpoint?.port || listener.port
+          ))
+        } else if (this.isWildcardListenIp(listener.listenIp)) {
+          this.serviceEndpoints.forEach(ip => addPair(ip, listener.port))
+        } else {
+          addPair(listener.listenIp, listener.port)
+        }
       })
+      if (!listeners.length) {
+        const fallbackIp = this.serviceEndpoint
+        this.smbEffectivePorts.forEach(port => addPair(fallbackIp, port))
+      }
       return pairs
     },
     smbEndpointPairSummary () {
@@ -2749,14 +3474,46 @@ export default {
       return this.isProtocolEnabled('SMB') && this.storageService.smbShares.length === 0
     },
     iscsiConnectionCommands () {
-      const endpoint = this.serviceEndpoint || '<service-ip>'
-      const target = this.storageService.iscsiTargets[0]?.targetname || '<target-iqn>'
-      return [`iscsiadm -m discovery -t sendtargets -p ${endpoint}:3260`, `iscsiadm -m node -T ${target} -p ${endpoint}:3260 --login`]
+      const targetObject = this.storageService.iscsiTargets[0] || {}
+      const config = this.parseStorageConfig(targetObject.config)
+      const target = targetObject.targetname || targetObject.targetName || '<target-iqn>'
+      const ports = this.normalizeListenerPorts(
+        targetObject.listenerports || targetObject.listenerPorts || config.listenerGroupPorts || config.listenerports || 3260
+      )
+      const endpoints = this.formatIscsiListenerGroupEndpoints(ports)
+        .split(',')
+        .map(item => item.trim())
+        .filter(item => item && item !== '-')
+      const effectiveEndpoints = endpoints.length ? endpoints : [`${this.serviceEndpoint || '<service-ip>'}:3260`]
+      const commands = []
+      effectiveEndpoints.forEach(endpoint => {
+        commands.push(`iscsiadm -m discovery -t sendtargets -p ${endpoint}`)
+        commands.push(`iscsiadm -m node -T ${target} -p ${endpoint} --login`)
+      })
+      return commands
+    },
+    iscsiEndpointSummary () {
+      const listenerEndpoints = this.protocolEndpointValues(this.iscsiListenerRows)
+      if (listenerEndpoints.length) {
+        return listenerEndpoints.join(', ')
+      }
+      const targetObject = this.storageService.iscsiTargets[0] || {}
+      const config = this.parseStorageConfig(targetObject.config)
+      const ports = this.normalizeListenerPorts(
+        targetObject.listenerports || targetObject.listenerPorts || config.listenerGroupPorts || config.listenerports
+      )
+      const targetEndpoints = this.formatIscsiListenerGroupEndpoints(ports)
+      return targetEndpoints && targetEndpoints !== '-'
+        ? targetEndpoints
+        : `${this.serviceEndpoint || '<service-ip>'}:${this.defaultProtocolPort('ISCSI')}`
     },
     nvmeConnectionCommands () {
-      const endpoint = this.serviceEndpoint || '<service-ip>'
+      const endpointPair = this.primaryNvmeEndpoint || `${this.serviceEndpoint || '<service-ip>'}:4420`
+      const parts = endpointPair.split(':')
+      const port = parts.pop() || 4420
+      const endpoint = parts.join(':') || this.serviceEndpoint || '<service-ip>'
       const nqn = this.storageService.nvmeSubsystems[0]?.targetname || '<subsystem-nqn>'
-      const commands = [`nvme discover -t tcp -a ${endpoint} -s 4420`, `nvme connect -t tcp -a ${endpoint} -s 4420 -n ${nqn}`]
+      const commands = [`nvme discover -t tcp -a ${endpoint} -s ${port}`, `nvme connect -t tcp -a ${endpoint} -s ${port} -n ${nqn}`]
       if (this.nvmeAclRows.some(row => row.authRequired)) {
         commands.push(this.$t('message.storage.service.nvme.auth.command.hint'))
       }
@@ -2830,6 +3587,8 @@ export default {
         { title: this.$t('label.diskoffering'), dataIndex: 'diskOffering', key: 'diskOffering', width: 220 },
         { title: this.$t('label.storagepool'), dataIndex: 'storagePool', key: 'storagePool', width: 220 },
         { title: this.$t('label.filesystem'), dataIndex: 'filesystem', key: 'filesystem', width: 130 },
+        { title: this.$t('label.storage.service.current.guest.device'), dataIndex: 'runtimeDevicePath', key: 'runtimeDevicePath', width: 180, code: true },
+        { title: this.$t('label.storage.service.volume.mapping.status'), dataIndex: 'mappingStatus', key: 'mappingStatus', width: 160 },
         { title: this.$t('label.storage.service.attached.export'), dataIndex: 'exportName', key: 'exportName', width: 200, code: true },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
         { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 290, align: 'right', className: 'storage-table-actions-column' }
@@ -2880,6 +3639,8 @@ export default {
         { title: this.$t('label.diskoffering'), dataIndex: 'diskOffering', key: 'diskOffering', width: 220 },
         { title: this.$t('label.storagepool'), dataIndex: 'storagePool', key: 'storagePool', width: 220 },
         { title: this.$t('label.filesystem'), dataIndex: 'filesystem', key: 'filesystem', width: 130 },
+        { title: this.$t('label.storage.service.current.guest.device'), dataIndex: 'runtimeDevicePath', key: 'runtimeDevicePath', width: 180, code: true },
+        { title: this.$t('label.storage.service.volume.mapping.status'), dataIndex: 'mappingStatus', key: 'mappingStatus', width: 160 },
         { title: this.$t('label.storage.service.attached.share'), dataIndex: 'shareName', key: 'shareName', width: 200, code: true },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
         { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
@@ -2978,26 +3739,32 @@ export default {
     nfsVolumeRows () {
       const rows = []
       const seen = new Set()
-      this.currentBackingVolumes.forEach((volume, index) => {
+      this.nfsBackingVolumes.forEach((volume, index) => {
         const id = volume.id || `backing-volume-${index}`
         if (seen.has(id)) return
         seen.add(id)
         const shares = this.nfsExportsForVolume(volume)
         const mountPath = this.currentBackingVolumeMountPath(volume)
+        const resourceName = shares.length ? shares.map(share => this.clientVisibleName(share.name || share.exportname, '-')).join(', ') : '-'
+        const runtimeShare = shares.find(share => share.runtimedevicepath || share.runtimeDevicePath || share.mappingstatus || share.mappingStatus) || shares[0] || {}
+        const resizeContext = this.backingVolumeActionFields(volume, resourceName, volume.size)
         rows.push({
           key: id,
           id,
+          ...resizeContext,
           exportId: shares[0]?.id,
           name: volume.name || volume.displayname || '-',
-          size: this.formatCapacityValue(volume.size || this.volume.size || this.resource.size),
+          size: this.formatCapacityValue(volume.size),
           used: this.formatCapacityValue(volume.usedfsbytes || volume.usedphysicalsize || volume.physicalsize),
-          diskOffering: volume.diskofferingname || this.volume.diskofferingname || this.resource.diskofferingname || '-',
-          storagePool: volume.storage || volume.storagepool || volume.storagePoolName || this.volume.storage || this.resource.storage || '-',
-          filesystem: this.currentBackingVolumeFilesystem(volume) || this.resource.filesystem || '-',
+          diskOffering: volume.diskofferingname || '-',
+          storagePool: volume.storage || volume.storagepool || volume.storagePoolName || '-',
+          filesystem: this.nfsBackingVolumeFilesystem(volume),
+          runtimeDevicePath: runtimeShare.runtimedevicepath || runtimeShare.runtimeDevicePath || '-',
+          mappingStatus: this.fileShareVolumeMappingStatusLabel(runtimeShare.mappingstatus || runtimeShare.mappingStatus),
           exportName: shares.length ? shares.map(share => this.clientVisibleName(share.name || share.exportname, '-')).join(', ') : '-',
           mountPath,
           detachAllowed: shares.length === 0 && String(volume.state || '').toLowerCase() !== 'destroyed',
-          state: volume.state || this.volume.state || '-',
+          state: volume.state || '-',
           raw: volume
         })
       })
@@ -3059,21 +3826,26 @@ export default {
       const seen = new Set()
       this.storageService.smbShares.forEach((share, index) => {
         const volume = this.volumeForShare(share)
-        const id = volume.id || share.volumeid || share.volumeId || this.volume.id || `smb-share-${index}`
+        const id = volume.id || volume.uuid || share.volumeid || share.volumeId || `smb-share-${index}`
         if (seen.has(id)) return
         seen.add(id)
+        const shareName = this.clientVisibleName(share.name || share.sharename, '-')
+        const resizeContext = this.backingVolumeActionFields(volume, shareName, share.volumesize || share.volumeSize)
         rows.push({
           key: id,
           id,
+          ...resizeContext,
           shareId: share.id,
-          name: volume.name || volume.displayname || share.volumename || share.volumeName || this.volume.name || this.volume.displayname || '-',
-          size: this.formatCapacityValue(share.volumesize || share.volumeSize || volume.size || this.volume.size || this.resource.size),
+          name: volume.name || volume.displayname || share.volumename || share.volumeName || share.volumeid || '-',
+          size: this.formatCapacityValue(share.volumesize || share.volumeSize || volume.size),
           used: this.formatCapacityValue(share.usedbytes || share.usedBytes || volume.usedfsbytes || volume.usedphysicalsize || volume.physicalsize || share.physicalsize),
-          diskOffering: share.diskofferingname || share.diskOfferingName || volume.diskofferingname || this.volume.diskofferingname || this.resource.diskofferingname || '-',
-          storagePool: share.storage || share.storagepool || share.storagePoolName || volume.storage || this.volume.storage || this.resource.storage || '-',
+          diskOffering: share.diskofferingname || share.diskOfferingName || volume.diskofferingname || '-',
+          storagePool: share.storage || share.storagepool || share.storagePoolName || volume.storage || '-',
           filesystem: this.displayBackingVolumeFilesystem(volume, share),
-          shareName: this.clientVisibleName(share.name || share.sharename, '-'),
-          state: share.volumestate || share.volumeState || volume.state || this.volume.state || '-',
+          runtimeDevicePath: share.runtimedevicepath || share.runtimeDevicePath || '-',
+          mappingStatus: this.fileShareVolumeMappingStatusLabel(share.mappingstatus || share.mappingStatus),
+          shareName,
+          state: share.volumestate || share.volumeState || volume.state || '-',
           raw: share
         })
       })
@@ -3105,6 +3877,7 @@ export default {
         { title: this.$t('label.storage.service.lun.size'), dataIndex: 'lunSize', key: 'lunSize', width: 150 },
         { title: this.$t('label.storage.service.effective.lun.size'), dataIndex: 'effectiveSize', key: 'effectiveSize', width: 160 },
         { title: this.$t('label.storage.service.runtime.backing.path'), dataIndex: 'backingPath', key: 'backingPath', width: 300, code: true },
+        { title: this.$t('label.storage.service.volume.mapping.status'), dataIndex: 'mappingStatus', key: 'mappingStatus', width: 150 },
         { title: this.$t('label.storage.service.access.rules'), dataIndex: 'aclSummary', key: 'aclSummary', width: 260 },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
         { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 190, align: 'right', className: 'storage-table-actions-column' }
@@ -3146,36 +3919,104 @@ export default {
         { title: this.$t('label.storage.service.connected.at'), dataIndex: 'connectedAt', key: 'connectedAt', width: 190 },
         { title: this.$t('label.storage.service.target.iqn'), dataIndex: 'resourceName', key: 'resourceName', width: 300, code: true },
         { title: this.$t('label.storage.service.lun'), dataIndex: 'lun', key: 'lun', width: 130, code: true },
-        { title: this.$t('label.storage.service.listener.ports'), dataIndex: 'listenerPorts', key: 'listenerPorts', width: 160, code: true },
+        { title: this.storageLabel('label.storage.service.listener.ports', '수신 포트 그룹'), dataIndex: 'listenerPorts', key: 'listenerPorts', width: 190, code: true },
         { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 260, code: true },
+        { title: this.$t('label.storage.service.chap.configured'), dataIndex: 'chapConfiguredLabel', key: 'chapConfiguredLabel', width: 150 },
+        { title: this.$t('label.storage.service.authentication.status'), dataIndex: 'authVerificationLabel', key: 'authVerification', width: 180 },
         { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
+    },
+    selectedNvmeNamespaceSubsystem () {
+      return this.nvmeSubsystemTargets.find(target => String(target.id || '') === String(this.forms.nvmeNamespace.subsystemid || '')) || null
+    },
+    selectedNvmeNamespaceHostPolicy () {
+      return this.nvmeSubsystemAccessPolicy(this.selectedNvmeNamespaceSubsystem)
+    },
+    selectedNvmeNamespaceHostPolicyType () {
+      const type = this.selectedNvmeNamespaceHostPolicy.type
+      if (type === 'NO_ACL') return 'warning'
+      return 'info'
+    },
+    selectedNvmeNamespaceHostPolicyMessage () {
+      if (!this.selectedNvmeNamespaceSubsystem) {
+        return ''
+      }
+      const policy = this.selectedNvmeNamespaceHostPolicy
+      if (policy.type === 'ALLOW_ANY') {
+        return this.$t('message.storage.service.nvme.namespace.allow.any.host')
+      }
+      if (policy.type === 'EXPLICIT_ACL') {
+        return this.$t('message.storage.service.nvme.namespace.explicit.host.acl', { count: policy.aclCount })
+      }
+      return this.$t('message.storage.service.nvme.namespace.no.host.acl')
     },
     nvmeSubsystemColumns () {
       return [
         { title: this.$t('label.storage.service.subsystem.nqn'), dataIndex: 'targetName', key: 'targetName', fixed: 'left', width: 340, code: true },
-        { title: this.$t('label.storage.service.namespace'), dataIndex: 'namespace', key: 'namespace', width: 120, code: true },
-        { title: this.$t('label.storage.service.endpoint'), dataIndex: 'endpoint', key: 'endpoint', width: 180, code: true },
+        { title: this.$t('label.storage.service.nvme.port.groups'), dataIndex: 'listenerGroupLabel', key: 'listenerGroupLabel', width: 260, code: true },
+        { title: this.$t('label.storage.service.nvme.effective.endpoints'), dataIndex: 'effectiveEndpoints', key: 'effectiveEndpoints', width: 360, code: true },
         { title: this.$t('label.storage.service.engine'), dataIndex: 'engine', key: 'engine', width: 160 },
-        { title: this.$t('label.storage.service.backing.volume'), dataIndex: 'volumeName', key: 'volumeName', width: 220 },
+        { title: this.$t('label.storage.service.nvme.host.policy'), dataIndex: 'hostPolicyLabel', key: 'hostPolicyLabel', width: 190 },
+        { title: this.$t('label.storage.service.nvme.effective.host.access'), dataIndex: 'effectiveHostAccess', key: 'effectiveHostAccess', width: 220 },
         { title: this.$t('label.storage.service.access.rules'), dataIndex: 'aclSummary', key: 'aclSummary', width: 260 },
-        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 }
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 190, align: 'right', className: 'storage-table-actions-column' }
+      ]
+    },
+    nvmeNamespaceColumns () {
+      return [
+        { title: this.$t('label.storage.service.subsystem.nqn'), dataIndex: 'targetName', key: 'targetName', fixed: 'left', width: 330, code: true },
+        { title: this.$t('label.storage.service.namespace.id'), dataIndex: 'namespace', key: 'namespace', width: 130, code: true },
+        { title: this.$t('label.storage.service.nvme.namespace.port.groups'), dataIndex: 'listenerGroupLabel', key: 'listenerGroupLabel', width: 260, code: true },
+        { title: this.$t('label.storage.service.nvme.namespace.endpoints'), dataIndex: 'effectiveEndpoints', key: 'effectiveEndpoints', width: 360, code: true },
+        { title: this.$t('label.storage.service.nvme.namespace.host.access'), dataIndex: 'hostPolicyLabel', key: 'hostPolicyLabel', width: 190 },
+        { title: this.$t('label.storage.service.nvme.effective.host.access'), dataIndex: 'effectiveHostAccess', key: 'effectiveHostAccess', width: 220 },
+        { title: this.$t('label.storage.service.backing.volume'), dataIndex: 'volumeName', key: 'volumeName', width: 220 },
+        { title: this.$t('label.storage.service.namespace.size'), dataIndex: 'namespaceSize', key: 'namespaceSize', width: 160 },
+        { title: this.$t('label.storage.service.effective.lun.size'), dataIndex: 'effectiveSize', key: 'effectiveSize', width: 160 },
+        { title: this.$t('label.storage.service.runtime.backing.path'), dataIndex: 'backingPath', key: 'backingPath', width: 300, code: true },
+        { title: this.$t('label.storage.service.session.mapping.status'), dataIndex: 'mappingStatus', key: 'mappingStatus', width: 150 },
+        { title: this.$t('label.storage.service.runtime.observed.at'), dataIndex: 'runtimeObservedAt', key: 'runtimeObservedAt', width: 190 },
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
+      ]
+    },
+    nvmeVolumeColumns () {
+      return [
+        { title: this.$t('label.volumename'), dataIndex: 'name', key: 'name', fixed: 'left', width: 200 },
+        { title: this.$t('label.volumeid'), dataIndex: 'id', key: 'id', width: 260, code: true },
+        { title: this.$t('label.size'), dataIndex: 'size', key: 'size', width: 130 },
+        { title: this.$t('label.storage.service.used.capacity'), dataIndex: 'used', key: 'used', width: 140 },
+        { title: this.$t('label.diskoffering'), dataIndex: 'diskOffering', key: 'diskOffering', width: 220 },
+        { title: this.$t('label.storagepool'), dataIndex: 'storagePool', key: 'storagePool', width: 220 },
+        { title: this.$t('label.storage.service.namespace'), dataIndex: 'namespaceName', key: 'namespaceName', width: 300, code: true },
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 270, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     nvmeAclColumns () {
       return [
         { title: this.$t('label.storage.service.subsystem.nqn'), dataIndex: 'targetName', key: 'targetName', fixed: 'left', width: 340, code: true },
+        { title: this.$t('label.storage.service.policy.source'), dataIndex: 'policySource', key: 'policySource', width: 160 },
         { title: this.$t('label.storage.service.allowed.host.nqn'), dataIndex: 'principal', key: 'principal', width: 320, code: true },
         { title: this.$t('label.storage.service.nvme.auth.mode'), dataIndex: 'authMode', key: 'authMode', width: 170 },
-        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 }
+        { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 120 },
+        { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 180, align: 'right', className: 'storage-table-actions-column' }
       ]
     },
     nvmeSessionColumns () {
       return [
         { title: this.$t('label.storage.service.peer'), dataIndex: 'peer', key: 'peer', fixed: 'left', width: 220, code: true },
+        { title: this.$t('label.storage.service.host.nqn'), dataIndex: 'hostNqn', key: 'hostNqn', width: 320, code: true },
         { title: this.$t('label.state'), dataIndex: 'state', key: 'state', width: 130 },
+        { title: this.$t('label.storage.service.session.mapping.status'), dataIndex: 'mappingStatusLabel', key: 'mappingStatusLabel', width: 160 },
         { title: this.$t('label.storage.service.connected.at'), dataIndex: 'connectedAt', key: 'connectedAt', width: 190 },
         { title: this.$t('label.storage.service.subsystem.nqn'), dataIndex: 'resourceName', key: 'resourceName', width: 320, code: true },
+        { title: this.$t('label.storage.service.namespace.id'), dataIndex: 'namespaceId', key: 'namespaceId', width: 140, code: true },
+        { title: this.$t('label.storage.service.nvme.possible.subsystems'), dataIndex: 'possibleSubsystems', key: 'possibleSubsystems', width: 360, code: true },
+        { title: this.$t('label.storage.service.nvme.possible.namespaces'), dataIndex: 'possibleNamespaces', key: 'possibleNamespaces', width: 320, code: true },
+        { title: this.$t('label.storage.service.nvme.host.policy'), dataIndex: 'hostPolicyLabel', key: 'hostPolicyLabel', width: 180 },
+        { title: this.$t('label.storage.service.nvme.transport.queue.count'), dataIndex: 'queueCount', key: 'queueCount', width: 150 },
         { title: this.$t('label.storage.service.local'), dataIndex: 'local', key: 'local', width: 220, code: true },
         { title: this.$t('label.actions'), dataIndex: 'actions', key: 'actions', fixed: 'right', width: 170, align: 'right', className: 'storage-table-actions-column' }
       ]
@@ -3188,7 +4029,9 @@ export default {
         const runtime = this.runtimeBlockTarget(target, 'iscsiTargets')
         const runtimeConfig = this.parseStorageConfig(runtime.config)
         const lunSizeBytes = this.firstDefined(target.lunsizebytes, target.lunSizeBytes, config.lunSizeBytes, runtime.lunSizeBytes, runtimeConfig.lunSizeBytes)
-        const effectiveSizeBytes = this.firstDefined(target.effectivesizebytes, target.effectiveSizeBytes, runtime.effectiveSizeBytes, runtime.actualSizeBytes, lunSizeBytes, target.volumesizebytes, target.volumeSizeBytes, volume.size, this.volume.size, this.resource.size)
+        const effectiveSizeBytes = this.firstDefined(target.actualbackingsizebytes, target.actualBackingSizeBytes, runtime.actualBackingSizeBytes, target.effectivesizebytes, target.effectiveSizeBytes, runtime.effectiveSizeBytes, runtime.actualSizeBytes, lunSizeBytes, target.volumesizebytes, target.volumeSizeBytes, volume.size, this.volume.size, this.resource.size)
+        const mappingStatus = String(this.firstDefined(target.runtimemappingstatus, target.runtimeMappingStatus, runtime.runtimeMappingStatus, 'UNMAPPED')).toUpperCase()
+        const runtimeBackingPath = this.firstDefined(target.runtimebackingpath, target.runtimeBackingPath, runtime.runtimeBackingPath, runtime.backingPath, runtime.backingpath)
         return {
           key: target.id || `iscsi-target-${index}`,
           id: target.id,
@@ -3197,11 +4040,12 @@ export default {
           targetLuns: target.targetluns || target.targetLuns || runtime.targetLuns || runtime.targetluns || target.lunornamespace || target.lunOrNamespace || target.lun || '0',
           endpoint: target.endpoints || target.endpoint || this.formatIscsiListenerGroupEndpoints(this.normalizeListenerPorts(target.listenerports || target.listenerPorts || config.listenerGroupPorts || config.listenerports || 3260)),
           volumeName: volume.name || volume.displayname || target.volumename || target.volumeName || target.volumeid || '-',
-          lunSize: this.formatCapacityValue(lunSizeBytes),
+          lunSize: lunSizeBytes ? this.formatCapacityValue(lunSizeBytes) : this.$t('label.storage.service.entire.backing.volume'),
           effectiveSize: this.formatCapacityValue(effectiveSizeBytes),
-          backingPath: target.backingpath || target.backingPath || runtime.backingPath || runtime.backingpath || config.backingPath || '-',
+          backingPath: mappingStatus === 'EXACT' ? (runtimeBackingPath || '-') : '-',
+          mappingStatus: this.fileShareVolumeMappingStatusLabel(mappingStatus),
           aclSummary: this.aclSummary(acls),
-          state: target.state || target.status || '-',
+          state: target.runtimestate || target.runtimeState || runtime.runtimeState || target.state || target.status || '-',
           raw: target
         }
       })
@@ -3229,20 +4073,23 @@ export default {
       const seen = new Set()
       this.storageService.iscsiTargets.forEach((target, index) => {
         const volume = this.volumeForTarget(target)
-        const id = volume.id || target.volumeid || target.volumeId || this.volume.id || `iscsi-target-${index}`
+        const id = volume.id || volume.uuid || target.volumeid || target.volumeId || `iscsi-target-${index}`
         if (seen.has(id)) return
         seen.add(id)
+        const targetName = target.targetname || target.targetName || '-'
+        const resizeContext = this.backingVolumeActionFields(volume, targetName, target.volumesizebytes || target.volumeSizeBytes || target.volumesize || target.volumeSize)
         rows.push({
           key: id,
           id,
+          ...resizeContext,
           targetId: target.id,
-          name: volume.name || volume.displayname || target.volumename || target.volumeName || this.volume.name || this.volume.displayname || '-',
-          size: this.formatCapacityValue(target.volumesizebytes || target.volumeSizeBytes || target.volumesize || target.volumeSize || volume.size || this.volume.size || this.resource.size),
+          name: volume.name || volume.displayname || target.volumename || target.volumeName || target.volumeid || '-',
+          size: this.formatCapacityValue(target.volumesizebytes || target.volumeSizeBytes || target.volumesize || target.volumeSize || volume.size),
           used: this.formatCapacityValue(target.usedbytes || target.usedBytes || volume.usedfsbytes || volume.usedphysicalsize || volume.physicalsize || target.physicalsize),
-          diskOffering: target.diskofferingname || target.diskOfferingName || volume.diskofferingname || this.volume.diskofferingname || this.resource.diskofferingname || '-',
-          storagePool: target.storage || target.storagepool || target.storagePoolName || volume.storage || this.volume.storage || this.resource.storage || '-',
-          targetName: target.targetname || target.targetName || '-',
-          state: target.volumestate || target.volumeState || volume.state || this.volume.state || '-',
+          diskOffering: target.diskofferingname || target.diskOfferingName || volume.diskofferingname || '-',
+          storagePool: target.storage || target.storagepool || target.storagePoolName || volume.storage || '-',
+          targetName,
+          state: target.volumestate || target.volumeState || volume.state || '-',
           raw: target
         })
       })
@@ -3254,6 +4101,9 @@ export default {
         const endpointMappingStatus = session.endpointMappingStatus || session.endpointmappingstatus || (session.local || session.endpoint ? 'exact' : (session.possibleEndpoints || session.possibleendpoints ? 'candidate' : ''))
         const possibleEndpoints = session.possibleEndpoints || session.possibleendpoints
         const listenerPorts = session.listenerPorts || session.listenerports || this.possibleSessionValues(possibleEndpoints, 'port')
+        const chapConfigured = session.chapConfigured ?? session.chapconfigured
+        const rawVerification = String(session.authVerification || session.authverification || '').toUpperCase()
+        const authVerification = rawVerification || (session.authenticated === true ? 'VERIFIED' : 'UNKNOWN')
         return {
           key: session.sessionId || session.id || `${session.peer || 'session'}-${index}`,
           protocol: session.protocol || 'ISCSI',
@@ -3269,58 +4119,192 @@ export default {
           lun: session.targetLuns || session.targetluns || session.lun || session.lunOrNamespace || session.lunornamespace || this.possibleSessionValues(session.possibleTargets, 'lun') || '-',
           listenerPorts: listenerPorts || '-',
           local: session.local || session.endpoint || this.possibleSessionValues(possibleEndpoints) || '-',
+          chapConfigured,
+          chapConfiguredLabel: this.booleanLabel(chapConfigured),
+          authVerification,
+          authVerificationLabel: this.iscsiAuthVerificationLabel(authVerification),
+          authVerificationTooltip: authVerification === 'UNKNOWN' ? this.$t('message.storage.service.authentication.unknown.help') : '',
           sessionId: session.sessionId || session.id || '',
           raw: session
         }
       })
     },
     nvmeSubsystemRows () {
-      return this.storageService.nvmeSubsystems.map((target, index) => {
+      return this.nvmeSubsystemTargets.map((target, index) => {
         const config = this.parseStorageConfig(target.config)
         const acls = this.blockAclsForTarget(target, this.storageService.nvmeHostAcls)
-        const volume = this.volumeForTarget(target)
+        const subsystemName = target.targetname || target.subsystemnqn || target.targetName
+        const hostPolicy = this.nvmeSubsystemAccessPolicy(target, acls, config)
+        const namespaceListenerPorts = []
+        this.nvmeNamespaceTargets
+          .filter(namespace => (namespace.targetname || namespace.subsystemnqn || namespace.targetName) === subsystemName)
+          .forEach(namespace => {
+            const namespaceConfig = this.parseStorageConfig(namespace.config)
+            this.normalizeListenerPorts(namespace.listenerports || namespace.listenerPorts || namespaceConfig.listenerGroupPorts || namespaceConfig.listenerports)
+              .forEach(port => namespaceListenerPorts.push(port))
+          })
+        const listenerPorts = this.normalizeListenerPorts(namespaceListenerPorts.length ? namespaceListenerPorts : (target.listenerports || target.listenerPorts || config.listenerGroupPorts || config.listenerports || this.defaultNvmeListenerPort()))
+        const listenerSummary = this.nvmeListenerGroupSummary(listenerPorts)
+        const namespaceCount = this.nvmeSubsystemNamespaceCount(subsystemName)
+        const deleteDisabledReason = this.nvmeSubsystemDeleteDisabledReason(namespaceCount, hostPolicy.aclCount)
         return {
           key: target.id || `nvme-subsystem-${index}`,
           id: target.id,
-          targetName: target.targetname || target.subsystemnqn || target.targetName || '-',
-          namespace: target.lunornamespace || target.namespaceid || target.namespaceId || '-',
-          endpoint: `${target.listenip || this.serviceEndpoint || '-'}:${target.port || 4420}`,
+          targetName: subsystemName || '-',
+          listenerPorts: listenerPorts.join(', '),
+          listenerGroupLabel: listenerSummary.listenerGroupLabel,
+          endpoint: listenerSummary.effectiveEndpoints,
+          effectiveEndpoints: listenerSummary.effectiveEndpoints,
           engine: target.engine || config.engine || '-',
-          volumeName: volume.name || volume.displayname || target.volumename || target.volumeName || target.volumeid || '-',
           aclSummary: this.aclSummary(acls),
-          state: target.state || target.status || '-',
+          hostPolicyLabel: hostPolicy.label,
+          hostPolicyColor: hostPolicy.color,
+          effectiveHostAccess: hostPolicy.effectiveAccess,
+          hostAclCount: hostPolicy.aclCount,
+          namespaceCount,
+          canDelete: !deleteDisabledReason,
+          deleteDisabledReason,
+          state: target.runtimestate || target.runtimeState || target.state || target.status || '-',
           raw: target
         }
       })
     },
+    nvmeNamespaceRows () {
+      return this.nvmeNamespaceTargets.map((target, index) => {
+        const config = this.parseStorageConfig(target.config)
+        const volume = this.volumeForTarget(target)
+        const runtime = this.runtimeBlockTarget(target, 'nvmeTargets')
+        const runtimeConfig = this.parseStorageConfig(runtime.config)
+        const nsSizeBytes = this.firstDefined(target.namespacesizebytes, target.namespaceSizeBytes, config.namespaceSizeBytes, runtime.namespaceSizeBytes, runtimeConfig.namespaceSizeBytes)
+        const mappingStatus = String(this.firstDefined(target.runtimemappingstatus, target.runtimeMappingStatus, runtime.runtimeMappingStatus, 'UNMAPPED')).toUpperCase()
+        const runtimeBackingPath = this.firstDefined(target.runtimebackingpath, target.runtimeBackingPath, runtime.runtimeBackingPath, runtime.backingPath, runtime.backingpath)
+        const actualBackingSizeBytes = this.firstDefined(target.actualbackingsizebytes, target.actualBackingSizeBytes, runtime.actualBackingSizeBytes, runtime.actualSizeBytes)
+        const effectiveSizeBytes = this.firstDefined(actualBackingSizeBytes, target.effectivesizebytes, target.effectiveSizeBytes, runtime.effectiveSizeBytes, nsSizeBytes, target.volumesizebytes, target.volumeSizeBytes, volume.size, this.volume.size, this.resource.size)
+        const listenerPorts = this.normalizeListenerPorts(target.listenerports || target.listenerPorts || config.listenerGroupPorts || config.listenerports || this.defaultNvmeListenerPort())
+        const listenerSummary = this.nvmeListenerGroupSummary(listenerPorts)
+        const hostPolicy = this.nvmeNamespaceAccessPolicy(target)
+        return {
+          key: target.id || `nvme-namespace-${index}`,
+          id: target.id,
+          targetName: target.targetname || target.subsystemnqn || target.targetName || '-',
+          namespace: target.lunornamespace || target.namespaceid || target.namespaceId || '1',
+          listenerPorts: listenerPorts.join(', '),
+          listenerGroupLabel: listenerSummary.listenerGroupLabel,
+          endpoint: listenerSummary.effectiveEndpoints,
+          effectiveEndpoints: listenerSummary.effectiveEndpoints,
+          volumeName: volume.name || volume.displayname || target.volumename || target.volumeName || target.volumeid || '-',
+          namespaceSize: nsSizeBytes ? this.formatCapacityValue(nsSizeBytes) : this.$t('label.storage.service.entire.backing.volume'),
+          effectiveSize: this.formatCapacityValue(effectiveSizeBytes),
+          backingPath: mappingStatus === 'EXACT' ? (runtimeBackingPath || '-') : '-',
+          mappingStatus: this.nvmeRuntimeMappingStatusLabel(mappingStatus),
+          runtimeObservedAt: target.runtimeobservedat || target.runtimeObservedAt || runtime.runtimeObservedAt || '-',
+          hostPolicyLabel: hostPolicy.label,
+          hostPolicyColor: hostPolicy.color,
+          effectiveHostAccess: hostPolicy.effectiveAccess,
+          state: target.runtimestate || target.runtimeState || runtime.runtimeState || runtime.state || target.state || target.status || '-',
+          raw: target
+        }
+      })
+    },
+    nvmeVolumeRows () {
+      const rows = []
+      const seen = new Set()
+      this.nvmeNamespaceTargets.forEach((target, index) => {
+        const volume = this.volumeForTarget(target)
+        const id = volume.id || volume.uuid || target.volumeid || target.volumeId || `nvme-namespace-${index}`
+        if (seen.has(id)) return
+        seen.add(id)
+        const namespaceName = `${target.targetname || target.targetName || '-'} / ${target.lunornamespace || target.lunOrNamespace || '1'}`
+        const resizeContext = this.backingVolumeActionFields(volume, namespaceName, target.volumesizebytes || target.volumeSizeBytes)
+        rows.push({
+          key: id,
+          id,
+          ...resizeContext,
+          namespaceId: target.id,
+          name: volume.name || volume.displayname || target.volumename || target.volumeName || '-',
+          size: this.formatCapacityValue(target.volumesizebytes || target.volumeSizeBytes || volume.size),
+          used: this.formatCapacityValue(target.usedbytes || target.usedBytes || volume.usedfsbytes || volume.usedphysicalsize || target.physicalsize),
+          diskOffering: target.diskofferingname || target.diskOfferingName || volume.diskofferingname || '-',
+          storagePool: target.storage || target.storagepool || target.storagePoolName || volume.storage || '-',
+          namespaceName,
+          state: target.volumestate || target.volumeState || volume.state || '-',
+          detachAllowed: false,
+          detachDisabledReason: this.$t('message.storage.service.nvme.volume.detach.in.use.disabled'),
+          raw: target
+        })
+      })
+      return rows
+    },
     nvmeAclRows () {
-      return this.storageService.nvmeHostAcls.map((acl, index) => {
+      const inheritedRows = this.nvmeSubsystemTargets
+        .filter(target => this.nvmeSubsystemAllowAnyHost(target))
+        .map((target, index) => ({
+          key: `nvme-acl-policy-${target.id || index}`,
+          targetName: this.nvmeTargetName(target) || '-',
+          policySource: this.$t('label.storage.service.nvme.subsystem.policy'),
+          principal: '*',
+          authMode: this.$t('label.storage.service.nvme.auth.none'),
+          authRequired: false,
+          state: this.$t('label.storage.service.inherited.policy'),
+          policyRow: true,
+          raw: target
+        }))
+      const aclRows = this.storageService.nvmeHostAcls.map((acl, index) => {
         const target = this.blockTargetForAcl(acl, this.storageService.nvmeSubsystems)
         const config = this.parseStorageConfig(acl.config || acl.configjson || acl.configJson)
         const authMode = this.nvmeAuthModeFromAcl(acl, config)
         return {
           key: acl.id || `nvme-acl-${index}`,
           targetName: target?.targetname || target?.subsystemnqn || target?.targetName || acl.targetname || acl.resourcename || '-',
+          policySource: this.$t('label.storage.service.explicit.rule'),
           principal: acl.principal || acl.hostnqn || '-',
           authMode: authMode.label,
           authRequired: authMode.required,
           state: acl.state || acl.status || '-',
+          id: acl.id,
+          subsystemAllowAnyHost: this.nvmeSubsystemAllowAnyHost(target),
           raw: acl
         }
       })
+      return [...inheritedRows, ...aclRows]
     },
     nvmeSessionRows () {
-      return this.protocolSessions('NVME_OF').map((session, index) => ({
-        key: session.sessionId || session.id || `${session.peer || 'session'}-${index}`,
-        protocol: session.protocol || 'NVME_OF',
-        peer: session.peer || session.client || session.clientIp || '-',
-        state: session.state || session.status || '-',
-        connectedAt: session.connectedAt || session.firstSeen || session.since || session.age || '-',
-        resourceName: session.resourceName || session.subsystemNqn || session.subsystemNQN || session.targetName || session.subsystem || '-',
-        local: session.local || session.endpoint || '-',
-        sessionId: session.sessionId || session.id || '',
-        raw: session
-      }))
+      return this.protocolSessions('NVME_OF').map((session, index) => {
+        const mappingStatus = String(session.mappingStatus || session.mappingstatus || 'UNMAPPED').toUpperCase()
+        const exact = mappingStatus === 'EXACT'
+        const possibleSubsystems = this.possibleSessionValues(session.possibleSubsystems || session.possiblesubsystems, 'subsystemNqn')
+        const possibleNamespaces = this.possibleSessionValues(session.possibleNamespaces || session.possiblenamespaces, 'namespaceId')
+        const hostPolicy = String(session.hostPolicy || session.hostpolicy || '').toUpperCase()
+        const hostPolicyLabels = {
+          ALLOW_ANY: this.$t('label.storage.service.nvme.allow.any.host'),
+          EXPLICIT_ACL: this.$t('label.storage.service.nvme.explicit.host.acl'),
+          DENY_ALL: this.$t('label.storage.service.nvme.no.host.access')
+        }
+        const logicalSessionId = session.logicalSessionId || session.logicalsessionid || ''
+        const canDisconnect = this.boolValue(session.canDisconnect ?? session.candisconnect) && !!logicalSessionId
+        return {
+          key: session.transportSessionId || session.transportsessionid || session.sessionId || session.id || `${session.peer || 'session'}-${index}`,
+          protocol: session.protocol || 'NVME_OF',
+          peer: session.peer || session.client || session.clientIp || '-',
+          state: session.state || session.status || '-',
+          mappingStatus,
+          mappingStatusLabel: this.iscsiMappingStatusLabel(mappingStatus),
+          connectedAt: session.connectedAt || session.firstSeen || session.since || session.age || '-',
+          resourceName: exact ? (session.resourceName || session.subsystemNqn || session.subsystemNQN || session.targetName || session.subsystem || '-') : '-',
+          namespaceId: exact ? (session.namespaceId || session.namespaceid || session.lunOrNamespace || session.lunornamespace || session.namespace || '-') : '-',
+          possibleSubsystems: possibleSubsystems || '-',
+          possibleNamespaces: possibleNamespaces || '-',
+          hostNqn: session.observedHostNqn || session.observedhostnqn || (exact ? (session.hostNqn || session.hostnqn || session.initiatorNqn || session.initiatornqn) : '') || '-',
+          hostPolicyLabel: hostPolicyLabels[hostPolicy] || '-',
+          queueCount: session.queueCount || session.queuecount || '-',
+          local: session.local || session.endpoint || '-',
+          sessionId: logicalSessionId,
+          transportSessionId: session.transportSessionId || session.transportsessionid || session.sessionId || '',
+          canDisconnect,
+          disconnectDisabledReason: session.disconnectDisabledReason || session.disconnectdisabledreason || this.$t('message.storage.service.nvme.session.disconnect.unavailable'),
+          raw: session
+        }
+      })
     },
     actionModalTitle () {
       const titles = {
@@ -3343,10 +4327,14 @@ export default {
         editIscsiAcl: 'label.storage.service.update.iscsi.acl',
         nvmePrepare: 'label.storage.service.prepare.nvmeof',
         nvmeSubsystem: 'label.storage.service.create.nvme.subsystem',
+        editNvmeSubsystem: 'label.storage.service.update.nvme.subsystem',
+        nvmeNamespace: 'label.storage.service.create.nvme.namespace',
+        editNvmeNamespace: 'label.storage.service.update.nvme.namespace',
         nvmeHostAcl: 'label.storage.service.create.nvme.host.acl',
+        editNvmeHostAcl: 'label.storage.service.update.nvme.host.acl',
         attachVolume: 'label.storage.service.attach.existing.volume',
         resizeShare: 'label.storage.service.resize.file.share',
-        resizeVolume: 'label.storage.service.resize.volume',
+        resizeBackingVolume: 'label.storage.service.resize.volume',
         detachBackingVolume: 'label.storage.service.detach.backing.volume',
         disconnectSession: 'label.storage.service.disconnect.session',
         deleteEndpoint: 'label.storage.service.delete.endpoint'
@@ -3358,11 +4346,20 @@ export default {
     },
     actionModalOkButtonProps () {
       const deleteEndpointBlocked = this.actionModal.type === 'deleteEndpoint' && !this.deleteEndpointConfirmationMatched
+      const resizeVolumeSize = Number(this.forms.resizeBackingVolume.size)
+      const resizeVolumeMinSize = Number(this.forms.resizeBackingVolume.minSizeGiB)
+      const resizeBackingVolumeBlocked = this.actionModal.type === 'resizeBackingVolume' && (
+        !this.forms.resizeBackingVolume.volumeid ||
+        !Number.isInteger(resizeVolumeSize) ||
+        !Number.isFinite(resizeVolumeMinSize) ||
+        resizeVolumeSize < resizeVolumeMinSize
+      )
       return {
         danger: ['deleteConfirm', 'deleteEndpoint', 'detachBackingVolume', 'adLeave'].includes(this.actionModal.type),
         disabled: (this.actionModal.type === 'deleteConfirm' && !this.deleteConfirmationMatched) ||
           deleteEndpointBlocked ||
           (this.actionModal.type === 'detachBackingVolume' && !this.forms.detachBackingVolume.confirmation) ||
+          resizeBackingVolumeBlocked ||
           (this.actionModal.type === 'adLeave' && !this.adLeaveConfirmationMatched)
       }
     },
@@ -3394,6 +4391,26 @@ export default {
       return this.actionModal.type === 'enableProtocol' &&
         String(this.forms.enableProtocol.protocol || '').toUpperCase() === 'NFS' &&
         this.isNfsRuntimeDualMode
+    },
+    enableProtocolListenerConflictMessage () {
+      if (this.actionModal.type !== 'enableProtocol') {
+        return ''
+      }
+      const protocol = String(this.forms.enableProtocol.protocol || '').toUpperCase()
+      if (!['ISCSI', 'NVME_OF'].includes(protocol)) {
+        return ''
+      }
+      return this.blockProtocolListenerConflictMessage(protocol, this.forms.enableProtocol.listenip, this.forms.enableProtocol.port)
+    },
+    enableProtocolListenerCoveredMessage () {
+      if (this.actionModal.type !== 'enableProtocol') {
+        return ''
+      }
+      const protocol = String(this.forms.enableProtocol.protocol || '').toUpperCase()
+      if (protocol !== 'NVME_OF') {
+        return ''
+      }
+      return this.blockProtocolListenerCoveredByWildcardMessage(protocol, this.forms.enableProtocol.listenip, this.forms.enableProtocol.port)
     },
     deleteConfirmationMatched () {
       if (this.actionModal.type !== 'deleteConfirm') {
@@ -3507,6 +4524,80 @@ export default {
     this.$emit('wide-layout-change', false)
   },
   methods: {
+    storageLabel (key, fallback) {
+      const value = this.$t(key)
+      return value && value !== key ? value : fallback
+    },
+    nvmeNamespaceListenerPortSet () {
+      const ports = new Set()
+      this.nvmeNamespaceTargets.forEach(target => {
+        const config = this.parseStorageConfig(target.config || target.configjson || target.configJson)
+        this.normalizeListenerPorts(target.listenerports || target.listenerPorts || config.listenerGroupPorts || config.listenerports || this.defaultNvmeListenerPort())
+          .forEach(port => ports.add(Number(port)))
+      })
+      return ports
+    },
+    nvmeListenerSamePortCount (port) {
+      const targetPort = Number(port || this.defaultNvmeListenerPort())
+      return this.nvmeProtocolListenerEntries.filter(entry => Number(entry.port) === targetPort).length
+    },
+    isPrimaryServiceEndpointIp (ip) {
+      const value = String(ip || '').trim()
+      return !!value && !this.isWildcardListenIp(value) && value === String(this.serviceEndpoint || '').trim()
+    },
+    canDeleteNvmeListener (entry) {
+      if (!entry) {
+        return false
+      }
+      if (this.isPrimaryServiceEndpointIp(entry.listenIp)) {
+        return false
+      }
+      const port = Number(entry.port || this.defaultNvmeListenerPort())
+      if (this.nvmeNamespaceListenerPortSet().has(port) && this.nvmeListenerSamePortCount(port) <= 1) {
+        return false
+      }
+      return true
+    },
+    nvmeListenerDeleteDisabledReason (entry) {
+      if (!entry) {
+        return ''
+      }
+      if (this.isPrimaryServiceEndpointIp(entry.listenIp)) {
+        return this.$t('message.storage.service.nvme.listener.delete.primary.disabled')
+      }
+      const port = Number(entry.port || this.defaultNvmeListenerPort())
+      if (this.nvmeNamespaceListenerPortSet().has(port) && this.nvmeListenerSamePortCount(port) <= 1) {
+        return this.$t('message.storage.service.nvme.listener.delete.in.use.disabled', { port })
+      }
+      return ''
+    },
+    nvmeSubsystemNamespaceCount (subsystemName) {
+      const name = String(subsystemName || '').trim()
+      if (!name) {
+        return 0
+      }
+      return this.nvmeNamespaceTargets.filter(namespace => {
+        return String(namespace.targetname || namespace.subsystemnqn || namespace.targetName || '').trim() === name
+      }).length
+    },
+    nvmeSubsystemDeleteDisabledReason (namespaceCount, hostAclCount) {
+      if (namespaceCount > 0) {
+        return this.$t('message.storage.service.nvme.subsystem.delete.namespace.disabled', { count: namespaceCount })
+      }
+      if (hostAclCount > 0) {
+        return this.$t('message.storage.service.nvme.subsystem.delete.acl.disabled', { count: hostAclCount })
+      }
+      return ''
+    },
+    nvmePortStatusLabel (status) {
+      if (!status) return ''
+      const state = String(status.state || '').toUpperCase()
+      if (state === 'UNUSED') return this.storageLabel('label.storage.service.runtime.unused', '미사용')
+      if (state === 'LISTENING') return this.storageLabel('label.storage.service.runtime.listening', '수신 중')
+      if (state === 'ERROR') return this.storageLabel('label.storage.service.runtime.error', '오류')
+      if (status.listening) return this.storageLabel('label.storage.service.runtime.listening', '수신 중')
+      return ''
+    },
     smbClientPathForShare (shareName) {
       const name = shareName || `<${this.$t('label.storage.service.share.name.placeholder')}>`
       const pairs = this.smbEffectiveEndpointPairs.length ? this.smbEffectiveEndpointPairs : [{ ip: this.serviceEndpoint || '<service-ip>' }]
@@ -3703,6 +4794,7 @@ export default {
       this.storageService.loading = true
       this.storageService.initialLoading = initialLoad
       this.storageService.refreshing = !initialLoad
+      const refreshGeneration = ++this.storageRefreshGeneration
       try {
         const params = {
           zoneid: this.resource.zoneid,
@@ -3710,25 +4802,68 @@ export default {
         }
         const instances = await this.listApi('listStorageServiceInstances', params, 'storageserviceinstance')
         const instance = instances.find(item => item.virtualmachineid === this.resource.virtualmachineid) || null
-        this.storageService.instance = instance
         if (!instance) {
-          this.clearStorageServiceRuntime()
+          Object.assign(this.storageService, {
+            instance: null,
+            health: [],
+            inventory: [],
+            protocols: [],
+            sessions: [],
+            domains: [],
+            nfsExports: [],
+            smbShares: [],
+            iscsiTargets: [],
+            nvmeSubsystems: [],
+            nvmeNamespaces: [],
+            nfsAcls: [],
+            smbAcls: [],
+            iscsiAcls: [],
+            nvmeHostAcls: [],
+            backingVolumes: [],
+            loaded: true
+          })
           return
         }
-        await Promise.all([
-          this.fetchRuntime('listStorageServiceHealth', 'health'),
-          this.fetchRuntime('listStorageServiceInventory', 'inventory'),
-          this.fetchCollection('listStorageServiceProtocols', 'protocols', 'storageserviceprotocol'),
-          this.fetchRuntime('listStorageServiceSessions', 'sessions'),
-          this.fetchCollection('listStorageServiceDomainStatus', 'domains', 'storageidentitydomain'),
-          this.fetchCollection('listStorageNfsExports', 'nfsExports', 'storagenfsexport'),
-          this.fetchCollection('listStorageSmbShares', 'smbShares', 'storagesmbshare'),
-          this.fetchCollection('listStorageIscsiTargets', 'iscsiTargets', 'storageiscsitarget'),
-          this.fetchCollection('listStorageNvmeOfSubsystems', 'nvmeSubsystems', 'storagenvmeofsubsystem')
+        const results = await Promise.all([
+          this.listApi('listStorageServiceHealth', { instanceid: instance.id }, 'storageserviceruntime'),
+          this.listApi('listStorageServiceProtocols', { instanceid: instance.id }, 'storageserviceprotocol'),
+          this.listApi('listStorageServiceDomainStatus', { instanceid: instance.id }, 'storageidentitydomain'),
+          this.listApi('listStorageNfsExports', { instanceid: instance.id }, 'storagenfsexport'),
+          this.listApi('listStorageSmbShares', { instanceid: instance.id }, 'storagesmbshare'),
+          this.listApi('listStorageIscsiTargets', { instanceid: instance.id }, 'storageiscsitarget'),
+          this.fetchNvmeStorageSnapshot(instance.id)
         ])
-        await this.fetchAccessRules()
-        await this.fetchBackingVolumes()
-        this.storageService.loaded = true
+        if (refreshGeneration !== this.storageRefreshGeneration) {
+          return
+        }
+        const [health, protocols, domains, nfsExports, smbShares, iscsiTargets, nvmeSnapshot] = results
+        const accessRules = await this.loadAccessRules(instance.id, nfsExports, smbShares, iscsiTargets, nvmeSnapshot.nvmeSubsystems, nvmeSnapshot.nvmeHostAcls)
+        const backingVolumes = await this.loadBackingVolumes({
+          instance,
+          nfsExports,
+          smbShares,
+          iscsiTargets,
+          nvmeNamespaces: nvmeSnapshot.nvmeNamespaces
+        })
+        if (refreshGeneration !== this.storageRefreshGeneration) {
+          return
+        }
+        Object.assign(this.storageService, {
+          instance,
+          health,
+          protocols,
+          domains,
+          nfsExports,
+          smbShares,
+          iscsiTargets,
+          inventory: nvmeSnapshot.inventory,
+          sessions: nvmeSnapshot.sessions,
+          nvmeSubsystems: nvmeSnapshot.nvmeSubsystems,
+          nvmeNamespaces: nvmeSnapshot.nvmeNamespaces,
+          ...accessRules,
+          backingVolumes,
+          loaded: true
+        })
       } catch (error) {
         this.$notifyError(error)
       } finally {
@@ -3747,6 +4882,7 @@ export default {
       this.storageService.smbShares = []
       this.storageService.iscsiTargets = []
       this.storageService.nvmeSubsystems = []
+      this.storageService.nvmeNamespaces = []
       this.storageService.nfsAcls = []
       this.storageService.smbAcls = []
       this.storageService.iscsiAcls = []
@@ -3759,11 +4895,52 @@ export default {
     async fetchCollection (api, key, objectName) {
       this.storageService[key] = await this.listApi(api, { instanceid: this.storageService.instance.id }, objectName)
     },
-    async fetchAccessRules () {
-      const nfsAcls = await this.listApi('listStorageNfsAcls', { instanceid: this.storageService.instance.id }, 'storageaccessrule')
-      const smbAcls = await Promise.all(this.storageService.smbShares.map(share => this.listApi('listStorageSmbAcls', { shareid: share.id }, 'storageaccessrule')))
-      const iscsiAcls = await Promise.all(this.storageService.iscsiTargets.map(target => this.listApi('listStorageIscsiAcls', { targetid: target.id }, 'storageaccessrule')))
-      const nvmeHostAcls = await Promise.all(this.storageService.nvmeSubsystems.map(target => this.listApi('listStorageNvmeOfHostAcls', { subsystemid: target.id }, 'storageaccessrule')))
+    async fetchNvmeStorageSnapshot (instanceId) {
+      const [inventory, sessions, nvmeSubsystems, nvmeNamespaces] = await Promise.all([
+        this.listApi('listStorageServiceInventory', { instanceid: instanceId }, 'storageserviceruntime'),
+        this.listApi('listStorageServiceSessions', { instanceid: instanceId }, 'storageserviceruntime'),
+        this.listApi('listStorageNvmeOfSubsystems', { instanceid: instanceId }, 'storagenvmeofsubsystem'),
+        this.listApi('listStorageNvmeOfNamespaces', { instanceid: instanceId }, 'storagenvmeofnamespace')
+      ])
+      const nvmeHostAclLists = await Promise.all(nvmeSubsystems.map(target => this.listApi('listStorageNvmeOfHostAcls', { subsystemid: target.id }, 'storageaccessrule')))
+      return {
+        inventory,
+        sessions,
+        nvmeSubsystems,
+        nvmeNamespaces,
+        nvmeHostAcls: nvmeHostAclLists.flat()
+      }
+    },
+    applyNvmeStorageSnapshot (snapshot, refreshGeneration) {
+      if (!snapshot || refreshGeneration !== this.storageRefreshGeneration) {
+        return false
+      }
+      this.storageService.inventory = snapshot.inventory
+      this.storageService.sessions = snapshot.sessions
+      this.storageService.nvmeSubsystems = snapshot.nvmeSubsystems
+      this.storageService.nvmeNamespaces = snapshot.nvmeNamespaces
+      this.storageService.nvmeHostAcls = snapshot.nvmeHostAcls
+      return true
+    },
+    async fetchAccessRules (prefetchedNvmeHostAcls = null) {
+      const rules = await this.loadAccessRules(
+        this.storageService.instance.id,
+        this.storageService.nfsExports,
+        this.storageService.smbShares,
+        this.storageService.iscsiTargets,
+        this.nvmeSubsystemTargets,
+        prefetchedNvmeHostAcls)
+      Object.assign(this.storageService, rules)
+    },
+    async loadAccessRules (instanceId, nfsExports, smbShares, iscsiTargets, nvmeSubsystems, prefetchedNvmeHostAcls = null) {
+      const [nfsAcls, smbAcls, iscsiAcls, nvmeHostAcls] = await Promise.all([
+        this.listApi('listStorageNfsAcls', { instanceid: instanceId }, 'storageaccessrule'),
+        Promise.all(smbShares.map(share => this.listApi('listStorageSmbAcls', { shareid: share.id }, 'storageaccessrule'))),
+        Promise.all(iscsiTargets.map(target => this.listApi('listStorageIscsiAcls', { targetid: target.id }, 'storageaccessrule'))),
+        prefetchedNvmeHostAcls === null
+          ? Promise.all(nvmeSubsystems.map(target => this.listApi('listStorageNvmeOfHostAcls', { subsystemid: target.id }, 'storageaccessrule'))).then(items => items.flat())
+          : Promise.resolve(prefetchedNvmeHostAcls)
+      ])
       const iscsiAclMap = new Map()
       iscsiAcls.flat().forEach(acl => {
         const key = acl.id || [
@@ -3775,33 +4952,57 @@ export default {
           iscsiAclMap.set(key, acl)
         }
       })
-      this.storageService.nfsAcls = nfsAcls.filter(acl => this.nfsShareForAcl(acl))
-      this.storageService.smbAcls = smbAcls.flat()
-      this.storageService.iscsiAcls = Array.from(iscsiAclMap.values())
-      this.storageService.nvmeHostAcls = nvmeHostAcls.flat()
+      const nfsIds = new Set(nfsExports.flatMap(share => [share.id, share.uuid]).filter(Boolean).map(String))
+      return {
+        nfsAcls: nfsAcls.filter(acl => [
+          acl.exportid,
+          acl.exportId,
+          acl.shareid,
+          acl.shareId,
+          acl.resourceid,
+          acl.resourceId,
+          acl.resourceuuid,
+          acl.resourceUuid,
+          acl.parentid,
+          acl.parentId,
+          acl.fileshareid,
+          acl.fileShareId
+        ].filter(Boolean).some(value => nfsIds.has(String(value)))),
+        smbAcls: smbAcls.flat(),
+        iscsiAcls: Array.from(iscsiAclMap.values()),
+        nvmeHostAcls
+      }
     },
     async fetchBackingVolumes () {
+      this.storageService.backingVolumes = await this.loadBackingVolumes({
+        instance: this.storageService.instance,
+        nfsExports: this.storageService.nfsExports,
+        smbShares: this.storageService.smbShares,
+        iscsiTargets: this.storageService.iscsiTargets,
+        nvmeNamespaces: this.storageService.nvmeNamespaces
+      })
+    },
+    async loadBackingVolumes ({ instance, nfsExports, smbShares, iscsiTargets, nvmeNamespaces }) {
       if (!('listVolumes' in this.$store.getters.apis)) {
-        this.storageService.backingVolumes = []
-        return
+        return []
       }
       const ids = new Set()
-      this.storageService.nfsExports.forEach(share => {
+      nfsExports.forEach(share => {
         if (share.volumeid || share.volumeId) {
           ids.add(share.volumeid || share.volumeId)
         }
       })
-      this.storageService.smbShares.forEach(share => {
+      smbShares.forEach(share => {
         if (share.volumeid || share.volumeId) {
           ids.add(share.volumeid || share.volumeId)
         }
       })
-      this.storageService.iscsiTargets.forEach(target => {
+      iscsiTargets.forEach(target => {
         if (target.volumeid || target.volumeId) {
           ids.add(target.volumeid || target.volumeId)
         }
       })
-      this.storageService.nvmeSubsystems.forEach(target => {
+      nvmeNamespaces.forEach(target => {
         if (target.volumeid || target.volumeId) {
           ids.add(target.volumeid || target.volumeId)
         }
@@ -3817,7 +5018,7 @@ export default {
         listall: true,
         listsystemvms: true
       }, 'volume'))
-      const vmId = this.resource.virtualmachineid || this.vm.id || this.storageService.instance?.virtualmachineid
+      const vmId = this.resource.virtualmachineid || this.vm.id || instance?.virtualmachineid
       if (vmId) {
         volumeRequests.push(this.listApi('listVolumes', {
           virtualmachineid: vmId,
@@ -3827,7 +5028,7 @@ export default {
       }
       const volumeLists = await Promise.all(volumeRequests)
       const seen = new Set()
-      this.storageService.backingVolumes = volumeLists.flat().filter(volume => {
+      return volumeLists.flat().filter(volume => {
         if (!volume?.id || seen.has(String(volume.id))) {
           return false
         }
@@ -3864,6 +5065,69 @@ export default {
       }
       throw new Error(`${apiName || 'Async job'} timed out`)
     },
+    async callStorageIdentityRepair (dryRun, expectedRuntimePrimary = '') {
+      const params = this.cleanParams({
+        sharedfilesystemid: this.resource.id,
+        dryrun: dryRun,
+        expectedruntimeprimary: expectedRuntimePrimary
+      })
+      const json = await postAPI('repairStorageServiceNicIdentity', params)
+      const response = json.repairstorageservicenicidentityresponse || {}
+      if (!response.jobid) {
+        return response
+      }
+      const job = await this.waitStorageServiceJob(response.jobid, 'repairStorageServiceNicIdentity')
+      return job.jobresult?.storageserviceruntime || job.jobresult || {}
+    },
+    parseIdentityRepairEvidence (response) {
+      const raw = response?.resultjson || response?.result || response?.details || response?.data || response?.response || response
+      if (raw && typeof raw === 'object') {
+        return raw
+      }
+      try {
+        return JSON.parse(raw || '{}')
+      } catch (error) {
+        return {}
+      }
+    },
+    async openStorageIdentityRepair () {
+      if (!this.canRepairStorageIdentity || this.identityRepair.loading) return
+      this.identityRepair.loading = true
+      try {
+        const response = await this.callStorageIdentityRepair(true)
+        const evidence = this.parseIdentityRepairEvidence(response)
+        this.identityRepair.eligible = this.boolValue(evidence.eligible)
+        this.identityRepair.persistedPrimaryIp = evidence.persistedPrimaryIp || evidence.persistedprimaryip || ''
+        this.identityRepair.runtimePrimaryIp = evidence.runtimePrimaryIp || evidence.runtimeprimaryip || ''
+        this.identityRepair.aliases = Array.isArray(evidence.aliases) ? evidence.aliases : []
+        this.identityRepair.reason = evidence.reason || ''
+        this.identityRepair.visible = true
+      } catch (error) {
+        this.$message.error(error.message || String(error))
+      } finally {
+        this.identityRepair.loading = false
+      }
+    },
+    closeStorageIdentityRepair () {
+      if (!this.identityRepair.loading) this.identityRepair.visible = false
+    },
+    async applyStorageIdentityRepair () {
+      if (!this.identityRepair.eligible || !this.identityRepair.runtimePrimaryIp) return
+      this.identityRepair.loading = true
+      try {
+        await this.callStorageIdentityRepair(false, this.identityRepair.runtimePrimaryIp)
+        await this.fetchStorageServiceData()
+        if (this.storageIdentityDrift) {
+          throw new Error(this.$t('message.storage.service.nic.identity.repair.postcondition.failed'))
+        }
+        this.identityRepair.visible = false
+        this.$message.success(this.$t('message.storage.service.nic.identity.repair.success'))
+      } catch (error) {
+        this.$message.error(error.message || String(error))
+      } finally {
+        this.identityRepair.loading = false
+      }
+    },
     async waitVolumeAttachable (volumeId, maxAttempts = 60) {
       const attachableStates = ['Allocated', 'Ready', 'Uploaded']
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -3887,6 +5151,10 @@ export default {
       }
       if (!this.isValidIpv4(listenIp)) {
         this.$message.error(this.$t('message.storage.service.listen.ip.invalid'))
+        return false
+      }
+      if (this.enableProtocolListenerConflictMessage) {
+        this.$message.error(this.enableProtocolListenerConflictMessage)
         return false
       }
       if (this.forms.enableProtocol.listenipmode !== 'NEW') {
@@ -3987,13 +5255,38 @@ export default {
       this.emitWideLayout()
       this.storageService.refreshing = true
       try {
+        const nvmeActions = ['nvmePrepare', 'nvmeSubsystem', 'nvmeNamespace', 'editNvmeNamespace', 'nvmeHostAcl', 'editNvmeHostAcl']
+        if (nvmeActions.includes(key)) {
+          const refreshGeneration = ++this.storageRefreshGeneration
+          const results = await Promise.all([
+            this.fetchRuntime('listStorageServiceHealth', 'health'),
+            this.fetchCollection('listStorageServiceProtocols', 'protocols', 'storageserviceprotocol'),
+            this.fetchNvmeStorageSnapshot(this.storageService.instance.id)
+          ])
+          const snapshot = results[results.length - 1]
+          if (this.applyNvmeStorageSnapshot(snapshot, refreshGeneration)) {
+            await this.fetchAccessRules(snapshot.nvmeHostAcls)
+            await this.fetchBackingVolumes()
+          }
+          return
+        }
         await Promise.all([
           this.fetchRuntime('listStorageServiceHealth', 'health'),
           this.fetchRuntime('listStorageServiceInventory', 'inventory'),
           this.fetchCollection('listStorageServiceProtocols', 'protocols', 'storageserviceprotocol'),
           this.fetchRuntime('listStorageServiceSessions', 'sessions')
         ])
-        if (['nfsExport', 'editNfsExport', 'nfsAcl', 'editNfsAcl', 'resizeShare', 'resizeVolume', 'detachBackingVolume', 'enableProtocol', 'deleteEndpoint'].includes(key)) {
+        if (['resizeBackingVolume', 'detachBackingVolume'].includes(key)) {
+          await Promise.all([
+            this.fetchCollection('listStorageNfsExports', 'nfsExports', 'storagenfsexport'),
+            this.fetchCollection('listStorageSmbShares', 'smbShares', 'storagesmbshare'),
+            this.fetchCollection('listStorageIscsiTargets', 'iscsiTargets', 'storageiscsitarget'),
+            this.fetchCollection('listStorageNvmeOfSubsystems', 'nvmeSubsystems', 'storagenvmeofsubsystem'),
+            this.fetchCollection('listStorageNvmeOfNamespaces', 'nvmeNamespaces', 'storagenvmeofnamespace')
+          ])
+          await this.fetchAccessRules()
+          await this.fetchBackingVolumes()
+        } else if (['nfsExport', 'editNfsExport', 'nfsAcl', 'editNfsAcl', 'resizeShare', 'enableProtocol', 'deleteEndpoint'].includes(key)) {
           await this.fetchCollection('listStorageNfsExports', 'nfsExports', 'storagenfsexport')
           await this.fetchAccessRules()
           await this.fetchBackingVolumes()
@@ -4006,10 +5299,6 @@ export default {
           await this.fetchBackingVolumes()
         } else if (['iscsiTarget', 'iscsiAcl'].includes(key)) {
           await this.fetchCollection('listStorageIscsiTargets', 'iscsiTargets', 'storageiscsitarget')
-          await this.fetchAccessRules()
-          await this.fetchBackingVolumes()
-        } else if (['nvmePrepare', 'nvmeSubsystem', 'nvmeHostAcl'].includes(key)) {
-          await this.fetchCollection('listStorageNvmeOfSubsystems', 'nvmeSubsystems', 'storagenvmeofsubsystem')
           await this.fetchAccessRules()
           await this.fetchBackingVolumes()
         }
@@ -4062,6 +5351,25 @@ export default {
       }
       return this.$t('label.no')
     },
+    iscsiAuthVerificationLabel (value) {
+      const status = String(value || 'UNKNOWN').toUpperCase()
+      const labels = {
+        VERIFIED: 'label.storage.service.authentication.verified',
+        NOT_REQUIRED: 'label.storage.service.authentication.not.required',
+        FAILED: 'label.storage.service.authentication.failed',
+        UNKNOWN: 'label.storage.service.authentication.unknown'
+      }
+      return this.$t(labels[status] || labels.UNKNOWN)
+    },
+    iscsiAuthVerificationColor (value) {
+      const status = String(value || 'UNKNOWN').toUpperCase()
+      return {
+        VERIFIED: 'green',
+        NOT_REQUIRED: 'blue',
+        FAILED: 'red',
+        UNKNOWN: 'orange'
+      }[status] || 'orange'
+    },
     iscsiMappingStatusLabel (value) {
       const status = String(value || '').toLowerCase()
       if (status === 'exact') {
@@ -4069,6 +5377,9 @@ export default {
       }
       if (status === 'candidate') {
         return this.$t('label.storage.service.session.mapping.candidate')
+      }
+      if (status === 'ambiguous') {
+        return this.$t('label.storage.service.session.mapping.ambiguous')
       }
       if (status === 'unmapped') {
         return this.$t('label.storage.service.session.mapping.unmapped')
@@ -4126,6 +5437,67 @@ export default {
         required: dhChapEnabled || dhChapCtrlEnabled
       }
     },
+    nvmeTargetName (target) {
+      return target?.targetname || target?.subsystemnqn || target?.subsystemNqn || target?.targetName || ''
+    },
+    nvmeSubsystemByName (targetName) {
+      const expected = String(targetName || '')
+      if (!expected) return null
+      return this.nvmeSubsystemTargets.find(target => String(this.nvmeTargetName(target)) === expected) || null
+    },
+    nvmeSubsystemAllowAnyHost (target, parsedConfig = null) {
+      if (!target) return false
+      const config = parsedConfig || this.parseStorageConfig(target.config || target.configjson || target.configJson)
+      return this.boolValue(this.firstDefined(
+        target.allowanyhost,
+        target.allowAnyHost,
+        target.allow_any_host,
+        config.allowAnyHost,
+        config.allowanyhost,
+        config.allow_any_host
+      ))
+    },
+    nvmeSubsystemAccessPolicy (target, explicitAcls = null, parsedConfig = null) {
+      if (!target) {
+        return {
+          type: 'UNKNOWN',
+          label: '-',
+          color: 'default',
+          effectiveAccess: '-',
+          aclCount: 0
+        }
+      }
+      const acls = explicitAcls || this.blockAclsForTarget(target, this.storageService.nvmeHostAcls)
+      if (this.nvmeSubsystemAllowAnyHost(target, parsedConfig)) {
+        return {
+          type: 'ALLOW_ANY',
+          label: this.$t('label.storage.service.nvme.access.any.host'),
+          color: 'green',
+          effectiveAccess: this.$t('label.storage.service.nvme.access.all.hosts'),
+          aclCount: acls.length
+        }
+      }
+      if (acls.length) {
+        return {
+          type: 'EXPLICIT_ACL',
+          label: this.$t('label.storage.service.nvme.access.explicit.host.acl'),
+          color: 'blue',
+          effectiveAccess: this.$t('label.storage.service.nvme.host.acl.count', { count: acls.length }),
+          aclCount: acls.length
+        }
+      }
+      return {
+        type: 'NO_ACL',
+        label: this.$t('label.storage.service.nvme.access.no.host.acl'),
+        color: 'orange',
+        effectiveAccess: this.$t('label.storage.service.nvme.access.blocked'),
+        aclCount: 0
+      }
+    },
+    nvmeNamespaceAccessPolicy (namespaceTarget) {
+      const subsystemName = this.nvmeTargetName(namespaceTarget)
+      return this.nvmeSubsystemAccessPolicy(this.nvmeSubsystemByName(subsystemName))
+    },
     permissionLabel (value) {
       const permission = String(value || '').toUpperCase()
       if (permission === 'READ_ONLY' || permission === 'READONLY' || permission === 'RO') {
@@ -4168,9 +5540,50 @@ export default {
     },
     runtimeBlockTarget (target, inventoryKey) {
       const inventory = this.parsedInventory[inventoryKey] || {}
-      const targets = Array.isArray(inventory.targets) ? inventory.targets : []
+      let targets = Array.isArray(inventory.targets) ? inventory.targets : []
+      if (inventoryKey === 'nvmeTargets' && !targets.length) {
+        const nvmeInventory = this.parsedInventory.nvmeofSubsystems || this.parsedInventory.nvmeOfSubsystems || {}
+        targets = []
+        ;(nvmeInventory.subsystems || []).forEach(subsystem => {
+          ;(subsystem.namespaces || []).forEach(namespace => {
+            targets.push({
+              ...namespace,
+              targetName: subsystem.targetName || subsystem.subsystemNqn,
+              runtime: namespace.runtime || {},
+              ...(namespace.runtime || {})
+            })
+          })
+        })
+      }
       const targetName = String(target.targetname || target.targetName || '')
       const targetLun = String(target.lunornamespace || target.lunOrNamespace || target.lun || '0')
+      if (inventoryKey === 'nvmeTargets') {
+        const explicitMappingStatus = target.runtimemappingstatus || target.runtimeMappingStatus
+        if (explicitMappingStatus) {
+          return {
+            runtimeMappingStatus: explicitMappingStatus,
+            runtimeBackingPath: target.runtimebackingpath || target.runtimeBackingPath,
+            actualBackingSizeBytes: target.actualbackingsizebytes || target.actualBackingSizeBytes,
+            runtimeObservedAt: target.runtimeobservedat || target.runtimeObservedAt,
+            runtimeState: target.runtimestate || target.runtimeState,
+            enabled: target.runtimeenabled ?? target.runtimeEnabled
+          }
+        }
+        const normalizeNqn = value => String(value || '').trim().toLowerCase()
+        const normalizeNamespaceId = value => {
+          const normalized = String(value || '1').trim()
+          return /^\d+$/.test(normalized) ? String(Number(normalized)) : normalized
+        }
+        const compositeMatches = targets.filter(item => {
+          const itemName = item.targetName || item.targetname || item.subsystemNqn || item.subsystemnqn
+          const itemNamespace = item.lunOrNamespace || item.lunornamespace || item.namespaceId || item.namespaceid || item.nsid || '1'
+          return normalizeNqn(itemName) === normalizeNqn(targetName) && normalizeNamespaceId(itemNamespace) === normalizeNamespaceId(targetLun)
+        })
+        if (compositeMatches.length === 1) {
+          return { ...compositeMatches[0], runtimeMappingStatus: 'EXACT' }
+        }
+        return { runtimeMappingStatus: compositeMatches.length > 1 ? 'AMBIGUOUS' : 'UNMAPPED' }
+      }
       const ids = [
         target.id,
         target.uuid,
@@ -4195,14 +5608,34 @@ export default {
         return itemName && itemName === targetName && itemLun === targetLun
       }) || {}
     },
+    nvmeRuntimeMappingStatusLabel (status) {
+      const labels = {
+        EXACT: 'label.storage.service.session.mapping.exact',
+        AMBIGUOUS: 'label.storage.service.session.mapping.ambiguous',
+        UNAVAILABLE: 'label.storage.service.session.mapping.unavailable',
+        UNMAPPED: 'label.storage.service.session.mapping.unmapped'
+      }
+      return this.$t(labels[String(status || '').toUpperCase()] || 'label.storage.service.session.mapping.unmapped')
+    },
+    fileShareVolumeMappingStatusLabel (status) {
+      const labels = {
+        EXACT: 'label.storage.service.volume.mapping.exact',
+        STALE: 'label.storage.service.volume.mapping.stale',
+        AMBIGUOUS: 'label.storage.service.volume.mapping.ambiguous',
+        UNAVAILABLE: 'label.storage.service.volume.mapping.unavailable',
+        UNMAPPED: 'label.storage.service.volume.mapping.unmapped'
+      }
+      return this.$t(labels[String(status || 'UNMAPPED').toUpperCase()] || labels.UNMAPPED)
+    },
     volumeForShare (share) {
-      const ids = [share.volumeid, share.volumeId].filter(Boolean).map(value => String(value))
-      const exact = this.storageService.backingVolumes.find(volume => ids.includes(String(volume.id)))
+      const ids = [share.volumeid, share.volumeId, share.volumeuuid, share.volumeUuid].filter(Boolean).map(value => String(value))
+      const exact = this.storageService.backingVolumes.find(volume => {
+        return ids.includes(String(volume.id)) || ids.includes(String(volume.uuid))
+      })
       if (exact && this.belongsToCurrentServiceVm(exact)) {
         return exact
       }
-      const currentSharedFsVolume = this.storageService.backingVolumes.find(volume => volume.id === this.resource.volumeid || volume.id === this.volume.id)
-      return currentSharedFsVolume || exact || this.volume || {}
+      return {}
     },
     nfsExportsForVolume (volume) {
       const ids = [volume?.id, volume?.uuid].filter(Boolean).map(value => String(value))
@@ -4239,6 +5672,19 @@ export default {
       const inspection = config.lastInspection || config.lastinspection || {}
       return inspection.filesystem || inspection.fsType || inspection.fstype || this.nfsExportsForVolume(volume)[0]?.filesystem || volume?.filesystem || ''
     },
+    nfsBackingVolumeFilesystem (volume) {
+      const shares = this.nfsExportsForVolume(volume)
+      for (const share of shares) {
+        const config = this.parseStorageConfig(share.config)
+        const inspection = config.lastInspection || config.lastinspection || {}
+        const value = inspection.filesystem || inspection.fsType || inspection.fstype || share.filesystem || share.fsType || share.fstype
+        if (value) {
+          return String(value).toLowerCase()
+        }
+      }
+      const value = volume?.filesystem || volume?.fsType || volume?.fstype
+      return value ? String(value).toLowerCase() : '-'
+    },
     displayBackingVolumeFilesystem (volume, share = {}) {
       const value = this.currentBackingVolumeFilesystem(volume) ||
         share.filesystem ||
@@ -4270,8 +5716,24 @@ export default {
       if (exact && this.belongsToCurrentServiceVm(exact)) {
         return exact
       }
-      const currentSharedFsVolume = this.storageService.backingVolumes.find(volume => volume.id === this.resource.volumeid || volume.id === this.volume.id)
-      return currentSharedFsVolume || exact || this.volume || {}
+      return {}
+    },
+    backingVolumeActionFields (volume = {}, resourceName = '-', fallbackSizeBytes = null) {
+      const volumeId = volume.id || volume.uuid || ''
+      const sizeValue = volumeId ? this.firstDefined(volume.size, fallbackSizeBytes) : null
+      const currentSizeBytes = Number(sizeValue)
+      const validSize = Number.isFinite(currentSizeBytes) && currentSizeBytes > 0
+      const resizeAllowed = Boolean(volumeId) && validSize && this.belongsToCurrentServiceVm(volume)
+      const currentSizeGiB = validSize ? Math.ceil(currentSizeBytes / (1024 * 1024 * 1024)) : null
+      return {
+        volumeid: resizeAllowed ? String(volumeId) : '',
+        volumeUuid: volume.uuid || '',
+        currentSizeBytes: validSize ? currentSizeBytes : null,
+        currentSizeGiB,
+        resizeAllowed,
+        resizeDisabledReason: resizeAllowed ? '' : this.$t('message.storage.service.resize.backing.volume.identity.unavailable'),
+        resourceName
+      }
     },
     belongsToCurrentServiceVm (volume) {
       const vmIds = [
@@ -4505,6 +5967,14 @@ export default {
         this.forms.iscsiTarget.storageid = this.filteredIscsiNewVolumeStoragePools[0]?.id || ''
       }
     },
+    reconcileNvmeNewVolumeStorage () {
+      if (this.forms.nvmeNamespace.volumemode !== 'NEW') {
+        return
+      }
+      if (!this.filteredNvmeNewVolumeStoragePools.some(pool => pool.id === this.forms.nvmeNamespace.storageid)) {
+        this.forms.nvmeNamespace.storageid = this.filteredNvmeNewVolumeStoragePools[0]?.id || ''
+      }
+    },
     defaultCurrentBackingVolumeId () {
       if (this.currentBackingVolumes.length === 1) {
         return this.currentBackingVolumes[0].id
@@ -4542,10 +6012,290 @@ export default {
       }
       return this.filteredIscsiNewVolumeStoragePools[0]?.id || preferred || ''
     },
+    defaultNvmeNewVolumeStorageId () {
+      const preferred = this.volume.storageid || this.resource.storageid || this.storageService.backingVolumes?.[0]?.storageid
+      if (preferred && this.filteredNvmeNewVolumeStoragePools.some(pool => pool.id === preferred)) {
+        return preferred
+      }
+      return this.filteredNvmeNewVolumeStoragePools[0]?.id || preferred || ''
+    },
     formatProtocolEndpoints (port, preferredIp = null) {
       const ips = preferredIp ? [preferredIp] : this.serviceEndpoints
       const values = ips.filter(ip => ip && !this.isWildcardListenIp(ip)).map(ip => `${ip}:${port}`)
       return values.length ? values.join(', ') : '-'
+    },
+    protocolListenerEntries (protocolName) {
+      const protocol = String(protocolName || '').toUpperCase()
+      const defaultPort = protocol === 'ISCSI' ? 3260 : protocol === 'NVME_OF' ? 4420 : this.defaultProtocolPort(protocol)
+      const raw = (this.storageService.protocols || [])
+        .filter(item => String(item.protocol || item.name || '').toUpperCase() === protocol)
+        .filter(item => item.enabled === undefined || this.boolValue(item.enabled))
+        .map(item => ({
+          listenIp: String(item.listenip || item.listenIp || item.ipaddress || '0.0.0.0').trim() || '0.0.0.0',
+          port: Number(item.port || item.listenPort || item.listenport || item.endpointPort || defaultPort),
+          listenerType: String(item.listenertype || item.listenerType || '').toUpperCase(),
+          primaryIp: item.primaryip || item.primaryIp || '',
+          runtimePrimaryIp: item.runtimeprimaryip || item.runtimePrimaryIp || '',
+          identityStatus: item.identitystatus || item.identityStatus || 'UNKNOWN',
+          identityWarning: item.identitywarning || item.identityWarning || '',
+          effectiveEndpoints: item.effectiveendpoints || item.effectiveEndpoints || [],
+          runtimeState: item.runtimestate || item.runtimeState || item.state || '-',
+          linkedResourceCount: Number(item.linkedresourcecount ?? item.linkedResourceCount ?? 0),
+          raw: item
+        }))
+        .filter(item => Number.isFinite(item.port) && item.port > 0)
+      const seen = new Set()
+      const unique = raw.filter(item => {
+        const key = `${item.listenIp}:${item.port}`
+        if (seen.has(key)) {
+          return false
+        }
+        seen.add(key)
+        return true
+      })
+      const wildcardByPort = new Map()
+      unique.forEach(item => {
+        if (item.listenerType === 'WILDCARD' || this.isWildcardListenIp(item.listenIp)) {
+          wildcardByPort.set(item.port, item)
+        }
+      })
+      return unique.filter(item => {
+        if (item.listenerType === 'WILDCARD' || this.isWildcardListenIp(item.listenIp)) return true
+        const wildcard = wildcardByPort.get(item.port)
+        if (!wildcard) return true
+        return String(item.runtimeState || '') !== String(wildcard.runtimeState || '') ||
+          Number(item.linkedResourceCount || 0) !== Number(wildcard.linkedResourceCount || 0)
+      })
+    },
+    protocolListenerRows (protocolName) {
+      const protocol = String(protocolName || '').toUpperCase()
+      return this.protocolListenerEntries(protocol).map(entry => {
+        const wildcard = entry.listenerType === 'WILDCARD' || this.isWildcardListenIp(entry.listenIp)
+        const apiEndpoints = (Array.isArray(entry.effectiveEndpoints) ? entry.effectiveEndpoints : [])
+          .map(item => {
+            const ip = item?.ipaddress || item?.ipAddress || item?.ip || ''
+            const port = Number(item?.port || entry.port)
+            return ip && port ? `${ip}:${port}` : ''
+          })
+          .filter(Boolean)
+        const inferredEndpoints = wildcard
+          ? this.serviceEndpoints.map(ip => `${ip}:${entry.port}`)
+          : [`${entry.listenIp}:${entry.port}`]
+        const endpoints = apiEndpoints.length ? apiEndpoints : inferredEndpoints
+        const linkedResourceCount = Number.isFinite(entry.linkedResourceCount) ? entry.linkedResourceCount : 0
+        const canDelete = linkedResourceCount === 0
+        return {
+          key: `${protocol}:${entry.listenIp}:${entry.port}`,
+          id: entry.raw?.id,
+          listenIp: entry.listenIp,
+          port: entry.port,
+          type: wildcard
+            ? this.$t('label.storage.service.listener.type.wildcard')
+            : this.$t('label.storage.service.listener.type.dedicated'),
+          effectiveEndpoints: [...new Set(endpoints)].join(', ') || '-',
+          linkedResourceCount,
+          state: entry.runtimeState || '-',
+          status: entry.runtimeState || '-',
+          protocol,
+          canDelete,
+          deleteDisabledReason: canDelete ? '' : this.$t('message.storage.service.listener.in.use'),
+          raw: entry.raw || entry
+        }
+      })
+    },
+    protocolEndpointValues (rows) {
+      const values = []
+      ;(rows || []).forEach(row => {
+        String(row?.effectiveEndpoints || '')
+          .split(',')
+          .map(value => value.trim())
+          .filter(value => value && value !== '-' && !value.startsWith('0.0.0.0:'))
+          .forEach(value => {
+            if (!values.includes(value)) values.push(value)
+          })
+      })
+      return values
+    },
+    splitEndpointValue (endpoint) {
+      const value = String(endpoint || '').trim()
+      const separator = value.lastIndexOf(':')
+      if (separator <= 0) {
+        return { ip: value, port: '' }
+      }
+      return {
+        ip: value.slice(0, separator),
+        port: value.slice(separator + 1)
+      }
+    },
+    formatBlockProtocolListenerGroupEndpoints (protocolName, ports) {
+      const normalized = this.normalizeListenerPorts(ports)
+      if (!normalized.length) {
+        return '-'
+      }
+      const entries = this.protocolListenerEntries(protocolName)
+      const values = []
+      const add = value => {
+        if (value && !values.includes(value)) values.push(value)
+      }
+      normalized.forEach(port => {
+        const matching = entries.filter(item => Number(item.port) === Number(port))
+        if (!matching.length) {
+          this.serviceEndpoints.forEach(ip => add(`${ip}:${port}`))
+          return
+        }
+        matching.forEach(item => {
+          if (this.isWildcardListenIp(item.listenIp)) {
+            this.serviceEndpoints.forEach(ip => add(`${ip}:${port}`))
+          } else {
+            add(`${item.listenIp}:${port}`)
+          }
+        })
+      })
+      return values.length ? values.join(', ') : '-'
+    },
+    nvmeEffectiveEndpointsForListener (entry) {
+      if (!entry || !entry.port) {
+        return []
+      }
+      if (this.isWildcardListenIp(entry.listenIp)) {
+        return this.serviceEndpoints.map(ip => ({
+          ip,
+          port: entry.port,
+          endpoint: `${ip}:${entry.port}`,
+          coveredByWildcard: true
+        }))
+      }
+      return [{
+        ip: entry.listenIp,
+        port: entry.port,
+        endpoint: `${entry.listenIp}:${entry.port}`,
+        coveredByWildcard: false
+      }]
+    },
+    nvmeHealthPortStatusMap () {
+      const health = this.parsedHealth || {}
+      const runtime = health.nvmeofRuntime || health.nvmeOfRuntime || health.nvmeof || health.nvmeOf || {}
+      const normalizeStatus = value => {
+        if (value && typeof value === 'object') {
+          const status = String(value.status || value.state || '').toLowerCase()
+          const listening = this.boolValue(value.listening ?? value.ready ?? value.ok) || ['ok', 'ready', 'running', 'listen', 'listening'].includes(status)
+          const linked = this.boolValue(value.linked ?? value.exposed ?? value.inUse ?? value.inuse)
+          const state = status || (linked ? (listening ? 'listening' : 'error') : 'unused')
+          return {
+            ...value,
+            listening,
+            linked,
+            state: state.toUpperCase()
+          }
+        }
+        const listening = this.boolValue(value) || String(value || '').toLowerCase() === 'ok'
+        return {
+          listening,
+          linked: listening,
+          state: listening ? 'LISTENING' : 'ERROR'
+        }
+      }
+      const candidates = [
+        runtime.portStatus,
+        runtime.portstatus,
+        runtime.ports,
+        runtime.listeners,
+        health.nvmeofPorts,
+        health.nvmeOfPorts
+      ]
+      const map = {}
+      candidates.filter(Boolean).forEach(source => {
+        if (Array.isArray(source)) {
+          source.forEach(item => {
+            const port = Number(item.port || item.listenPort || item.listenport)
+            if (Number.isFinite(port) && port > 0) {
+              map[port] = normalizeStatus(item)
+            }
+          })
+          return
+        }
+        if (typeof source === 'object') {
+          Object.entries(source).forEach(([portKey, value]) => {
+            const port = Number(portKey)
+            if (!Number.isFinite(port) || port <= 0) {
+              return
+            }
+            map[port] = normalizeStatus(value)
+          })
+        }
+      })
+      return map
+    },
+    nvmeListenerState (entry) {
+      const statusMap = this.nvmeHealthPortStatusMap()
+      if (Object.prototype.hasOwnProperty.call(statusMap, Number(entry.port))) {
+        const status = statusMap[Number(entry.port)]
+        const state = String(status?.state || '').toUpperCase()
+        if (state === 'UNUSED') return 'Unused'
+        return status?.listening ? 'Ready' : 'Error'
+      }
+      return 'Ready'
+    },
+    blockProtocolListenerConflictMessage (protocolName, listenIp, port) {
+      const protocol = String(protocolName || '').toUpperCase()
+      if (!['ISCSI', 'NVME_OF'].includes(protocol)) {
+        return ''
+      }
+      const protocolLabel = protocol === 'NVME_OF' ? 'NVMe-oF' : 'iSCSI'
+      const requestedIp = String(listenIp || '0.0.0.0').trim() || '0.0.0.0'
+      const requestedPort = Number(port || this.defaultProtocolPort(protocol))
+      if (!Number.isFinite(requestedPort) || requestedPort <= 0) {
+        return ''
+      }
+      const requestedWildcard = this.isWildcardListenIp(requestedIp)
+      const existing = (this.storageService.protocols || [])
+        .filter(item => String(item.protocol || item.name || '').toUpperCase() === protocol)
+        .filter(item => item.enabled === undefined || this.boolValue(item.enabled))
+        .map(item => ({
+          listenIp: String(item.listenip || item.listenIp || item.ipaddress || '0.0.0.0').trim() || '0.0.0.0',
+          port: Number(item.port || item.listenPort || item.listenport || item.endpointPort || this.defaultProtocolPort(protocol))
+        }))
+      for (const item of existing) {
+        if (Number(item.port) !== requestedPort || item.listenIp === requestedIp) {
+          continue
+        }
+        const existingWildcard = this.isWildcardListenIp(item.listenIp)
+        if (requestedWildcard && !existingWildcard) {
+          return `${protocolLabel} ${this.$t('message.storage.service.listener.wildcard.conflict')} (${requestedIp}:${requestedPort} / ${item.listenIp}:${item.port})`
+        }
+        if (!requestedWildcard && existingWildcard) {
+          if (protocol === 'NVME_OF') {
+            continue
+          }
+          return `${protocolLabel} ${this.$t('message.storage.service.listener.covered.by.wildcard')} (${requestedIp}:${requestedPort} / ${item.listenIp}:${item.port})`
+        }
+      }
+      return ''
+    },
+    blockProtocolListenerCoveredByWildcardMessage (protocolName, listenIp, port) {
+      const protocol = String(protocolName || '').toUpperCase()
+      if (protocol !== 'NVME_OF') {
+        return ''
+      }
+      const protocolLabel = 'NVMe-oF'
+      const requestedIp = String(listenIp || '0.0.0.0').trim() || '0.0.0.0'
+      const requestedPort = Number(port || this.defaultProtocolPort(protocol))
+      if (!Number.isFinite(requestedPort) || requestedPort <= 0 || this.isWildcardListenIp(requestedIp)) {
+        return ''
+      }
+      const existing = (this.storageService.protocols || [])
+        .filter(item => String(item.protocol || item.name || '').toUpperCase() === protocol)
+        .filter(item => item.enabled === undefined || this.boolValue(item.enabled))
+        .map(item => ({
+          listenIp: String(item.listenip || item.listenIp || item.ipaddress || '0.0.0.0').trim() || '0.0.0.0',
+          port: Number(item.port || item.listenPort || item.listenport || item.endpointPort || this.defaultProtocolPort(protocol))
+        }))
+      for (const item of existing) {
+        if (Number(item.port) === requestedPort && this.isWildcardListenIp(item.listenIp)) {
+          return `${protocolLabel} ${this.$t('message.storage.service.listener.covered.by.wildcard.reuse')} (${requestedIp}:${requestedPort} / ${item.listenIp}:${item.port})`
+        }
+      }
+      return ''
     },
     isWildcardListenIp (ip) {
       const value = String(ip || '').trim()
@@ -4622,7 +6372,7 @@ export default {
         if (protocol && protocol !== 'NFS') {
           return
         }
-        const listenIp = String(entry.listenIp || entry.listenip || entry.ip || entry.address || entry.listenAddress || entry.addr || '').trim()
+        const listenIp = String(entry.listenIp || entry.listenip || entry.ipaddress || entry.ip || entry.address || entry.listenAddress || entry.addr || '').trim()
         if (!listenIp) {
           return
         }
@@ -4849,10 +6599,85 @@ export default {
       if (!normalized.length) {
         return '-'
       }
-      return normalized.flatMap(port => this.formatProtocolEndpoints(port)).join(', ')
+      return this.formatBlockProtocolListenerGroupEndpoints('ISCSI', normalized)
+    },
+    defaultNvmeListenerPort () {
+      const options = this.nvmeListenerGroupOptions || []
+      return options.length ? options[0].value : 4420
+    },
+    formatNvmeListenerGroupEndpoints (ports) {
+      return this.nvmeListenerGroupSummary(ports).effectiveEndpoints
+    },
+    formatNvmeListenerGroupLabel (ports) {
+      return this.nvmeListenerGroupSummary(ports).listenerGroupLabel
+    },
+    nvmeListenerGroupSummary (ports) {
+      const normalized = this.normalizeListenerPorts(ports)
+      if (!normalized.length) {
+        return {
+          listenerGroupLabel: '-',
+          effectiveEndpoints: '-',
+          scopeLabel: '-'
+        }
+      }
+      const entries = this.protocolListenerEntries('NVME_OF')
+      const groups = normalized.map(port => {
+        const matching = entries.filter(item => Number(item.port) === Number(port))
+        const wildcard = matching.some(item => this.isWildcardListenIp(item.listenIp)) || !matching.length
+        const dedicatedIps = matching
+          .map(item => item.listenIp)
+          .filter(ip => ip && !this.isWildcardListenIp(ip))
+          .filter((ip, index, values) => values.indexOf(ip) === index)
+        const scopeLabel = wildcard
+          ? this.$t('label.storage.service.nvme.wildcard.listener')
+          : (dedicatedIps.length ? dedicatedIps.join(', ') : this.$t('label.storage.service.nvme.dedicated.listener'))
+        const endpoints = this.formatBlockProtocolListenerGroupEndpoints('NVME_OF', [port])
+        return {
+          port,
+          scopeLabel,
+          label: `${this.$t('label.port')} ${port} / ${scopeLabel}`,
+          endpoints
+        }
+      })
+      const endpointValues = []
+      groups.forEach(group => {
+        String(group.endpoints || '').split(',').map(item => item.trim()).filter(Boolean).forEach(endpoint => {
+          if (endpoint !== '-' && !endpointValues.includes(endpoint)) {
+            endpointValues.push(endpoint)
+          }
+        })
+      })
+      return {
+        listenerGroupLabel: groups.map(group => group.label).join(', '),
+        effectiveEndpoints: endpointValues.length ? endpointValues.join(', ') : '-',
+        scopeLabel: groups.map(group => group.scopeLabel).join(', ')
+      }
     },
     selectedIscsiListenerPorts () {
       return this.normalizeListenerPorts(this.forms.iscsiTarget.listenerports)
+    },
+    selectedNvmeListenerPorts () {
+      return this.normalizeListenerPorts(this.forms.nvmeNamespace.listenerports)
+    },
+    resetNvmeSubsystemForm () {
+      this.forms.nvmeSubsystem = {
+        id: '',
+        subsystemnqn: `nqn.2026-06.local.storage:${this.resource.name || 'subsystem'}`,
+        allowanyhost: false,
+        engine: 'KERNEL_NVMET',
+        transport: 'tcp'
+      }
+    },
+    populateNvmeSubsystemForm (record) {
+      const raw = record?.raw || record || {}
+      const config = this.parseStorageConfig(raw.config || raw.configjson || raw.configJson)
+      this.forms.nvmeSubsystem = {
+        id: raw.id || record?.id || '',
+        subsystemnqn: raw.targetname || raw.targetName || raw.subsystemnqn || record?.targetName || '',
+        allowanyhost: this.boolValue(raw.allowanyhost ?? raw.allowAnyHost ?? config.allowAnyHost ?? config.allowanyhost),
+        engine: raw.engine || config.engine || 'KERNEL_NVMET',
+        transport: raw.transport || config.transport || 'tcp'
+      }
     },
     resetIscsiTargetForm () {
       this.forms.iscsiTarget = {
@@ -4915,6 +6740,65 @@ export default {
         mutualchapenabled: raw.mutualchapenabled ?? raw.mutualChapEnabled ?? config.mutualChapEnabled ?? false,
         mutualchapusername: raw.mutualchapusername || raw.mutualChapUsername || config.mutualChapUsername || '',
         mutualchapsecret: ''
+      }
+    },
+    resetNvmeNamespaceForm () {
+      this.forms.nvmeNamespace = {
+        id: '',
+        subsystemid: this.nvmeSubsystemTargets[0]?.id || '',
+        namespaceid: '1',
+        volumeid: this.currentNvmeBlockVolumes.length === 1 ? this.currentNvmeBlockVolumes[0].id : '',
+        volumemode: this.currentNvmeBlockVolumes.length ? 'CURRENT' : 'EXISTING',
+        newvolumename: '',
+        diskofferingid: '',
+        storageid: this.defaultNvmeNewVolumeStorageId(),
+        newvolumesize: null,
+        backingpath: '',
+        listenerports: [this.defaultNvmeListenerPort()]
+      }
+    },
+    populateNvmeNamespaceForm (record) {
+      const raw = record?.raw || record || {}
+      const config = this.parseStorageConfig(raw.config)
+      const subsystem = this.nvmeSubsystemTargets.find(item => (item.targetname || item.targetName) === (raw.targetname || raw.targetName || record?.targetName))
+      this.forms.nvmeNamespace = {
+        id: raw.id || record?.id || '',
+        subsystemid: subsystem?.id || raw.subsystemid || raw.subsystemId || '',
+        namespaceid: raw.lunornamespace || raw.lunOrNamespace || raw.namespaceid || raw.namespaceId || record?.namespace || '1',
+        volumeid: raw.volumeid || raw.volumeId || '',
+        volumemode: 'EXISTING',
+        newvolumename: '',
+        diskofferingid: '',
+        storageid: this.defaultNvmeNewVolumeStorageId(),
+        newvolumesize: null,
+        backingpath: raw.backingpath || raw.backingPath || config.backingPath || '',
+        listenerports: this.normalizeListenerPorts(raw.listenerports || raw.listenerPorts || config.listenerGroupPorts || config.listenerports || this.defaultNvmeListenerPort())
+      }
+    },
+    resetNvmeHostAclForm () {
+      const firstExplicitSubsystem = this.nvmeSubsystemTargets.find(target => !this.nvmeSubsystemAllowAnyHost(target)) || null
+      this.forms.nvmeHostAcl = {
+        id: '',
+        subsystemid: firstExplicitSubsystem?.id || '',
+        hostnqn: '',
+        dhchapenabled: false,
+        dhchapkey: '',
+        dhchapctrlenabled: false,
+        dhchapctrlkey: ''
+      }
+    },
+    populateNvmeHostAclForm (record) {
+      const raw = record?.raw || record || {}
+      const config = this.parseStorageConfig(raw.config || raw.configjson || raw.configJson)
+      const target = this.blockTargetForAcl(raw, this.storageService.nvmeSubsystems) || this.nvmeSubsystemTargets.find(item => (item.targetname || item.targetName) === (record?.targetName || raw.targetname || raw.targetName))
+      this.forms.nvmeHostAcl = {
+        id: raw.id || record?.id || '',
+        subsystemid: target?.id || raw.resourceid || raw.resourceId || '',
+        hostnqn: raw.principal || raw.hostnqn || raw.hostNqn || record?.principal || '',
+        dhchapenabled: raw.dhchapenabled ?? raw.dhChapEnabled ?? config.dhChapEnabled ?? false,
+        dhchapkey: '',
+        dhchapctrlenabled: raw.dhchapctrlenabled ?? raw.dhChapCtrlEnabled ?? config.dhChapCtrlEnabled ?? false,
+        dhchapctrlkey: ''
       }
     },
     resetNfsExportForm () {
@@ -5219,12 +7103,36 @@ export default {
       if (type === 'editIscsiAcl') {
         this.populateIscsiAclForm(context)
       }
+      if (type === 'nvmeSubsystem') {
+        this.resetNvmeSubsystemForm()
+      }
+      if (type === 'editNvmeSubsystem') {
+        this.populateNvmeSubsystemForm(context)
+      }
+      if (type === 'nvmeNamespace') {
+        this.resetNvmeNamespaceForm()
+        this.fetchDiskOfferings()
+        this.fetchStoragePools()
+      }
+      if (type === 'editNvmeNamespace') {
+        this.populateNvmeNamespaceForm(context)
+        this.fetchDiskOfferings()
+        this.fetchStoragePools()
+      }
+      if (type === 'nvmeHostAcl') {
+        this.resetNvmeHostAclForm()
+        if (context?.subsystemid) {
+          this.forms.nvmeHostAcl.subsystemid = context.subsystemid
+        }
+      }
+      if (type === 'editNvmeHostAcl') {
+        this.populateNvmeHostAclForm(context)
+      }
       if (type === 'resizeShare' && context?.id) {
         this.forms.resizeShare.id = context.id
       }
-      if (type === 'resizeVolume' && context?.id) {
-        this.forms.resizeShare.id = context.id
-        this.forms.resizeShare.resizevolume = true
+      if (type === 'resizeBackingVolume') {
+        this.populateResizeBackingVolumeForm(context)
       }
       if (type === 'detachBackingVolume' && context?.id) {
         this.forms.detachBackingVolume = {
@@ -5259,7 +7167,12 @@ export default {
         smbShare: record?.name || this.clientVisibleName(raw.name || raw.sharename, ''),
         smbAcl: record?.principal || raw.principal || raw.username || raw.account,
         iscsiTarget: record?.targetName || raw.targetname || raw.targetName,
-        iscsiAcl: record?.principal || raw.principal || raw.initiatoriqn
+        iscsiAcl: record?.principal || raw.principal || raw.initiatoriqn,
+        protocolListener: `${record?.listenIp || raw.listenIp || raw.listenip || '0.0.0.0'}:${record?.port || raw.port || '-'}`,
+        nvmeListener: `${record?.listenIp || raw.listenIp || raw.listenip || '0.0.0.0'}:${record?.port || raw.port || this.defaultNvmeListenerPort()}`,
+        nvmeSubsystem: record?.targetName || raw.targetname || raw.targetName || raw.subsystemnqn,
+        nvmeNamespace: `${record?.targetName || raw.targetname || raw.targetName || '-'} / ${record?.namespace || raw.lunornamespace || raw.lunOrNamespace || '1'}`,
+        nvmeHostAcl: record?.principal || raw.principal || raw.hostnqn || raw.hostNqn
       }
       const commands = {
         protocol: 'deleteStorageServiceProtocol',
@@ -5268,13 +7181,20 @@ export default {
         smbShare: 'deleteStorageSmbShare',
         smbAcl: 'deleteStorageSmbAcl',
         iscsiTarget: 'deleteStorageIscsiTarget',
-        iscsiAcl: 'deleteStorageIscsiAcl'
+        iscsiAcl: 'deleteStorageIscsiAcl',
+        protocolListener: 'deleteStorageServiceProtocol',
+        nvmeListener: 'deleteStorageServiceProtocol',
+        nvmeSubsystem: 'deleteStorageNvmeOfSubsystem',
+        nvmeNamespace: 'deleteStorageNvmeOfNamespace',
+        nvmeHostAcl: 'deleteStorageNvmeOfHostAcl'
       }
       this.forms.deleteConfirm = {
         resourceType,
         command: commands[resourceType],
         id: raw.id || record?.id || '',
         protocol: raw.protocol || record?.protocol || '',
+        listenip: raw.listenIp || raw.listenip || record?.listenIp || '',
+        port: raw.port || record?.port || '',
         confirmation: ''
       }
       this.actionModal.type = 'deleteConfirm'
@@ -5284,6 +7204,9 @@ export default {
         raw
       }
       this.actionModal.visible = true
+    },
+    openDeleteConfirm (resourceType, record) {
+      this.openDeleteModal(resourceType, record)
     },
     closeActionModal () {
       this.actionModal.visible = false
@@ -5313,10 +7236,14 @@ export default {
         editIscsiAcl: this.updateIscsiAcl,
         nvmePrepare: this.prepareNvmeOf,
         nvmeSubsystem: this.createNvmeSubsystem,
+        editNvmeSubsystem: this.updateNvmeSubsystem,
+        nvmeNamespace: this.createNvmeNamespace,
+        editNvmeNamespace: this.updateNvmeNamespace,
         nvmeHostAcl: this.createNvmeHostAcl,
+        editNvmeHostAcl: this.updateNvmeHostAcl,
         attachVolume: this.attachExistingVolume,
         resizeShare: this.resizeFileShare,
-        resizeVolume: this.resizeBackingVolume,
+        resizeBackingVolume: this.resizeBackingVolume,
         detachBackingVolume: this.detachBackingVolume,
         disconnectSession: this.disconnectSession
       }
@@ -5514,10 +7441,18 @@ export default {
       }
       const type = this.forms.deleteConfirm.resourceType
       const command = this.forms.deleteConfirm.command
-      const key = type === 'protocol' ? 'enableProtocol' : type
-      const params = type === 'protocol'
-        ? { instanceid: this.storageService.instance.id, protocol: this.forms.deleteConfirm.protocol }
-        : { id: this.forms.deleteConfirm.id }
+      const key = (type === 'protocol' || type === 'protocolListener' || type === 'nvmeListener') ? 'enableProtocol' : type
+      let params = { id: this.forms.deleteConfirm.id }
+      if (type === 'protocol') {
+        params = { instanceid: this.storageService.instance.id, protocol: this.forms.deleteConfirm.protocol }
+      } else if (type === 'protocolListener' || type === 'nvmeListener') {
+        params = {
+          instanceid: this.storageService.instance.id,
+          protocol: type === 'nvmeListener' ? 'NVME_OF' : this.forms.deleteConfirm.protocol,
+          listenip: this.forms.deleteConfirm.listenip,
+          port: this.forms.deleteConfirm.port
+        }
+      }
       return this.runStorageAction(key, command, params, this.$t('label.storage.service.delete.confirm'))
     },
     deleteStorageEndpoint () {
@@ -5528,7 +7463,8 @@ export default {
       return this.runStorageAction('deleteEndpoint', 'deleteStorageServiceProtocol', {
         instanceid: this.storageService.instance.id,
         protocol: this.forms.deleteEndpoint.protocol,
-        listenip: this.forms.deleteEndpoint.listenip
+        listenip: this.forms.deleteEndpoint.listenip,
+        port: this.forms.deleteEndpoint.port
       }, this.$t('label.storage.service.delete.endpoint'))
     },
     async prepareSmbShareVolume () {
@@ -5743,6 +7679,75 @@ export default {
         listenerports: listenerPorts.join(',')
       }, this.$t('label.storage.service.update.iscsi.target'))
     },
+    async prepareNvmeNamespaceVolume () {
+      if (this.forms.nvmeNamespace.volumemode === 'CURRENT' || this.forms.nvmeNamespace.volumemode === 'EXISTING') {
+        if (!this.forms.nvmeNamespace.volumeid) {
+          this.$message.error(this.$t(this.forms.nvmeNamespace.volumemode === 'CURRENT' ? 'message.storage.service.current.volume.required' : 'message.storage.service.existing.volume.required'))
+          return false
+        }
+        return this.forms.nvmeNamespace.volumeid
+      }
+      if (!this.forms.nvmeNamespace.storageid) {
+        this.forms.nvmeNamespace.storageid = this.defaultNvmeNewVolumeStorageId()
+      }
+      if (!this.forms.nvmeNamespace.diskofferingid || !this.forms.nvmeNamespace.storageid || !this.forms.nvmeNamespace.newvolumesize) {
+        this.$message.error(this.$t('message.storage.service.new.volume.required'))
+        return false
+      }
+      const subsystem = this.nvmeSubsystemTargets.find(item => String(item.id) === String(this.forms.nvmeNamespace.subsystemid))
+      const params = {
+        name: this.forms.nvmeNamespace.newvolumename || `${(subsystem?.targetname || subsystem?.targetName || 'nvme').split(':').pop()}-ns${this.forms.nvmeNamespace.namespaceid || '1'}`,
+        zoneid: this.resource.zoneid,
+        diskofferingid: this.forms.nvmeNamespace.diskofferingid,
+        storageid: this.forms.nvmeNamespace.storageid,
+        size: this.forms.nvmeNamespace.newvolumesize
+      }
+      const json = await postAPI('createVolume', this.cleanParams(params))
+      const response = json.createvolumeresponse || {}
+      const jobResult = response.jobid ? await this.waitStorageServiceJob(response.jobid, 'createVolume', 180) : null
+      const jobVolume = jobResult?.jobresult?.volume || jobResult?.volume || {}
+      const id = jobVolume.id || response.id || response.volume?.id
+      if (!id) {
+        this.$message.error(this.$t('message.storage.service.new.volume.create.failed'))
+        return false
+      }
+      await this.waitVolumeAttachable(id)
+      return id
+    },
+    async createNvmeNamespace () {
+      const volumeId = await this.prepareNvmeNamespaceVolume()
+      if (volumeId === false) {
+        return Promise.resolve()
+      }
+      const listenerPorts = this.selectedNvmeListenerPorts()
+      if (!listenerPorts.length) {
+        this.$message.error(this.$t('message.storage.service.nvme.listener.group.required'))
+        return Promise.resolve()
+      }
+      return this.runStorageAction('nvmeNamespace', 'createStorageNvmeOfNamespace', {
+        subsystemid: this.forms.nvmeNamespace.subsystemid,
+        namespaceid: this.forms.nvmeNamespace.namespaceid,
+        volumeid: volumeId,
+        backingpath: this.forms.nvmeNamespace.backingpath,
+        listenerports: listenerPorts.join(','),
+        cleanupvolumeonfailure: this.forms.nvmeNamespace.volumemode === 'NEW' && !!volumeId
+      }, this.$t('label.storage.service.create.nvme.namespace'))
+    },
+    updateNvmeNamespace () {
+      const context = this.actionModal.context?.raw || this.actionModal.context || {}
+      const listenerPorts = this.selectedNvmeListenerPorts()
+      if (!listenerPorts.length) {
+        this.$message.error(this.$t('message.storage.service.nvme.listener.group.required'))
+        return Promise.resolve()
+      }
+      return this.runStorageAction('editNvmeNamespace', 'updateStorageNvmeOfNamespace', {
+        id: context.id || this.forms.nvmeNamespace.id,
+        namespaceid: this.forms.nvmeNamespace.namespaceid,
+        volumeid: this.forms.nvmeNamespace.volumeid,
+        backingpath: this.forms.nvmeNamespace.backingpath,
+        listenerports: listenerPorts.join(',')
+      }, this.$t('label.storage.service.update.nvme.namespace'))
+    },
     validateIscsiChapForm () {
       if (this.forms.iscsiAcl.chapenabled) {
         if (!this.forms.iscsiAcl.chapusername || !this.forms.iscsiAcl.chapsecret) {
@@ -5795,6 +7800,17 @@ export default {
       this.forms.iscsiAcl.mutualchapsecret = ''
       return result
     },
+    validateNvmeHostAclForm () {
+      if (!this.forms.nvmeHostAcl.subsystemid || !this.forms.nvmeHostAcl.hostnqn) {
+        this.$notification.error({ message: this.$t('message.storage.service.nvme.host.acl.required') })
+        return false
+      }
+      if (this.selectedNvmeHostAclAllowsAnyHost) {
+        this.$notification.error({ message: this.$t('message.storage.service.nvme.host.acl.allow.any.host.blocked') })
+        return false
+      }
+      return true
+    },
     prepareNvmeOf () {
       return this.runStorageAction('nvmePrepare', 'prepareStorageServiceNvmeOfVm', {
         instanceid: this.storageService.instance.id,
@@ -5807,7 +7823,20 @@ export default {
         ...this.forms.nvmeSubsystem
       }, this.$t('label.storage.service.create.nvme.subsystem'))
     },
+    updateNvmeSubsystem () {
+      const context = this.actionModal.context?.raw || this.actionModal.context || {}
+      return this.runStorageAction('editNvmeSubsystem', 'updateStorageNvmeOfSubsystem', {
+        id: context.id || this.forms.nvmeSubsystem.id,
+        subsystemnqn: this.forms.nvmeSubsystem.subsystemnqn,
+        allowanyhost: this.forms.nvmeSubsystem.allowanyhost,
+        engine: this.forms.nvmeSubsystem.engine,
+        transport: this.forms.nvmeSubsystem.transport
+      }, this.$t('label.storage.service.update.nvme.subsystem'))
+    },
     createNvmeHostAcl () {
+      if (!this.validateNvmeHostAclForm()) {
+        return Promise.resolve()
+      }
       if (!this.nvmeDhChapSupported) {
         this.forms.nvmeHostAcl.dhchapenabled = false
         this.forms.nvmeHostAcl.dhchapctrlenabled = false
@@ -5826,6 +7855,28 @@ export default {
       this.forms.nvmeHostAcl.dhchapctrlkey = ''
       return result
     },
+    updateNvmeHostAcl () {
+      if (!this.validateNvmeHostAclForm()) {
+        return Promise.resolve()
+      }
+      if (!this.nvmeDhChapSupported) {
+        this.forms.nvmeHostAcl.dhchapenabled = false
+        this.forms.nvmeHostAcl.dhchapctrlenabled = false
+        this.forms.nvmeHostAcl.dhchapkey = ''
+        this.forms.nvmeHostAcl.dhchapctrlkey = ''
+      }
+      const result = this.runStorageAction('editNvmeHostAcl', 'updateStorageNvmeOfHostAcl', {
+        id: this.forms.nvmeHostAcl.id,
+        hostnqn: this.forms.nvmeHostAcl.hostnqn,
+        dhchapenabled: this.forms.nvmeHostAcl.dhchapenabled,
+        dhchapkey: this.forms.nvmeHostAcl.dhchapenabled ? this.forms.nvmeHostAcl.dhchapkey : '',
+        dhchapctrlenabled: this.forms.nvmeHostAcl.dhchapenabled && this.forms.nvmeHostAcl.dhchapctrlenabled,
+        dhchapctrlkey: this.forms.nvmeHostAcl.dhchapenabled && this.forms.nvmeHostAcl.dhchapctrlenabled ? this.forms.nvmeHostAcl.dhchapctrlkey : ''
+      }, this.$t('label.storage.service.update.nvme.host.acl'))
+      this.forms.nvmeHostAcl.dhchapkey = ''
+      this.forms.nvmeHostAcl.dhchapctrlkey = ''
+      return result
+    },
     attachExistingVolume () {
       return this.runStorageAction('attachVolume', 'attachStorageVolumeToFileShare', this.forms.attachVolume, this.$t('label.storage.service.attach.existing.volume'))
     },
@@ -5837,11 +7888,29 @@ export default {
         resizevolume: this.forms.resizeShare.resizevolume
       }, this.$t('label.storage.service.resize.file.share'))
     },
+    populateResizeBackingVolumeForm (context = {}) {
+      const volumeId = context.volumeid || context.volumeId || ''
+      const currentSizeBytes = Number(context.currentSizeBytes)
+      const currentSizeGiB = Number(context.currentSizeGiB)
+      const validSize = Number.isFinite(currentSizeBytes) && currentSizeBytes > 0 && Number.isFinite(currentSizeGiB) && currentSizeGiB > 0
+      this.forms.resizeBackingVolume = {
+        volumeid: volumeId,
+        size: null,
+        currentSizeBytes: validSize ? currentSizeBytes : null,
+        currentSizeGiB: validSize ? currentSizeGiB : null,
+        minSizeGiB: validSize ? currentSizeGiB + 1 : 1,
+        name: context.name || '-',
+        currentSize: validSize ? this.formatCapacityValue(currentSizeBytes) : '-',
+        diskOffering: context.diskOffering || '-',
+        storagePool: context.storagePool || '-',
+        resourceName: context.resourceName || context.exportName || context.shareName || context.targetName || context.namespaceName || '-'
+      }
+    },
     resizeBackingVolume () {
-      return this.runStorageAction('resizeVolume', 'resizeStorageFileShare', {
-        id: this.forms.resizeShare.id,
-        size: this.forms.resizeShare.size,
-        resizevolume: true
+      return this.runStorageAction('resizeBackingVolume', 'resizeStorageServiceBackingVolume', {
+        instanceid: this.storageService.instance.id,
+        volumeid: this.forms.resizeBackingVolume.volumeid,
+        size: this.forms.resizeBackingVolume.size
       }, this.$t('label.storage.service.resize.volume'))
     },
     detachBackingVolume () {
@@ -6083,6 +8152,11 @@ export default {
   }
   .storage-service__alert {
     margin-bottom: 16px;
+  }
+  .storage-identity-repair-action {
+    display: flex;
+    justify-content: flex-end;
+    margin: -8px 0 16px;
   }
   .storage-service-error-list {
     margin: 4px 0 0;
@@ -6425,6 +8499,21 @@ export default {
       color: inherit;
       border-color: rgba(127, 127, 127, 0.22);
     }
+
+    :deep(.ant-form-item) {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      margin-bottom: 0;
+    }
+
+    :deep(.ant-form-item-label),
+    :deep(.ant-form-item-control) {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      text-align: left;
+    }
   }
   .storage-action-section {
     box-sizing: border-box;
@@ -6442,6 +8531,35 @@ export default {
     font-size: 13px;
     font-weight: 600;
     line-height: 1.35;
+  }
+  .storage-action-policy-box {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-top: 18px;
+    padding: 12px 14px;
+    border: 1px solid rgba(127, 127, 127, 0.18);
+    border-radius: 6px;
+    background: rgba(127, 127, 127, 0.035);
+  }
+  .storage-action-policy-box__title {
+    margin-bottom: 10px;
+    color: rgba(127, 127, 127, 0.98);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .storage-action-policy-box__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-width: 0;
+
+    :deep(.tooltip-label) {
+      min-width: 0;
+    }
   }
   .storage-action-checkbox-grid {
     display: grid;
@@ -6487,6 +8605,25 @@ export default {
     code {
       color: inherit;
       background: transparent;
+    }
+  }
+  .storage-listener-option {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+
+    span,
+    small {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    small {
+      color: #8c8c8c;
+      font-size: 12px;
+      line-height: 1.3;
     }
   }
   .capacity-input-group {
@@ -6633,6 +8770,13 @@ export default {
   :global(body.dark-mode .storage-service-action-modal .storage-action-section) {
     background: rgba(255, 255, 255, 0.025);
     border-color: rgba(255, 255, 255, 0.14);
+  }
+  :global(body.dark-mode .storage-service-action-modal .storage-action-policy-box) {
+    background: rgba(255, 255, 255, 0.025);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  :global(body.dark-mode .storage-service-action-modal .storage-action-policy-box__title) {
+    color: rgba(229, 236, 246, 0.76);
   }
   :global(body.dark-mode .storage-service-action-modal .storage-action-summary-box) {
     background: rgba(255, 255, 255, 0.025);

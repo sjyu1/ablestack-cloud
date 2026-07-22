@@ -2243,17 +2243,34 @@ export default {
         }
       }
       if (this.isSetupServiceSelected(snapshot, 'NVME_OF')) {
-        const subsystems = await this.fetchStorageServiceItems('listStorageNvmeOfSubsystems', 'storagenvmeofsubsystem', { instanceid: instance.id })
-        if (subsystems.length === 0) {
+        const subsystemParams = setup.nvmeSubsystemId
+          ? { id: setup.nvmeSubsystemId }
+          : { instanceid: instance.id, subsystemnqn: snapshot.nvmesubsystemnqn }
+        const subsystems = await this.fetchStorageServiceItems('listStorageNvmeOfSubsystems', 'storagenvmeofsubsystem', subsystemParams)
+        const subsystem = subsystems.find(item => this.isNvmeSubsystemItem(item) && (!snapshot.nvmesubsystemnqn || (item.targetname || item.targetName) === snapshot.nvmesubsystemnqn)) ||
+          subsystems.find(item => this.isNvmeSubsystemItem(item))
+        if (!subsystem) {
           throw new Error(this.$t('message.storage.service.setup.verify.nvme.missing'))
         }
         if (snapshot.nvmehostnqn) {
-          const acls = await this.fetchStorageServiceItems('listStorageNvmeOfHostAcls', 'storageaccessrule', { subsystemid: subsystems[0].id })
-          if (acls.length === 0) {
+          const acls = await this.fetchStorageServiceItems('listStorageNvmeOfHostAcls', 'storageaccessrule', { subsystemid: subsystem.id })
+          const matchingAcl = acls.find(acl => (acl.principal || acl.hostnqn || acl.hostNqn) === snapshot.nvmehostnqn)
+          if (!matchingAcl) {
             throw new Error(this.$t('message.storage.service.setup.verify.nvme.acl.missing'))
           }
         }
       }
+    },
+    parseStorageServiceItemConfig (item) {
+      try {
+        return JSON.parse(item?.config || item?.configjson || item?.configJson || '{}')
+      } catch (e) {
+        return {}
+      }
+    },
+    isNvmeSubsystemItem (item) {
+      const config = this.parseStorageServiceItemConfig(item)
+      return String(config.type || '').toLowerCase() === 'subsystem' || !(item?.volumeid || item?.volumeId || item?.lunornamespace || item?.lunOrNamespace)
     },
     async fetchStorageServiceItems (api, itemName, params) {
       if (!(api in this.$store.getters.apis)) {

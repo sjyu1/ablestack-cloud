@@ -31,19 +31,19 @@ import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
 import org.apache.cloudstack.api.response.VolumeResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "createStorageNvmeOfNamespace",
+@APICommand(name = "updateStorageNvmeOfNamespace",
         responseObject = StorageBlockTargetResponse.class,
-        description = "Creates an NVMe-oF namespace for a subsystem.",
+        description = "Updates an NVMe-oF namespace on a Storage Service instance.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class CreateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements UserCmd {
+public class UpdateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = "subsystemid", type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, required = true, description = "NVMe-oF subsystem ID")
-    private Long subsystemId;
+    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, required = true, description = "NVMe-oF namespace ID")
+    private Long id;
 
     @Parameter(name = "namespaceid", type = CommandType.STRING, description = "namespace ID")
     private String namespaceId;
@@ -51,7 +51,7 @@ public class CreateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements Use
     @Parameter(name = "namespacesizebytes", type = CommandType.LONG, description = "namespace size in bytes")
     private Long namespaceSizeBytes;
 
-    @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, required = true, description = "backing volume ID")
+    @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, description = "backing volume ID")
     private Long volumeId;
 
     @Parameter(name = "backingpath", type = CommandType.STRING, description = "optional block device path inside the Storage Service System VM")
@@ -60,11 +60,8 @@ public class CreateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements Use
     @Parameter(name = "listenerports", type = CommandType.STRING, description = "comma-separated NVMe-oF listener port groups for this namespace")
     private String listenerPorts;
 
-    @Parameter(name = "cleanupvolumeonfailure", type = CommandType.BOOLEAN, description = "cleanup newly created backing volume if namespace creation fails")
-    private Boolean cleanupVolumeOnFailure;
-
-    public Long getSubsystemId() {
-        return subsystemId;
+    public Long getId() {
+        return id;
     }
 
     public String getNamespaceId() {
@@ -87,10 +84,6 @@ public class CreateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements Use
         return listenerPorts;
     }
 
-    public Boolean getCleanupVolumeOnFailure() {
-        return cleanupVolumeOnFailure;
-    }
-
     @Override
     public long getEntityOwnerId() {
         return 0;
@@ -98,19 +91,19 @@ public class CreateStorageNvmeOfNamespaceCmd extends BaseAsyncCmd implements Use
 
     @Override
     public String getEventType() {
-        return "STORAGE.NVMEOF.NAMESPACE.CREATE";
+        return "STORAGE.NVMEOF.NAMESPACE.UPDATE";
     }
 
     @Override
     public String getEventDescription() {
-        return "Creating Storage Service NVMe-oF namespace for subsystem " + subsystemId;
+        return "Updating Storage Service NVMe-oF namespace " + id;
     }
 
     @Override
     public void execute() {
-        StorageBlockTargetResponse response = storageService.createStorageNvmeOfNamespace(this);
+        StorageBlockTargetResponse response = storageService.updateStorageNvmeOfNamespace(this);
         if (response == null) {
-            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create NVMe-oF namespace");
+            throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to update NVMe-oF namespace");
         }
         response.setResponseName(getCommandName());
         setResponseObject(response);

@@ -17,6 +17,8 @@
 
 package org.apache.cloudstack.api.response;
 
+import java.util.List;
+
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.BaseResponse;
 
@@ -60,6 +62,38 @@ public class StorageServiceProtocolResponse extends BaseResponse {
     @Param(description = "protocol configuration JSON")
     private String config;
 
+    @SerializedName("listenertype")
+    @Param(description = "listener type: WILDCARD or DEDICATED")
+    private String listenerType;
+
+    @SerializedName("primaryip")
+    @Param(description = "primary IPv4 address of the Storage Service VM")
+    private String primaryIp;
+
+    @SerializedName("runtimeprimaryip")
+    @Param(description = "primary IPv4 address observed inside the Storage Service VM")
+    private String runtimePrimaryIp;
+
+    @SerializedName("identitystatus")
+    @Param(description = "NIC identity consistency status: CONSISTENT, DRIFT, or UNKNOWN")
+    private String identityStatus;
+
+    @SerializedName("identitywarning")
+    @Param(description = "diagnostic warning when persisted and runtime NIC identities disagree")
+    private String identityWarning;
+
+    @SerializedName("effectiveendpoints")
+    @Param(description = "effective IP and port combinations exposed by this listener")
+    private List<StorageServiceProtocolEndpointResponse> effectiveEndpoints;
+
+    @SerializedName("runtimestate")
+    @Param(description = "normalized listener runtime state")
+    private String runtimeState;
+
+    @SerializedName("linkedresourcecount")
+    @Param(description = "number of protocol resources linked to this listener port")
+    private Integer linkedResourceCount;
+
     public void setId(String id) {
         this.id = id;
     }
@@ -94,5 +128,37 @@ public class StorageServiceProtocolResponse extends BaseResponse {
 
     public void setConfig(String config) {
         this.config = config;
+    }
+
+    public void setListenerType(final String listenerType) {
+        this.listenerType = listenerType;
+    }
+
+    public void setPrimaryIp(final String primaryIp) {
+        this.primaryIp = primaryIp;
+    }
+
+    public void setRuntimePrimaryIp(final String runtimePrimaryIp) {
+        this.runtimePrimaryIp = runtimePrimaryIp;
+    }
+
+    public void setIdentityStatus(final String identityStatus) {
+        this.identityStatus = identityStatus;
+    }
+
+    public void setIdentityWarning(final String identityWarning) {
+        this.identityWarning = identityWarning;
+    }
+
+    public void setEffectiveEndpoints(final List<StorageServiceProtocolEndpointResponse> effectiveEndpoints) {
+        this.effectiveEndpoints = effectiveEndpoints;
+    }
+
+    public void setRuntimeState(final String runtimeState) {
+        this.runtimeState = runtimeState;
+    }
+
+    public void setLinkedResourceCount(final Integer linkedResourceCount) {
+        this.linkedResourceCount = linkedResourceCount;
     }
 }

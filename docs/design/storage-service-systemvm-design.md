@@ -365,7 +365,8 @@ Important columns:
     implementation.
 - `mountOptions`
 - `partition`
-- `fsUuid`
+- `filesystemUuid` (canonical); legacy `fsUuid` is accepted only as a read
+  alias and is normalized on the next successful explicit inspect/apply.
 - `projectQuotaId` for XFS project quota based capacity enforcement.
 
 ### `storage_block_target`
@@ -1115,6 +1116,138 @@ Failure handling:
 - Multi-share-on-one-volume capacity is enforced through XFS project quota; the
   volume grow and quota grow are separate state transitions.
 
+### Dedicated Backing Volume Resize Workflow
+
+Backing volume resize must be separated from file-share capacity resize. The
+file-share workflow owns protocol quota and filesystem growth. The backing
+volume workflow owns the ABLESTACK data volume size and block-device rescan.
+This prevents block protocols such as iSCSI and NVMe-oF from opening a
+file-share selector or calling a file-share API with a target/namespace ID.
+
+| Area | As-is | To-be |
+| --- | --- | --- |
+| UI modal | `resizeVolume` reuses the `resizeShare` form. The first field is labeled `file share` and is populated with export/share/target/namespace IDs depending on the caller. | `resizeBackingVolume` has its own vertical modal. It shows the selected volume name, volume UUID, current size, storage pool, disk offering, and the resources using the volume. The only editable field is the requested new volume size in GiB. |
+| File-share resize API | `resizeStorageFileShare` accepts `id`, `size`, `quotabytes`, and `resizevolume`; the ID must be a `storage_file_share` row. | Keep `resizeStorageFileShare` for NFS/SMB file-share quota and optional filesystem grow only. It must not be used by iSCSI or NVMe-oF backing-volume table actions. |
+| Backing-volume resize API | No Storage Service specific API exists. The UI currently routes every protocol's backing-volume button to `resizeStorageFileShare`, so iSCSI/NVMe-oF can submit invalid IDs. | Add `resizeStorageServiceBackingVolume` with `instanceid`, `volumeid`, and `size`. The backend validates that the volume belongs to the viewed Storage Service instance and that the requested size is larger than the current size, then calls ABLESTACK volume resize. |
+| Runtime refresh | File-service resize sends `filesystem resize` after volume resize. Block protocols may not need filesystem grow, but they still need guest-side block rescan and desired-state refresh. | After volume resize, send a Storage Service VM rescan operation for the selected volume. NFS/SMB file paths may continue to use filesystem grow when applicable. iSCSI and NVMe-oF refresh raw block device size and reapply their target/namespace desired state without creating a filesystem. |
+| Data safety | A generic volume expand button may appear to expand the protocol resource, while actually operating through a file-share object. | The modal explains that this grows only the ABLESTACK backing volume. Namespace/LUN/share quota expansion remains a separate protocol-resource action where that feature exists. Shrink is never offered. |
+
+Code-level targets:
+
+| Component | Required change |
+| --- | --- |
+| `api/src/main/java/org/apache/cloudstack/api/command/user/storage/dataservice/ResizeStorageServiceBackingVolumeCmd.java` | Add a user API command named `resizeStorageServiceBackingVolume`. Required parameters: `instanceid`, `volumeid`, `size`. Response should be `StorageServiceRuntimeResponse` or a dedicated volume response that includes refreshed volume metadata. |
+| `api/src/main/java/org/apache/cloudstack/storage/dataservice/StorageService.java` | Add `resizeStorageServiceBackingVolume(ResizeStorageServiceBackingVolumeCmd cmd)`. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Register the new command, validate instance ownership, validate the volume is attached to or recorded by the Storage Service instance, reject shrink/no-op sizes, call the existing `resizeBackingVolume(volumeId, sizeGb)` helper, then request guest rescan and protocol desired-state refresh for resources using the volume. |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | Add or reuse a safe backing-volume rescan command. It must resolve the volume by UUID/name using the existing safe disk resolver, rescan `/sys/class/block/<dev>/device/rescan` when present, refresh `blockdev --getsize64`, and update monitor cache. It must not format, mount, or modify filesystems for iSCSI/NVMe-oF raw block volumes. |
+| `ui/src/views/storage/SharedFSTab.vue` | Split `forms.resizeShare` and `forms.resizeBackingVolume`. Backing-volume table buttons call `openActionModal('resizeBackingVolume', { volumeid, volumeName, currentSize, protocolRefs })`. The submit handler calls `resizeStorageServiceBackingVolume`. The modal never renders `label.storage.service.file.share`. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Add dedicated labels/help text for backing volume name, volume UUID, current size, new size, using resources, and block-client rescan guidance. Remove any raw i18n key exposure in backing-volume resize dialogs. |
+
+Preflight rule:
+
+- The current defect is a deterministic UI/API object-mapping defect, so a live
+  service-VM code injection is not required to prove the modal/API split.
+- Before enabling the SystemVM rescan path in a deployable build, run a
+  disposable-service preflight that expands one attached iSCSI or NVMe-oF
+  backing volume, verifies guest block size refresh, verifies protocol
+  reconnect/read/write behavior, and verifies reboot reconcile keeps the larger
+  size visible.
+
+### Backing Volume Resize Identity, Runtime, and Deployment Contract
+
+The dedicated backing-volume workflow must fail closed at every layer. A block
+target UUID, namespace UUID, file-share UUID, or a fallback SharedFS volume must
+never be accepted as the selected backing-volume identity. The operator-visible
+modal and the API request must carry the same canonical ABLESTACK volume UUID.
+
+Observed evidence on 2026-07-10:
+
+- The NVMe-oF backing-volume row for `sharedfs-DATA-591` represented volume UUID
+  `59121317-293c-45d6-87ac-da70d5f5a1e8`, current size `50 GiB`, and resource
+  `nqn.2026-06.local.storage:tc03d01 / Namespace 1`.
+- The served legacy modal instead displayed
+  `b331a969-1041-4b44-b577-a62abbe9161b`, which is the namespace
+  `storage_block_target` UUID, under a `file share` label.
+- The current source and local UI build already contain the dedicated
+  `resizeBackingVolume` form, but the effective 22.10 webroot served an older
+  entry bundle. This proves that source correctness and deployment correctness
+  must be separate release gates.
+- The live Storage Service VM resolved the volume by normalized serial before
+  reboot and again after its Linux device name changed. NVMe-oF connect and a
+  reversible raw-block write/read/restore test passed before and after reboot.
+
+Canonical UI row contract:
+
+| Field | Source | Rule |
+| --- | --- | --- |
+| `volumeId` | exact match from `storageService.backingVolumes` using target `volumeid`/`volumeUuid` | Required. Never fall back to the target/namespace row ID or the default SharedFS volume. |
+| `volumeName` | matched volume response | Read-only summary value. |
+| `currentSizeBytes` | matched volume `size` | Required numeric value used to calculate the minimum expansion size. |
+| `currentSizeGiB` | ceiling of `currentSizeBytes / GiB` | Read-only summary value. |
+| `resourceRefs` | all NFS/SMB/iSCSI/NVMe-oF resources referencing the volume | Read-only summary; multiple references are rendered as a list or tooltip. |
+| `diskOffering` / `storagePool` | matched volume response | Read-only summary values. |
+| `newSizeGiB` | operator input | Integer only and strictly greater than `currentSizeGiB`. |
+
+UI implementation rules for `SharedFSTab.vue`:
+
+1. Replace permissive `volumeForTarget()` use in backing-volume action rows
+   with an exact resolver, for example `exactVolumeForTarget(target)`. An exact
+   resolver returns `null` when no matching volume UUID exists; it does not
+   return `currentSharedFsVolume`, `this.volume`, or another fallback object.
+2. Build protocol backing-volume rows through one canonical row factory. The
+   action record contains explicit `volumeId`, `volumeName`,
+   `currentSizeBytes`, `currentSizeGiB`, and `resourceRefs`; the generic `id`
+   field is only the table key.
+3. Disable `volume expansion` when the exact volume or numeric current size is
+   missing. The tooltip must identify the missing mapping instead of opening a
+   partially populated modal.
+4. `populateResizeBackingVolumeForm()` accepts only the canonical row contract.
+   It must not inspect `context.id`, `raw.id`, target IDs, or namespace IDs as a
+   fallback volume identifier.
+5. The vertical dark-mode modal displays the read-only summary first. Its only
+   editable field is `new volume size (GiB)`, with `min = currentSizeGiB + 1`,
+   integer precision, and a grow-only validation message. Confirm remains
+   disabled until the input is valid.
+6. Submission calls only `resizeStorageServiceBackingVolume` with
+   `instanceid`, canonical `volumeid`, and `size`. Successful completion
+   refreshes backing volumes, affected resources, runtime inventory, health,
+   and sessions without changing the active tab or full-width preference.
+
+Backend and SystemVM sequence:
+
+| Step | Component | Required behavior |
+| --- | --- | --- |
+| 1 | `ResizeStorageServiceBackingVolumeCmd` | Accept only `instanceid`, `volumeid`, and integer GiB `size`; do not accept a share/target/namespace selector. |
+| 2 | `StorageServiceManagerImpl.resizeStorageServiceBackingVolume()` | Require a DATADISK attached to the selected Storage Service VM, reject shrink/no-op requests, and ensure the volume is represented by a Storage Service file share or block target before resizing. |
+| 3 | ABLESTACK volume service | Resize the canonical volume, reload it from the DAO, and verify the persisted size is at least the requested byte size. |
+| 4 | `ablestack-storagectl volume rescan` | Match exactly one non-root disk by normalized volume UUID/serial. Zero or multiple matches are errors. Never rescan every non-root disk as a fallback. |
+| 5 | `ablestack-storagectl volume rescan` | Rescan the exact device, settle udev, read `blockdev --getsize64`, and return volatile `observedDevicePath`, `matchedBy`, `expectedSizeBytes`, and `actualSizeBytes`. A legacy `devicePath` alias may be emitted during compatibility rollout but is never selector authority. Fail when the observed size is smaller than requested. |
+| 6 | protocol reapply | Reapply only protocols that reference the resized volume. iSCSI/NVMe-oF use the raw block device without formatting or mounting it; NFS/SMB filesystem growth remains in the file-share workflow. |
+| 7 | runtime verification | For NVMe-oF, verify the namespace configfs `device_path` still resolves to the matched disk and report the refreshed block size. Monitor cache is updated only after verification succeeds. |
+
+No DB schema migration is required. Existing volume, file-share, and block-target
+relations provide the ownership and affected-resource mapping.
+
+Deployment is part of the feature contract. A successful UI build is not a
+successful deployment until the effective HTTP webroot serves that build:
+
+1. Build in the canonical WSL tree and record the SHA-256 of `ui/dist/index.html`
+   and the hashed app entry referenced by it.
+2. Deploy scoped static assets to the effective management webroot
+   `/usr/share/cloudstack-management/webapp/` and to
+   `/usr/share/cloudstack-ui/` when that secondary root is required. Preserve
+   `WEB-INF` and backend libraries; never run an unscoped delete over the
+   management webapp root.
+3. Reject `/usr/share/cloudstack-management/webapp/client/` as the sole target;
+   it is not the effective `/client/` webroot in the validated 22.10 runtime.
+4. Verify local `index.html` hash equals the effective remote webroot hash and
+   the body hash returned by `GET /client/`.
+5. Parse the served `index.html`, require every referenced hashed JS/CSS asset
+   to return HTTP 200, and require the obsolete entry bundle to be absent from
+   the served document.
+6. Open the backing-volume action in the browser and assert that the dialog
+   contains the volume summary and does not contain the file-share selector.
+
 ## SMB Design
 
 SMB must support both local authentication and AD domain backed authentication.
@@ -1427,21 +1560,410 @@ rendered Ganesha configuration in `/etc/ganesha/ablestack-storage/*.conf`:
   and let the UI show that the exact export is ambiguous instead of selecting
   an arbitrary export.
 
-For NVMe-oF TCP sessions, the monitor may derive the live connection set from
-`ss` because kenel target sessions are transport-level connections. The
-collector must then enrich those rows from
-`/etc/ablestack-storage/nvmeof-subsystems.json`:
+For NVMe-oF TCP sessions, the monitor derives the live transport connection set
+from `ss` because Linux kernel `nvmet` exposes one TCP connection per I/O queue
+rather than a single high-level controller row. The collector must enrich and
+collapse those TCP rows from Linux `configfs`, not from a fixed port assumption:
 
-- if the runtime request includes a matching `resourceId` or subsystem NQN,
-  assign that subsystem to the session rows;
-- if exactly one active subsystem is present, assign that subsystem NQN and
-  resource ID to all NVMe-oF TCP session rows;
-- if more than one active subsystem exists and the session cannot be mapped
-  unambiguously, leave the subsystem field unknown instead of inventing a
-  mapping.
+- read `/sys/kernel/config/nvmet/ports/*` and collect each `addr_traddr`,
+  `addr_trsvcid`, and linked subsystem;
+- read `/sys/kernel/config/nvmet/subsystems/<nqn>/namespaces/*` to keep only
+  subsystems with active namespaces;
+- read `allowed_hosts` and `attr_allow_any_host` as configured access policy.
+  Configured ACL identity must never be reported as an observed client Host NQN;
+- treat every configured listener port as valid, including non-default ports
+  such as 4421 or 4422. The session collector must never hard-code only 4420;
+- group TCP rows by `(local endpoint, client address)` and expose one transport
+  aggregate with a `queueCount` value. This tuple is not a controller identity;
+- when exactly one subsystem with a namespace is linked to the listener, set
+  subsystem NQN and namespace ID as exact. Set `observedHostNqn` only when an
+  independent runtime controller source reports it;
+- when multiple candidate subsystems are linked to the same listener, return
+  `mappingStatus=AMBIGUOUS`, `possibleSubsystems`, and `possibleNamespaces`
+  instead of inventing a subsystem, namespace, or Host NQN;
+- when no namespace-backed subsystem is linked to a listener that has live TCP
+  queues, mark the row as unmapped and degrade monitor status.
 
-The session cache key should stay stable for each TCP peer/local tuple so the
+The transport cache key stays stable for each TCP peer/local tuple so the
 monitor can retain `connectedAt` and update `lastSeen` across polling cycles.
+The API and UI must call this value `transportSessionId`, not a logical
+controller session ID. A `logicalSessionId` may be emitted only when an exact
+runtime controller source provides a stable controller identity.
+
+The current stock Storage Service kernel does not expose a stateless query that
+joins endpoint, client address, Host NQN, subsystem NQN, and controller ID.
+`nvmet` tracepoints expose only partial request/controller data, and kernel log
+creation messages are not a durable query API. Therefore:
+
+- a single-candidate transport aggregate may show exact subsystem/namespace
+  attribution, but its Host NQN remains unknown unless independently observed;
+- a multi-candidate transport aggregate remains one warning row with candidate
+  metadata and must not be split heuristically;
+- disconnect is disabled for ambiguous aggregates because there is no safe
+  controller-specific handle;
+- `queueCount` means transport queues, not logical sessions;
+- future exact controller attribution requires a dedicated runtime event source
+  such as kernel instrumentation or a target-side controller event daemon. It
+  is outside this focused correction.
+
+Required runtime/API session fields:
+
+| Field | Rule |
+| --- | --- |
+| `transportSessionId` | SHA-256 of protocol, local endpoint, and client endpoint. Stable only for the transport aggregate. |
+| `logicalSessionId` | Optional. Present only when the runtime supplies an exact controller identity. |
+| `mappingStatus` | `EXACT`, `AMBIGUOUS`, or `UNMAPPED`. |
+| `queueCount` | Number of established TCP queues in the transport aggregate. |
+| `subsystemNqn`, `namespaceIds` | Populated only for exact attribution. |
+| `possibleSubsystems`, `possibleNamespaces` | Candidate metadata for ambiguous attribution. |
+| `observedHostNqn` | Runtime-observed Host NQN only. Never copied from configured ACLs. |
+| `hostPolicy` | `ALLOW_ANY` or `EXPLICIT`; describes configured policy separately from observed identity. |
+| `configuredAllowedHosts` | Redacted, non-secret configured Host NQN list. It is not a session observation. |
+
+Code-level session targets:
+
+| File | Required change |
+| --- | --- |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | Refactor `nvme_tcp_sessions()` so `(local, client)` creates a transport aggregate. Emit `transportSessionId`, normalized mapping status, candidate NQN/NSID lists, access policy, and configured ACLs separately. Remove the assignment that copies a single configured `allowedHosts` value into `hostNqn`. Keep ambiguous aggregates healthy-with-warning and unmapped aggregates degraded. |
+| `systemvm/debian/usr/local/bin/ablestack-storage-monitor` | Preserve the extended session JSON and first/last-seen timestamps keyed by `transportSessionId`. Do not synthesize logical controller rows. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Preserve the new session fields while merging monitor cache into runtime status. Do not collapse candidate arrays or rename configured ACL identity to observed Host NQN. |
+| `ui/src/views/storage/SharedFSTab.vue` | Extend `nvmeSessionColumns` and `nvmeSessionRows` with mapping status, candidate summary, host policy, and transport queue terminology. Use `transportSessionId` as the row key. Show exact values only for exact mapping, show candidate count/details for ambiguous mapping, and disable termination unless a controller-specific logical handle exists. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Add translated labels/tooltips for transport aggregate, mapping warning, candidate subsystem/namespace list, observed Host NQN, configured host policy, and disabled disconnect reason. |
+
+Backward compatibility rule: old monitor rows that contain only `sessionId` and
+lowercase `exact`/`candidate`/`unmapped` remain readable. The UI normalizes them
+to the new model, but it must not promote a legacy candidate row to exact.
+
+### NVMe-oF Runtime Namespace Observation Contract
+
+NVMe-oF namespace rows need both desired and observed storage facts. The
+current generic block-target response reads `lunSizeBytes`, while NVMe-oF
+desired state stores `namespaceSizeBytes`, and the SystemVM inventory returns
+desired-state JSON without configfs/block-device enrichment. This produces `-`
+for namespace size and runtime backing path even when the namespace is healthy.
+
+| Component | As-is | To-be |
+| --- | --- | --- |
+| API response | Reuses generic LUN size fields and does not expose an explicit namespace size. | Add `namespaceSizeBytes` while preserving `effectiveSizeBytes` for compatibility. NVMe-oF rows read configured size from `namespaceSizeBytes`, not `lunSizeBytes`. |
+| SystemVM inventory | Returns the desired subsystem JSON as runtime inventory. | Add `enrich_nvmeof_subsystems()` and merge configfs observations by canonical `(subsystemNqn, namespaceId)`. |
+| Backing identity | A transient `/dev/sdX` path can appear as if it were the durable identity. | Desired identity remains volume UUID/serial. `runtime.backingPath` is observed-only and may change after reboot. |
+| Size fields | UI falls back inconsistently to volume size or `-`. | Emit `configuredSizeBytes`, `volumeSizeBytes`, `actualBackingSizeBytes`, and `effectiveSizeBytes`; UI shows effective size and a source tooltip. |
+| Runtime mismatch | Missing enrichment is indistinguishable from an empty namespace. | Emit `runtime.mappingStatus`, `runtime.enabled`, and a warning when configfs or block-device mapping is missing or ambiguous. |
+
+Code-level targets:
+
+| File | Required change |
+| --- | --- |
+| `api/src/main/java/org/apache/cloudstack/api/response/StorageBlockTargetResponse.java` | Add `namespaceSizeBytes` and keep existing generic size fields backward compatible. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | In `createBlockTargetResponse`, branch on NVMe-oF namespace type, read `namespaceSizeBytes`, and merge observed namespace fields without treating `/dev/sdX` as persistent identity. |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | Add `enrich_nvmeof_subsystems()` that reads configfs namespace `device_path`, `enable`, and block-device byte size, then merges by NQN/NSID. |
+| `ui/src/views/storage/SharedFSTab.vue` | Render observed size/path first, configured values second, and volume fallback last. Display mapping source/status rather than a silent dash. |
+
+#### Canonical Namespace join and coherent UI observation
+
+The runtime contract above is only useful when every consumer applies the same
+identity rule. Namespace ID is scoped to a subsystem and is not globally unique.
+The 2026-07-17 preflight proved that several healthy subsystems can all have
+Namespace ID `1` while using different backing devices. A bare NSID match must
+therefore never select a runtime namespace.
+
+| Area | As-is | To-be |
+| --- | --- | --- |
+| UI runtime join | `runtimeBlockTarget()` compares target UUID, row ID, and bare LUN/Namespace ID in one common ID set. The first runtime row with NSID `1` can be returned for every subsystem. | Use an ordered, fail-closed matcher. First match a persistent target UUID only against an explicit runtime `resourceUuid`. Otherwise match the normalized composite `(subsystemNqn, namespaceId)`. Use volume UUID/serial only as a tie-breaker. Zero or multiple matches return `UNMAPPED` or `AMBIGUOUS`; they never return another namespace path. |
+| Desired and observed path | The namespace row can prefer `target.backingPath` and can display one transient `/dev/sdX` path as if it were durable. | Keep `backingPath` as desired/configured metadata. Add `runtimeBackingPath` as an observed field. The UI column named actual/runtime backing path uses only `runtimeBackingPath`; volume UUID/serial remains the durable identity. |
+| API response | `StorageBlockTargetResponse.runtimeStatus` is assembled from DB state and endpoint metadata, while the UI independently joins monitor inventory. | Merge the monitor-cache namespace observation in the backend using the same canonical composite key and expose `runtimeBackingPath`, `runtimeMappingStatus`, `runtimeEnabled`, `actualBackingSizeBytes`, and `runtimeObservedAt`. Keep existing fields for backward compatibility. |
+| Namespace size | An empty configured namespace limit can render as a dash even when the namespace intentionally consumes the whole backing volume. | Return the effective observed size separately. The UI renders an empty configured limit as `entire backing volume` and shows the observed byte/GiB size as effective capacity. |
+| Reboot refresh | Subsystems, namespaces, ACLs, and monitor inventory can replace UI arrays at different times. A namespace can briefly show no ACL or a stale path until the manual Update action completes. | Fetch the four datasets under one refresh generation, stage them, reject older monitor snapshots, and atomically replace the NVMe-oF view model. While refreshing, retain the previous coherent snapshot and update rows in place; do not clear or flicker the whole tab. |
+| Missing translation | The required locale keys exist in source, but a stale or partially deployed locale file can expose raw `label.storage.service.*` values. | Treat UI JavaScript, CSS, and locale JSON as one release unit. The deployment gate must verify the effective webroot and HTTP body hashes for the app entry and both locale files, then fail if a browser smoke test finds a raw storage-service key. |
+
+Code-level implementation targets:
+
+| File | Required change |
+| --- | --- |
+| `api/src/main/java/org/apache/cloudstack/api/response/StorageBlockTargetResponse.java` | Add backward-compatible runtime observation fields: `runtimeBackingPath`, `runtimeMappingStatus`, `runtimeEnabled`, `actualBackingSizeBytes`, and `runtimeObservedAt`. Do not overload configured `backingPath`. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Add one canonical NVMe namespace observation mapper keyed by normalized subsystem NQN plus normalized NSID. Merge monitor data only on an exact composite match and include mapping status/warnings in the response. Never match on NSID alone. |
+| `ui/src/views/storage/SharedFSTab.vue` | Replace the mixed-ID search in `runtimeBlockTarget()` with a protocol-specific matcher. For NVMe-oF, compare resource UUID only to resource UUID, then compare `(NQN, NSID)`; detect duplicates. Change `nvmeNamespaceRows()` so actual path and size use explicit runtime fields first and never silently borrow another row. Add a refresh generation token and atomically commit subsystem, namespace, ACL, and inventory results. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Preserve the existing session labels and add only missing labels for `entire backing volume`, mapping status, ambiguous mapping, and runtime observation time. JSON validation and raw-key browser checks are mandatory. |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | No behavior change is required for this correction. Its enriched inventory already emits NQN, NSID, enabled state, runtime backing path, and serial-resolved size. Keep the composite identity contract and add regression fixtures only if the inventory format changes. |
+
+Compatibility and failure rules:
+
+- No database schema migration is required.
+- Older management responses without explicit runtime observation fields remain
+  readable through the same composite UI fallback.
+- A mapping warning must not be converted into a healthy path by falling back to
+  the first inventory row.
+- A transient Linux device name may change after reboot without changing the
+  namespace identity or causing a false error.
+
+### Storage Service Endpoint Identity Invariants
+
+The VM NIC primary address and service listener aliases are different identity
+classes. A secondary listener must never replace the primary address because of
+array order or the last endpoint operation.
+
+| Layer | Required invariant |
+| --- | --- |
+| Backend payload | NIC `primaryIp` is the immutable VM NIC primary address from DB. Each listener alias carries `listenIp`, `port`, `protocol`, `isAlias`, and `coveredByWildcard`. |
+| SystemVM state | Store `interfaces[]` and `aliases[]` separately. Alias application never mutates interface `primaryIp`. |
+| Inventory | Derive live addresses from `ip -j addr`, reconcile them with backend NIC identity, and mark secondary addresses as aliases. Never infer primary from list order. |
+| UI | Show all effective endpoints. Apply the `primary` badge only to the backend/runtime-agreed primary address. |
+
+This correction uses a versioned desired-state contract and does not require a
+database schema change.
+
+#### Cross-protocol listener inventory contract
+
+NFS, SMB, iSCSI, and NVMe-oF must expose listener information through one
+management contract even though their runtime listener implementations differ.
+The canonical listener identity is `(instanceId, protocol, listenIp, port)`.
+A share, target, subsystem, or namespace may reference a listener port group,
+but it must not become the source of listener inventory.
+
+The integrated runtime validation on SharedFS
+`63efbcd0-65ee-4e73-bf92-bfe09c62703a` proved that all four protocol data paths
+and reboot reconciliation are healthy. The remaining defects are management
+inventory, NIC identity, and UI composition defects. This change therefore does
+not alter the SystemVM desired-state or monitor-cache schema.
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Listener source | NFS, SMB, and iSCSI screens infer endpoints from protocol objects, shares/targets, or defaults. NVMe-oF has an explicit listener table. | `listStorageServiceProtocols` is the authoritative desired-listener source for every protocol. Runtime cache enriches state only; shares and targets never create listener rows. |
+| Wildcard listener | `0.0.0.0:<port>` may be hidden, expanded differently, or replaced by the first service IP. | Preserve the logical wildcard row and return its effective endpoints as the immutable primary IP plus all service aliases. |
+| Dedicated listener | A configured alias can be displayed as the VM primary address because UI sources are merged by arrival order. | Return `primaryIp` and endpoint roles explicitly. A dedicated listener is rendered as an alias unless it equals the authoritative primary IP. |
+| Protocol tabs | Only NVMe-oF exposes a listener-port-group table. | NFS, SMB, iSCSI, and NVMe-oF all render the same table grammar: listen IP, port, listener type, effective endpoints, runtime state, linked-resource count, and actions. |
+| Refresh | Collection requests mutate `storageService` independently while `Promise.all` is still resolving. | Fetch into an immutable generation-scoped snapshot and commit all protocol/resource/ACL/runtime arrays once. |
+| NFS commands | `nfsConnectionCommands` calls a missing `nfsRuntimeEndpointDetails()` method. | One tested endpoint adapter supplies the status summary, connection examples, listener table, and export endpoint display. |
+| Active service summary | A protocol is considered active only when a share/target/subsystem array is non-empty. | Enabled protocol listener rows are authoritative, so an enabled service with no child resource remains visible. |
+
+API response changes are backward-compatible additions to
+`StorageServiceProtocolResponse`:
+
+| Field | Type | Contract |
+| --- | --- | --- |
+| `listenertype` | string | `WILDCARD` for `0.0.0.0`/`::`; otherwise `DEDICATED`. |
+| `primaryip` | string | Authoritative VM NIC primary IPv4 address. It is never selected from endpoint ordering. |
+| `effectiveendpoints` | list | Structured endpoint rows containing `ipaddress`, `port`, `role`, and `coveredbywildcard`. |
+| `runtimestate` | string | `LISTENING`, `UNUSED`, `ERROR`, or `UNKNOWN`. Desired state remains in the existing `state` field. |
+| `linkedresourcecount` | integer | Number of exports, shares, targets, or namespaces that reference the listener port group. |
+
+`StorageServiceProtocolEndpointResponse` is the nested response object for
+`effectiveendpoints`. The server must build it from one instance-scoped endpoint
+inventory, not by querying the NIC and runtime cache once per listener row.
+
+Required server changes:
+
+1. `StorageServiceManagerImpl.listStorageServiceProtocols` loads the instance,
+   protocol rows, authoritative NIC identity, secondary IPs, and runtime
+   listener observation once. It then calls
+   `createProtocolResponse(protocol, listenerContext)` and sorts responses by
+   protocol, port, and listen IP.
+2. `buildProtocolListenerContext` keeps `primaryIp`, aliases, and runtime
+   observations separate. Wildcard expansion includes the primary and aliases;
+   dedicated expansion contains only its configured IP.
+3. `linkedResourceCount` is computed by protocol-specific reference readers:
+   NFS export listener ports, SMB share exposure, iSCSI target listener ports,
+   and NVMe-oF namespace listener ports. It is informational and must not alter
+   deletion validation.
+4. An enabled protocol row is returned even when it has no linked resource.
+   The server must not synthesize a default row when no persisted listener
+   exists.
+5. `registerProtocolListenAddress` remains a narrow transaction: it may set only
+   the secondary-IP flag and insert `nic_secondary_ips`. It must compare the NIC
+   primary address before and after the transaction and roll back on drift.
+6. Existing instances with DB/runtime primary disagreement are reported as an
+   identity warning. Automatic repair is prohibited; repair requires an
+   explicit maintenance operation using deployment and runtime evidence.
+
+Protocol-specific display rules:
+
+- NFS `V4_ONLY`: each listener port group is displayed independently; exports
+  show the groups they reference.
+- NFS `V3V4_DUAL`: show the service-wide fixed listener group and its effective
+  IPs; per-export listener selection remains unavailable.
+- SMB: Samba's wildcard TCP 445 listener is one logical wildcard group. The UI
+  displays all effective service IPs without pretending that separate `smbd`
+  listeners exist.
+- iSCSI: each LIO portal IP/port is a dedicated listener group; linked target
+  count is shown.
+- NVMe-oF: keep the current wildcard/dedicated model and row-action constraints,
+  but render it through the same common adapter.
+
+Required UI changes in `SharedFSTab.vue`:
+
+1. Replace protocol-specific endpoint inference with
+   `protocolListenerRows(protocol)` and `protocolListenerColumns(protocol)`.
+2. Add a listener-port-group table to NFS, SMB, and iSCSI using the same
+   dark-mode, fixed-right action-column, compact-scroll, ellipsis, and no-data
+   conventions already used by NVMe-oF.
+3. Replace the missing `nfsRuntimeEndpointDetails()` call with the common
+   endpoint adapter. The NFS status card and connection examples must consume
+   the same rows as the NFS listener table.
+4. Compute `activeServiceTypes` from enabled protocol rows and use child
+   resources only as compatibility evidence for older responses.
+5. Replace mutating `fetchCollection` calls with pure collection loaders.
+   `fetchStorageServiceData` commits one complete snapshot only when the refresh
+   generation still matches.
+6. Remove fabricated default listener rows when the current API is available.
+   Empty or failed protocol inventory shows the standard no-data/error state
+   instead of a healthy-looking default port.
+
+Implementation tests:
+
+- `StorageServiceManagerImplTest` covers wildcard expansion, dedicated
+  listeners, deterministic ordering, linked-resource counts, empty-child
+  protocol visibility, and primary-IP preservation during two alias retries.
+- `SharedFSTab.spec.js` covers the four protocol adapters, the missing NFS
+  endpoint-method regression, wildcard endpoint expansion, atomic snapshot
+  commit, active service calculation, dark-mode table classes, and no raw i18n
+  keys.
+- API compatibility tests confirm older clients can ignore the added fields and
+  that no database migration is required.
+
+#### Primary NIC preservation transaction
+
+Registering a service alias is an ownership transaction, not a NIC identity
+update. The current raw `NicVO` update can write every field from a stale entity
+while only intending to set the secondary-IP flag. The implementation must
+preserve and verify the original primary address.
+
+| Component | Required change |
+| --- | --- |
+| Backend registration | Capture `originalPrimaryIp` and NIC version before registration. Persist the secondary-IP flag and `nic_secondary_ips` row in one transaction using a narrowly scoped DAO/service operation. Reload the NIC and fail/rollback if `ip4_address` changed. |
+| Guest apply | Send the immutable primary IP and the requested alias as separate payload fields. QGA applies the alias but never rewrites the primary address. |
+| API inventory | Return `primaryIp` from the authoritative NIC identity and aliases from `nic_secondary_ips`. Do not pick a primary from endpoint order. |
+| UI summary | Render the primary badge only when DB and runtime agree. If they disagree, show a consistency warning and list the runtime address and aliases without silently relabeling an alias as primary. |
+| Existing inconsistent rows | Repair requires an explicit maintenance path using authoritative deployment/runtime evidence. Never infer the original primary from the latest alias or array order. |
+
+Required tests:
+
+- Adding two aliases leaves the NIC primary address byte-for-byte unchanged.
+- Retrying an existing alias is idempotent and does not alter the primary.
+- QGA failure removes only the new alias/protocol row and preserves the NIC.
+- Reboot inventory continues to classify the same primary and aliases regardless
+  of address ordering returned by the guest.
+
+#### Runtime NIC reconciliation and desired-state finalization
+
+Integrated validation on SharedFS
+`636bab5d-553b-451e-8f02-f792ea83b8b3` confirmed that NFS, SMB, iSCSI, and
+NVMe-oF listeners, data paths, and reboot reconciliation are healthy. The
+remaining failure is a management-plane identity drift: the guest primary
+address is `10.10.254.140`, while `nics.ip4_address` contains listener alias
+`10.10.22.202`. The same alias also exists correctly in `nic_secondary_ips`.
+
+The drift has two independent write hazards and one response amplification:
+
+1. `registerProtocolListenAddress` loads a complete `NicVO` and calls the
+   generic DAO update while intending to change only `secondary_ip`.
+2. `StatsCollector.VmStatsCollector` receives one IPv4 value per MAC from the
+   KVM/QGA statistics path and writes it directly to `nics.ip4_address` for L2
+   NICs. The KVM collector currently overwrites the map value for every IPv4
+   address returned for the interface, so the last alias can replace the VM
+   primary.
+3. `buildProtocolResponseContext` trusts the corrupted DB value as primary and
+   wildcard expansion consequently omits the actual runtime primary address.
+
+The NFS desired-state file has a separate finalization defect. NFS create and
+update flows serialize the current DB workflow state (`Creating` or `Updating`)
+before the DB row is moved to `Ready`. `ablestack-storagectl` correctly persists
+the successful payload, but that payload remains transient and is reused during
+boot reconcile.
+
+| Component | AS-IS | TO-BE |
+| --- | --- | --- |
+| KVM NIC statistics | `Map<MAC, IPv4>` may contain any one IPv4 returned by QGA, so it cannot identify the primary when aliases exist. | Keep the existing agent wire contract unchanged. Treat the single address as a non-authoritative observation and do not deploy a newer KVM resource class into the older host runtime. |
+| `StatsCollector` | Every reported L2 address can replace `nics.ip4_address`. | Treat VM statistics as observation. Never replace a populated DB primary from the single-address agent map. Populate an empty primary only when the observed value is not present in `nic_secondary_ips`; otherwise warn and skip. Storage Service aliases never update the primary. |
+| Alias registration DAO | Generic `nicDao.update(id, NicVO)` can write unrelated stale fields. | Add a narrow DAO operation that updates only `secondary_ip`, guarded by NIC id and expected primary IP. Insert the alias row in the same transaction and fail on a zero-row optimistic update. |
+| Protocol response | DB primary is trusted even when runtime disagrees; wildcard endpoints can omit the actual primary. | Load DB primary, secondary rows, and runtime interface observations once. Return both identity sources, an explicit consistency status, and a deduplicated endpoint union. Never label a known alias as primary during drift. |
+| Existing drift | No safe automated correction exists. | Provide an admin-only dry-run/repair operation. Repair is allowed only when one default NIC/MAC is identified, runtime reports one non-secondary primary, and the incorrect DB value is already recorded as an alias. Emit an audit event and do not change guest networking. |
+| NFS desired state | Persisted payload can contain `Creating` or `Updating` after a successful apply. | Persist only operational desired state (`Ready`) for resources included in an apply payload. Keep workflow state in DB/event history; do not leak it into the boot-reconcile contract. |
+| UI refresh | Instance metadata can be committed before protocol, runtime, and resource collections finish. | Build one generation-scoped immutable snapshot and commit instance, protocols, resources, ACLs, runtime inventory, sessions, and volumes together. |
+
+Backward-compatible API additions to `StorageServiceProtocolResponse`:
+
+| Field | Contract |
+| --- | --- |
+| `runtimeprimaryip` | Primary IPv4 observed on the matching runtime interface. It is diagnostic and does not mutate DB identity. |
+| `identitystatus` | `CONSISTENT`, `DRIFT`, or `UNKNOWN`. |
+| `identitywarning` | Localized warning input containing DB primary and runtime primary when they disagree. |
+
+`effectiveendpoints` keeps its existing shape. During `DRIFT`, wildcard
+expansion includes the runtime primary and every persisted alias exactly once;
+the conflicting DB address is returned with alias role when it exists in
+`nic_secondary_ips`. Dedicated listeners remain limited to their configured
+IP and are never broadened by the drift fallback.
+
+Code-level implementation targets:
+
+| File/object | Required change |
+| --- | --- |
+| `server/.../StatsCollector.java` | Move NIC updates behind `reconcileObservedNicAddresses`. Preserve every populated primary regardless of the legacy single observation. Exclude every `nic_secondary_ips` value and populate an empty primary only from one non-alias observation. |
+| `engine/schema/.../NicDao.java`, `NicDaoImpl.java` | Add field-scoped secondary-IP flag update with expected-primary guard. Do not call the generic full-row update for alias registration. |
+| `server/.../StorageServiceManagerImpl.java` | Use the narrow alias transaction, construct one identity context per instance, add consistency response fields, and normalize applied NFS resource states to `Ready`. |
+| `api/.../StorageServiceProtocolResponse.java` | Add the backward-compatible runtime-primary and identity-status response fields. |
+| `api/.../RepairStorageServiceNicIdentityCmd.java` | Add an admin-only command with `sharedfilesystemid`, `dryrun` (default `true`), and `expectedruntimeprimary`. Reject ambiguous runtime/default-NIC/MAC evidence. |
+| `ui/.../SharedFSTab.vue` | Consume one identity adapter for summary cards and all protocol listener tables; display a drift warning and commit refresh data atomically. |
+
+`repairStorageServiceNicIdentity` performs no guest command. Dry-run returns the
+DB primary, runtime primary, aliases, NIC id, and eligibility reason. Apply is
+allowed only when the caller repeats the expected runtime primary, the DB value
+is a persisted alias, and the same default NIC/MAC still reports the runtime
+primary. The transaction updates only `nics.ip4_address`, preserves all alias
+rows, and emits an administrator event containing before/after values.
+
+`applyNfsDesiredState` must not move the DB object to `Ready` before runtime
+success. Instead, `createNfsDesiredStatePayload` writes `Ready` as the desired
+operational state for every included listener, export, and ACL. The existing
+DB workflow continues to transition `Creating/Updating -> Ready` only after a
+successful QGA apply; failure transitions and rollback behavior remain
+unchanged.
+
+No database schema migration is required. Existing `nics` and
+`nic_secondary_ips` rows contain enough evidence for guarded repair. No
+SystemVM runtime or template change is required because listener execution,
+monitor-cache collection, storage paths, and reboot restore passed. A SystemVM
+preflight becomes mandatory only if implementation later changes the monitor
+schema or desired-state consumer.
+
+Deployment is management and UI only. Host agent JARs are intentionally left
+unchanged: the running 22.x agent runtime is not aligned with the current KVM
+resource class and a class-only hot patch can introduce unrelated script
+dependencies. The management fix accepts the existing single-address stats
+contract and prevents it from overwriting a populated primary. UI deployment
+follows the existing served-asset hash gate.
+
+Required regression tests:
+
+- QGA IPv4 order permutations never change a populated primary into an alias.
+- A legitimate first primary observation can populate an empty L2 NIC address.
+- Alias registration updates only `secondary_ip` and `nic_secondary_ips`.
+- DB/runtime drift returns `DRIFT`, includes the actual runtime primary in a
+  wildcard endpoint, and never expands a dedicated listener.
+- NFS create, export update, and ACL update persist `Ready` desired-state rows
+  after a successful apply; boot reconcile sees no transient state.
+- One UI refresh generation cannot expose new instance metadata with stale or
+  empty protocol collections.
+
+#### Management UI deployment integrity gate
+
+The management web root contains both generated UI assets and the management
+API servlet descriptor. UI deployment must therefore preserve server-owned
+files and prove that the static UI and API runtime belong to one healthy
+release.
+
+| Target | Deployment rule |
+| --- | --- |
+| `/usr/share/cloudstack-management/webapp` | Synchronize generated UI assets without deleting `WEB-INF/**`. Stage first, preserve `WEB-INF/web.xml`, then switch or sync atomically. A plain `rsync --delete` against this root is prohibited. |
+| `/usr/share/cloudstack-ui` | Replace the generated static tree atomically. This compatibility root does not own the management servlet descriptor. |
+| Management JAR | Install the aligned aggregate JAR before restarting `mold.service`; retain a timestamped backup of both JAR and web roots. |
+| Post-deploy runtime | Require `mold.service=active`, `GET /client/ = 200`, and unauthenticated `GET /client/api/?command=listApis&response=json = 401`. A static-page 200 without the API 401 is a failed deployment. |
+| Asset consistency | Parse the served `index.html`, require every referenced JS/CSS asset to return 200, and compare served entry/locale hashes with the local build. Run a fresh-browser smoke test that finds no raw `label.storage.service.*` key. |
+
+If `WEB-INF/web.xml` is absent after staging, restore it from the same deployed
+management JAR (`META-INF/webapp/WEB-INF/web.xml`) or the timestamped backup
+before service restart. This is recovery only; the normal deployment path must
+never remove it.
 
 Runtime can use `nvmetcli` if available, or manage Linux `configfs`
 directly through `ablestack-storagectl`.
@@ -2274,9 +2796,10 @@ keeping common service state in the first details tab.
   - `NVMe-oF access` table: subsystem NQN, host NQN, authentication mode,
     DH-HMAC-CHAP user/key status where applicable, runtime state, and actions.
     Secrets must never be displayed, cached, or written to monitor cache files.
-  - `NVMe-oF sessions` table: host NQN or client address, subsystem NQN,
-    controller/session identifier, connection state, endpoint, and disconnect
-    action.
+  - `NVMe-oF sessions` table: client address, host NQN when known, subsystem
+    NQN, namespace ID, TCP queue count, connection state, service endpoint, and
+    disconnect action. Long NQNs must use ellipsis plus tooltip. The action
+    column remains right aligned and fixed when the table scrolls horizontally.
 - Protocol tab refresh behavior:
   - Initial loading may use a page spinner, but subsequent status refreshes
     must not clear the existing tab data or re-render the whole tab. The UI
@@ -4352,3 +4875,1243 @@ Implementation rules:
   endpoint ambiguity.
 - No CHAP or mutual CHAP secret may be emitted in health, inventory, or session
   cache output.
+
+## NVMe-oF iSCSI-Parity Detailed Design (2026-06-29)
+
+This section supersedes the earlier exploratory NVMe-oF notes for the next
+implementation pass. The goal is to bring NVMe-oF management to the same
+operator model as the current iSCSI service while preserving the existing NFS,
+SMB, and iSCSI behavior.
+
+### Runtime Proof Before Implementation
+
+The design below is based on a live non-persistent probe on the current
+Storage Service VM:
+
+| Item | Result |
+| --- | --- |
+| Storage Service VM | `i-2-571-VM` on host `10.10.22.1` |
+| Active service baseline | NFS and iSCSI only; no persisted NVMe-oF rows |
+| Kernel target modules | `nvmet` and `nvmet-tcp` load successfully |
+| configfs root | `/sys/kernel/config/nvmet` appears after module load |
+| Temporary subsystem | `nqn.2026-06.local.storage:codex-nvmeof-probe` |
+| Temporary namespace | 64 MiB loop-backed namespace, NSID `1` |
+| Listener | TCP `0.0.0.0:4420` |
+| WSL client result | `nvme discover`, `nvme connect`, block size check, direct write, and direct read all passed |
+| Host NQN ACL result | Wrong Host NQN was rejected; the WSL Host NQN was accepted and read/write passed |
+| DH-HMAC-CHAP capability | Not supported by the current SystemVM kernel/configfs surface because host directories expose no `dhchap_key` or `dhchap_ctrl_key` attributes |
+
+Implications:
+
+- `KERNEL_NVMET` is technically usable in the current SystemVM when modules are
+  loaded before capability detection.
+- Host NQN ACL is a supported access-control primitive.
+- DH-HMAC-CHAP must remain capability-gated and disabled on the current
+  template baseline. If requested through API, the engine must fail before
+  reporting the ACL as `Ready`.
+- The temporary probe created no persistent DB state and was cleaned up after
+  validation.
+
+### API Design
+
+NVMe-oF should expose the same management shape as iSCSI:
+
+| Area | API Direction |
+| --- | --- |
+| Protocol endpoint | Reuse `enableStorageServiceProtocol`, `disableStorageServiceProtocol`, and `updateStorageServiceProtocol` with protocol `NVME_OF`, transport `tcp`, and default port `4420`. Multiple listener ports may be stored, but the first implementation should validate the kernel target path before enabling non-default ports. |
+| Subsystem | Keep `createStorageNvmeOfSubsystem`, `updateStorageNvmeOfSubsystem`, `deleteStorageNvmeOfSubsystem`, and `listStorageNvmeOfSubsystems`. The subsystem owns the subsystem NQN, transport, engine, listener port group, and `allowAnyHost` policy. |
+| Namespace | Extend namespace creation to the iSCSI-style backing-volume model: current attached block volume, existing unattached volume, or newly created volume. Add update support for mutable fields that are safe after runtime apply. Namespace create/update must return effective namespace size, backing volume identity, and runtime block device path. |
+| Host ACL | Keep create/update/delete/list Host ACL APIs. Host NQN is required unless `allowAnyHost` is explicitly enabled on the subsystem. DH-HMAC-CHAP fields are accepted only when SystemVM health reports support. Secrets remain request-only and are never persisted or returned. |
+| Sessions | Reuse `listStorageServiceSessions` and `disconnectStorageServiceSession`. Session rows must include host/client, subsystem NQN, namespace IDs when attributable, endpoint, connected time, last seen time, and mapping status. |
+
+API response objects must include:
+
+- subsystem NQN and UUID
+- namespace ID and UUID
+- backing volume UUID, name, size, disk offering, primary storage, and file
+  system field when relevant to volume inspection
+- effective namespace size in bytes
+- listener port group
+- access mode: `allowAnyHost`, Host NQN ACL, or unsupported authenticated mode
+- runtime state and error message
+
+### Backend And Engine Design
+
+The server-side lifecycle must mirror the iSCSI block-only path.
+
+| Area | Rule |
+| --- | --- |
+| Backing volume | NVMe-oF namespaces are block-only. A namespace must resolve to an attached data block device or explicitly created/attached ABLESTACK data volume. Mounted file-share volumes must not be exposed directly as raw namespaces. |
+| New volume flow | UI creates the volume with disk offering and primary storage, waits for async completion, then calls the namespace API. The backend re-checks attachable state before attaching the volume to the Storage Service VM. |
+| Existing volume flow | Existing unattached volumes are attached to the Storage Service VM, inspected, and used as whole raw namespace devices. The engine must not format, mount, or create a file inside the volume. |
+| Current attached volume flow | Only an unused attached block volume can be selected. Root, boot, swap, ISO, mounted file-share volumes, and volumes already used by NFS, SMB, iSCSI, or another NVMe-oF namespace are rejected. |
+| Device identity | Device matching must use ABLESTACK volume UUID/name/serial/size hints and reject ambiguous candidates. Selecting an arbitrary unmounted device is not allowed. |
+| Desired-state apply | The DB row remains transitional until QGA apply succeeds. On failure, namespace/subsystem/ACL state becomes `Error` and the error is returned to the async job. |
+| Rollback | A newly created volume for a failed namespace create may be detached and expunged by compensation. Operator-selected existing volumes must never be deleted automatically. |
+| Reconcile | Boot reconcile reapplies persisted NVMe-oF subsystem, namespace, port, and Host ACL state. It must load `nvmet` and `nvmet-tcp` before evaluating capability. |
+
+### Database Design
+
+The existing Storage Service tables are sufficient for the first parity pass.
+No schema migration is required unless later reporting requires a normalized
+listener-group table.
+
+| Table | Usage |
+| --- | --- |
+| `storage_service_protocol` | Store protocol `NVME_OF`, enabled state, listen IP, port, and protocol-level JSON such as transport and listener capability. |
+| `storage_block_target` | Store subsystem rows and namespace rows for protocol `NVME_OF`. The `lun_or_namespace` field stores namespace ID for namespace rows. `config_json` stores `type=subsystem` or `type=namespace`. |
+| `storage_access_rule` | Store Host NQN ACL rows and non-secret auth metadata. DH-HMAC-CHAP secrets are never stored. |
+
+Recommended `config_json` keys:
+
+```json
+{
+  "type": "namespace",
+  "backstoreType": "BLOCK",
+  "volumeMode": "CURRENT_VOLUME|EXISTING_VOLUME|NEW_VOLUME",
+  "volumeUuid": "...",
+  "volumeName": "...",
+  "namespaceSizeBytes": 53687091200,
+  "effectiveSizeBytes": 53687091200,
+  "runtimeDevicePath": "/dev/...",
+  "listenerGroupPorts": [4420]
+}
+```
+
+```json
+{
+  "type": "subsystem",
+  "engine": "KERNEL_NVMET",
+  "transport": "tcp",
+  "allowAnyHost": false,
+  "listenerGroupPorts": [4420],
+  "dhChapCapability": "UNSUPPORTED"
+}
+```
+
+### SystemVM Runtime Design
+
+`/usr/local/bin/ablestack-storagectl` must own the NVMe-oF runtime path.
+
+| Function | Required Behavior |
+| --- | --- |
+| `nvmeof_capabilities` | Run `modprobe nvmet` and `modprobe nvmet-tcp` before checking `/sys/kernel/config/nvmet`. Report `kernelTargetSupported`, `tcpSupported`, `configfsRoot`, `dhChapSupported`, and `dhChapCtrlSupported`. |
+| `apply_nvmeof_subsystems` | Render configfs subsystem, namespace, port, and Host ACL state idempotently. Write configfs port attributes only before links become active. |
+| Namespace apply | Resolve the selected ABLESTACK volume to a safe raw block device and write that path to `device_path`. File-backed loop namespaces are not used for the main parity implementation. |
+| Host ACL apply | If `allowAnyHost=false`, write `attr_allow_any_host=0` before creating `allowed_hosts` symlinks. Wrong Host NQNs must be rejected by the kernel path. |
+| Auth apply | If DH-HMAC-CHAP is requested and configfs host attributes are absent, fail explicitly with an unsupported capability error. |
+| Monitor cache | Inventory and session cache must include subsystem NQN, namespace ID, endpoint, backing volume, Host NQN ACL state, and DH-HMAC-CHAP capability. |
+| Boot reconcile | Reapply NVMe-oF desired state after boot and refresh monitor cache. |
+
+### UI Design
+
+The NVMe-oF tab and dialogs must follow the current iSCSI service standard.
+
+| UI Area | Required Shape |
+| --- | --- |
+| Service tab | Full-width capable tab, dark-mode-safe cards and tables, right-aligned row action buttons, compact scrollbars, fixed action column when horizontal scroll is needed. |
+| Status summary | Endpoint, engine, monitoring cache, DH-HMAC-CHAP support state, last refresh, and subsystem/namespace count. |
+| Subsystem table | Subsystem NQN, engine, transport, listener port group, access policy, state, and row actions. |
+| Namespace table | Namespace ID, subsystem NQN, backing volume, size, endpoint exposure, state, and row actions. |
+| Host ACL table | Host NQN, subsystem NQN, auth mode, DH-HMAC-CHAP support/usage, state, and row actions. |
+| Backing volume table | Same columns and behavior as iSCSI: volume name, UUID, size, usage, disk offering, primary storage, connected namespace, state, and actions. |
+| Session table | Client/Host NQN, subsystem NQN, namespace, endpoint, state, connected time, and disconnect action. |
+| Modals | All NVMe-oF action modals use the vertical, viewport-bounded, dark-mode-safe modal standard used by iSCSI/NFS/SMB. No horizontal scrollbar should appear in ordinary desktop width. |
+| Backing picker | Current attached volume, existing unattached volume, and new volume options match iSCSI behavior. New volume uses disk offering then tag-filtered primary storage. |
+| DH-HMAC-CHAP | Controls are disabled with a clear unsupported message when SystemVM capability reports missing `dhchap_key` or `dhchap_ctrl_key`. |
+| SPDK | SPDK remains visible only as planned or disabled capability. VM-level HugePage, NUMA, CPU pinning, memlock, SR-IOV, and PCI passthrough controls are not part of Storage Service in this phase. |
+
+### Validation Gate For Implementation
+
+NVMe-oF parity implementation is not complete until these UI-led tests pass:
+
+1. Create a Storage Service with NVMe-oF only, using a new backing volume.
+2. Create a subsystem and namespace with Host NQN ACL.
+3. Discover and connect from WSL or a prepared client with the allowed Host NQN.
+4. Verify raw block size and direct read/write.
+5. Verify a wrong Host NQN is rejected.
+6. Verify DH-HMAC-CHAP controls are disabled on the current template and an API
+   request that forces CHAP fails explicitly.
+7. Reboot the Storage Service VM and confirm reconcile restores subsystem,
+   namespace, Host ACL, listener, monitor cache, and session visibility.
+8. Confirm UI tables and modals match iSCSI dark-mode and vertical-dialog
+   standards.
+
+## NVMe-oF iSCSI-Parity Implementation Scope (2026-06-30)
+
+This implementation pass promotes NVMe-oF from a subsystem-only prototype to
+the same operational shape used by iSCSI, while preserving the current kernel
+NVMET capability boundary.
+
+| Layer | Implementation Target |
+| --- | --- |
+| API | `createStorageNvmeOfNamespace` accepts listener port groups and cleanup-on-failure; `updateStorageNvmeOfNamespace` is added for namespace edit workflows. |
+| Backend | NVMe-oF namespace create/update/delete validates dedicated backing volumes, verifies requested listener port groups exist, prepares/attaches backing volumes, renders desired state, and rolls back failed namespace creation. |
+| Response model | Block target responses expose listener port groups and effective endpoint strings for NVMe-oF namespaces the same way iSCSI targets do. |
+| UI | NVMe-oF tab shows subsystem, namespace, Host ACL, backing volume, and session sections. Namespace and Host ACL actions use viewport-bounded vertical modals with the existing dark-mode storage-service style. |
+| SystemVM | `ablestack-storagectl` applies kernel NVMET subsystems, raw block namespaces, Host NQN ACLs, and multiple listener port groups from desired state. Mounted file-system paths are rejected for namespaces. |
+| Monitor cache | Inventory and health derive NVMe-oF listening state from desired listeners and namespace listener groups instead of hard-coding TCP 4420. |
+| Unsupported auth | DH-HMAC-CHAP remains capability-gated. If configfs does not expose `dhchap_key` or `dhchap_ctrl_key`, UI controls stay disabled and forced requests fail explicitly. |
+
+### Code-Level Contracts
+
+| Object | Contract |
+| --- | --- |
+| `CreateStorageNvmeOfNamespaceCmd` | Must provide `subsystemid`, `namespaceid`, `volumeid`, optional `namespacesizebytes`, optional `listenerports`, and optional `cleanupvolumeonfailure`. |
+| `UpdateStorageNvmeOfNamespaceCmd` | Must update namespace ID, backing volume, backing path, namespace size, and listener port groups without changing the parent subsystem. |
+| `StorageServiceManagerImpl` | Must use the same volume safety rules as iSCSI: a backing volume can belong to only one block target, raw block namespaces cannot use mounted file-system paths, and failed new-volume namespace creation must clean up its DB row and optionally its volume. |
+| `ablestack-storagectl apply-nvmeof` | Must load `nvmet` and `nvmet-tcp`, create configfs ports before linking subsystems, disable namespaces before changing `device_path`, and link each subsystem only to requested listener port groups. |
+| `SharedFSTab.vue` | Must not show raw i18n keys in Korean UI. All NVMe-oF action controls must use the same dark-mode-safe vertical modal pattern as iSCSI. |
+
+## NVMe-oF Boot Reconcile Contract (2026-06-30)
+
+NVMe-oF desired state is persisted in the Storage Service SystemVM at
+`/etc/ablestack-storage/nvmeof-subsystems.json`. The runtime state is kernel
+configfs state under `/sys/kernel/config/nvmet`, so it is lost when the
+SystemVM reboots. The boot reconcile service must therefore treat NVMe-oF the
+same way as NFS, SMB, and iSCSI: saved desired state is authoritative and must
+be reapplied before the monitor cache reports the service as healthy.
+
+The reconcile flow is:
+
+1. Mount configfs when `/sys/kernel/config` is not mounted.
+2. Load `nvmet` and `nvmet-tcp` before applying desired state.
+3. If `/etc/ablestack-storage/nvmeof-subsystems.json` exists and is non-empty,
+   run:
+
+   ```bash
+   /usr/local/bin/ablestack-storagectl nvmeof subsystem apply /etc/ablestack-storage/nvmeof-subsystems.json
+   ```
+
+4. Refresh the monitor cache after a successful apply.
+5. Mark reconcile failure if the apply command fails, because a stored
+   NVMe-oF subsystem without a live listener is a degraded Storage Service.
+
+Post-boot health evidence must include:
+
+- a listening NVMe-oF TCP endpoint for every configured listener port group;
+- existing configfs subsystem and namespace entries;
+- `ablestack-storage-monitor --once` reporting `health_status=ok`;
+- a client-side `nvme discover`, `nvme connect`, block read/write, and
+  disconnect test for the exposed namespace.
+
+## NVMe-oF Listener Persistence Contract (2026-07-01)
+
+Runtime validation on Storage Service VM `i-2-573-VM` confirmed that kernel
+NVMET can expose one subsystem through multiple TCP listeners at the same time
+when the desired-state payload preserves every listener row.
+
+The implementation contract is:
+
+| Area | Required Behavior |
+| --- | --- |
+| Protocol persistence | `NVME_OF` is an endpoint protocol. `enableStorageServiceProtocol` must create or update rows by `instance_id + protocol + listen_ip + port`, not by `instance_id + protocol` only. |
+| Desired-state rendering | NVMe-oF apply payloads must include all enabled `NVME_OF` listener rows for the instance. |
+| Namespace exposure | A namespace may keep `listenerGroupPorts` metadata for UI/API compatibility, but kernel NVMET links listeners at subsystem scope. The SystemVM links each active subsystem to every real listener endpoint. |
+| Runtime apply | `ablestack-storagectl nvmeof subsystem apply` must keep existing listener ports when a new listener is added and must not collapse the service to the latest port only. |
+| Boot reconcile | `/etc/ablestack-storage/nvmeof-subsystems.json` remains authoritative and must restore all listener ports after reboot. |
+| UI/API | Protocol activation must show every persisted listener and namespace dialogs must offer every valid listener port group. |
+
+The validated hot-patch state used listeners `10.10.22.202:4420` and
+`10.10.22.201:4421`. After reboot, both listeners were restored and WSL
+`nvme discover`, `nvme connect`, direct write/read, and disconnect passed
+against both endpoints.
+
+## NVMe-oF Wildcard Listener Conflict Contract (2026-07-01)
+
+Runtime validation on Storage Service VM `i-2-575-VM` confirmed that kernel
+NVMET treats a wildcard listener (`0.0.0.0:<port>`) as covering every IPv4
+address on that port. Creating a second configfs port for a specific service IP
+with the same port can leave stale configfs port directories and fail with
+`Address already in use` when the subsystem is linked again.
+
+The implementation contract is:
+
+| Area | Required Behavior |
+| --- | --- |
+| API/backend validation | For `NVME_OF`, reject `specific-ip:<port>` when `0.0.0.0:<port>` already exists, and reject `0.0.0.0:<port>` when any specific listener already exists on that port. Exact endpoint activation remains idempotent. |
+| Desired-state rendering | If legacy DB state already contains both wildcard and specific listeners for the same port, render only the wildcard listener to the SystemVM. |
+| SystemVM apply | Normalize desired listeners before touching configfs. A wildcard listener absorbs specific listeners on the same port. Existing configfs ports are reused by `(listenIp, port)` and active subsystems are linked to every real listener endpoint. |
+| Stale configfs cleanup | Remove stale `/sys/kernel/config/nvmet/ports/<id>` directories after unlinking subsystems so a failed apply cannot poison the next apply. |
+| Monitor cache | Health must be based on namespace-exposed listener ports, not every registered protocol endpoint. Registered but unexposed endpoints must not mark NVMe-oF degraded. |
+| UI | Protocol activation warns and blocks wildcard/specific same-port conflicts before the API call. Namespace endpoint summaries display endpoints from the normalized listener set. |
+
+This rule does not remove the previously validated multi-listener capability:
+different ports can still coexist, and specific listeners on the same port can
+coexist only when no wildcard listener exists for that port.
+
+### NVMe-oF wildcard listener endpoint alias rule
+
+For NVMe-oF kernel NVMET, a `0.0.0.0:<port>` listener already accepts traffic for every IP assigned to the Storage Service VM on that port. When the operator adds a specific listen IP on the same port, the backend must not create a duplicate configfs listener. Instead, it must persist the requested endpoint as an endpoint alias and ensure the IP is assigned to the SystemVM NIC.
+
+Implementation rules:
+
+- `listeners` in the NVMe-oF desired-state payload represent real configfs listeners only.
+- `endpointAliases` represent specific service IPs covered by a wildcard listener on the same port.
+- The backend allows `NVME_OF` specific-IP additions when an existing wildcard listener on the same port exists, while keeping the existing iSCSI conflict behavior unchanged.
+- The SystemVM applies `endpointAliases` through `storagectl network endpoints apply` before rendering NVMe-oF subsystems.
+- Boot reconciliation restores endpoint aliases through `/etc/ablestack-storage/network-endpoints.json` before applying NVMe-oF desired state.
+- UI must show this case as an informational reuse message, not as a blocking validation error.
+
+### NVMe-oF multi-port runtime reconcile rule
+
+Kernel NVMET exposes listeners by linking a subsystem into configfs ports.
+The listener is therefore a subsystem-level runtime property, not an individual
+namespace property. Validation on a running Storage Service VM confirmed that
+adding configfs ports for `10.10.22.201:4421` and `10.10.22.203:4422`, then
+linking the existing subsystem to those ports, makes `nvme discover`,
+`nvme connect`, and direct write/read tests succeed without changing the
+namespace backing volume.
+
+- Every enabled real NVMe-oF listener row must become a configfs port.
+- Existing configfs ports must be reused by tuple `(listenIp, port)` and must
+  not have their address attributes rewritten while active.
+- Endpoint aliases covered by a wildcard listener are applied as NIC/IP state
+  only and do not create duplicate configfs ports.
+- A kernel NVMET port links to a subsystem, not directly to an individual
+  namespace. Therefore all namespaces in the same subsystem must use one
+  identical listener port group. If a different listener group is required, the
+  operator must create another subsystem.
+- The backend rejects namespace create/update requests that would mix listener
+  port groups inside one subsystem.
+- SystemVM reconcile computes the effective listener port group per subsystem
+  from its namespaces, links that subsystem only to matching real listener
+  ports, and removes stale subsystem symlinks from no-longer-selected ports.
+- Endpoint aliases covered by wildcard listeners remain NIC/IP state only and do
+  not create duplicate configfs ports.
+- UI and API must show Namespace listener ports/endpoints from Namespace
+  metadata, while subsystem rows summarize the listener group inherited from
+  their namespaces.
+
+### NVMe-oF endpoint IP pre-activation rule
+
+Runtime validation on Storage Service VM `i-2-579-VM` confirmed that an added
+NVMe-oF listener such as `10.10.22.201:4421` fails with `Network is unreachable`
+when the SystemVM guest has not activated the requested service IP before the
+kernel NVMET listener is probed.
+
+| Area | Required Behavior |
+| --- | --- |
+| Backend ordering | `enableStorageServiceProtocol` registers the listen IP, applies the guest network endpoint, and only then applies NVMe-oF desired state. |
+| Payload metadata | NVMe-oF `listeners` and `endpointAliases` include `nicId`, `networkId`, `primaryIp` when available, and `prefixlen`/`networkCidr`. |
+| SystemVM network apply | `ablestack-storagectl network endpoint apply` processes `listeners`, `endpoints`, and `endpointAliases`, skips wildcard listeners, and activates every specific listen IP. |
+| No-IP guest fallback | If the guest has no global IPv4 address but exactly one non-loopback Ethernet interface, the SystemVM may bring that interface up and add the requested listen IP using the backend-provided prefix. |
+| NVMe-oF apply | `nvmeof subsystem apply` calls `network endpoint apply` before touching configfs ports or probing listener readiness. |
+| Boot reconcile | Boot reconcile restores saved network endpoints before reapplying NVMe-oF desired state. |
+
+The production implementation must use backend-provided prefix/CIDR metadata;
+hardcoded prefixes are allowed only in manual validation scripts.
+
+### NVMe-oF UI endpoint presentation rule
+
+The NVMe-oF runtime source of truth is split across protocol registration,
+health, and subsystem/namespace records. The UI must not treat the endpoint
+string in `listStorageNvmeOfSubsystems` as the complete listener inventory.
+
+| UI Area | Required Presentation Source |
+| --- | --- |
+| Status summary endpoint | Build from `listStorageServiceProtocols(protocol=NVME_OF)` and expand wildcard listeners through the current service IP list. |
+| Listener/port group table | Show every registered NVMe-oF protocol listener, including wildcard listeners and specific-IP endpoint aliases covered by wildcard listeners. |
+| Listener health | Use `listStorageServiceHealth` NVMe-oF port status when available; otherwise show registered listeners as Ready rather than hiding them. |
+| Subsystem table | Show listener port groups separately from effective accessible endpoints. |
+| Namespace table | Show namespace listener ports separately from effective accessible endpoints so namespace metadata is not confused with the service-wide listener inventory. |
+
+This is a UI-only contract. It must not change backend desired-state rendering,
+SystemVM configfs reconciliation, DB schema, or API payload semantics.
+
+### NVMe-oF subsystem modal host access layout rule
+
+The NVMe-oF subsystem create dialog must keep subsystem identity fields and host
+access policy visually separate. `allowAnyHost` is an access policy, not a
+property of the engine selector.
+
+| UI Area | Required Layout |
+| --- | --- |
+| Subsystem settings | Keep subsystem NQN and engine as the first vertical input group. |
+| Host access policy | Render `allowAnyHost` inside a separate boxed policy block below the engine field. |
+| Spacing | Keep a clear vertical gap between the engine field and the host access policy block so the switch does not appear attached to the previous input. |
+| Theme | Use the same low-contrast bordered section style as other Storage Service vertical modals, including dark mode. |
+
+This is a UI-only rule. It does not change API parameters, backend validation,
+DB schema, SystemVM desired state, or NVMe-oF runtime behavior.
+
+### NVMe-oF canonical subsystem NQN rule
+
+Kernel NVMET has one runtime object per subsystem NQN. The Storage Service DB
+must therefore treat an NVMe-oF subsystem NQN as an instance-scoped identity,
+even when older UI/API flows or retry paths have already produced duplicate
+`BLOCK_TARGET` rows for the same NQN.
+
+| Area | Required Behavior |
+| --- | --- |
+| API create | `createStorageNvmeOfSubsystem` must return the existing active subsystem when the same NQN already exists in the same Storage Service instance. It must not create a second subsystem row for an already-defined NQN. |
+| API list | `listStorageNvmeOfSubsystems` must expose only one subsystem row per NQN to the UI. Duplicate legacy rows must not create duplicate subsystem cards or tables. |
+| Desired-state rendering | `applyNvmeOfDesiredState` must build one canonical subsystem payload per NQN and merge duplicate rows into it. |
+| Namespace merge | Namespaces are merged by namespace ID under the canonical NQN. Duplicate namespace payloads with the same ID are ignored after the first active entry. |
+| Host ACL merge | Host ACLs attached to any duplicate subsystem row are merged into the canonical subsystem. If the same host NQN appears more than once, active rows and rows carrying DH-HMAC-CHAP secrets take precedence. |
+| SystemVM apply | `ablestack-storagectl` repeats the same canonicalization before touching configfs so stale DB rows or partially failed retries cannot remove an existing allowed host symlink. |
+
+This rule is especially important for `allowAnyHost=false`: a namespace may be
+valid and exposed, but `nvme discover`/`connect` will still fail unless the
+allowed host NQN is linked under the single runtime subsystem object.
+
+### NVMe-oF subsystem and namespace API separation rule
+
+NVMe-oF subsystem rows and namespace rows share the same block-target table, but
+they are different runtime objects and must not be returned through one UI-facing
+collection. A mixed response can make the UI select a namespace ID as if it were
+a subsystem ID and then falsely report that a host ACL is missing.
+
+| Area | Required Behavior |
+| --- | --- |
+| `listStorageNvmeOfSubsystems` | Return only subsystem objects. The response item key is `storagenvmeofsubsystem`. |
+| `listStorageNvmeOfNamespaces` | Return only namespace objects. The response item key is `storagenvmeofnamespace`. |
+| Host ACL lookup | Resolve the requested subsystem to the canonical subsystem NQN before listing or creating host ACLs. |
+| Initial setup verification | Verify subsystem existence through subsystem ID/NQN only, then query host ACLs with the resolved subsystem ID. |
+| UI inventory | Use namespace APIs for namespace/backing-volume tables and subsystem APIs for subsystem/ACL tables. |
+
+This rule does not change the DB schema or SystemVM runtime model. It prevents
+API/UI ambiguity around the shared block-target table.
+
+### NVMe-oF namespace refresh and display rule
+
+Namespace create, update, and delete actions must refresh both
+`listStorageNvmeOfSubsystems` and `listStorageNvmeOfNamespaces`. The namespace
+API is the source of truth for namespace rows, listener port groups, backing
+volumes, and endpoint presentation. Subsystem rows may summarize namespace
+listener groups, but must not replace namespace rows or display service-wide
+endpoint summaries as if they were namespace-specific exposure.
+
+### NVMe-oF listener runtime-state separation rule
+
+NVMe-oF protocol listeners and namespace exposure are separate runtime concepts.
+A registered protocol endpoint means that the service can use an IP/port group,
+but the kernel NVMET listener becomes meaningful only when at least one active
+namespace exposes its subsystem through that port group.
+
+| Item | Rule |
+| --- | --- |
+| Protocol row | Represents configured listener metadata. It can be `Ready` even when no namespace uses its port group yet. |
+| Namespace row | Owns the listener port group that exposes the subsystem. Namespace listener ports are the source of truth for configfs subsystem links. |
+| SystemVM monitor | Reports each NVMe-oF port as `LISTENING`, `UNUSED`, or `ERROR`. `UNUSED` is not degraded; `ERROR` is degraded. |
+| UI status summary | Separates configured endpoints from namespace-exposed endpoints and displays unused listeners explicitly. |
+| Namespace modal | Shows listener port groups with runtime status and must not leak raw i18n keys. |
+| Reboot reconcile | Restores configured listeners and links only namespace-selected port groups; unused listeners remain configured metadata without forcing a failed listen probe. |
+
+This prevents a listener such as `10.10.22.203:4422` from being shown as a
+failed service when it has only been registered and no namespace has selected
+the `4422` port group yet. When a namespace later selects that port group, the
+SystemVM apply step must link the subsystem to the configfs port and the monitor
+must transition the port from `UNUSED` to `LISTENING`.
+
+### NVMe-oF host ACL and allow-any-host exclusivity rule
+
+Kernel NVMET treats `attr_allow_any_host=1` and explicit
+`allowed_hosts/<host-nqn>` links as mutually exclusive access models for a
+subsystem. On the 2026-07-09 validation service, linking a host NQN under a
+subsystem whose `allowAnyHost` policy was enabled failed with kernel configfs
+`EINVAL`. Storage Service must therefore prevent this invalid combination before
+it reaches the SystemVM runtime.
+
+| Component | As-is | To-be |
+| --- | --- | --- |
+| UI access table | Shows inherited all-host policy and explicit ACL rows in the same table, but only exposes a create action. Operators can try to add a Host ACL to an all-host subsystem and get a late runtime failure. | Show access policy rows separately from explicit Host ACL rows. Rows derived from `allowAnyHost=true` are read-only policy rows with no edit/delete Host ACL action. Explicit rows have right-aligned edit/delete actions. |
+| UI Host ACL create modal | Lists every subsystem as a selectable ACL target. | Filter or disable `allowAnyHost=true` subsystems and show a clear message: all-host subsystems already allow every host; disable all-host policy first to use explicit ACLs. |
+| UI Host ACL edit/delete | Backend APIs exist, but the tab has no edit/delete actions. | Add edit/delete actions for explicit Host ACL rows. Edit reuses the create modal with current Host NQN and DH-HMAC-CHAP flags populated. Delete uses a destructive confirmation and refreshes subsystem, ACL, and inventory data without switching tabs. |
+| API create | Persists a `storage_access_rule` row first, then the SystemVM may fail with `EINVAL`, leaving an `Error` row. | Resolve the canonical subsystem, parse `config_json.allowAnyHost`, and reject create before persisting if it is true. No DB row is created for this policy conflict. |
+| API update | Allows changing an ACL row without rechecking the current subsystem policy. Failed apply leaves the row in `Error`. | Re-read the canonical subsystem before update. If `allowAnyHost=true`, reject the update. If the Host NQN changes, check duplicate Host NQNs under the canonical subsystem before persisting. Preserve the previous row on apply failure where possible. |
+| API delete | Deletes explicit ACL rows and reapplies desired state. | Keep this behavior for explicit rows only. The API remains ID-based; policy rows are UI-only and never call delete. |
+| Desired-state builder | Can include hosts even when the subsystem payload has `allowAnyHost=true`. | When building the canonical subsystem payload, treat `allowAnyHost=true` as authoritative and omit explicit hosts from that runtime payload. Persisted invalid legacy ACL rows should be surfaced as invalid/error metadata rather than rendered into configfs. |
+| SystemVM `ablestack-storagectl` | Writes `attr_allow_any_host`, then blindly creates `allowed_hosts` symlinks for every host row. | If `allowAnyHost=true`, write `attr_allow_any_host=1`, remove stale managed `allowed_hosts` symlinks for that subsystem, skip host linking, and report inherited all-host policy in monitor inventory. If `allowAnyHost=false`, write `0` before linking explicit hosts. |
+| Monitor/inventory | Does not distinguish inherited all-host policy from explicit Host ACL rows clearly enough for action routing. | Report subsystem access mode (`ALLOW_ANY_HOST` or `EXPLICIT_HOST_ACL`), explicit ACL count, and inherited policy status. Do not synthesize inherited policy as an editable ACL resource ID. |
+
+Code-level implementation targets:
+
+| File | Required change |
+| --- | --- |
+| `ui/src/views/storage/SharedFSTab.vue` | Add `actions` handling to `nvmeAclColumns`; implement `editNvmeHostAcl`, `updateNvmeHostAcl`, and `deleteNvmeHostAcl`; keep policy rows actionless; disable or annotate `allowAnyHost` subsystems in the Host ACL modal; refresh only NVMe-oF tab data after action completion. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Add labels and messages for inherited all-host policy, explicit Host ACL edit/delete, the policy-conflict warning, and destructive delete confirmation. Ensure no raw i18n keys are visible in the NVMe-oF tables or modals. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Add a small helper such as `ensureNvmeHostAclAllowed(StorageBlockTargetVO subsystem)` and call it from create/update. Add duplicate Host NQN validation on update when the principal changes. Build NVMe-oF desired state without rendering explicit hosts for all-host subsystems. |
+| `api/src/main/java/org/apache/cloudstack/api/command/user/storage/dataservice/*StorageNvmeOfHostAclCmd.java` | No new command is required. Existing create/update/delete/list APIs remain the contract; only validation and UI exposure change. |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | Guard `apply_nvmeof_subsystems` so all-host subsystems never attempt `allowed_hosts` symlink creation. Make the policy conflict error deterministic if an invalid payload still reaches the VM. |
+| `systemvm/debian/usr/local/bin/ablestack-storage-boot-reconcile` | No separate business logic change should be needed if it invokes the corrected `storagectl` desired-state apply. Retest reboot recovery after the `storagectl` change. |
+
+Migration and cleanup rule:
+
+- Existing invalid `storage_access_rule` rows created by this defect should not be
+  silently converted to active ACLs. They should either remain visible as failed
+  explicit rows until an operator deletes them, or be cleaned by an explicit
+  maintenance action after confirming the subsystem is still `allowAnyHost=true`.
+- The implementation does not require a DB schema change.
+
+### NVMe-oF row action and safety rule
+
+The NVMe-oF tab must follow the same operational pattern as the completed NFS,
+SMB, and iSCSI tabs: every mutable row has an action column, action buttons are
+right aligned and fixed to the right edge, and destructive operations are only
+enabled when they can be executed without orphaning runtime state or data.
+
+This rule is a UI/API guardrail design. It does not change the NVMe-oF configfs
+runtime model unless a requested action already maps to an existing desired-state
+operation.
+
+| Area | As-is | To-be |
+| --- | --- | --- |
+| Listener table | Shows listen IP, port, listener type, and effective endpoints, but has no row actions. Operators cannot remove a wrong listener from the NVMe-oF tab. | Add a fixed right action column. Editing a listener is not offered because listener identity is `protocol + listenIp + port`; changing it is modeled as delete and create. Delete is enabled only when no namespace uses the same listener port group and no active session is on the listener endpoint. |
+| Listener delete API | `deleteStorageServiceProtocol` accepts `listenip`, but endpoint removal is explicitly limited to NFS. It also lacks a `port` parameter, so it cannot safely distinguish multiple listeners on the same IP. | Extend the API with an optional `port` parameter and add NVMe-oF endpoint deletion support. The backend removes only the exact `listenIp + port` protocol row, refuses primary service IP deletion, refuses rows still referenced by namespaces, then reapplies NVMe-oF desired state. |
+| Listener wildcard rows | A wildcard listener row such as `0.0.0.0:4420` can represent a port group covering all service IPs. | Treat wildcard rows as service-wide port groups. They are read-only in the row action column unless no namespace references the port and another listener remains available. The UI explains that a wildcard row is removed by removing the corresponding port group. |
+| Subsystem table | Backend update/delete APIs exist, but the UI table has no row actions. | Add edit and delete actions. Edit opens the existing subsystem form with current NQN, engine, and host policy populated. Engine and transport are read-only after creation. Delete is disabled while namespaces, explicit host ACL rows, or active sessions exist. Backend cascade delete remains protected by the UI and should also reject unsafe deletes server-side. |
+| Namespace table | Edit and delete actions exist. | Keep actions, but apply the same action-cell styling as other storage tables. Edit remains limited to mutable fields such as listener port group/size metadata; subsystem identity and backing volume remain immutable after creation. Delete remains destructive and never deletes the backing volume. |
+| Backing volume table | Shows volumes but has no actions. In older UI wiring, the volume expansion action reused the file-share resize modal/API and could show a target/namespace UUID in a `file share` field. | Add fixed right actions for backing-volume expansion and backing-volume detach. Expansion opens the dedicated `resizeBackingVolume` modal and calls `resizeStorageServiceBackingVolume`; it never asks for a file share. Detach is disabled when any namespace uses the volume or when active sessions exist for namespaces on that volume. The tab never deletes the volume; volume deletion stays in the volume workflow. |
+| Host ACL table | Explicit ACL edit/delete actions exist, while inherited all-host policy rows are actionless. | Keep inherited policy rows read-only. Keep explicit ACL edit/delete actions visible and right aligned. If a subsystem is `allowAnyHost=true`, explicit ACL creation/edit is blocked and stale explicit rows can only be deleted after confirmation. |
+| Session table | Session termination exists. | Keep session termination as the only session action. Session rows gate other destructive actions when they reference the same subsystem, namespace, volume, listener IP, or port. |
+
+Code-level implementation targets:
+
+| File | Required change |
+| --- | --- |
+| `ui/src/views/storage/SharedFSTab.vue` | Add `actions` columns and body-cell handlers for `nvmeListenerColumns`, `nvmeSubsystemColumns`, and `nvmeVolumeColumns`; keep existing namespace and Host ACL actions but normalize them to `storage-table-actions`. Add helpers for `canDeleteNvmeListener`, `canEditNvmeSubsystem`, `canDeleteNvmeSubsystem`, `canDetachNvmeVolume`, and `nvmeActiveSessionRefs`. Add modal wiring for `editNvmeSubsystem`, `resizeBackingVolume`, `detachBackingVolume`, and listener deletion. `resizeBackingVolume` must use the dedicated backing-volume resize form/API, not `resizeStorageFileShare`. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Add labels/tooltips for listener delete, subsystem edit/delete, volume expand/detach, disabled reasons, wildcard listener protection, namespace reference protection, active session protection, and destructive confirmation messages. No raw i18n keys may be visible in the NVMe-oF tables or modals. |
+| `api/src/main/java/org/apache/cloudstack/api/command/user/storage/dataservice/DeleteStorageServiceProtocolCmd.java` | Add optional `port` parameter. Keep backward compatibility: if `port` is omitted, existing NFS behavior is preserved; NVMe-oF deletion requires `port` to avoid ambiguous endpoint deletion. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Extend `deleteStorageServiceEndpoint` or add a protocol-specific helper for NVMe-oF. Validate exact listener row existence, primary IP protection, namespace listener-port references, and active session safety before removing the protocol row. After removal, call `applyNvmeOfDesiredState(instance)` and rollback the DB row if runtime apply fails. Add server-side guards for unsafe subsystem deletes. |
+| `api/src/main/java/org/apache/cloudstack/api/command/user/storage/dataservice/UpdateStorageNvmeOfSubsystemCmd.java` and `DeleteStorageNvmeOfSubsystemCmd.java` | No new commands are required. Tighten parameter semantics in docs and rely on server-side validation for immutable fields and delete safety. |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | No direct change is required for UI action exposure. Only change this file if backend listener deletion reveals that desired-state apply leaves stale configfs links; then cleanup must be driven by the desired-state payload, not ad hoc UI behavior. |
+
+Preflight and validation rule:
+
+- A service-VM code injection preflight is not required for pure UI action
+  exposure or API validation because the configfs runtime model is unchanged.
+- A preflight is required before changing `ablestack-storagectl` listener cleanup
+  logic. The preflight must verify deletion of an unused NVMe-oF listener,
+  refusal to delete a namespace-referenced listener, and reboot reconcile with
+  the listener removed.
+- UI validation must include horizontal-scroll tables with fixed right action
+  columns so the action buttons do not overlap the scrollbar or disappear when
+  the table is scrolled.
+
+## Cross-Protocol Endpoint Read Model And Runtime Alignment (2026-07-18)
+
+This section is the implementation design for the management-plane defects
+remaining after the integrated NFS, SMB, iSCSI, and NVMe-oF runtime validation
+on SharedFS `63efbcd0-65ee-4e73-bf92-bfe09c62703a`. The data paths and reboot
+reconcile passed. The correction is therefore limited to endpoint identity,
+runtime-policy alignment, UI semantics, locale completeness, and one SystemVM
+unit-file permission defect.
+
+### Canonical listener read model
+
+The common protocol response is the authoritative listener inventory. UI code
+must not reconstruct configured listeners from service NICs, child resources,
+or default protocol ports when `listStorageServiceProtocols` returned listener
+rows.
+
+Priority order:
+
+1. `StorageServiceProtocolResponse.listenip`, `port`, `listenertype`,
+   `effectiveendpoints`, `runtimestate`, and `linkedresourcecount`.
+2. Parsed protocol `config` only for backward-compatible responses that do not
+   include the fields above.
+3. Service NIC inventory only to expand a wildcard listener when the API did
+   not provide `effectiveendpoints`.
+4. Protocol default ports only when no protocol row exists at all; this is an
+   explicit legacy/empty-state fallback and must be labelled as inferred.
+
+Wildcard canonicalization is semantic, not destructive. For one protocol and
+port, a `0.0.0.0:<port>` row remains the single logical listener and its
+effective endpoints contain each service IP exactly once. A dedicated row with
+the same port is hidden as redundant only when it adds no distinct lifecycle or
+runtime state. The read path never deletes historical DB rows automatically.
+
+### Protocol-specific behavior
+
+| Area | As-is | To-be |
+| --- | --- | --- |
+| NFS listener inventory | Wildcard and primary-IP rows can both be rendered even though one Ganesha wildcard listener owns the port. | Adapt NFS through the common listener read model. Collapse semantically covered primary rows and preserve distinct NFSv4 listener groups by port. `V3V4_DUAL` remains service-wide. |
+| SMB endpoint calculation | `smbEffectiveEndpointPairs` reads selected protocol IPs and then appends every service NIC, so share paths imply access on addresses not selected by the operator. Runtime `smbd` currently listens on `0.0.0.0:445`. | Build UI share paths only from canonical SMB listener rows. Render `interfaces` and `bind interfaces only = yes` in `smb.conf` for dedicated SMB listeners. A wildcard SMB listener intentionally expands to every service IP. Runtime inventory must compare desired and observed bindings. |
+| iSCSI status and commands | `iscsiConnectionCommands` composes the service primary IP and hard-coded port 3260 even when the target uses another portal. | Resolve endpoint pairs from the target's listener port groups and canonical iSCSI listener rows. Status cards and commands display all effective portals; the command example uses the first active portal only as an example. |
+| iSCSI LUN size | A whole-volume LUN can show requested size `-` and applied size `50 GiB`, which looks incomplete. | Display the requested size as `백킹 볼륨 전체` / `Entire backing volume` when no explicit size was requested, while retaining the observed applied capacity in the effective-size column. |
+| NVMe-oF all-host session label | The raw key `label.storage.service.nvme.allow.any.host` can escape into the session table. | Add the locale key in both bundles and route policy text through `storageLabel` only as a last-resort safety fallback. A locale test fails when any rendered `label.storage.service.*` text remains. |
+| Systemd unit packaging | `resize-sharedfs@.service` is created with mode `0700`, producing a systemd unit permission warning. | Change only the unit-file mode to `0644`; keep `/usr/local/bin/sharedfs/resize-filesystem` executable at `0700`. |
+
+### Code-level implementation targets
+
+| Component/file | Required change |
+| --- | --- |
+| `api/src/main/java/org/apache/cloudstack/api/response/StorageServiceProtocolResponse.java` | Keep the existing response contract. No new field is required. Clarify that `effectiveendpoints` is the canonical expansion of a logical listener and `linkedresourcecount` is scoped to the listener port group. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Keep `createProtocolResponse`, `buildProtocolResponseContext`, and `createEffectiveProtocolEndpoints` as the common adapter. Add deterministic wildcard deduplication in the response assembly or a helper used by `listStorageServiceProtocols`; do not infer the primary IP from the newest secondary address. Extend `applySmbDesiredState` with canonical enabled listener IPs and ports. |
+| `ui/src/views/storage/SharedFSTab.vue` | Introduce one adapter such as `canonicalProtocolListenerRows(protocolName)` and make NFS, SMB, iSCSI, and NVMe-oF listener tables, summaries, connection commands, and child-resource endpoint labels consume it. Remove the unconditional `serviceEndpoints.forEach(addIp)` branch from `smbEffectiveEndpointPairs`. Replace the hard-coded `serviceEndpoint:3260` path in `iscsiConnectionCommands`. Add an explicit whole-volume formatter for `iscsiTargetRows`. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Add the missing NVMe-oF allow-any-host policy label and whole-backing-volume LUN label. Maintain a locale parity test for every new storage-service key. |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | In SMB desired-state apply, derive dedicated listener addresses from the payload and render `interfaces = lo <selected addresses>` plus `bind interfaces only = yes`. Omit both settings for a wildcard SMB listener. After restart, verify observed TCP 445 addresses and report mismatch through monitor inventory instead of silently returning success. |
+| `plugins/storage/sharedfs/storagevm/src/main/resources/conf/fsvm-init.yml` | Change `/etc/systemd/system/resize-sharedfs@.service` permissions from `0700` to `0644`. No service behavior changes. |
+| `ui/tests/unit/views/storage/SharedFSTab.spec.js` | Add table-driven tests for wildcard expansion, redundant NFS row suppression, dedicated SMB isolation, iSCSI portal-derived commands, whole-volume LUN labels, and raw-key rejection. |
+| `server/src/test/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImplTest.java` | Add protocol response tests for wildcard effective endpoint expansion, secondary-IP preservation, and linked-resource counts by protocol/port. |
+
+### SMB preflight evidence and runtime contract
+
+A non-destructive QGA preflight was executed on `i-2-597-VM`:
+
+- current Samba configuration had no `interfaces` value and
+  `bind interfaces only = No`;
+- runtime `smbd` listened on IPv4 and IPv6 wildcard TCP 445;
+- a temporary configuration containing
+  `interfaces = lo 10.10.22.201/32` and
+  `bind interfaces only = yes` passed `testparm` and normalized to the expected
+  values;
+- no live Samba configuration or process was changed by this preflight.
+
+This proves the selected-IP model is syntactically supported in the current
+SystemVM image. Implementation still requires a data-path regression showing
+that selected addresses accept SMB and unselected addresses reject SMB without
+affecting NFS, iSCSI, or NVMe-oF listeners.
+
+### Scope boundaries and rollout gates
+
+- No DB schema migration is required. Existing protocol rows already hold the
+  required listener identity.
+- API response shape remains backward compatible. The management aggregate JAR
+  and API classes must still be deployed as one aligned set.
+- A SystemVM template rebuild is required because SMB rendering and the
+  cloud-init unit permission change are inside the image.
+- NFS Ganesha, LIO iSCSI, kernel NVMET, backing-volume mapping, ACL semantics,
+  and reboot reconcile algorithms are out of scope and must remain unchanged.
+- Release is blocked unless all four protocols pass connection/write checks,
+  reboot recovery, listener-table UI checks, locale checks, and the served UI
+  asset/hash gate.
+
+## Existing NIC Drift Repair and iSCSI Session Authentication Closure
+
+This section closes the two management-plane defects found during the
+four-protocol validation of an existing Storage Service. It supplements the
+primary-NIC preservation design above and does not reopen listener, backing
+volume, ACL, or reboot-reconcile behavior.
+
+### Scope and invariants
+
+- A populated `nics.ip4_address` remains authoritative until an explicit,
+  administrator-approved repair is applied.
+- Runtime QGA addresses and `nic_secondary_ips` are observations. They may
+  prove drift, but may not silently rewrite primary identity.
+- Repair is allowed only when the observed runtime primary is unambiguous and
+  the incorrect DB primary is still present as a runtime/DB alias.
+- An established LIO iSCSI session is not an authentication failure merely
+  because `targetcli sessions detail` prints `(NOT AUTHENTICATED)`.
+- CHAP secrets must never be returned by the session API, written to the
+  monitoring cache, or rendered by the UI.
+
+### AS-IS / TO-BE
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Existing NIC drift | Prevention and an administrator repair API exist, but the SharedFS UI only warns. Existing drift therefore remains operationally unresolved. | The warning exposes a guarded dry-run and explicit repair action when the repair API is available. The UI shows DB primary, runtime primary, aliases, and the exact proposed change before confirmation. |
+| NIC repair result | The repair command updates the guarded primary field, but the UI has no closed-loop postcondition. | After the async job succeeds, refetch protocol/identity context and require `identityStatus=CONSISTENT`; aliases and protocol endpoint rows must remain unchanged. A failed postcondition is shown as a repair failure, not success. |
+| iSCSI authentication observation | `ablestack-storagectl` maps the literal targetcli text `(NOT AUTHENTICATED)` to `authenticated=false`, even for a CHAP-protected `LOGGED_IN` LIO session. | Authentication is classified from LIO policy, matching ACL configuration, session state, and explicit failure evidence. The targetcli phrase is retained only as a diagnostic observation. |
+| iSCSI session API | Session JSON exposes a misleading boolean without explaining whether CHAP was configured or required. | Session JSON exposes `chapConfigured`, `authRequired`, `authVerification`, and optional backward-compatible `authenticated`; no credential value is exposed. |
+| iSCSI session UI | The table cannot distinguish no-auth sessions, verified CHAP sessions, unknown observations, and failures. | Add translated `CHAP 구성` and `인증 상태` columns. `UNKNOWN` includes a tooltip; `FAILED` is reserved for explicit authentication failure evidence. |
+
+### NIC repair implementation contract
+
+The existing `repairStorageServiceNicIdentity` API is the only write path. No
+new repair command or DB migration is required.
+
+1. `SharedFSTab.vue` reads the identity diagnostic fields already returned by
+   the protocol response and displays the repair control only when:
+   - `identityStatus` is `DRIFT`;
+   - the current API catalog contains `repairStorageServiceNicIdentity`;
+   - DB primary, runtime primary, and alias evidence are all populated.
+2. The first action always calls the command with `dryrun=true`. The response
+   populates a confirmation dialog; the UI must not derive the proposed values
+   independently.
+3. Apply calls the same command with `dryrun=false` and
+   `expectedruntimeprimary=<dry-run runtime primary>` to reject stale evidence.
+4. The existing async-job helper waits for completion. Only the identity and
+   protocol data sets are refreshed; the selected service tab and wide-mode
+   state are preserved.
+5. The success postcondition is `identityStatus=CONSISTENT`, the repaired DB
+   primary equals the runtime primary, and the alias set is unchanged.
+6. `NicDaoImpl.updateSecondaryIpFlag` remains a field-scoped, expected-value
+   guarded update. A full `NicVO` update is prohibited for this flow.
+
+### iSCSI authentication classification contract
+
+`ablestack-storagectl` must separate parsing from classification:
+
+```text
+parse_targetcli_session_auth(text) -> raw observation
+classify_iscsi_auth_session(session, target, acl, runtime_attrs) -> contract
+```
+
+The classifier returns one of:
+
+| `authVerification` | Required evidence | Compatibility field |
+| --- | --- | --- |
+| `VERIFIED` | Session is `LOGGED_IN`, LIO authentication is required, and the matched desired/runtime ACL has CHAP configured. | `authenticated=true` |
+| `NOT_REQUIRED` | Session is `LOGGED_IN` and target/TPG authentication is disabled. | omit `authenticated` |
+| `UNKNOWN` | Session exists but required policy or ACL evidence cannot be resolved safely. | omit `authenticated` |
+| `FAILED` | Explicit login/authentication failure evidence exists and no established session supersedes it. | `authenticated=false` |
+
+The literal targetcli observation is stored as
+`targetcliAuthObservation=AUTHENTICATED|NOT_AUTHENTICATED|UNSPECIFIED` for
+diagnostics only. It cannot directly select `FAILED`.
+
+For each session row, the collector also emits stable correlation fields:
+
+- initiator IQN;
+- target IQN;
+- mapped LUN/namespace identifier;
+- portal endpoint;
+- `chapConfigured` and `authRequired` booleans when known;
+- `authVerification`;
+- connection state and observed time.
+
+The monitoring/session payload uses `sessionSchemaVersion=2`. Readers must
+continue accepting version 1 rows and map their authentication state to
+`UNKNOWN` unless explicit positive evidence is present.
+
+### Code-level implementation targets
+
+| Component/file | Required change |
+| --- | --- |
+| `ui/src/views/storage/SharedFSTab.vue` | Add the API-catalog-gated NIC repair dry-run/confirmation/apply flow, preserve the active tab during focused refresh, and add iSCSI `chapConfigured`/`authVerification` columns with backward-compatible row adaptation. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Add repair confirmation/result labels and iSCSI authentication-state labels. Enforce locale-key parity and raw-key rejection. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Retain the current guarded repair implementation. Add/verify the post-repair identity response postcondition and preserve aliases/listener rows. Do not add an automatic repair path. |
+| `engine/schema/src/main/java/com/cloud/vm/dao/NicDao.java`, `engine/schema/src/main/java/com/cloud/vm/dao/NicDaoImpl.java` | Retain the expected-primary, field-scoped update contract and add regression coverage. No schema change. |
+| `server/src/main/java/com/cloud/server/StatsCollector.java` | Retain the rule that observed aliases cannot replace a populated primary. Add ordering/permutation regression coverage only. |
+| `api/src/main/java/org/apache/cloudstack/api/command/admin/storage/dataservice/RepairStorageServiceNicIdentityCmd.java` | Keep dry-run as the default and require expected runtime primary for apply. No new API surface is required. |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | Replace direct targetcli-string boolean mapping with the versioned iSCSI authentication classifier and secret-free session fields. |
+| `server/src/test/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImplTest.java` | Cover dry-run, stale evidence rejection, ambiguous runtime addresses, alias preservation, and post-repair `CONSISTENT` identity. |
+| `ui/tests/unit/views/storage/SharedFSTab.spec.js` | Cover repair control visibility, confirmation values, tab preservation, version 1 session fallback, and all authentication badges. |
+| `systemvm/test/test_ablestack_storagectl_iscsi_sessions.py` | Add table-driven fixtures for CHAP verified despite targetcli `NOT AUTHENTICATED`, no-auth, unknown policy, explicit failure, and secret redaction. |
+
+### Build, deployment, and acceptance gates
+
+- DB migration: not required.
+- Host agent deployment: not required.
+- Management/API/UI deployment: required for repair workflow and session/UI
+  contract consumers.
+- SystemVM template rebuild: required because the iSCSI collector lives in
+  `ablestack-storagectl`.
+- Existing running SystemVMs require either an explicit collector hot patch for
+  preflight or recreation from the rebuilt template; management-side NIC repair
+  does not require a SystemVM change.
+- Deployment is accepted only when the served UI asset hashes match the local
+  build, the repair dry-run/apply postcondition passes, CHAP login/write remains
+  successful, the session row reports `VERIFIED`, and all four protocols pass
+  reboot recovery without listener or alias changes.
+
+## Protocol-Scoped Session Warning and NFS Volume Presentation Closure (2026-07-20)
+
+### Validated evidence and scope
+
+The four-protocol validation of Storage Service instance 144 and Service VM
+599 passed DB/runtime correlation, NFS/SMB/iSCSI/NVMe-oF connection and
+reversible write tests, and reboot recovery. Two remaining defects are limited
+to UI-derived presentation data:
+
+- the iSCSI tab rendered an NVMe-oF mapping warning because
+  `iscsiSessionRuntimeWarning` consumed the top-level, cross-protocol
+  `sessions.json.warnings` array;
+- the NFS backing-volume table iterated `currentBackingVolumes`, which is the
+  intentionally broad attached-DATADISK selector used by create dialogs. It
+  therefore included SMB, iSCSI, and NVMe-oF volumes and could fall back to the
+  SharedFS default filesystem, displaying an ext4 raw block volume as XFS.
+
+No Service VM code injection is required for this closure. The runtime cache,
+block-device filesystem probes, listener state, protocol resources, and
+post-reboot data paths were already correct. Injecting code into a healthy
+Service VM would not exercise the faulty Vue computed properties and would add
+unnecessary risk.
+
+### AS-IS / TO-BE
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| iSCSI warning source | `iscsiSessionRuntimeWarning` joins every top-level runtime warning. An NVMe-oF candidate-mapping warning can therefore appear above an exact iSCSI session row. | Derive the iSCSI warning only from iSCSI counters and iSCSI session rows. Never render another protocol's `mappingWarning` in the iSCSI tab. |
+| iSCSI warning text | Runtime English diagnostic text is appended to a translated iSCSI banner. | Render a fully translated, protocol-specific summary. Keep raw runtime diagnostics out of the normal table surface; they remain available to diagnostic tooling. |
+| NFS table volume source | `nfsVolumeRows` iterates all DATADISK volumes attached to the Service VM through `currentBackingVolumes`. | Add an NFS-specific volume projection keyed by the `volumeId`/`volumeUuid` referenced by NFS exports. The broad collection remains available only to volume-selection dialogs. |
+| NFS filesystem value | Missing NFS inspection data can fall back to `resource.filesystem`, causing unrelated raw block volumes to display as XFS. | Resolve filesystem from the matched NFS export inspection, export filesystem field, or exact volume runtime metadata. If none is authoritative, display `-`; never infer XFS from the SharedFS default. |
+| Refresh behavior | One atomic refresh loads all protocol resources and all attached volumes, but table projections do not consistently preserve protocol ownership. | Keep the existing atomic refresh and build protocol-scoped computed projections after the snapshot commits. Do not issue extra API calls per row. |
+
+### UI implementation contract
+
+`ui/src/views/storage/SharedFSTab.vue` must implement the following contracts:
+
+1. Add `nfsBackingVolumes`, a computed projection that:
+   - builds a set from every NFS export `volumeid`, `volumeId`, `volumeuuid`,
+     and `volumeUuid`;
+   - exact-matches those identifiers against `storageService.backingVolumes`;
+   - retains the default SharedFS volume only when an NFS export explicitly
+     references it;
+   - deduplicates by canonical ABLESTACK volume ID;
+   - never includes a volume solely because it is attached to the Service VM.
+2. Change `nfsVolumeRows` to iterate `nfsBackingVolumes`. Keep
+   `currentBackingVolumes` unchanged because NFS/SMB create dialogs require the
+   full set of safe, attached DATADISK candidates.
+3. Add an NFS-only filesystem resolver. Resolution order is:
+   `config.lastInspection.filesystem` -> export `filesystem`/`fsType` -> exact
+   volume runtime `filesystem`/`fsType` -> `-`. Remove `resource.filesystem`
+   from NFS table-row fallback logic.
+4. Replace `iscsiSessionRuntimeWarning` consumption of global `warnings` with
+   protocol evidence:
+   - `observedIscsiTcpCount` is the observed transport count;
+   - `protocolSessions('ISCSI')` is the logical row set;
+   - `UNMAPPED` iSCSI rows may produce an iSCSI-specific translated warning;
+   - exact or otherwise mapped iSCSI rows suppress the incomplete-detail
+     warning even when another protocol has a mapping warning.
+5. Do not display raw runtime warning strings in the standard iSCSI tab. A new
+   locale key provides the count-only incomplete-session message in Korean and
+   English. Diagnostic raw text remains available in the runtime payload.
+
+### Code-level targets
+
+| Component/file | Required change |
+| --- | --- |
+| `ui/src/views/storage/SharedFSTab.vue` | Add `nfsBackingVolumes`; scope `nfsVolumeRows`; remove default-filesystem fallback from NFS table rows; make `iscsiSessionRuntimeWarning` protocol-specific and translation-only. |
+| `ui/public/locales/ko_KR.json`, `ui/public/locales/en.json` | Add the protocol-specific incomplete iSCSI session message and keep locale-key parity. No raw runtime English warning is rendered. |
+| `ui/tests/unit/views/storage/SharedFSTab.spec.js` | Add mixed-protocol warning fixtures, exact iSCSI suppression, iSCSI-unmapped warning, NFS-only volume filtering, ID/UUID matching, deduplication, and unknown-filesystem `-` cases. |
+| API, server, schema, SystemVM | No change. Existing list APIs and runtime cache already contain sufficient authoritative data. |
+
+### Acceptance gates
+
+- A runtime payload containing an exact iSCSI session and an NVMe-oF
+  `mappingWarning` renders no iSCSI incomplete-session banner.
+- An observed iSCSI transport with no logical iSCSI row renders only the
+  translated iSCSI warning and the observed count.
+- The NFS backing-volume table contains exactly the volumes referenced by NFS
+  exports. SMB/iSCSI/NVMe-oF-only volumes are absent.
+- An NFS volume with authoritative ext4 inspection displays `ext4`; an unknown
+  filesystem displays `-` and never falls back to XFS.
+- NFS/SMB current-volume selectors still list all safe attached DATADISK
+  candidates; this presentation fix must not reduce create-dialog capability.
+- Locale JSON parsing, locale-key parity, focused Jest tests, lint, and the UI
+  production build pass.
+- Deployment scope is UI only. DB migration, management/API deployment,
+  `mold-agent.service` restart, and SystemVM template rebuild are not required.
+
+## Stable File-Share Backing-Volume Identity And Runtime Observation (2026-07-21)
+
+### Scope and validated failure
+
+This closure is limited to NFS/SMB backing-volume identity after Service VM
+reboot and guest disk re-enumeration. It must not change NFS export behavior,
+SMB share or ACL behavior, iSCSI/NVMe-oF raw-block ownership, or any existing
+four-protocol reboot contract.
+
+A read-only QGA preflight against Service VM 599 proved that Linux device names
+are not stable volume identities:
+
+- the NFS volume recorded `/dev/sdb` in `config_json.lastInspection`, but the
+  running guest resolved that ABLESTACK volume UUID and filesystem UUID to
+  `/dev/sde` after reboot;
+- the SMB volume recorded `/dev/sdc`, but the running guest resolved it to
+  `/dev/sdd`;
+- the old `/dev/sdb` and `/dev/sdc` names were valid, safe data disks belonging
+  to different volumes, so a safety check based only on disk type would not
+  prevent a wrong-volume selection;
+- UUID-backed `/etc/fstab` entries and stable per-volume mount directories
+  recovered correctly, and all protocol data paths remained healthy.
+
+The failure is therefore metadata drift plus a latent wrong-device risk. It is
+not a mount, listener, filesystem, or protocol-service failure.
+
+### AS-IS / TO-BE
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| Desired volume identity | `attachedVolumeUuid` exists, but some guest operations accept a cached `config.devicePath` first. | `attachedVolumeUuid` and the persisted ABLESTACK volume ID are the authoritative desired identity. |
+| Guest device identity | `/dev/sdX` from `lastInspection.devicePath` can be reused as a selector after reboot. | `/dev/sdX` is volatile telemetry only. Selection uses stable volume serial/by-id evidence, filesystem UUID, and the mounted source. |
+| Inspection schema | `lastInspection` mixes stable and volatile fields and emits `fsUuid` without a schema version or observation epoch. | Store a versioned observation with `filesystemUuid`, `observedDevicePath`, `observedAt`, `bootId`, and `matchedBy`; retain legacy read aliases. |
+| Resolver implementations | Attach, rescan, resize, and boot reconcile have partially different lookup orders. | All operations call one strict resolver with the same identity order and ambiguity rules. |
+| API semantics | Raw `config_json` can make a historical path look current. | Desired identity and live runtime observation are separate response fields with an explicit mapping status. |
+| UI semantics | A cached guest device path can be interpreted as the current path. | The backing-volume table shows stable volume identity and mount intent; a guest path is shown only from current runtime inventory and is labelled as current observation. |
+| Legacy records | Existing `devicePath`/`fsUuid` records have no deterministic normalization path. | Legacy records remain readable, but `devicePath` never selects a disk; the next successful inspect/apply writes schema version 2. |
+
+### Stable identity and observation contract
+
+`config_json` remains the persistence container; no DB column migration is
+required. A successful inspection writes the following normalized shape:
+
+```json
+{
+  "attachedVolumeUuid": "<ABLESTACK volume UUID>",
+  "attachedVolumeName": "<volume name>",
+  "volumeMountPath": "/srv/ablestack-storage/volumes/<volume UUID>",
+  "lastInspection": {
+    "schemaVersion": 2,
+    "volumeUuid": "<ABLESTACK volume UUID>",
+    "filesystemUuid": "<filesystem UUID>",
+    "filesystem": "xfs|ext4",
+    "observedDevicePath": "/dev/sdX",
+    "observedAt": "<UTC ISO-8601>",
+    "bootId": "<guest boot ID>",
+    "matchedBy": "VOLUME_SERIAL|FILESYSTEM_UUID|MOUNT_SOURCE",
+    "volumeMountPath": "/srv/ablestack-storage/volumes/<volume UUID>",
+    "backingPath": "/export/<share name>"
+  }
+}
+```
+
+Compatibility rules are mandatory:
+
+1. Read legacy `fsUuid` as an alias for `filesystemUuid`.
+2. Read legacy `devicePath` only as historical diagnostic evidence. It must
+   never be passed to a disk selector.
+3. Do not mutate the DB from a list/read API. A boot-local reconcile updates
+   runtime inventory; an explicit inspect/apply operation may normalize the
+   persisted observation.
+4. Preserve `volumeMountPath` and UUID-based `/etc/fstab` entries as desired
+   mount intent. A changed `/dev/sdX` must not rewrite that intent.
+
+### SystemVM resolver contract
+
+`systemvm/debian/usr/local/bin/ablestack-storagectl` must expose one shared
+resolver used by `volume_attach`, `volume_rescan`, `filesystem_resize`, and boot
+reconcile. The resolver order is strict:
+
+1. Build the safe candidate set and reject root, boot, swap, optical, read-only,
+   and unrelated mounted devices.
+2. Match the compact ABLESTACK volume UUID against stable `/dev/disk/by-id`
+   links and the guest disk serial. This is the primary match.
+3. If a known filesystem UUID exists, resolve `/dev/disk/by-uuid` and require it
+   to agree with stable volume evidence whenever serial evidence is available.
+4. Resolve the mounted source with `findmnt --target <volumeMountPath>` and
+   verify that source against the expected volume/filesystem identity.
+5. Permit a size-only fallback only for the first attachment of a blank volume,
+   only when exactly one safe candidate exists. Reboot reconcile, rescan, and
+   resize must never use this fallback.
+6. Return an error for zero or multiple candidates. Never guess and never fall
+   through to a cached `devicePath`.
+7. Return the current kernel path plus `matchedBy`, filesystem UUID, boot ID,
+   and observation time as telemetry.
+
+The attach result must emit `filesystemUuid`. It may also emit `fsUuid` during a
+compatibility window, but management code must normalize both to the canonical
+field. `filesystem_resize` must resolve by mount target or stable identity
+before invoking the filesystem tool; `volume_rescan` must use the same resolver
+before any capacity or mount operation.
+
+### Management and API contract
+
+`StorageServiceManagerImpl.inspectAttachedFileShareVolume` and
+`buildFileShareAttachConfigJson` must:
+
+- preserve `attachedVolumeUuid`, DB `volume_id`, and `volumeMountPath` as desired
+  state;
+- normalize `fsUuid`/`filesystemUuid` and `devicePath`/`observedDevicePath` into
+  the version 2 observation;
+- add `observedAt`, guest `bootId`, and `matchedBy` from the command result;
+- never copy a historical device path into a future command's selector input;
+- refuse an inspection result whose resolved volume identity differs from the
+  requested ABLESTACK volume UUID.
+
+`StorageFileShareResponse` and `StorageSmbShareResponse` must expose separate
+stable and runtime fields instead of requiring the UI to interpret raw JSON:
+
+- desired: `volumeId`, `volumeUuid`, `filesystemUuid`, `volumeMountPath`;
+- runtime: `runtimeDevicePath`, `runtimeObservedAt`, `runtimeBootId`,
+  `runtimeMatchedBy`;
+- status: `mappingStatus` with `EXACT`, `STALE`, `UNMAPPED`, or `AMBIGUOUS`.
+
+Current runtime fields come from the monitoring inventory/cache. Historical
+`lastInspection.devicePath` must never be returned as `runtimeDevicePath`.
+`STALE` means the persisted observation belongs to another boot or no longer
+matches current stable identity; it is diagnostic and does not override a live
+`EXACT` mapping.
+
+### UI contract
+
+The NFS and SMB backing-volume rows in
+`ui/src/views/storage/SharedFSTab.vue` must display:
+
+- ABLESTACK volume name and UUID;
+- filesystem and stable mount path;
+- mapping status from the API;
+- optional `현재 게스트 장치` only when current runtime inventory supplies an
+  exact path;
+- observation time and boot ID in a tooltip when runtime telemetry exists.
+
+If runtime inventory is unavailable or stale, display `-` for the guest device
+and a translated stale/unavailable status. Do not degrade a healthy share solely
+because a historical `/dev/sdX` differs. Existing dark-mode table, compact
+scrollbar, fixed action-column, and tooltip conventions remain unchanged.
+
+### Code-level targets
+
+| Component/file | Required change |
+| --- | --- |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | Add the shared stable resolver; remove `config.devicePath` precedence; normalize attach output; reuse resolver in attach/rescan/resize/reconcile. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Normalize inspection schema version 2, preserve desired identity, validate returned identity, and stop propagating stale paths as selector input. |
+| File-share/SMB response classes and response builders | Add desired/runtime identity fields and `mappingStatus`; source runtime fields only from current inventory. |
+| `ui/src/views/storage/SharedFSTab.vue` | Render stable identity separately from current guest observation and handle exact/stale/unmapped/ambiguous states. |
+| Korean and English locale JSON | Add current-device, observation, and mapping-status labels with key parity. |
+| Focused server, SystemVM, and UI tests | Cover legacy normalization, reordered disks, ambiguous candidates, runtime-only display, and stale observation behavior. |
+| DB schema, host agent | No change. |
+
+### Acceptance and deployment gates
+
+- A fixture where cached `/dev/sdb` now belongs to another safe data disk must
+  resolve the expected volume by ABLESTACK UUID/serial and return the new path.
+- A reboot that reorders NFS and SMB disks must recover UUID-backed mounts and
+  aliases, preserve desired volume UUIDs, and report `mappingStatus=EXACT`.
+- Ambiguous or mismatched stable identities must fail before format, mount,
+  resize, or export/share apply.
+- Legacy `fsUuid` is normalized; legacy `devicePath` is never used as authority.
+- List APIs remain read-only and do not rewrite observations.
+- NFS/SMB connect and reversible write tests pass before and after reboot;
+  iSCSI and NVMe-oF regressions remain passing.
+- Management/API and UI artifacts are rebuilt and deployed together. The
+  SystemVM template is rebuilt because the resolver changes. Served UI asset
+  hashes and management class signatures must match the build.
+- No DB migration and no `mold-agent.service` deployment or restart are needed.
+
+## Integrated Runtime Observation Completion (2026-07-21)
+
+### Scope and read-only preflight evidence
+
+This closure completes the runtime-observation side of the stable volume
+identity design. It is limited to NFS/SMB backing-volume projection, iSCSI
+actual backing-device projection, and the SharedFS VM boot-network owner. It
+must not change protocol desired state, ACL semantics, listener selection,
+filesystem contents, raw-block ownership, or the existing four-protocol reboot
+reconcile order.
+
+A read-only QGA preflight against Service VM 600 established the following:
+
+- `findmnt -J` returned one top-level node and 29 nodes recursively; both managed
+  file-service mounts were child nodes, so the current top-level-only collector
+  returned no observations for otherwise healthy `/dev/sdd` and `/dev/sde`
+  mounts;
+- `targetcli ls /iscsi` resolved the configured IQN and LUN 0 to `/dev/sdc`,
+  proving that the SystemVM collector has the actual iSCSI backing path while
+  the management list response drops that observation;
+- `networking.service` was failed with `ifup: unknown interface eth0`; the file
+  declared `auto lo eth0` but contained only an `iface lo` stanza, while the
+  active SharedFS NIC was correctly owned by `cloud-dhclient@eth0.service` and
+  storage endpoint reconciliation;
+- all four protocol data paths and reboot recovery remained healthy. These are
+  observation and service-ownership defects, not desired-state failures.
+
+No mutating code injection is required for this closure. The live evidence is
+complete and the proposed changes are collector traversal, response merging,
+presentation semantics, and SharedFS-only unit ownership.
+
+### AS-IS / TO-BE
+
+| Area | AS-IS | TO-BE |
+| --- | --- | --- |
+| File-share mount discovery | `file_share_volume_runtime()` iterates only `findmnt.filesystems[]`. Managed mounts below the root node are silently omitted. | Recursively flatten every `children[]` node, then select exact canonical managed mount targets. |
+| File-share mapping result | A missing observation is defaulted to `UNMAPPED` even when inventory collection itself was unavailable or incomplete. | Distinguish `EXACT`, `STALE`, `UNMAPPED`, `AMBIGUOUS`, and `UNAVAILABLE`; absence caused by collector failure is never called unmapped. |
+| NFS/SMB UI | A healthy mounted volume can display current device `-` and mapping `unmapped`. | Display the current device only from an `EXACT` live observation and show translated unavailable/stale diagnostics otherwise. |
+| iSCSI runtime collection | SystemVM inventory contains target/LUN `backingPath`, backstore type, and effective size. | Preserve that existing collector output and add an observation timestamp and boot ID. |
+| iSCSI management response | `listStorageIscsiTargets` calls the response builder without runtime observation, and runtime response fields are populated only for NVMe-oF namespaces. | Load inventory once per instance, join by normalized `(target IQN, LUN)`, and populate runtime backing path, mapping status, size, and observation metadata for iSCSI. |
+| iSCSI UI | The `actual backing path` column falls back to desired config and commonly renders `-` for block targets. | Render `runtimeBackingPath` as the actual path; keep configured backing intent separate and never fabricate an actual path. |
+| SharedFS boot networking | Generic `networking.service` attempts an invalid ifupdown `eth0` stanza, while persistent DHCP is independently managed by `cloud-dhclient@eth0`. | Declare persistent DHCP as the only SharedFS NIC owner, disable the generic unit for SharedFS VMs, and order storage reconcile after the DHCP unit. |
+| Health semantics | A failed unused networking unit can coexist with healthy protocol listeners without a clear ownership explanation. | No unused failed networking unit remains; health reports DHCP ownership and endpoint-reconcile status explicitly. |
+
+### SystemVM runtime inventory contract
+
+`systemvm/debian/usr/local/bin/ablestack-storagectl` must add a pure helper such
+as `flatten_findmnt_filesystems(nodes)` and use it in
+`file_share_volume_runtime()`.
+
+1. Execute `findmnt -J -o SOURCE,TARGET,FSTYPE,FSROOT,OPTIONS` once.
+2. Recursively yield each node and all `children` in deterministic order.
+3. Normalize target paths and accept only an exact
+   `/srv/ablestack-storage/volumes/<volume UUID>` target. Bind aliases such as
+   `/export/<name>` are secondary observations and must not create duplicate
+   volume rows.
+4. Resolve the mount source through the existing strict
+   `resolve_volume_device()` implementation. Never use `/dev/sdX` as desired
+   identity.
+5. Emit one observation per volume UUID with `observedDevicePath`,
+   `volumeMountPath`, `filesystem`, `filesystemUuid`, `matchedBy`, `observedAt`,
+   and `bootId`.
+6. If two canonical mounts claim one volume UUID, emit `AMBIGUOUS` and do not
+   choose one. If collection fails, mark the inventory envelope unavailable
+   rather than returning a successful empty list.
+
+The inventory result must add an envelope timestamp and boot ID. Existing
+`fileShareVolumes`, `iscsiTargets`, and `nvmeofSubsystems` keys remain backward
+compatible. A successful empty observation and an unavailable collector are
+different states.
+
+The existing `targetcli_iscsi_runtime()` output remains authoritative for the
+live iSCSI backing path. It must add `observedAt` and `bootId`, and its parser
+must have a fixture matching the deployed targetcli tree format. ConfigFS may be
+used as corroborating evidence, but the join key remains normalized target IQN
+plus normalized LUN number.
+
+### Management and API merge contract
+
+`StorageServiceManagerImpl` must introduce an immutable runtime snapshot result
+instead of returning an unqualified map. The snapshot carries `available`,
+`observedAt`, `bootId`, and the protocol-specific observations.
+
+- `loadFileShareVolumeRuntimeObservations()` indexes observations by normalized
+  volume UUID and preserves snapshot availability.
+- NFS/SMB response builders return `UNAVAILABLE` when inventory cannot be read,
+  `UNMAPPED` only when a successful current snapshot lacks the expected volume,
+  and `EXACT` only for a unique stable-identity match.
+- `loadIscsiTargetRuntimeObservations()` reads `iscsiTargets` once per Service
+  VM and indexes each LUN by `lowercase(trim(targetName)) + '|' + normalizedLun`.
+- `listStorageIscsiTargets()` groups targets by instance, fetches one snapshot
+  per instance, and passes the matching observation into
+  `createBlockTargetResponse()`.
+- The block-target response builder applies the existing
+  `runtimeBackingPath`, `runtimeMappingStatus`, `actualBackingSizeBytes`, and
+  `runtimeObservedAt` fields to both iSCSI LUNs and NVMe-oF namespaces. It must
+  not overload configured `backingPath` with runtime data.
+- List/read APIs remain read-only. No runtime observation is written back to DB
+  resource config.
+
+No DB migration is required. Existing response fields are sufficient; only the
+mapping-status enum is extended with backward-compatible `UNAVAILABLE`.
+
+### SharedFS boot-network ownership contract
+
+`plugins/storage/sharedfs/storagevm/src/main/resources/conf/fsvm-init.yml` is
+the SharedFS-specific owner and must not change networking behavior for router,
+console-proxy, or secondary-storage System VMs.
+
+1. Start and enable `cloud-dhclient@<storage-interface>.service` first.
+2. Verify that the interface has a global IPv4 address before declaring setup
+   complete.
+3. Reduce `/etc/network/interfaces` to loopback-only content for this VM type,
+   disable `networking.service` for future boots, and reset its stale failed
+   state without stopping the active DHCP-owned interface.
+4. Add `Before=network-online.target` to the persistent DHCP template and order
+   `ablestack-storage-reconcile.service` after the concrete DHCP unit and QGA.
+5. Keep secondary-IP persistence in `ablestack-storagectl network endpoints
+   reconcile`; endpoint reconciliation remains idempotent and must not become a
+   second primary-address owner.
+
+### UI contract
+
+`ui/src/views/storage/SharedFSTab.vue` must keep the current dark-mode table and
+fixed action-column layout while changing only observation projection:
+
+- NFS/SMB current-device cells use runtime fields only when status is `EXACT`;
+- `UNAVAILABLE`, `STALE`, `UNMAPPED`, and `AMBIGUOUS` receive distinct translated
+  labels and tooltips containing observation time, boot ID, matched-by evidence,
+  or the warning reason when present;
+- the iSCSI actual-backing column reads `runtimeBackingPath` before any legacy
+  alias and displays `-` when no exact runtime mapping exists;
+- desired mount path and configured backing intent stay in their existing
+  columns and are never presented as runtime truth.
+
+### Code-level targets
+
+| Component/file | Required change |
+| --- | --- |
+| `systemvm/debian/usr/local/bin/ablestack-storagectl` | Recursively flatten `findmnt`, emit snapshot metadata and collection availability, and timestamp iSCSI runtime observations. |
+| `systemvm/test/TestStorageVolumeIdentity.py` and focused inventory fixtures | Cover nested mounts, duplicate canonical mounts, unavailable findmnt, reboot device reorder, and targetcli IQN/LUN backing paths. |
+| `server/src/main/java/org/apache/cloudstack/storage/dataservice/StorageServiceManagerImpl.java` | Add qualified runtime snapshots, truthful file-share status derivation, iSCSI observation loading/joining, and block-target runtime merge. |
+| `api/src/main/java/org/apache/cloudstack/api/response/StorageBlockTargetResponse.java` and file-share responses | Reuse existing runtime fields and document `UNAVAILABLE`; add no incompatible field or signature change. |
+| `ui/src/views/storage/SharedFSTab.vue` | Project current device/backing path only from exact live observations and distinguish unavailable from unmapped. |
+| `ui/public/locales/en.json`, `ui/public/locales/ko_KR.json` | Add parity-checked unavailable and runtime-observation diagnostic labels. |
+| `plugins/storage/sharedfs/storagevm/src/main/resources/conf/fsvm-init.yml` | Make persistent DHCP the SharedFS NIC owner and disable/reset the unused generic networking unit safely. |
+| `systemvm/debian/etc/systemd/system/ablestack-storage-reconcile.service` and DHCP unit emitted by `fsvm-init.yml` | Establish DHCP-before-network-online-before-storage-reconcile ordering. |
+| DB schema and host agent | No change. Do not deploy or restart `mold-agent.service`. |
+
+### Acceptance and deployment gates
+
+- A nested `findmnt` fixture reports both managed mounts as `EXACT` and never
+  duplicates their `/export/<name>` aliases.
+- A failed inventory command yields `UNAVAILABLE`; a successful current snapshot
+  with no matching volume yields `UNMAPPED`.
+- Deployed iSCSI target/LUN `/dev/sdc` is returned as `runtimeBackingPath` with
+  an exact mapping, effective size, current boot ID, and observation timestamp.
+- After reboot and disk reorder, NFS/SMB current device paths follow stable
+  identity and all four protocol read/write paths still pass.
+- A new SharedFS VM has active persistent DHCP, no failed
+  `networking.service`, restored secondary IPs, and all configured listeners.
+- SystemVM tests, focused server tests, locale parity, UI unit tests, lint, and
+  production builds pass.
+- Management/API and UI are deployed together; the SystemVM template is rebuilt
+  and published because collector and SharedFS boot ownership change. Served UI
+  hashes, management class signatures, and template artifact checksums are
+  verified before retest.
+- No DB migration and no host-agent deployment are required.
+
+## SharedFS Runtime Locale Completeness Closure (2026-07-22)
+
+### Scope and confirmed cause
+
+The integrated four-protocol runtime, API/DB projection, client I/O, and reboot
+recovery are passing. This closure is limited to four literal i18n keys used by
+`SharedFSTab.vue` that are absent from both runtime locale bundles:
+
+- `message.storage.service.nfs.export.name.help`
+- `message.storage.service.nfs.backing.path.help`
+- `message.storage.service.iscsi.chap.credential.required`
+- `message.storage.service.iscsi.mutual.chap.credential.required`
+
+The NFS keys are rendered by export-create field tooltips. The iSCSI keys are
+rendered by CHAP and mutual-CHAP validation failures. They are not SystemVM
+messages and must not be solved by a guest-side fallback or by hard-coded text
+in the Vue component.
+
+The current `i18n:report` script scans `src/locales/**/*.json`, while the
+runtime bundles are loaded from `public/locales/<locale>.json`. A successful
+UI build therefore does not prove that literal storage-service keys used by the
+component exist in the deployed locale files.
+
+### AS-IS / TO-BE
+
+| Concern | AS-IS | TO-BE |
+| --- | --- | --- |
+| NFS help text | Literal tooltip keys exist only in `SharedFSTab.vue`; a missing runtime translation can expose the raw key. | Add meaningful English and Korean values to both runtime locale bundles. Keep the tooltip call sites unchanged. |
+| iSCSI validation | CHAP validation emits literal i18n keys that are missing from both bundles. | Add explicit one-way and mutual-CHAP credential validation messages in both locales. Never include entered credentials in the message. |
+| Locale parity | A key can be added to one locale or to the component only without failing the build. | Add a focused locale-contract test that extracts literal storage-service `$t()` keys from `SharedFSTab.vue` and `CreateSharedFS.vue`, requires them in both bundles, and requires English/Korean storage-service key parity. |
+| Existing report command | `i18n:report` points at a locale path that is not the runtime source of truth. | Correct the report path to `public/locales/**/*.json`, or replace it with a repository script that reads the two runtime files directly. The focused test remains the mandatory gate. |
+| Deployment verification | App entry hash validation can pass even when locale files are stale or incomplete. | Treat `index.html`, hashed JS/CSS, `en.json`, and `ko_KR.json` as one release unit. Verify local/served hashes and query the four required keys from the served JSON. |
+
+### Code-level targets
+
+| Component/file | Required change |
+| --- | --- |
+| `ui/public/locales/en.json` | Add concise English NFS export-name help, NFS backing-path help, CHAP credential-required, and mutual-CHAP credential-required messages. |
+| `ui/public/locales/ko_KR.json` | Add equivalent Korean messages in UTF-8 with the same keys and semantics. |
+| `ui/tests/unit/views/storage/SharedFSLocale.spec.js` | New focused test. Parse both runtime locale JSON files, extract literal `label.storage.service.*` and `message.storage.service.*` `$t()` calls from `SharedFSTab.vue` and `CreateSharedFS.vue`, and fail on a missing key, empty value, raw-key value, or en/ko parity difference. |
+| `ui/tests/unit/views/storage/SharedFSTab.spec.js` | Add focused assertions that the two CHAP validation branches select different translated messages and that no secret value is included in emitted UI text. Preserve existing protocol behavior tests. |
+| `ui/package.json` | Point `i18n:report` at the runtime locale location or invoke the new locale-contract test explicitly. Do not make the legacy report the sole release gate. |
+| Backend, API, DB, SystemVM, template, host agent | No change. The verified runtime data path must remain untouched. |
+
+### Message semantics
+
+- NFS export-name help explains that the client-visible root is
+  `/<export-name>` and that the name must satisfy the existing Linux directory
+  name validation.
+- NFS backing-path help explains that the path must be exactly one level below
+  `/export`, for example `/export/nfs01`.
+- One-way CHAP validation asks for both username and secret without echoing
+  either value.
+- Mutual CHAP validation asks for the controller username and secret without
+  echoing either value.
+- Korean and English messages express the same constraint. A generic fallback
+  such as `label.error` is not an acceptable replacement for these field-level
+  validation messages.
+
+### Preflight and acceptance gates
+
+No Service VM code injection is required. The failure is reproduced entirely
+from the deployed UI source and locale bundles, while all four protocol data
+paths and reboot recovery have already passed. Guest mutation would not test
+the affected layer.
+
+1. `jq empty` passes for `en.json` and `ko_KR.json`.
+2. The focused locale-contract test reports zero missing, empty, or asymmetric
+   storage-service keys.
+3. `SharedFSTab.spec.js` passes the NFS/iSCSI focused cases and existing
+   protocol regression cases.
+4. UI lint and the Node 16 production build pass using the established legacy
+   OpenSSL provider setting when required.
+5. The effective Management Server webroot and `GET /client/` return the same
+   app-entry hash as the local build, and every referenced JS/CSS asset returns
+   HTTP 200.
+6. Served `locales/en.json` and `locales/ko_KR.json` hashes match the build and
+   contain all four keys with non-key values.
+7. Korean browser smoke checks open NFS export creation and exercise iSCSI CHAP
+   validation without displaying `label.storage.service.*` or
+   `message.storage.service.*` text.
+8. No management service, host agent, DB migration, or SystemVM template build
+   is part of this UI-only closure.

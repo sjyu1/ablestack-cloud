@@ -48,6 +48,7 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageIsc
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfsExportsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfHostAclsCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfNamespacesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfSubsystemsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceDomainStatusCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceHealthCmd;
@@ -59,14 +60,17 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmb
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.PrepareStorageServiceNvmeOfVmCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ResizeStorageFileShareCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ResizeStorageServiceBackingVolumeCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiTargetCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNfsExportCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfHostAclCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfNamespaceCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageNvmeOfSubsystemCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbAclCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageSmbShareCmd;
+import org.apache.cloudstack.api.command.admin.storage.dataservice.RepairStorageServiceNicIdentityCmd;
 import org.apache.cloudstack.api.response.ListResponse;
 import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
 import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
@@ -141,7 +145,11 @@ public interface StorageService {
 
     StorageFileShareResponse resizeStorageFileShare(ResizeStorageFileShareCmd cmd);
 
+    StorageServiceRuntimeResponse resizeStorageServiceBackingVolume(ResizeStorageServiceBackingVolumeCmd cmd);
+
     StorageServiceRuntimeResponse prepareStorageServiceNvmeOfVm(PrepareStorageServiceNvmeOfVmCmd cmd);
+
+    StorageServiceRuntimeResponse repairStorageServiceNicIdentity(RepairStorageServiceNicIdentityCmd cmd);
 
     StorageBlockTargetResponse createStorageIscsiTarget(CreateStorageIscsiTargetCmd cmd);
 
@@ -167,7 +175,11 @@ public interface StorageService {
 
     ListResponse<StorageBlockTargetResponse> listStorageNvmeOfSubsystems(ListStorageNvmeOfSubsystemsCmd cmd);
 
+    ListResponse<StorageBlockTargetResponse> listStorageNvmeOfNamespaces(ListStorageNvmeOfNamespacesCmd cmd);
+
     StorageBlockTargetResponse createStorageNvmeOfNamespace(CreateStorageNvmeOfNamespaceCmd cmd);
+
+    StorageBlockTargetResponse updateStorageNvmeOfNamespace(UpdateStorageNvmeOfNamespaceCmd cmd);
 
     boolean deleteStorageNvmeOfNamespace(DeleteStorageNvmeOfNamespaceCmd cmd);
 

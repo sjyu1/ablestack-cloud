@@ -217,24 +217,65 @@ def write_state(entries):
     os.replace(tmp, STATE_PATH)
 
 def normalize_payload(payload):
-    if isinstance(payload, dict) and isinstance(payload.get("endpoints"), list):
-        return payload.get("endpoints")
+    if isinstance(payload, dict):
+        entries = []
+        if isinstance(payload.get("endpoints"), list):
+            entries.extend(payload.get("endpoints") or [])
+        if isinstance(payload.get("listeners"), list):
+            entries.extend(payload.get("listeners") or [])
+        if isinstance(payload.get("endpointAliases"), list):
+            entries.extend(payload.get("endpointAliases") or [])
+        if entries:
+            return entries
+        if payload.get("listenIp") or payload.get("listenip"):
+            return [payload]
+        return []
     if isinstance(payload, list):
         return payload
-    return [payload]
+    return []
 
 def netmask_to_prefix(netmask):
     if not netmask:
-        return 24
+        return None
     try:
         return ipaddress.IPv4Network("0.0.0.0/" + str(netmask), strict=False).prefixlen
     except Exception:
-        return 24
+        return None
+
+def cidr_to_prefix(cidr):
+    if not cidr:
+        return None
+    try:
+        return ipaddress.IPv4Network(str(cidr), strict=False).prefixlen
+    except Exception:
+        return None
+
+def requested_prefix(entry):
+    for key in ("prefixlen", "prefixLen"):
+        value = entry.get(key)
+        if value not in (None, ""):
+            try:
+                prefix = int(value)
+                if 0 <= prefix <= 32:
+                    return prefix
+            except Exception:
+                pass
+    prefix = cidr_to_prefix(entry.get("networkCidr") or entry.get("cidr"))
+    if prefix is not None:
+        return prefix
+    prefix = netmask_to_prefix(entry.get("netmask"))
+    return prefix if prefix is not None else 24
 
 def interface_addresses():
     result = run(["ip", "-j", "-4", "addr", "show", "scope", "global"])
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "failed to inspect IPv4 addresses")
+    return json.loads(result.stdout or "[]")
+
+def interface_links():
+    result = run(["ip", "-j", "link", "show"])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "failed to inspect network links")
     return json.loads(result.stdout or "[]")
 
 def find_existing_iface(listen_ip, links):
@@ -246,17 +287,17 @@ def find_existing_iface(listen_ip, links):
 
 def find_target_iface(entry, links):
     primary_ip = str(entry.get("primaryIp") or "").strip()
-    requested_prefix = int(entry.get("prefixlen") or netmask_to_prefix(entry.get("netmask")))
+    requested_prefix_value = requested_prefix(entry)
     if primary_ip:
         for link in links:
             for addr in link.get("addr_info") or []:
                 if addr.get("local") == primary_ip:
-                    return link.get("ifname"), int(addr.get("prefixlen") or requested_prefix)
+                    return link.get("ifname"), int(addr.get("prefixlen") or requested_prefix_value)
     listen_ip = ipaddress.IPv4Address(str(entry.get("listenIp")))
     for link in links:
         for addr in link.get("addr_info") or []:
             local = addr.get("local")
-            prefix = int(addr.get("prefixlen") or requested_prefix)
+            prefix = int(addr.get("prefixlen") or requested_prefix_value)
             if not local:
                 continue
             try:
@@ -265,7 +306,17 @@ def find_target_iface(entry, links):
                 continue
             if listen_ip in network:
                 return link.get("ifname"), prefix
-    return None, requested_prefix
+    candidates = []
+    for link in interface_links():
+        ifname = str(link.get("ifname") or "")
+        if not ifname or ifname == "lo":
+            continue
+        if link.get("link_type") not in (None, "ether"):
+            continue
+        candidates.append(ifname)
+    if len(candidates) == 1:
+        return candidates[0], requested_prefix_value
+    return None, requested_prefix_value
 
 def apply_one(entry):
     listen_ip = str(entry.get("listenIp") or entry.get("listenip") or "").strip()
@@ -279,6 +330,9 @@ def apply_one(entry):
     iface, prefix = find_target_iface({**entry, "listenIp": listen_ip}, links)
     if not iface:
         raise RuntimeError(f"No System VM interface can host Storage Service listen IP {listen_ip}")
+    link_result = run(["ip", "link", "set", iface, "up"])
+    if link_result.returncode != 0:
+        raise RuntimeError(link_result.stderr.strip() or f"failed to bring up {iface}")
     result = run(["ip", "addr", "add", f"{listen_ip}/{prefix}", "dev", iface])
     if result.returncode != 0 and "File exists" not in (result.stderr or ""):
         raise RuntimeError(result.stderr.strip() or f"failed to add {listen_ip}/{prefix} to {iface}")
@@ -629,14 +683,119 @@ def desired_iscsi_ports(state):
         ports.add(3260)
     return sorted(ports)
 
+def desired_nvmeof_ports(state):
+    ports = set()
+    if isinstance(state, dict):
+        for listener in state.get("listeners") or []:
+            if not isinstance(listener, dict):
+                continue
+            try:
+                ports.add(int(listener.get("port") or listener.get("listenPort") or listener.get("listenport") or state.get("port") or 4420))
+            except Exception:
+                pass
+        has_namespace = False
+        has_subsystem = bool(state.get("subsystems"))
+        if not ports:
+            for subsystem in state.get("subsystems") or []:
+                for namespace in subsystem.get("namespaces") or []:
+                    has_namespace = True
+                    config = namespace.get("config") or {}
+                    raw = namespace.get("listenerPorts") or namespace.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports")
+                    if isinstance(raw, list):
+                        for value in raw:
+                            try:
+                                ports.add(int(value))
+                            except Exception:
+                                pass
+                    elif isinstance(raw, str):
+                        for value in re.split(r"[,\s]+", raw):
+                            if not value:
+                                continue
+                            try:
+                                ports.add(int(value))
+                            except Exception:
+                                pass
+        if not ports and (has_namespace or has_subsystem):
+            try:
+                ports.add(int(state.get("port") or 4420))
+            except Exception:
+                ports.add(4420)
+    return sorted(ports)
+
+def nvmeof_namespace_ports(namespace):
+    ports = set()
+    if not isinstance(namespace, dict):
+        return ports
+    config = namespace.get("config") or {}
+    raw = namespace.get("listenerPorts") or namespace.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports")
+    if isinstance(raw, list):
+        values = raw
+    elif isinstance(raw, str):
+        values = re.split(r"[,\s]+", raw)
+    else:
+        values = []
+    for value in values:
+        if value in (None, ""):
+            continue
+        try:
+            ports.add(int(value))
+        except Exception:
+            pass
+    return ports
+
+def nvmeof_linked_ports(state):
+    ports = set()
+    if not isinstance(state, dict):
+        return ports
+    default_port = int(state.get("port") or 4420)
+    for subsystem in state.get("subsystems") or []:
+        if not isinstance(subsystem, dict) or str(subsystem.get("state", "Ready")) in ("Disabled", "Destroyed", "Error"):
+            continue
+        for namespace in subsystem.get("namespaces") or []:
+            if not isinstance(namespace, dict) or str(namespace.get("state", "Ready")) in ("Disabled", "Destroyed", "Error"):
+                continue
+            ports.update(nvmeof_namespace_ports(namespace) or {default_port})
+    return ports
+
+def nvmeof_port_runtime(state):
+    configured_ports = set(desired_nvmeof_ports(state))
+    linked_ports = nvmeof_linked_ports(state)
+    configured_ports.update(linked_ports)
+    if not configured_ports and isinstance(state, dict) and state.get("subsystems"):
+        configured_ports.add(int(state.get("port") or 4420))
+    runtime = {}
+    for port in sorted(configured_ports):
+        listening = port_listening(port)
+        linked = port in linked_ports
+        if linked and listening:
+            port_state = "LISTENING"
+        elif linked:
+            port_state = "ERROR"
+        else:
+            port_state = "UNUSED"
+        runtime[str(port)] = {
+            "configured": True,
+            "linked": linked,
+            "listening": listening,
+            "state": port_state,
+        }
+    return runtime
+
+def nvmeof_runtime_ok(runtime):
+    return all(str(item.get("state", "")).upper() != "ERROR" for item in runtime.values())
+
 iscsi_targets_state = load_json_state("iscsi-targets.json")
 iscsi_ports = desired_iscsi_ports(iscsi_targets_state)
+nvmeof_state = load_json_state("nvmeof-subsystems.json")
+nvmeof_ports = desired_nvmeof_ports(nvmeof_state)
+nvmeof_runtime = nvmeof_port_runtime(nvmeof_state)
 listen_ports = {
     "nfs": ganesha_runtime["listening"] if ganesha_runtime["configured"] else port_listening(2049),
     "smb": port_listening(445) or port_listening(139),
     "iscsi": all(port_listening(port) for port in iscsi_ports),
     "iscsiPorts": {str(port): port_listening(port) for port in iscsi_ports},
-    "nvmeof": port_listening(4420),
+    "nvmeof": nvmeof_runtime_ok(nvmeof_runtime),
+    "nvmeofPorts": nvmeof_runtime,
 }
 status = "ok"
 if services["qemuGuestAgent"] not in ("active", "unknown"):
@@ -644,6 +803,8 @@ if services["qemuGuestAgent"] not in ("active", "unknown"):
 if ganesha_runtime["configured"] and not ganesha_runtime["listening"]:
     status = "degraded"
 if desired_state["iscsiTargets"] and not listen_ports["iscsi"]:
+    status = "degraded"
+if desired_state["nvmeofSubsystems"] and not nvmeof_runtime_ok(nvmeof_runtime):
     status = "degraded"
 if desired_state.get("smbDomainError"):
     status = "degraded"
@@ -677,7 +838,17 @@ import shutil
 import subprocess
 import re
 import socket
+import sys
 import time
+
+sys.path.insert(0, "/usr/local/lib/ablestack-storage")
+from volume_identity import (  # noqa: E402
+    VolumeIdentityError,
+    device_for_path,
+    flatten_devices,
+    flatten_mounts,
+    resolve_volume_device,
+)
 
 def load_json(path, default):
     try:
@@ -717,6 +888,88 @@ def run(args):
         return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
     except Exception as exc:
         return type("Result", (), {"returncode": 1, "stdout": "", "stderr": str(exc)})()
+
+def runtime_metadata():
+    observed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    boot_id = ""
+    try:
+        with open("/proc/sys/kernel/random/boot_id", "r", encoding="utf-8") as handle:
+            boot_id = handle.read().strip()
+    except Exception:
+        pass
+    return observed_at, boot_id
+
+def storage_lsblk():
+    result = run(["lsblk", "-J", "-b", "-o", "NAME,KNAME,PATH,TYPE,SIZE,FSTYPE,UUID,SERIAL,MOUNTPOINT"])
+    if result.returncode != 0:
+        return []
+    try:
+        return json.loads(result.stdout or "{}").get("blockdevices") or []
+    except Exception:
+        return []
+
+def file_share_volume_runtime():
+    observed_at, boot_id = runtime_metadata()
+    snapshot = {
+        "available": False,
+        "observedAt": observed_at,
+        "bootId": boot_id,
+        "observations": [],
+    }
+    result = run(["findmnt", "-J", "-o", "SOURCE,TARGET,FSTYPE,FSROOT,OPTIONS"])
+    if result.returncode != 0:
+        snapshot["error"] = (result.stderr or "findmnt failed").strip()
+        return snapshot
+    try:
+        payload = json.loads(result.stdout or "{}")
+        if not isinstance(payload.get("filesystems"), list):
+            raise ValueError("findmnt JSON does not contain a filesystems array")
+        filesystems = flatten_mounts(payload.get("filesystems"))
+    except Exception as exc:
+        snapshot["error"] = str(exc)
+        return snapshot
+    blockdevices = storage_lsblk()
+    flattened = flatten_devices(blockdevices)
+    observations = []
+    for mount in filesystems:
+        target = str(mount.get("target") or "")
+        match = re.fullmatch(r"/srv/ablestack-storage/volumes/([^/]+)", target.rstrip("/"))
+        if not match:
+            continue
+        volume_uuid = match.group(1)
+        source = str(mount.get("source") or "")
+        observed = device_for_path(flattened, source)
+        item = {
+            "volumeUuid": volume_uuid,
+            "volumeMountPath": target,
+            "mountSource": source,
+            "filesystem": mount.get("fstype") or (observed or {}).get("fstype"),
+            "filesystemUuid": (observed or {}).get("uuid"),
+            "observedDevicePath": (observed or {}).get("path") or source,
+            "observedAt": observed_at,
+            "bootId": boot_id,
+        }
+        try:
+            resolved = resolve_volume_device(
+                blockdevices,
+                volume_uuid=volume_uuid,
+                mount_source=source,
+                allow_blank_size_fallback=False,
+            )
+            item.update({
+                "observedDevicePath": resolved.get("devicePath"),
+                "filesystem": resolved.get("filesystem") or item.get("filesystem"),
+                "filesystemUuid": resolved.get("filesystemUuid") or item.get("filesystemUuid"),
+                "matchedBy": resolved.get("matchedBy"),
+                "mappingStatus": "EXACT",
+            })
+        except VolumeIdentityError as exc:
+            item["mappingStatus"] = "AMBIGUOUS" if "Ambiguous" in str(exc) else ("STALE" if observed else "UNMAPPED")
+            item["mappingError"] = str(exc)
+        observations.append({key: value for key, value in item.items() if value not in (None, "")})
+    snapshot["available"] = True
+    snapshot["observations"] = observations
+    return snapshot
 
 def port_listening(port):
     if not shutil.which("ss"):
@@ -972,12 +1225,21 @@ def configfs_iscsi_acls(target_name):
     except Exception:
         return []
 
-def targetcli_iscsi_runtime():
+def targetcli_iscsi_runtime_snapshot():
+    observed_at, boot_id = runtime_metadata()
+    snapshot = {
+        "available": False,
+        "observedAt": observed_at,
+        "bootId": boot_id,
+        "observations": [],
+    }
     if not shutil.which("targetcli"):
-        return []
+        snapshot["error"] = "targetcli is not installed"
+        return snapshot
     result = run(["targetcli", "ls", "/iscsi"])
     if result.returncode != 0:
-        return []
+        snapshot["error"] = (result.stderr or "targetcli inventory failed").strip()
+        return snapshot
     runtime = []
     current_target = None
     for raw_line in result.stdout.splitlines():
@@ -1017,12 +1279,17 @@ def targetcli_iscsi_runtime():
     for target in runtime:
         if not target.get("acls"):
             target["acls"] = configfs_iscsi_acls(target.get("targetName"))
-    return runtime
+        target["observedAt"] = observed_at
+        target["bootId"] = boot_id
+    snapshot["available"] = True
+    snapshot["observations"] = runtime
+    return snapshot
 
-def enrich_iscsi_targets(desired):
+def enrich_iscsi_targets(desired, runtime_snapshot=None):
     if not isinstance(desired, dict):
         return desired
-    runtime_by_name = {item.get("targetName"): item for item in targetcli_iscsi_runtime()}
+    runtime_snapshot = runtime_snapshot or targetcli_iscsi_runtime_snapshot()
+    runtime_by_name = {item.get("targetName"): item for item in runtime_snapshot.get("observations", [])}
     enriched = json.loads(json.dumps(desired))
     for target in enriched.get("targets", []):
         config = target.get("config") or {}
@@ -1045,6 +1312,85 @@ def enrich_iscsi_targets(desired):
             target["lunSizeBytes"] = config.get("lunSizeBytes")
         if target.get("effectiveSizeBytes") is None:
             target["effectiveSizeBytes"] = target.get("lunSizeBytes") or target.get("volumeSizeBytes")
+    return enriched
+
+def read_runtime_text(path, default=""):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return handle.read().strip()
+    except Exception:
+        return default
+
+def nvme_namespace_device_size(path):
+    if not path:
+        return None
+    result = run(["blockdev", "--getsize64", path])
+    value = result.stdout.strip()
+    if result.returncode == 0 and value.isdigit():
+        return int(value)
+    result = run(["lsblk", "-b", "-dn", "-o", "SIZE", path])
+    value = result.stdout.strip()
+    return int(value) if result.returncode == 0 and value.isdigit() else None
+
+def nvme_namespace_device_identity(path):
+    identity = {"backingPath": path, "resolvedBackingPath": os.path.realpath(path) if path else ""}
+    if not path:
+        return identity
+    for field, key in (("UUID", "filesystemUuid"), ("SERIAL", "serial"), ("WWN", "wwn")):
+        result = run(["lsblk", "-dn", "-o", field, path])
+        value = result.stdout.strip()
+        if result.returncode == 0 and value:
+            identity[key] = value
+    return identity
+
+def enrich_nvmeof_subsystems(desired):
+    if not isinstance(desired, dict):
+        return desired
+    enriched = json.loads(json.dumps(desired))
+    for subsystem in enriched.get("subsystems", []) or []:
+        nqn = str(subsystem.get("targetName") or subsystem.get("subsystemNqn") or "")
+        subsystem_root = os.path.join("/sys/kernel/config/nvmet/subsystems", nqn)
+        subsystem_runtime = {
+            "subsystemNqn": nqn,
+            "configfsPresent": bool(nqn and os.path.isdir(subsystem_root)),
+            "allowAnyHost": read_runtime_text(os.path.join(subsystem_root, "attr_allow_any_host")) == "1",
+        }
+        allowed_hosts_root = os.path.join(subsystem_root, "allowed_hosts")
+        subsystem_runtime["allowedHosts"] = sorted(os.listdir(allowed_hosts_root)) if os.path.isdir(allowed_hosts_root) else []
+        runtime_namespaces = []
+        for namespace in subsystem.get("namespaces", []) or []:
+            nsid = str(namespace.get("lunOrNamespace") or namespace.get("namespaceId") or "1")
+            namespace_root = os.path.join(subsystem_root, "namespaces", nsid)
+            backing_path = read_runtime_text(os.path.join(namespace_root, "device_path"))
+            enabled = read_runtime_text(os.path.join(namespace_root, "enable")) == "1"
+            actual_size = nvme_namespace_device_size(backing_path)
+            config = namespace.get("config") if isinstance(namespace.get("config"), dict) else {}
+            configured_size = config.get("namespaceSizeBytes") or namespace.get("namespaceSizeBytes")
+            runtime = {
+                "subsystemNqn": nqn,
+                "namespaceId": nsid,
+                "configfsPresent": os.path.isdir(namespace_root),
+                "enabled": enabled,
+                "runtimeState": "READY" if enabled and backing_path else "ERROR",
+                "namespaceSizeBytes": configured_size,
+                "actualSizeBytes": actual_size,
+                "effectiveSizeBytes": actual_size,
+                "volumeUuid": namespace.get("volumeUuid") or config.get("volumeUuid"),
+                "volumeName": namespace.get("volumeName") or config.get("volumeName"),
+            }
+            runtime.update(nvme_namespace_device_identity(backing_path))
+            runtime = {key: value for key, value in runtime.items() if value not in (None, "")}
+            namespace["runtime"] = runtime
+            namespace.update({
+                "namespaceSizeBytes": configured_size,
+                "effectiveSizeBytes": actual_size,
+                "backingPath": backing_path,
+                "runtimeState": runtime.get("runtimeState"),
+            })
+            runtime_namespaces.append(runtime)
+        subsystem_runtime["namespaces"] = runtime_namespaces
+        subsystem_runtime["namespaceCount"] = len([item for item in runtime_namespaces if item.get("enabled")])
+        subsystem["runtime"] = subsystem_runtime
     return enriched
 
 def desired_iscsi_ports(state):
@@ -1082,12 +1428,117 @@ def desired_iscsi_ports(state):
         ports.add(3260)
     return sorted(ports)
 
-iscsi_targets = enrich_iscsi_targets(load_json("/etc/ablestack-storage/iscsi-targets.json", {}))
+def desired_nvmeof_ports(state):
+    ports = set()
+    if isinstance(state, dict):
+        for listener in state.get("listeners") or []:
+            if not isinstance(listener, dict):
+                continue
+            try:
+                ports.add(int(listener.get("port") or listener.get("listenPort") or listener.get("listenport") or state.get("port") or 4420))
+            except Exception:
+                pass
+        has_namespace = False
+        has_subsystem = bool(state.get("subsystems"))
+        if not ports:
+            for subsystem in state.get("subsystems") or []:
+                for namespace in subsystem.get("namespaces") or []:
+                    has_namespace = True
+                    config = namespace.get("config") or {}
+                    raw = namespace.get("listenerPorts") or namespace.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports")
+                    if isinstance(raw, list):
+                        for value in raw:
+                            try:
+                                ports.add(int(value))
+                            except Exception:
+                                pass
+                    elif isinstance(raw, str):
+                        for value in re.split(r"[,\s]+", raw):
+                            if not value:
+                                continue
+                            try:
+                                ports.add(int(value))
+                            except Exception:
+                                pass
+        if not ports and (has_namespace or has_subsystem):
+            try:
+                ports.add(int(state.get("port") or 4420))
+            except Exception:
+                ports.add(4420)
+    return sorted(ports)
+
+def nvmeof_namespace_ports(namespace):
+    ports = set()
+    if not isinstance(namespace, dict):
+        return ports
+    config = namespace.get("config") or {}
+    raw = namespace.get("listenerPorts") or namespace.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports")
+    if isinstance(raw, list):
+        values = raw
+    elif isinstance(raw, str):
+        values = re.split(r"[,\s]+", raw)
+    else:
+        values = []
+    for value in values:
+        if value in (None, ""):
+            continue
+        try:
+            ports.add(int(value))
+        except Exception:
+            pass
+    return ports
+
+def nvmeof_linked_ports(state):
+    ports = set()
+    if not isinstance(state, dict):
+        return ports
+    default_port = int(state.get("port") or 4420)
+    for subsystem in state.get("subsystems") or []:
+        if not isinstance(subsystem, dict) or str(subsystem.get("state", "Ready")) in ("Disabled", "Destroyed", "Error"):
+            continue
+        for namespace in subsystem.get("namespaces") or []:
+            if not isinstance(namespace, dict) or str(namespace.get("state", "Ready")) in ("Disabled", "Destroyed", "Error"):
+                continue
+            ports.update(nvmeof_namespace_ports(namespace) or {default_port})
+    return ports
+
+def nvmeof_port_runtime(state):
+    configured_ports = set(desired_nvmeof_ports(state))
+    linked_ports = nvmeof_linked_ports(state)
+    configured_ports.update(linked_ports)
+    if not configured_ports and isinstance(state, dict) and state.get("subsystems"):
+        configured_ports.add(int(state.get("port") or 4420))
+    runtime = {}
+    for port in sorted(configured_ports):
+        listening = port_listening(port)
+        linked = port in linked_ports
+        if linked and listening:
+            port_state = "LISTENING"
+        elif linked:
+            port_state = "ERROR"
+        else:
+            port_state = "UNUSED"
+        runtime[str(port)] = {
+            "configured": True,
+            "linked": linked,
+            "listening": listening,
+            "state": port_state,
+        }
+    return runtime
+
+iscsi_runtime_snapshot = targetcli_iscsi_runtime_snapshot()
+iscsi_targets = enrich_iscsi_targets(load_json("/etc/ablestack-storage/iscsi-targets.json", {}), iscsi_runtime_snapshot)
+nvmeof_subsystems = redact_sensitive(enrich_nvmeof_subsystems(load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})))
+nvmeof_ports = desired_nvmeof_ports(nvmeof_subsystems)
+nvmeof_runtime = nvmeof_port_runtime(nvmeof_subsystems)
+file_share_volume_snapshot = file_share_volume_runtime()
+file_share_volumes = file_share_volume_snapshot.get("observations", [])
 
 print(json.dumps({
     "success": True,
     "status": "ok",
     "network": {"addresses": collect_network_addresses()},
+    "fileShareVolumes": file_share_volumes,
     "nfsExports": exports,
     "nfsGaneshaExports": ganesha_exports,
     "nfsGaneshaRuntime": ganesha_runtime,
@@ -1098,10 +1549,14 @@ print(json.dumps({
     "smbDomainError": load_json("/etc/ablestack-storage/smb-domain-error.json", {}),
     "iscsiTargets": iscsi_targets,
     "iscsiRuntime": {"listening": all(port_listening(port) for port in desired_iscsi_ports(iscsi_targets)), "ports": desired_iscsi_ports(iscsi_targets), "portStatus": {str(port): port_listening(port) for port in desired_iscsi_ports(iscsi_targets)}},
-    "nvmeofSubsystems": redact_sensitive(load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})),
-    "nvmeofRuntime": {"listening": port_listening(4420), "port": 4420, "capabilities": nvmeof_capabilities()},
+    "nvmeofSubsystems": nvmeof_subsystems,
+    "nvmeofRuntime": {"listening": all(str(item.get("state", "")).upper() != "ERROR" for item in nvmeof_runtime.values()), "ports": nvmeof_ports, "portStatus": nvmeof_runtime, "linkedPorts": sorted(nvmeof_linked_ports(nvmeof_subsystems)), "capabilities": nvmeof_capabilities()},
     "capabilities": {
         "nvmeof": nvmeof_capabilities(),
+    },
+    "runtimeObservability": {
+        "fileShareVolumes": {key: value for key, value in file_share_volume_snapshot.items() if key != "observations"},
+        "iscsiTargets": {key: value for key, value in iscsi_runtime_snapshot.items() if key != "observations"},
     },
 }, sort_keys=True))
 PY
@@ -1121,6 +1576,13 @@ import subprocess
 import sys
 import tempfile
 import time
+
+sys.path.insert(0, "/usr/local/lib/ablestack-storage")
+from session_auth import (  # noqa: E402
+    classify_iscsi_auth_session,
+    compatibility_authenticated,
+    parse_targetcli_auth_observation,
+)
 
 def load_payload(path):
     if not path:
@@ -1173,6 +1635,13 @@ def store_json(path, value):
         json.dump(value, handle, sort_keys=True)
         handle.write("\n")
     os.replace(tmp, path)
+
+def read_text(path, default=""):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return handle.read().strip()
+    except Exception:
+        return default
 
 def nfs_protocol_mode_from_content(content):
     protocols = re.findall(r"Protocols\s*=\s*([^;\n]+)", content or "")
@@ -1241,13 +1710,130 @@ def active_nvme_subsystems():
     for subsystem in state.get("subsystems", []) if isinstance(state, dict) else []:
         name = subsystem.get("targetName") or subsystem.get("subsystemNqn")
         if name and subsystem.get("state", "Ready") not in ("Disabled", "Destroyed", "Error"):
+            config = subsystem.get("config") if isinstance(subsystem.get("config"), dict) else {}
+            namespace = str(subsystem.get("lunOrNamespace") or subsystem.get("lunornamespace") or subsystem.get("namespaceId") or subsystem.get("namespaceid") or config.get("namespaceId") or config.get("namespaceid") or "1")
             subsystems.append({
                 "id": str(subsystem.get("id") or ""),
                 "uuid": str(subsystem.get("uuid") or ""),
                 "name": str(name),
+                "subsystemNqn": str(name),
+                "namespace": namespace,
+                "namespaces": [namespace],
                 "endpoint": f"{state.get('listenIp') or subsystem.get('listenIp') or ''}:{state.get('port') or subsystem.get('port') or 4420}".strip(":"),
             })
     return subsystems
+
+def configfs_nvme_subsystem_details(name):
+    root = os.path.join("/sys/kernel/config/nvmet/subsystems", str(name or ""))
+    if not os.path.isdir(root):
+        return {}
+    namespaces = []
+    namespaces_root = os.path.join(root, "namespaces")
+    if os.path.isdir(namespaces_root):
+        for entry in sorted(os.listdir(namespaces_root), key=lambda value: int(value) if str(value).isdigit() else str(value)):
+            path = os.path.join(namespaces_root, entry)
+            if not os.path.isdir(path):
+                continue
+            enabled = read_text(os.path.join(path, "enable"))
+            device_path = read_text(os.path.join(path, "device_path"))
+            namespaces.append({
+                "id": str(entry),
+                "enabled": enabled,
+                "devicePath": device_path,
+            })
+    hosts = []
+    hosts_root = os.path.join(root, "allowed_hosts")
+    if os.path.isdir(hosts_root):
+        for entry in sorted(os.listdir(hosts_root)):
+            hosts.append(entry)
+    allow_any_host = read_text(os.path.join(root, "attr_allow_any_host")) == "1"
+    return {
+        "subsystemNqn": str(name),
+        "name": str(name),
+        "namespaces": [namespace.get("id") for namespace in namespaces if namespace.get("id")],
+        "namespaceDetails": namespaces,
+        "namespaceCount": len([namespace for namespace in namespaces if namespace.get("enabled") == "1" or namespace.get("devicePath")]),
+        "allowedHosts": hosts,
+        "allowAnyHost": allow_any_host,
+    }
+
+def configfs_nvme_listeners():
+    listeners = []
+    root = "/sys/kernel/config/nvmet/ports"
+    if not os.path.isdir(root):
+        return listeners
+    state_by_name = {item.get("name"): item for item in active_nvme_subsystems() if item.get("name")}
+    for port_id in sorted(os.listdir(root), key=lambda value: int(value) if str(value).isdigit() else str(value)):
+        port_root = os.path.join(root, port_id)
+        if not os.path.isdir(port_root):
+            continue
+        listen_ip = normalize_ip(read_text(os.path.join(port_root, "addr_traddr"), ""))
+        port = endpoint_port(read_text(os.path.join(port_root, "addr_trsvcid"), ""))
+        transport = read_text(os.path.join(port_root, "addr_trtype"), "tcp") or "tcp"
+        subsystem_root = os.path.join(port_root, "subsystems")
+        subsystems = []
+        if os.path.isdir(subsystem_root):
+            for entry in sorted(os.listdir(subsystem_root)):
+                detail = configfs_nvme_subsystem_details(entry)
+                state_item = state_by_name.get(entry, {})
+                if state_item:
+                    for key, value in state_item.items():
+                        if key in ("namespaces", "namespaceDetails", "namespaceCount", "allowedHosts", "allowAnyHost"):
+                            continue
+                        if value not in (None, "", []):
+                            detail[key] = value
+                    detail.setdefault("subsystemNqn", entry)
+                    detail.setdefault("name", entry)
+                if not detail:
+                    detail = {"subsystemNqn": entry, "name": entry, "namespaces": [], "namespaceCount": 0}
+                subsystems.append(detail)
+        listeners.append({
+            "portId": str(port_id),
+            "listenIp": listen_ip,
+            "port": port,
+            "transport": transport,
+            "subsystems": subsystems,
+        })
+    return listeners
+
+def nvmeof_listener_ports():
+    ports = {listener.get("port") for listener in configfs_nvme_listeners() if listener.get("port")}
+    state = load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {})
+    if isinstance(state, dict):
+        ports.update(normalize_port_values(state.get("port") or state.get("listenPort") or state.get("listenport")))
+        for listener in state.get("listeners") or []:
+            if isinstance(listener, dict):
+                ports.update(normalize_port_values(listener.get("port") or listener.get("listenPort") or listener.get("listenport")))
+        for subsystem in state.get("subsystems") or []:
+            if isinstance(subsystem, dict):
+                config = subsystem.get("config") if isinstance(subsystem.get("config"), dict) else {}
+                ports.update(normalize_port_values(subsystem.get("listenerPorts") or subsystem.get("listenerports") or config.get("listenerGroupPorts") or config.get("listenergroupports") or config.get("listenerPorts") or config.get("listenerports")))
+    return ports or {4420}
+
+def nvme_listener_matches_session(listener, local_ip, local_port):
+    if listener.get("port") != local_port:
+        return False
+    listen_ip = normalize_ip(listener.get("listenIp"))
+    return listen_ip in ("", "0.0.0.0", "::") or listen_ip == normalize_ip(local_ip)
+
+def nvme_subsystem_candidates_for_session(local):
+    local_ip = endpoint_host(local)
+    local_port = endpoint_port(local)
+    candidates = []
+    if not local_port:
+        return candidates
+    for listener in configfs_nvme_listeners():
+        if not nvme_listener_matches_session(listener, local_ip, local_port):
+            continue
+        for subsystem in listener.get("subsystems") or []:
+            if subsystem.get("namespaceCount", 0) <= 0:
+                continue
+            item = dict(subsystem)
+            item["listenerPort"] = listener.get("port")
+            item["listenerIp"] = listener.get("listenIp")
+            item["listenerPortId"] = listener.get("portId")
+            candidates.append(item)
+    return candidates
 
 def nvme_subsystem_hint(filters):
     subsystems = active_nvme_subsystems()
@@ -1419,10 +2005,7 @@ def targetcli_iscsi_session_details():
             name_match = re.search(r"name:\s*([^\s]+)", text)
             if name_match:
                 current["initiatorIqn"] = name_match.group(1)
-            if "NOT AUTHENTICATED" in text:
-                current["authenticated"] = False
-            elif "AUTHENTICATED" in text:
-                current["authenticated"] = True
+            current["targetcliAuthObservation"] = parse_targetcli_auth_observation(text)
             continue
         if text.startswith("mapped-lun:"):
             lun_match = re.search(r"mapped-lun:\s*([^\s]+)", text)
@@ -1474,6 +2057,73 @@ def active_iscsi_target_for_name(target_name):
             return target
     return {}
 
+def read_configfs_boolean(path):
+    value = read_text(path, "").strip().lower()
+    if value in ("1", "yes", "true", "on"):
+        return True
+    if value in ("0", "no", "false", "off"):
+        return False
+    return None
+
+def configfs_iscsi_auth_required(target_name):
+    if not target_name:
+        return None
+    return read_configfs_boolean(os.path.join(
+        "/sys/kernel/config/target/iscsi", target_name, "tpgt_1", "attrib", "authentication"))
+
+def nonempty_auth_value(value):
+    return str(value or "").strip().lower() not in ("", "null", "none")
+
+def configfs_iscsi_acl_chap_configured(target_name, initiator_iqn):
+    if not target_name or not initiator_iqn:
+        return None
+    auth_root = os.path.join(
+        "/sys/kernel/config/target/iscsi", target_name, "tpgt_1", "acls", initiator_iqn, "auth")
+    if not os.path.isdir(auth_root):
+        return None
+    userid = read_text(os.path.join(auth_root, "userid"), "")
+    password = read_text(os.path.join(auth_root, "password"), "")
+    mutual_userid = read_text(os.path.join(auth_root, "mutual_userid"), "")
+    mutual_password = read_text(os.path.join(auth_root, "mutual_password"), "")
+    return ((nonempty_auth_value(userid) and nonempty_auth_value(password)) or
+            (nonempty_auth_value(mutual_userid) and nonempty_auth_value(mutual_password)))
+
+def desired_iscsi_acl_chap_configured(target, initiator_iqn):
+    if not isinstance(target, dict) or not initiator_iqn:
+        return None
+    for acl in target.get("acls") or []:
+        if not isinstance(acl, dict):
+            continue
+        principal = acl.get("principal") or acl.get("initiatorIqn") or acl.get("initiatoriqn")
+        if str(principal or "") != str(initiator_iqn):
+            continue
+        config = acl.get("config") if isinstance(acl.get("config"), dict) else {}
+        return bool(config.get("chapEnabled") or config.get("mutualChapEnabled"))
+    return None
+
+def iscsi_session_auth_contract(detail, target_name, target):
+    initiator_iqn = detail.get("initiatorIqn")
+    auth_required = configfs_iscsi_auth_required(target_name)
+    desired_chap = desired_iscsi_acl_chap_configured(target, initiator_iqn)
+    runtime_chap = configfs_iscsi_acl_chap_configured(target_name, initiator_iqn)
+    chap_configured = True if True in (desired_chap, runtime_chap) else (
+        False if desired_chap is False and runtime_chap is False else None)
+    verification = classify_iscsi_auth_session(
+        detail.get("connectionState") or detail.get("state"), auth_required, chap_configured)
+    contract = {
+        "sessionSchemaVersion": 2,
+        "targetcliAuthObservation": detail.get("targetcliAuthObservation") or "UNSPECIFIED",
+        "authVerification": verification,
+    }
+    if auth_required is not None:
+        contract["authRequired"] = auth_required
+    if chap_configured is not None:
+        contract["chapConfigured"] = chap_configured
+    authenticated = compatibility_authenticated(verification)
+    if authenticated is not None:
+        contract["authenticated"] = authenticated
+    return contract
+
 def targetcli_iscsi_session_rows():
     rows = []
     for detail in targetcli_iscsi_session_details():
@@ -1510,7 +2160,6 @@ def targetcli_iscsi_session_rows():
                 "client": peer_host,
                 "initiatorIqn": detail.get("initiatorIqn"),
                 "targetcliSid": detail.get("targetcliSid"),
-                "authenticated": detail.get("authenticated"),
                 "resourceId": target.get("uuid") or target.get("id") if target else None,
                 "resourceName": target_name,
                 "targetName": target_name,
@@ -1526,6 +2175,7 @@ def targetcli_iscsi_session_rows():
                 "possibleEndpoints": portals,
                 "listenerPorts": ",".join(str(port) for port in ports) if ports else "",
             }
+            row.update(iscsi_session_auth_contract(detail, target_name, target))
             if not exact_endpoint:
                 row["mappingWarning"] = "Target/LUN attribution is exact from targetcli; endpoint is candidate because the target has multiple portals or shared listeners."
             rows.append({k: v for k, v in row.items() if v not in (None, "")})
@@ -1701,12 +2351,14 @@ def tcp_socket_rows():
         parts = line.split()
         if len(parts) < 4:
             continue
+        local = parts[-2]
+        peer = parts[-1]
         rows.append({
             "state": parts[0],
-            "local": parts[3],
-            "peer": parts[4] if len(parts) > 4 else "",
+            "local": local,
+            "peer": peer,
             "line": line,
-            "localPort": endpoint_port(parts[3]),
+            "localPort": endpoint_port(local),
         })
     return rows
 
@@ -1714,9 +2366,95 @@ def observed_iscsi_tcp_count():
     ports = iscsi_listener_ports()
     return len([row for row in tcp_socket_rows() if row.get("localPort") in ports])
 
+def observed_nvmeof_tcp_count():
+    ports = nvmeof_listener_ports()
+    return len([row for row in tcp_socket_rows() if row.get("localPort") in ports])
+
+def nvme_tcp_sessions(rows, filters):
+    ports = nvmeof_listener_ports()
+    grouped = {}
+    for row in rows:
+        if row.get("localPort") not in ports:
+            continue
+        local = row.get("local") or ""
+        peer = row.get("peer") or ""
+        client = endpoint_host(peer)
+        key = (local, client)
+        grouped.setdefault(key, []).append(row)
+    sessions = []
+    resource_id = str(filters.get("resourceId") or filters.get("resourceName") or "").strip().lower()
+    for (local, client), group_rows in sorted(grouped.items(), key=lambda item: f"{item[0][0]}|{item[0][1]}"):
+        peer_ports = sorted({endpoint_port(row.get("peer")) for row in group_rows if endpoint_port(row.get("peer"))})
+        candidates = nvme_subsystem_candidates_for_session(local)
+        if resource_id:
+            candidates = [
+                candidate for candidate in candidates
+                if resource_id in {
+                    str(candidate.get("id") or "").lower(),
+                    str(candidate.get("uuid") or "").lower(),
+                    str(candidate.get("name") or "").lower(),
+                    str(candidate.get("subsystemNqn") or "").lower(),
+                }
+            ]
+        state_values = {str(row.get("state") or "").upper() for row in group_rows}
+        state = "ESTAB" if "ESTAB" in state_values else (next(iter(state_values), "UNKNOWN") or "UNKNOWN")
+        transport_session_id = hashlib.sha256(f"NVME_OF|{local}|{client}".encode("utf-8")).hexdigest()[:20]
+        possible_namespaces = []
+        for candidate in candidates:
+            subsystem_nqn = candidate.get("subsystemNqn") or candidate.get("name")
+            for namespace_id in candidate.get("namespaces") or []:
+                possible_namespaces.append({
+                    "subsystemNqn": subsystem_nqn,
+                    "namespaceId": str(namespace_id),
+                })
+        session = {
+            "sessionId": transport_session_id,
+            "transportSessionId": transport_session_id,
+            "sessionKind": "TRANSPORT_AGGREGATE",
+            "protocol": "NVME_OF",
+            "state": state,
+            "local": local,
+            "peer": client,
+            "client": client,
+            "queueCount": len(group_rows),
+            "peerPorts": peer_ports,
+            "listenerPort": endpoint_port(local),
+            "listenerPorts": str(endpoint_port(local) or ""),
+            "possibleSubsystems": candidates,
+            "possibleNamespaces": possible_namespaces,
+            "canDisconnect": False,
+            "disconnectDisabledReason": "The kernel exposes transport queues but no stable logical NVMe controller handle for this connection.",
+        }
+        if len(candidates) == 1:
+            candidate = candidates[0]
+            hosts = candidate.get("allowedHosts") or []
+            session.update({
+                "configuredHostNqns": hosts,
+                "allowAnyHost": candidate.get("allowAnyHost"),
+                "hostPolicy": "ALLOW_ANY" if candidate.get("allowAnyHost") else ("EXPLICIT_ACL" if hosts else "DENY_ALL"),
+                "mappingStatus": "CANDIDATE",
+                "endpointMappingStatus": "EXACT",
+                "mappingWarning": "One configured subsystem is exposed on this transport endpoint, but the kernel does not expose a durable controller-to-subsystem identity for this TCP aggregate.",
+            })
+        elif candidates:
+            session.update({
+                "mappingStatus": "AMBIGUOUS",
+                "endpointMappingStatus": "EXACT",
+                "mappingWarning": "Multiple NVMe-oF subsystems with namespaces are exposed on this listener; subsystem attribution is candidate-based.",
+            })
+        else:
+            session.update({
+                "mappingStatus": "UNMAPPED",
+                "endpointMappingStatus": "UNMAPPED",
+                "mappingWarning": f"No active NVMe-oF subsystem namespace is linked to listener {local}.",
+            })
+        sessions.append({k: v for k, v in session.items() if v not in (None, "", [])})
+    return sessions
+
 def tcp_sessions(filters):
     rows = tcp_socket_rows()
     nfs_ports = nfs_listener_ports()
+    nvme_ports = nvmeof_listener_ports()
     sessions = []
     for row in rows:
         local = row.get("local") or ""
@@ -1727,8 +2465,8 @@ def tcp_sessions(filters):
             protocol = "NFS"
         elif local.endswith(":445") or local.endswith(":139"):
             protocol = "SMB"
-        elif local.endswith(":4420"):
-            protocol = "NVME_OF"
+        elif local_port in nvme_ports:
+            continue
         if protocol:
             session_id = hashlib.sha256(f"{protocol}|{row.get('state')}|{local}|{peer}".encode("utf-8")).hexdigest()[:20]
             session = {"sessionId": session_id, "protocol": protocol, "state": row.get("state"), "local": local, "peer": peer, "client": endpoint_host(peer)}
@@ -1736,13 +2474,8 @@ def tcp_sessions(filters):
                 hint = nfs_export_hint_for_session(local)
                 if hint:
                     session.update(hint)
-            if protocol == "NVME_OF":
-                hint = nvme_subsystem_hint(filters)
-                if hint:
-                    session["resourceId"] = hint.get("uuid") or hint.get("id")
-                    session["resourceName"] = hint.get("name")
-                    session["subsystemNqn"] = hint.get("name")
             sessions.append(session)
+    sessions.extend(nvme_tcp_sessions(rows, filters))
     return sessions
 
 def ss_sessions(filters):
@@ -1775,6 +2508,7 @@ session_state = load_json(session_state_path, {})
 next_state = {}
 raw_sessions = ss_sessions(payload)
 observed_iscsi = observed_iscsi_tcp_count()
+observed_nvmeof = observed_nvmeof_tcp_count()
 warnings = []
 for session in raw_sessions:
     if protocol_filter and session.get("protocol") != protocol_filter:
@@ -1818,8 +2552,22 @@ for session in raw_sessions:
         "listenerPorts": session.get("listenerPorts"),
         "connectionState": session.get("connectionState"),
         "authenticated": session.get("authenticated"),
+        "sessionSchemaVersion": session.get("sessionSchemaVersion"),
+        "targetcliAuthObservation": session.get("targetcliAuthObservation"),
+        "authVerification": session.get("authVerification"),
+        "authRequired": session.get("authRequired"),
+        "chapConfigured": session.get("chapConfigured"),
         "lun": session.get("lun"),
         "lunOrNamespace": session.get("lunOrNamespace"),
+        "namespaceId": session.get("namespaceId"),
+        "namespaceCount": session.get("namespaceCount"),
+        "hostNqn": session.get("hostNqn"),
+        "allowedHosts": session.get("allowedHosts"),
+        "allowAnyHost": session.get("allowAnyHost"),
+        "possibleSubsystems": session.get("possibleSubsystems"),
+        "queueCount": session.get("queueCount"),
+        "peerPorts": session.get("peerPorts"),
+        "listenerPort": session.get("listenerPort"),
     }
     if session.get("mappingWarning"):
         warnings.append(session.get("mappingWarning"))
@@ -1829,15 +2577,23 @@ status = "ok"
 if observed_iscsi and not any(session.get("protocol") == "ISCSI" for session in sessions):
     status = "degraded"
     warnings.append("iSCSI TCP sessions were observed but no iSCSI session rows matched the current filters.")
-elif any(session.get("protocol") == "ISCSI" and session.get("mappingStatus") == "unmapped" for session in sessions):
+elif any(session.get("protocol") == "ISCSI" and str(session.get("mappingStatus", "")).upper() == "UNMAPPED" for session in sessions):
+    status = "degraded"
+if observed_nvmeof and not any(session.get("protocol") == "NVME_OF" for session in sessions):
+    status = "degraded"
+    warnings.append("NVMe-oF TCP queues were observed but no NVMe-oF logical session rows matched the current filters.")
+elif any(session.get("protocol") == "NVME_OF" and str(session.get("mappingStatus", "")).upper() == "UNMAPPED" for session in sessions):
     status = "degraded"
 print(json.dumps({
     "success": True,
     "status": status,
+    "sessionSchemaVersion": 2,
     "sessions": sessions,
     "count": len(sessions),
     "observedTcpCount": len(raw_sessions),
     "observedIscsiTcpCount": observed_iscsi,
+    "observedNvmeofTcpCount": observed_nvmeof,
+    "observedNvmeofSessionCount": len([session for session in sessions if session.get("protocol") == "NVME_OF"]),
     "warnings": sorted(set([warning for warning in warnings if warning])),
 }, sort_keys=True))
 PY
@@ -1865,12 +2621,23 @@ def endpoint_host(value):
         return value[1:value.index("]:")]
     return value.rsplit(":", 1)[0]
 
+def endpoint_port(value):
+    value = str(value or "").strip()
+    if value.startswith("[") and "]:" in value:
+        value = value.rsplit(":", 1)[-1]
+    elif ":" in value:
+        value = value.rsplit(":", 1)[-1]
+    try:
+        return int(value)
+    except Exception:
+        return None
+
 payload = load_payload(sys.argv[1])
 protocol = str(payload.get("protocol", "")).upper()
 peer = payload.get("peer", "")
 local = payload.get("local", "")
 client = endpoint_host(peer)
-port = PORTS.get(protocol)
+port = str(endpoint_port(local) or PORTS.get(protocol) or "")
 if not protocol or not port or not client:
     print(json.dumps({"success": False, "status": "INVALID_REQUEST", "details": "protocol and peer endpoint are required"}))
     sys.exit(1)
@@ -1903,6 +2670,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
+
+sys.path.insert(0, "/usr/local/lib/ablestack-storage")
+from volume_identity import VolumeIdentityError, resolve_volume_device  # noqa: E402
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -2009,51 +2780,29 @@ def select_single(candidates, reason):
         raise SystemExit(f"Ambiguous Storage Service volume device candidates for {reason}: {paths}")
     return None
 
-def find_by_id(volume_uuid, volume_name):
-    by_id = "/dev/disk/by-id"
-    if not identity_tokens or not os.path.isdir(by_id):
-        return None
-    for name in sorted(os.listdir(by_id)):
-        if token_matches(name, identity_tokens):
-            path = os.path.realpath(os.path.join(by_id, name))
-            dev = device_by_path.get(path)
-            if safe_candidate(dev, allow_mounted_match=True):
-                return path
-    return None
-
-def find_device():
-    config = payload.get("config") or {}
-    if config.get("devicePath") and os.path.exists(config["devicePath"]):
-        dev = device_by_path.get(os.path.realpath(config["devicePath"])) or device_by_path.get(config["devicePath"])
-        if not safe_candidate(dev, allow_mounted_match=True):
-            raise SystemExit(f"Configured devicePath is not safe for Storage Service volume attach: {config['devicePath']}")
-        return config["devicePath"]
-    matched = find_by_id(payload.get("volumeUuid"), payload.get("volumeName"))
-    if matched:
-        return matched
-    identity_matches = [dev for dev in devices if safe_candidate(dev, allow_mounted_match=True) and device_matches_identity(dev)]
-    exact_size_identity_matches = [dev for dev in identity_matches if size_matches(dev, expected_size)]
-    selected = select_single(exact_size_identity_matches, "volume UUID and size")
-    if selected:
-        return selected
-    selected = select_single(identity_matches, "volume UUID")
-    if selected:
-        return selected
-
-    fallback_candidates = [dev for dev in devices if safe_candidate(dev)]
-    exact_size_fallback = [dev for dev in fallback_candidates if size_matches(dev, expected_size)]
-    selected = select_single(exact_size_fallback, "volume size")
-    if selected:
-        return selected
-    if import_mode in format_modes:
-        selected = select_single(fallback_candidates, "blank format target")
-        if selected:
-            return selected
-    raise SystemExit("Unable to identify a safe attached Storage Service volume device")
-
-device = find_device()
-device_info = next((dev for dev in devices if dev.get("path") == device), {})
 config = payload.get("config") or {}
+inspection = config.get("lastInspection") or config.get("lastinspection") or {}
+configured_mount_path = config.get("volumeMountPath") or payload.get("mountPath")
+mounted_source = None
+if configured_mount_path:
+    mounted = run(["findmnt", "-n", "-o", "SOURCE", "--target", configured_mount_path])
+    if mounted.returncode == 0 and mounted.stdout.strip():
+        mounted_source = mounted.stdout.strip().splitlines()[0]
+try:
+    resolved_device = resolve_volume_device(
+        lsblk(),
+        volume_uuid=payload.get("volumeUuid"),
+        volume_name=payload.get("volumeName"),
+        filesystem_uuid=(inspection.get("filesystemUuid") or inspection.get("fsUuid")
+                         or config.get("filesystemUuid") or config.get("fsUuid")),
+        mount_source=mounted_source,
+        expected_size=expected_size,
+        allow_blank_size_fallback=import_mode in format_modes,
+    )
+except VolumeIdentityError as error:
+    raise SystemExit(str(error))
+device = resolved_device["devicePath"]
+device_info = next((dev for dev in devices if dev.get("path") == device), {})
 existing_filesystem = device_info.get("fstype")
 requested_filesystem = str(payload.get("filesystem") or existing_filesystem or "xfs").lower()
 filesystem = existing_filesystem or requested_filesystem
@@ -2181,10 +2930,18 @@ backing_path = resolve_backing_path(mount_path, relative_share_path, create_dire
 print(json.dumps({
     "success": True,
     "status": "ok",
+    "schemaVersion": 2,
+    "volumeUuid": payload.get("volumeUuid"),
     "devicePath": device,
+    "observedDevicePath": device,
+    "matchedBy": resolved_device.get("matchedBy"),
+    "serial": resolved_device.get("serial"),
     "filesystem": filesystem,
     "filesystemSupported": filesystem in supported_filesystems,
     "fsUuid": fs_uuid,
+    "filesystemUuid": fs_uuid,
+    "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "bootId": open("/proc/sys/kernel/random/boot_id", "r", encoding="utf-8").read().strip() if os.path.exists("/proc/sys/kernel/random/boot_id") else "",
     "mountPath": mount_path,
     "volumeMountPath": mount_path,
     "relativeSharePath": relative_share_path,
@@ -2267,13 +3024,185 @@ print(json.dumps({
 PY
 }
 
-filesystem_resize() {
+volume_rescan() {
   local payload_file="$1"
 
   python3 - "$payload_file" <<'PY'
 import json
+import os
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
+
+sys.path.insert(0, "/usr/local/lib/ablestack-storage")
+from volume_identity import VolumeIdentityError, resolve_volume_device  # noqa: E402
+
+payload_path = sys.argv[1]
+with open(payload_path, "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+
+def run(args, timeout=60):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+
+def settle():
+    if os.path.exists("/usr/bin/udevadm") or os.path.exists("/bin/udevadm"):
+        subprocess.run(["udevadm", "settle"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=60)
+
+def lsblk():
+    result = run(["lsblk", "-b", "-J", "-o", "NAME,PATH,TYPE,FSTYPE,UUID,SERIAL,SIZE,MOUNTPOINT"], timeout=30)
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or "lsblk failed")
+    return json.loads(result.stdout).get("blockdevices", [])
+
+def walk(devices, parent_disk=None):
+    for dev in devices:
+        disk = dev if dev.get("type") == "disk" else parent_disk
+        dev["_parentDisk"] = disk
+        yield dev
+        for child in dev.get("children") or []:
+            yield from walk([child], disk)
+
+def compact(value):
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+def token_matches(value, tokens):
+    candidate = compact(value)
+    if not candidate:
+        return False
+    for token in tokens:
+        if len(token) >= 8 and (token in candidate or candidate in token):
+            return True
+    return False
+
+def resolve_disk(device_path):
+    devices = list(walk(lsblk()))
+    identities = [
+        ("volumeUuid", compact(payload.get("volumeUuid"))),
+        ("volumeName", compact(payload.get("volumeName")))
+    ]
+    identities = [(kind, token) for kind, token in identities if token]
+    root_disks = {
+        dev.get("_parentDisk", {}).get("name")
+        for dev in devices
+        if dev.get("_parentDisk") and (dev.get("mountpoint") in ("/", "/boot", "/boot/efi") or dev.get("fstype") == "swap")
+    }
+    if device_path:
+        real_path = os.path.realpath(device_path)
+        for dev in devices:
+            if os.path.realpath(dev.get("path") or "") == real_path and dev.get("_parentDisk"):
+                disk = dev["_parentDisk"]
+                if disk.get("name") not in root_disks:
+                    return {
+                        "name": disk.get("name"),
+                        "path": disk.get("path") or f"/dev/{disk.get('name')}",
+                        "matchedBy": "devicePath"
+                    }
+    candidates = {}
+    for dev in devices:
+        disk = dev.get("_parentDisk") or dev
+        name = disk.get("name")
+        if not name or name in root_disks or disk.get("type") != "disk":
+            continue
+        for identity_kind, token in identities:
+            if any(token_matches(dev.get(key), [token]) for key in ("name", "path", "serial", "uuid")):
+                candidates[name] = {
+                    "name": name,
+                    "path": disk.get("path") or f"/dev/{name}",
+                    "matchedBy": identity_kind
+                }
+                break
+    if not candidates:
+        raise SystemExit(
+            "Unable to identify the exact attached Storage Service volume device for "
+            f"{payload.get('volumeUuid') or payload.get('volumeName') or 'unknown volume'}"
+        )
+    if len(candidates) != 1:
+        raise SystemExit("Ambiguous attached Storage Service volume mapping: " + ", ".join(sorted(candidates)))
+    return next(iter(candidates.values()))
+
+def rescan_disk(target):
+    name = target.get("name")
+    rescan_path = f"/sys/block/{name}/device/rescan"
+    if not name or not os.path.exists(rescan_path):
+        raise SystemExit(f"Rescan path is unavailable for the resolved Storage Service volume device: {name}")
+    with open(rescan_path, "w", encoding="utf-8") as rescan_fp:
+        rescan_fp.write("1\n")
+    return {"disk": name, "devicePath": target.get("path"), "matchedBy": target.get("matchedBy"), "rescanned": True}
+
+settle()
+config = payload.get("config") or {}
+inspection = config.get("lastInspection") or config.get("lastinspection") or {}
+mount_path = payload.get("mountPath") or config.get("volumeMountPath") or inspection.get("volumeMountPath")
+mount_source = None
+if mount_path:
+    mounted = run(["findmnt", "-n", "-o", "SOURCE", "--target", mount_path], timeout=10)
+    if mounted.returncode == 0 and mounted.stdout.strip():
+        mount_source = mounted.stdout.strip().splitlines()[0]
+try:
+    resolved = resolve_volume_device(
+        lsblk(),
+        volume_uuid=payload.get("volumeUuid"),
+        volume_name=payload.get("volumeName"),
+        filesystem_uuid=(inspection.get("filesystemUuid") or inspection.get("fsUuid")
+                         or config.get("filesystemUuid") or config.get("fsUuid")),
+        mount_source=mount_source,
+    )
+except VolumeIdentityError as error:
+    raise SystemExit(str(error))
+target = {
+    "name": resolved.get("diskName"),
+    "path": resolved.get("diskPath"),
+    "matchedBy": resolved.get("matchedBy"),
+}
+result = rescan_disk(target)
+settle()
+expected_size = int(payload.get("volumeSizeBytes") or 0)
+actual_size = 0
+deadline = time.time() + 30
+while time.time() < deadline:
+    observed = run(["blockdev", "--getsize64", target.get("path")], timeout=10)
+    if observed.returncode == 0 and observed.stdout.strip().isdigit():
+        actual_size = int(observed.stdout.strip())
+        if expected_size <= 0 or actual_size >= expected_size:
+            break
+    time.sleep(1)
+    settle()
+if expected_size > 0 and actual_size < expected_size:
+    raise SystemExit(
+        f"Storage Service volume rescan did not expose the requested size on {target.get('path')}: "
+        f"expected at least {expected_size} bytes, observed {actual_size} bytes"
+    )
+
+print(json.dumps({
+    "success": True,
+    "status": "ok",
+    "volumeUuid": payload.get("volumeUuid"),
+    "volumeName": payload.get("volumeName"),
+    "volumeSizeBytes": expected_size,
+    "actualSizeBytes": actual_size,
+    "devicePath": target.get("path"),
+    "observedDevicePath": target.get("path"),
+    "matchedBy": target.get("matchedBy"),
+    "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "bootId": open("/proc/sys/kernel/random/boot_id", "r", encoding="utf-8").read().strip() if os.path.exists("/proc/sys/kernel/random/boot_id") else "",
+    "rescans": [result]
+}, sort_keys=True))
+PY
+}
+
+filesystem_resize() {
+  local payload_file="$1"
+
+  python3 - "$payload_file" <<'PY'
+import datetime
+import json
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, "/usr/local/lib/ablestack-storage")
+from volume_identity import VolumeIdentityError, resolve_volume_device  # noqa: E402
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -2282,23 +3211,45 @@ with open(payload_path, "r", encoding="utf-8") as payload_fp:
 def run(args):
     return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
 
+def lsblk():
+    result = run(["lsblk", "-J", "-b", "-o", "NAME,KNAME,PATH,TYPE,SIZE,FSTYPE,UUID,SERIAL,MOUNTPOINT"])
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or "Unable to inspect attached Storage Service volumes")
+    return json.loads(result.stdout).get("blockdevices") or []
+
 mount_path = payload.get("path")
 config = payload.get("config") or {}
 inspection = config.get("lastInspection") or {}
-device = inspection.get("devicePath") or config.get("devicePath")
 filesystem = payload.get("filesystem") or inspection.get("filesystem")
+mount_source = None
 
 if mount_path:
     source_result = run(["findmnt", "-n", "-o", "SOURCE,FSTYPE", "--target", mount_path])
     if source_result.returncode == 0 and source_result.stdout.strip():
         parts = source_result.stdout.strip().split()
         if parts:
-            device = parts[0]
+            mount_source = parts[0]
         if len(parts) > 1:
             filesystem = filesystem or parts[1]
 
+try:
+    resolved = resolve_volume_device(
+        lsblk(),
+        volume_uuid=payload.get("volumeUuid"),
+        volume_name=payload.get("volumeName"),
+        filesystem_uuid=(inspection.get("filesystemUuid") or inspection.get("fsUuid")
+                         or config.get("filesystemUuid") or config.get("fsUuid")),
+        mount_source=mount_source,
+        expected_size=payload.get("volumeSizeBytes"),
+        allow_blank_size_fallback=False,
+    )
+except VolumeIdentityError as exc:
+    raise SystemExit(str(exc))
+
+device = resolved.get("devicePath")
+filesystem = filesystem or resolved.get("filesystem")
 if not device:
-    raise SystemExit("Unable to resolve mounted device for filesystem resize")
+    raise SystemExit("Unable to resolve the exact mounted device for filesystem resize")
 
 if filesystem == "xfs":
     if not mount_path:
@@ -2315,8 +3266,13 @@ if result.returncode != 0:
 print(json.dumps({
     "success": True,
     "status": "ok",
-    "devicePath": device,
+    "observedDevicePath": device,
+    "matchedBy": resolved.get("matchedBy"),
+    "observedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "bootId": open("/proc/sys/kernel/random/boot_id", "r", encoding="utf-8").read().strip()
+        if os.path.exists("/proc/sys/kernel/random/boot_id") else "",
     "filesystem": filesystem,
+    "filesystemUuid": resolved.get("filesystemUuid"),
     "mountPath": mount_path,
     "quotaBytes": payload.get("quotaBytes"),
     "volumeSizeGb": payload.get("volumeSizeGb"),
@@ -3826,19 +4782,35 @@ join_state = identity.get("joinState")
 workgroup = derive_ad_workgroup(domain_name, identity_config.get("workgroup"))
 ad_joined = bool(domain_name and join_state == "JOINED")
 netbios_name = safe_netbios_name(payload.get("netbiosName") or identity_config.get("netbiosName"), payload.get("instanceUuid"))
-listen_port = int(payload.get("port") or 445)
+listener_rows = [item for item in (payload.get("listeners") or []) if isinstance(item, dict)]
+if not listener_rows:
+    listener_rows = [{"listenIp": payload.get("listenIp") or "0.0.0.0", "port": payload.get("port") or 445}]
+listener_ports = sorted({int(item.get("port") or 445) for item in listener_rows})
+listener_ips = []
+wildcard_listener = False
+for item in listener_rows:
+    listen_ip = str(item.get("listenIp") or "0.0.0.0").strip() or "0.0.0.0"
+    if listen_ip == "0.0.0.0":
+        wildcard_listener = True
+    elif listen_ip not in listener_ips:
+        listener_ips.append(listen_ip)
 
 lines = [
     "[global]",
     "   server string = ABLESTACK Storage Service",
     f"   netbios name = {netbios_name}",
-    f"   smb ports = {listen_port}",
+    "   smb ports = " + " ".join(str(port) for port in listener_ports),
     "   load printers = no",
     "   printing = bsd",
     "   disable spoolss = yes",
     "   map to guest = Bad User",
     "   passdb backend = tdbsam",
 ]
+if listener_ips and not wildcard_listener:
+    lines.extend([
+        "   interfaces = lo " + " ".join(listener_ips),
+        "   bind interfaces only = yes",
+    ])
 if ad_joined:
     lines.extend([
         f"   workgroup = {workgroup}",
@@ -3973,7 +4945,21 @@ PY
     systemctl restart nmbd >/dev/null 2>&1 || true
     systemctl restart winbind >/dev/null 2>&1 || true
   fi
-  open_tcp_firewall_port "445"
+  while read -r smb_port; do
+    [[ -n "$smb_port" ]] && open_tcp_firewall_port "$smb_port"
+  done < <(python3 - "$payload_file" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "r", encoding="utf-8") as payload_fp:
+    payload = json.load(payload_fp)
+listeners = [item for item in (payload.get("listeners") or []) if isinstance(item, dict)]
+ports = {int(item.get("port") or 445) for item in listeners}
+if not ports:
+    ports.add(int(payload.get("port") or 445))
+for port in sorted(ports):
+    print(port)
+PY
+)
   open_tcp_firewall_port "139"
   persist_smb_desired_state "$payload_file"
 }
@@ -4956,6 +5942,8 @@ PY
 apply_nvmeof_subsystems() {
   local payload_file="$1"
 
+  network_endpoint_apply "$payload_file" >/dev/null
+
   python3 - "$payload_file" <<'PY'
 import json
 import os
@@ -4963,6 +5951,7 @@ import subprocess
 import sys
 import glob
 import time
+import errno
 
 payload_path = sys.argv[1]
 with open(payload_path, "r", encoding="utf-8") as payload_fp:
@@ -5127,36 +6116,197 @@ def loop_for_file(path):
 def resolve_namespace_device(namespace):
     path = find_backing_path(namespace)
     config = namespace.get("config") or {}
-    explicit = bool(config.get("backingPath") or namespace.get("backingPath"))
     mountpoint = mountpoint_for_device(path)
-    if explicit and not mountpoint:
-        return path, "block"
-    if not mountpoint:
-        return path, "block"
-    file_root = mountpoint
-    ns_dir = os.path.join(file_root, ".ablestack-storage", "nvmeof")
-    os.makedirs(ns_dir, exist_ok=True)
-    ns_file = os.path.join(ns_dir, f"{namespace.get('uuid')}.img")
-    ns_size = namespace_size_bytes(namespace, path)
-    if not os.path.exists(ns_file) or os.path.getsize(ns_file) != ns_size:
-        run(["truncate", "-s", str(ns_size), ns_file], timeout=60)
-    return loop_for_file(ns_file), "file-loop"
+    if mountpoint:
+        raise SystemExit(f"backing device {path} is mounted at {mountpoint}; NVMe-oF namespaces require a dedicated raw block volume")
+    return path, "block"
 
-def port_has_subsystem_links(port_dir):
+def desired_listeners():
+    raw = payload.get("listeners") or []
+    listeners = []
+    seen = set()
+    for listener in raw:
+        listen_ip = str(listener.get("listenIp") or "0.0.0.0")
+        port = int(listener.get("port") or payload.get("port") or 4420)
+        key = (listen_ip, port)
+        if key in seen:
+            continue
+        seen.add(key)
+        listeners.append({"listenIp": listen_ip, "port": port})
+    if not listeners:
+        listeners.append({"listenIp": payload.get("listenIp") or "0.0.0.0", "port": int(payload.get("port") or 4420)})
+    wildcard_ports = {int(listener["port"]) for listener in listeners if str(listener["listenIp"]) == "0.0.0.0"}
+    normalized = []
+    normalized_seen = set()
+    for listener in listeners:
+        port = int(listener["port"])
+        listen_ip = str(listener["listenIp"])
+        if port in wildcard_ports and listen_ip != "0.0.0.0":
+            continue
+        key = (listen_ip, port)
+        if key in normalized_seen:
+            continue
+        normalized_seen.add(key)
+        normalized.append(listener)
+    return normalized
+
+def listener_ports_for_subsystem(subsystem, all_listeners):
+    ports = set()
+    for namespace in subsystem.get("namespaces", []):
+        config = namespace.get("config") or {}
+        for value in config.get("listenerGroupPorts") or config.get("listenerports") or []:
+            try:
+                ports.add(int(value))
+            except Exception:
+                pass
+    if not ports:
+        ports.add(int(payload.get("port") or 4420))
+    available = {int(listener["port"]) for listener in all_listeners}
+    missing = sorted(ports - available)
+    if missing:
+        raise SystemExit(f"NVMe-oF namespace requested listener port group(s) that are not enabled: {', '.join(str(port) for port in missing)}")
+    return ports
+
+def resource_is_active(resource):
+    return str(resource.get("state", "Ready")) not in ("Disabled", "Destroyed", "Error")
+
+def merge_nvmeof_resource_list(items, key_func):
+    merged = {}
+    ordered = []
+    for item in items or []:
+        key = key_func(item)
+        if not key:
+            continue
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = item
+            ordered.append(item)
+            continue
+        should_replace = False
+        if not resource_is_active(existing) and resource_is_active(item):
+            should_replace = True
+        elif not existing.get("secrets") and item.get("secrets"):
+            should_replace = True
+        elif not existing.get("permission") and item.get("permission"):
+            should_replace = True
+        if should_replace:
+            index = ordered.index(existing)
+            ordered[index] = item
+            merged[key] = item
+    return ordered
+
+def merge_nvmeof_subsystems(subsystems):
+    merged = {}
+    ordered = []
+    for subsystem in subsystems or []:
+        nqn = subsystem.get("targetName")
+        if not nqn:
+            continue
+        current = merged.get(nqn)
+        if current is None:
+            current = dict(subsystem)
+            current["config"] = dict(subsystem.get("config") or {})
+            current["namespaces"] = list(subsystem.get("namespaces") or [])
+            current["hosts"] = list(subsystem.get("hosts") or [])
+            merged[nqn] = current
+            ordered.append(current)
+            continue
+        config = subsystem.get("config") or {}
+        current_config = current.setdefault("config", {})
+        if config.get("allowAnyHost"):
+            current_config["allowAnyHost"] = True
+        for key in ("engine", "engineState", "transport"):
+            if not current_config.get(key) and config.get(key):
+                current_config[key] = config[key]
+        if not resource_is_active(current) and resource_is_active(subsystem):
+            current["state"] = subsystem.get("state", "Ready")
+        current["namespaces"].extend(subsystem.get("namespaces") or [])
+        current["hosts"].extend(subsystem.get("hosts") or [])
+    for subsystem in ordered:
+        subsystem["namespaces"] = merge_nvmeof_resource_list(
+            subsystem.get("namespaces") or [],
+            lambda namespace: str(namespace.get("lunOrNamespace") or "1"),
+        )
+        subsystem["hosts"] = merge_nvmeof_resource_list(
+            subsystem.get("hosts") or [],
+            lambda host: host.get("principal"),
+        )
+    return ordered
+
+def unlink_all_subsystems(port_dir):
     subsystem_dir = os.path.join(port_dir, "subsystems")
-    try:
-        return bool(os.listdir(subsystem_dir))
-    except OSError:
-        return False
-
-def configure_port(port_dir):
-    ensure_dir(port_dir)
-    if port_has_subsystem_links(port_dir):
+    if not os.path.isdir(subsystem_dir):
         return
+    for name in os.listdir(subsystem_dir):
+        path = os.path.join(subsystem_dir, name)
+        if os.path.islink(path):
+            os.unlink(path)
+
+def remove_port_dir(port_dir):
+    unlink_all_subsystems(port_dir)
+    try:
+        os.rmdir(port_dir)
+    except OSError as exc:
+        if exc.errno not in (errno.ENOENT, errno.ENOTEMPTY, errno.EBUSY):
+            raise
+
+def read_port_tuple(port_dir):
+    trtype = read_file(os.path.join(port_dir, "addr_trtype"))
+    adrfam = read_file(os.path.join(port_dir, "addr_adrfam"))
+    traddr = read_file(os.path.join(port_dir, "addr_traddr"))
+    trsvcid = read_file(os.path.join(port_dir, "addr_trsvcid"))
+    if trtype and trtype != "tcp":
+        return None
+    if adrfam and adrfam != "ipv4":
+        return None
+    if not traddr or not trsvcid:
+        return None
+    try:
+        return (traddr, int(trsvcid))
+    except Exception:
+        return None
+
+def existing_port_map(base):
+    ports_root = os.path.join(base, "ports")
+    mapped = {}
+    used = set()
+    if not os.path.isdir(ports_root):
+        return mapped, used
+    for port_id in os.listdir(ports_root):
+        used.add(str(port_id))
+        port_dir = os.path.join(ports_root, port_id)
+        if not os.path.isdir(port_dir):
+            continue
+        key = read_port_tuple(port_dir)
+        if key:
+            mapped.setdefault(key, []).append(str(port_id))
+    return mapped, used
+
+def allocate_port_id(used):
+    for candidate in range(1, 4096):
+        value = str(candidate)
+        if value not in used:
+            used.add(value)
+            return value
+    raise SystemExit("unable to allocate NVMe-oF configfs port id")
+
+def configure_new_port(port_dir, listen_ip, port):
+    ensure_dir(port_dir)
     write_if_changed(os.path.join(port_dir, "addr_trtype"), "tcp")
     write_if_changed(os.path.join(port_dir, "addr_adrfam"), "ipv4")
-    write_if_changed(os.path.join(port_dir, "addr_traddr"), payload.get("listenIp") or "0.0.0.0")
-    write_if_changed(os.path.join(port_dir, "addr_trsvcid"), payload.get("port") or 4420)
+    write_if_changed(os.path.join(port_dir, "addr_traddr"), listen_ip)
+    write_if_changed(os.path.join(port_dir, "addr_trsvcid"), port)
+
+def ensure_listener_port(base, listener, existing, used):
+    key = (str(listener["listenIp"]), int(listener["port"]))
+    port_ids = existing.get(key) or []
+    if port_ids:
+        return str(port_ids[0])
+    port_id = allocate_port_id(used)
+    port_dir = os.path.join(base, "ports", port_id)
+    configure_new_port(port_dir, key[0], key[1])
+    existing.setdefault(key, []).append(port_id)
+    return port_id
 
 def link_once(source, link_path):
     if os.path.islink(link_path) and os.path.realpath(link_path) == os.path.realpath(source):
@@ -5173,6 +6323,29 @@ def unlink_stale_symlinks(parent_dir, desired_names):
         if name not in desired_names and os.path.islink(path):
             os.unlink(path)
 
+def remove_stale_managed_port_links(base, desired_listener_keys, desired_subsystems_by_listener, active_subsystem_names):
+    ports_root = os.path.join(base, "ports")
+    if not os.path.isdir(ports_root):
+        return
+    for port_id in os.listdir(ports_root):
+        port_dir = os.path.join(ports_root, port_id)
+        if not os.path.isdir(port_dir):
+            continue
+        key = read_port_tuple(port_dir)
+        subsystems_dir = os.path.join(port_dir, "subsystems")
+        if key in desired_listener_keys:
+            unlink_stale_symlinks(subsystems_dir, desired_subsystems_by_listener.get(key, set()))
+            continue
+        touched = False
+        if os.path.isdir(subsystems_dir):
+            for name in os.listdir(subsystems_dir):
+                path = os.path.join(subsystems_dir, name)
+                if name in active_subsystem_names and os.path.islink(path):
+                    os.unlink(path)
+                    touched = True
+        if touched:
+            remove_port_dir(port_dir)
+
 enabled = bool(payload.get("enabled", True))
 base = "/sys/kernel/config/nvmet"
 applied = 0
@@ -5182,10 +6355,9 @@ if enabled:
     subprocess.run(["modprobe", "nvmet-tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 if enabled and os.path.isdir(base):
-    port_id = "1"
-    port_dir = os.path.join(base, "ports", port_id)
-    configure_port(port_dir)
-
+    listeners = desired_listeners()
+    payload["subsystems"] = merge_nvmeof_subsystems(payload.get("subsystems") or [])
+    active_subsystems = []
     for subsystem in payload.get("subsystems", []):
         if subsystem.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
             continue
@@ -5193,30 +6365,59 @@ if enabled and os.path.isdir(base):
         if not nqn:
             skipped += 1
             continue
-        subsystem_dir = os.path.join(base, "subsystems", nqn)
         config = subsystem.get("config") or {}
         engine = str(config.get("engine") or "KERNEL_NVMET").upper()
         if engine != "KERNEL_NVMET":
             skipped += 1
             continue
+        active_subsystems.append(subsystem)
+    active_listeners = listeners if active_subsystems else []
+    active_subsystem_names = {subsystem.get("targetName") for subsystem in active_subsystems if subsystem.get("targetName")}
+    existing_ports, used_port_ids = existing_port_map(base)
+    listener_port_ids = {}
+    desired_listener_keys = set()
+    desired_subsystems_by_listener = {}
+    for listener in active_listeners:
+        key = (str(listener["listenIp"]), int(listener["port"]))
+        desired_listener_keys.add(key)
+        desired_subsystems_by_listener.setdefault(key, set())
+        listener_port_ids[key] = ensure_listener_port(base, listener, existing_ports, used_port_ids)
+    for subsystem in active_subsystems:
+        nqn = subsystem.get("targetName")
+        subsystem_ports = listener_ports_for_subsystem(subsystem, active_listeners)
+        subsystem["runtimeListenerPorts"] = sorted(subsystem_ports)
+        for listener in active_listeners:
+            key = (str(listener["listenIp"]), int(listener["port"]))
+            if int(listener["port"]) in subsystem_ports:
+                desired_subsystems_by_listener.setdefault(key, set()).add(nqn)
+    remove_stale_managed_port_links(base, desired_listener_keys, desired_subsystems_by_listener, active_subsystem_names)
+
+    for subsystem in active_subsystems:
+        nqn = subsystem.get("targetName")
+        subsystem_dir = os.path.join(base, "subsystems", nqn)
+        config = subsystem.get("config") or {}
         ensure_dir(subsystem_dir)
-        write_if_changed(os.path.join(subsystem_dir, "attr_allow_any_host"), "1" if config.get("allowAnyHost") else "0")
+        allow_any_host = bool(config.get("allowAnyHost"))
+        write_if_changed(os.path.join(subsystem_dir, "attr_allow_any_host"), "1" if allow_any_host else "0")
         desired_hosts = set()
-        for host in subsystem.get("hosts", []):
-            host_nqn = host.get("principal")
-            if host_nqn:
-                desired_hosts.add(host_nqn)
-                host_dir = os.path.join(base, "hosts", host_nqn)
-                ensure_dir(host_dir)
-                host_config = host.get("config") or {}
-                host_secrets = host.get("secrets") or {}
-                if host_config.get("dhChapEnabled"):
-                    write_required_configfs(os.path.join(host_dir, "dhchap_key"), host_secrets.get("dhChapKey"), "NVMe-oF DH-HMAC-CHAP host authentication")
-                if host_config.get("dhChapCtrlEnabled"):
-                    write_required_configfs(os.path.join(host_dir, "dhchap_ctrl_key"), host_secrets.get("dhChapCtrlKey"), "NVMe-oF DH-HMAC-CHAP controller authentication")
-                allowed_host_path = os.path.join(subsystem_dir, "allowed_hosts", host_nqn)
-                link_once(host_dir, allowed_host_path)
-        unlink_stale_symlinks(os.path.join(subsystem_dir, "allowed_hosts"), desired_hosts)
+        if allow_any_host:
+            unlink_stale_symlinks(os.path.join(subsystem_dir, "allowed_hosts"), desired_hosts)
+        else:
+            for host in subsystem.get("hosts", []):
+                host_nqn = host.get("principal")
+                if host_nqn:
+                    desired_hosts.add(host_nqn)
+                    host_dir = os.path.join(base, "hosts", host_nqn)
+                    ensure_dir(host_dir)
+                    host_config = host.get("config") or {}
+                    host_secrets = host.get("secrets") or {}
+                    if host_config.get("dhChapEnabled"):
+                        write_required_configfs(os.path.join(host_dir, "dhchap_key"), host_secrets.get("dhChapKey"), "NVMe-oF DH-HMAC-CHAP host authentication")
+                    if host_config.get("dhChapCtrlEnabled"):
+                        write_required_configfs(os.path.join(host_dir, "dhchap_ctrl_key"), host_secrets.get("dhChapCtrlKey"), "NVMe-oF DH-HMAC-CHAP controller authentication")
+                    allowed_host_path = os.path.join(subsystem_dir, "allowed_hosts", host_nqn)
+                    link_once(host_dir, allowed_host_path)
+            unlink_stale_symlinks(os.path.join(subsystem_dir, "allowed_hosts"), desired_hosts)
         for namespace in subsystem.get("namespaces", []):
             if namespace.get("state", "Ready") in ("Disabled", "Destroyed", "Error"):
                 continue
@@ -5236,8 +6437,17 @@ if enabled and os.path.isdir(base):
                 write_if_changed(os.path.join(ns_dir, "device_path"), backing_path)
             write_if_changed(os.path.join(ns_dir, "enable"), "1")
             namespace["runtime"] = {"backingPath": backing_path, "backingType": backing_type}
-        link_path = os.path.join(port_dir, "subsystems", nqn)
-        link_once(subsystem_dir, link_path)
+        subsystem_ports = set(subsystem.get("runtimeListenerPorts") or listener_ports_for_subsystem(subsystem, active_listeners))
+        for listener in active_listeners:
+            listener_key = (str(listener["listenIp"]), int(listener["port"]))
+            if int(listener["port"]) not in subsystem_ports:
+                continue
+            port_id = listener_port_ids.get(listener_key)
+            if not port_id:
+                continue
+            port_dir = os.path.join(base, "ports", port_id)
+            link_path = os.path.join(port_dir, "subsystems", nqn)
+            link_once(subsystem_dir, link_path)
         applied += 1
 else:
     skipped = len(payload.get("subsystems", []))
@@ -5323,6 +6533,14 @@ case "$command" in
       fi
       log_command "$command $subcommand $action" "$payload"
       volume_detach_prepare "$payload"
+    elif [[ "$subcommand" == "rescan" ]]; then
+      payload="${3:-}"
+      if [[ -z "$payload" || ! -r "$payload" ]]; then
+        emit_error "A readable payload file is required for volume rescan."
+        exit 2
+      fi
+      log_command "$command $subcommand" "$payload"
+      volume_rescan "$payload"
     else
       emit_error "Unsupported volume operation: ${subcommand:-<empty>} ${action:-<empty>}"
       exit 2

@@ -30,18 +30,18 @@ import org.apache.cloudstack.api.response.StorageBlockTargetResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.storage.dataservice.StorageService;
 
-@APICommand(name = "listStorageNvmeOfSubsystems",
+@APICommand(name = "listStorageNvmeOfNamespaces",
         responseObject = StorageBlockTargetResponse.class,
-        description = "Lists NVMe-oF subsystems.",
+        description = "Lists NVMe-oF namespaces.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
         authorized = {RoleType.Admin, RoleType.ResourceAdmin, RoleType.DomainAdmin, RoleType.User})
-public class ListStorageNvmeOfSubsystemsCmd extends BaseListCmd implements UserCmd {
+public class ListStorageNvmeOfNamespacesCmd extends BaseListCmd implements UserCmd {
     @Inject
     StorageService storageService;
 
-    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, description = "NVMe-oF subsystem ID")
+    @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageBlockTargetResponse.class, description = "NVMe-oF namespace ID")
     private Long id;
 
     @Parameter(name = "instanceid", type = CommandType.UUID, entityType = StorageServiceInstanceResponse.class, description = "Storage Service instance ID")
@@ -49,6 +49,9 @@ public class ListStorageNvmeOfSubsystemsCmd extends BaseListCmd implements UserC
 
     @Parameter(name = "subsystemnqn", type = CommandType.STRING, description = "NVMe-oF subsystem NQN")
     private String subsystemNqn;
+
+    @Parameter(name = "namespaceid", type = CommandType.STRING, description = "NVMe-oF namespace ID")
+    private String namespaceId;
 
     public Long getId() {
         return id;
@@ -62,9 +65,13 @@ public class ListStorageNvmeOfSubsystemsCmd extends BaseListCmd implements UserC
         return subsystemNqn;
     }
 
+    public String getNamespaceId() {
+        return namespaceId;
+    }
+
     @Override
     public void execute() {
-        ListResponse<StorageBlockTargetResponse> response = storageService.listStorageNvmeOfSubsystems(this);
+        ListResponse<StorageBlockTargetResponse> response = storageService.listStorageNvmeOfNamespaces(this);
         response.setResponseName(getCommandName());
         setResponseObject(response);
     }
