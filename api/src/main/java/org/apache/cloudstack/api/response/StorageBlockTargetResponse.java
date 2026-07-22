@@ -60,8 +60,12 @@ public class StorageBlockTargetResponse extends BaseResponse {
     private Long volumeSizeBytes;
 
     @SerializedName("lunsizebytes")
-    @Param(description = "configured LUN or namespace size in bytes")
+    @Param(description = "configured iSCSI LUN size in bytes")
     private Long lunSizeBytes;
+
+    @SerializedName("namespacesizebytes")
+    @Param(description = "configured NVMe-oF namespace size in bytes")
+    private Long namespaceSizeBytes;
 
     @SerializedName("effectivesizebytes")
     @Param(description = "effective LUN or namespace size in bytes")
@@ -82,6 +86,42 @@ public class StorageBlockTargetResponse extends BaseResponse {
     @SerializedName("endpoints")
     @Param(description = "effective listener endpoints")
     private String endpoints;
+
+    @SerializedName("resolvedendpoints")
+    @Param(description = "runtime-resolved listener endpoints")
+    private String resolvedEndpoints;
+
+    @SerializedName("runtimestate")
+    @Param(description = "runtime state resolved from the Storage Service System VM")
+    private String runtimeState;
+
+    @SerializedName("runtimestatus")
+    @Param(description = "runtime status JSON resolved from the Storage Service System VM")
+    private String runtimeStatus;
+
+    @SerializedName("runtimewarnings")
+    @Param(description = "runtime warnings resolved from the Storage Service System VM")
+    private String runtimeWarnings;
+
+    @SerializedName("runtimebackingpath")
+    @Param(description = "observed backing path inside the Storage Service System VM")
+    private String runtimeBackingPath;
+
+    @SerializedName("runtimemappingstatus")
+    @Param(description = "runtime block backing mapping status")
+    private String runtimeMappingStatus;
+
+    @SerializedName("runtimeenabled")
+    @Param(description = "whether the runtime namespace is enabled")
+    private Boolean runtimeEnabled;
+
+    @SerializedName("actualbackingsizebytes")
+    @Param(description = "observed backing device size in bytes")
+    private Long actualBackingSizeBytes;
+
+    @SerializedName("runtimeobservedat")
+    @Param(description = "timestamp of the runtime observation")
+    private String runtimeObservedAt;
 
     @SerializedName("targetgroupkey")
     @Param(description = "target group key, such as iSCSI target IQN")
@@ -147,6 +187,10 @@ public class StorageBlockTargetResponse extends BaseResponse {
         this.lunSizeBytes = lunSizeBytes;
     }
 
+    public void setNamespaceSizeBytes(final Long namespaceSizeBytes) {
+        this.namespaceSizeBytes = namespaceSizeBytes;
+    }
+
     public void setEffectiveSizeBytes(final Long effectiveSizeBytes) {
         this.effectiveSizeBytes = effectiveSizeBytes;
     }
@@ -165,6 +209,42 @@ public class StorageBlockTargetResponse extends BaseResponse {
 
     public void setEndpoints(final String endpoints) {
         this.endpoints = endpoints;
+    }
+
+    public void setResolvedEndpoints(final String resolvedEndpoints) {
+        this.resolvedEndpoints = resolvedEndpoints;
+    }
+
+    public void setRuntimeState(final String runtimeState) {
+        this.runtimeState = runtimeState;
+    }
+
+    public void setRuntimeStatus(final String runtimeStatus) {
+        this.runtimeStatus = runtimeStatus;
+    }
+
+    public void setRuntimeWarnings(final String runtimeWarnings) {
+        this.runtimeWarnings = runtimeWarnings;
+    }
+
+    public void setRuntimeBackingPath(final String runtimeBackingPath) {
+        this.runtimeBackingPath = runtimeBackingPath;
+    }
+
+    public void setRuntimeMappingStatus(final String runtimeMappingStatus) {
+        this.runtimeMappingStatus = runtimeMappingStatus;
+    }
+
+    public void setRuntimeEnabled(final Boolean runtimeEnabled) {
+        this.runtimeEnabled = runtimeEnabled;
+    }
+
+    public void setActualBackingSizeBytes(final Long actualBackingSizeBytes) {
+        this.actualBackingSizeBytes = actualBackingSizeBytes;
+    }
+
+    public void setRuntimeObservedAt(final String runtimeObservedAt) {
+        this.runtimeObservedAt = runtimeObservedAt;
     }
 
     public void setTargetGroupKey(final String targetGroupKey) {

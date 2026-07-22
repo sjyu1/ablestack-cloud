@@ -8,6 +8,7 @@ DESIRED_STATE_DIR="${ABLESTACK_STORAGE_DESIRED_STATE_DIR:-/etc/ablestack-storage
 NFS_PAYLOAD="${ABLESTACK_STORAGE_NFS_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/nfs-export-apply.json}"
 SMB_PAYLOAD="${ABLESTACK_STORAGE_SMB_DESIRED_STATE_FILE:-${DESIRED_STATE_DIR}/smb-share-apply.json}"
 ISCSI_PAYLOAD="${ABLESTACK_STORAGE_ISCSI_DESIRED_STATE_FILE:-/etc/ablestack-storage/iscsi-targets.json}"
+NVMEOF_PAYLOAD="${ABLESTACK_STORAGE_NVMEOF_DESIRED_STATE_FILE:-/etc/ablestack-storage/nvmeof-subsystems.json}"
 LOG_FILE="${ABLESTACK_STORAGE_BOOT_RECONCILE_LOG:-/var/log/ablestack-storage-boot-reconcile.log}"
 MAX_ATTEMPTS="${ABLESTACK_STORAGE_BOOT_RECONCILE_ATTEMPTS:-12}"
 SLEEP_SECONDS="${ABLESTACK_STORAGE_BOOT_RECONCILE_SLEEP:-5}"
@@ -28,7 +29,15 @@ ensure_ganesha_runtime_dirs() {
   fi
 }
 
-if [[ ! -s "$NFS_PAYLOAD" && ! -s "$SMB_PAYLOAD" && ! -s "$ISCSI_PAYLOAD" ]]; then
+
+ensure_nvmeof_runtime() {
+  mkdir -p /sys/kernel/config
+  mountpoint -q /sys/kernel/config || mount -t configfs configfs /sys/kernel/config >/dev/null 2>&1 || true
+  modprobe nvmet >/dev/null 2>&1 || true
+  modprobe nvmet-tcp >/dev/null 2>&1 || true
+}
+
+if [[ ! -s "$NFS_PAYLOAD" && ! -s "$SMB_PAYLOAD" && ! -s "$ISCSI_PAYLOAD" && ! -s "$NVMEOF_PAYLOAD" ]]; then
   log "no saved Storage Service desired state; skipping boot reconcile"
   exit 0
 fi
@@ -38,7 +47,7 @@ if [[ ! -x "$STORAGECTL" ]]; then
   exit 1
 fi
 
-log "starting boot reconcile nfs=$NFS_PAYLOAD smb=$SMB_PAYLOAD iscsi=$ISCSI_PAYLOAD"
+log "starting boot reconcile nfs=$NFS_PAYLOAD smb=$SMB_PAYLOAD iscsi=$ISCSI_PAYLOAD nvmeof=$NVMEOF_PAYLOAD"
 ensure_ganesha_runtime_dirs
 systemctl daemon-reload >/dev/null 2>&1 || true
 
@@ -70,6 +79,15 @@ while (( attempt <= MAX_ATTEMPTS )); do
       log "iSCSI desired state reapplied successfully"
     else
       log "iSCSI desired state reapply failed"
+      success=0
+    fi
+  fi
+  if [[ -s "$NVMEOF_PAYLOAD" ]]; then
+    ensure_nvmeof_runtime
+    if "$STORAGECTL" nvmeof subsystem apply "$NVMEOF_PAYLOAD" >> "$LOG_FILE" 2>&1; then
+      log "NVMe-oF desired state reapplied successfully"
+    else
+      log "NVMe-oF desired state reapply failed"
       success=0
     fi
   fi

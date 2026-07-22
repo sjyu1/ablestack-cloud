@@ -47,6 +47,38 @@ public class StorageNfsExportResponse extends BaseResponse {
     @Param(description = "backing volume ID")
     private String volumeId;
 
+    @SerializedName("volumeuuid")
+    @Param(description = "stable ABLESTACK backing volume UUID")
+    private String volumeUuid;
+
+    @SerializedName("filesystemuuid")
+    @Param(description = "stable backing filesystem UUID")
+    private String filesystemUuid;
+
+    @SerializedName("volumemountpath")
+    @Param(description = "managed backing volume mount path")
+    private String volumeMountPath;
+
+    @SerializedName("runtimedevicepath")
+    @Param(description = "guest device path observed during the current System VM boot")
+    private String runtimeDevicePath;
+
+    @SerializedName("runtimeobservedat")
+    @Param(description = "time when the runtime volume mapping was observed")
+    private String runtimeObservedAt;
+
+    @SerializedName("runtimebootid")
+    @Param(description = "System VM boot ID associated with the runtime observation")
+    private String runtimeBootId;
+
+    @SerializedName("runtimematchedby")
+    @Param(description = "stable identity used to resolve the runtime device")
+    private String runtimeMatchedBy;
+
+    @SerializedName("mappingstatus")
+    @Param(description = "runtime backing volume mapping status")
+    private String mappingStatus;
+
     @SerializedName(ApiConstants.FILESYSTEM)
     @Param(description = "filesystem type")
     private String filesystem;
@@ -106,6 +138,15 @@ public class StorageNfsExportResponse extends BaseResponse {
     public void setVolumeId(String volumeId) {
         this.volumeId = volumeId;
     }
+
+    public void setVolumeUuid(final String volumeUuid) { this.volumeUuid = volumeUuid; }
+    public void setFilesystemUuid(final String filesystemUuid) { this.filesystemUuid = filesystemUuid; }
+    public void setVolumeMountPath(final String volumeMountPath) { this.volumeMountPath = volumeMountPath; }
+    public void setRuntimeDevicePath(final String runtimeDevicePath) { this.runtimeDevicePath = runtimeDevicePath; }
+    public void setRuntimeObservedAt(final String runtimeObservedAt) { this.runtimeObservedAt = runtimeObservedAt; }
+    public void setRuntimeBootId(final String runtimeBootId) { this.runtimeBootId = runtimeBootId; }
+    public void setRuntimeMatchedBy(final String runtimeMatchedBy) { this.runtimeMatchedBy = runtimeMatchedBy; }
+    public void setMappingStatus(final String mappingStatus) { this.mappingStatus = mappingStatus; }
 
     public void setFilesystem(String filesystem) {
         this.filesystem = filesystem;
