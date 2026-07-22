@@ -10313,7 +10313,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
         List<VolumeDetailVO> pendingDetails = volumeDetailsDao.findDetails(FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING, false);
         if (CollectionUtils.isEmpty(pendingDetails)) {
-            return false;
+            return recoverFastCloneSourceOverlayCommit();
         }
 
         for (VolumeDetailVO pendingDetail : pendingDetails) {
@@ -10359,6 +10359,34 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             }
             return true;
         }
+        return false;
+    }
+
+    protected boolean recoverFastCloneSourceOverlayCommit() {
+        List<VolumeDetailVO> sourceDetails = volumeDetailsDao.findDetails(FAST_CLONE_ROLE, FAST_CLONE_ROLE_SOURCE, false);
+        if (CollectionUtils.isEmpty(sourceDetails)) {
+            return false;
+        }
+
+        Set<String> operationIds = new LinkedHashSet<>();
+        for (VolumeDetailVO sourceDetail : sourceDetails) {
+            VolumeDetailVO operationDetail = volumeDetailsDao.findDetail(sourceDetail.getResourceId(), FAST_CLONE_OPERATION_ID);
+            if (operationDetail == null || StringUtils.isBlank(operationDetail.getValue())) {
+                logger.warn("Found SharedMountPoint clone source volume detail [{}] without operation id. Skipping source overlay recovery.", sourceDetail);
+                continue;
+            }
+            String operationId = operationDetail.getValue();
+            if (!hasPendingFastCloneVolumes(operationId)) {
+                operationIds.add(operationId);
+            }
+        }
+
+        for (String operationId : operationIds) {
+            logger.info("Recovering SharedMountPoint clone source overlay commit for operation [{}].", operationId);
+            tryCommitFastCloneSourceOverlay(operationId);
+            return true;
+        }
+
         return false;
     }
 
