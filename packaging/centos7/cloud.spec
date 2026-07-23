@@ -226,7 +226,7 @@ if [ \"%{_temp}\" != "" ]; then
 fi
 
 mvn -Psystemvm,developer $FLAGS clean package
-cd ui && npm install && npm run build && cd ..
+cd ui && npm ci --no-audit --no-fund && npm run build && cd ..
 
 %install
 [ ${RPM_BUILD_ROOT} != "/" ] && rm -rf ${RPM_BUILD_ROOT}

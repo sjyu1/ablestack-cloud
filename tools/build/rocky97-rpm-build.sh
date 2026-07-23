@@ -25,7 +25,7 @@ SIMULATOR=${SIMULATOR:-default}
 DISTRO=${DISTRO:-rocky9}
 RELEASE=${RELEASE:-}
 TEMPLATES=${TEMPLATES:-}
-NODE_VERSION=${NODE_VERSION:-14.21.3}
+NODE_VERSION=${NODE_VERSION:-16.20.2}
 BRAND=${BRAND:-}
 PACKAGE_VERSION=${PACKAGE_VERSION:-}
 TIMESTAMP_VALUE=${TIMESTAMP_VALUE:-}
@@ -131,6 +131,7 @@ fi
 export JAVA_HOME="$JAVA17_HOME"
 export PATH="/opt/node-v${NODE_VERSION}-linux-x64/bin:$JAVA_HOME/bin:$PATH"
 export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true --add-opens=java.base/java.lang=ALL-UNNAMED"
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider"
 
 git config --global --add safe.directory "$ROOT_DIR"
 
