@@ -778,16 +778,6 @@ export default {
           show: (record) => { return ['Stopped', 'Ready', 'Detached'].includes(record.state) }
         },
         {
-          api: 'changeSharedFileSystemDiskOffering',
-          icon: 'swap-outlined',
-          docHelp: 'adminguide/storage.html#lifecycle-operations',
-          label: 'label.change.disk.offering',
-          dataView: true,
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/storage/ChangeSharedFSDiskOffering.vue'))),
-          show: (record) => { return ['Stopped', 'Ready'].includes(record.state) }
-        },
-        {
           api: 'changeSharedFileSystemServiceOffering',
           icon: 'arrows-alt-outlined',
           docHelp: 'adminguide/storage.html#lifecycle-operations',

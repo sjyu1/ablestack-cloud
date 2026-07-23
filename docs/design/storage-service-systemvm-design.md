@@ -189,6 +189,11 @@ These should remain under:
 org.apache.cloudstack.api.command.user.storage.sharedfs
 ```
 
+`changeSharedFileSystemDiskOffering` is retained for API compatibility only.
+The current Storage Service UI must not expose it as a service-wide operation,
+because a Storage Service can own multiple independently managed backing
+volumes.
+
 ### New Independent API
 
 New ABLESTACK APIs should be placed under an independent package, for example:
@@ -1051,8 +1056,12 @@ API direction:
   - `quotabytes` is a per-share file-service capacity limit in bytes. The UI
     must collect it through a value plus IEC unit selector and convert it to
     bytes before submission.
-- Existing SharedFS `changeSharedFileSystemDiskOffering` remains the
-  compatibility API and can later call this workflow intenally.
+- Existing SharedFS `changeSharedFileSystemDiskOffering` remains available for
+  API compatibility, but is not exposed in the current Storage Service UI and
+  must not imply that all backing volumes are changed together.
+- Backing volume growth is managed per volume through
+  `resizeStorageServiceBackingVolume`; the row-level volume action is the
+  authoritative UI workflow.
 
 Resize workflow:
 
