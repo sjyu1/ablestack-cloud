@@ -228,7 +228,7 @@ fi
 mvn -Psystemvm,developer $FLAGS clean package
 cd ui
 env -u NODE_OPTIONS %{_node_bindir}/npm ci --no-audit --no-fund
-NODE_OPTIONS=--openssl-legacy-provider %{_node_bindir}/npm run build
+env -u NODE_OPTIONS %{_node_bindir}/npm run build
 cd ..
 
 %install
