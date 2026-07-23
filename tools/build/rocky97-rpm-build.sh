@@ -58,6 +58,22 @@ echo "BUILD_SRPM=$BUILD_SRPM"
 echo "USE_TIMESTAMP=$USE_TIMESTAMP"
 echo "LOCAL_FAST=$LOCAL_FAST"
 
+configure_rocky_vault_repositories() {
+    local repo
+
+    for repo in /etc/yum.repos.d/rocky*.repo; do
+        [ -f "$repo" ] || continue
+        sed -E -i \
+            -e 's|^mirrorlist=|#mirrorlist=|' \
+            -e 's|^#?baseurl=https?://dl\.rockylinux\.org/\$contentdir|baseurl=https://dl.rockylinux.org/vault/rocky|' \
+            "$repo"
+    done
+}
+
+# Rocky 9.7 is archived, so both the container image and its package
+# repositories must use the Rocky vault.
+configure_rocky_vault_repositories
+
 DNF=(dnf --releasever=9.7 -y)
 
 "${DNF[@]}" install dnf-plugins-core
