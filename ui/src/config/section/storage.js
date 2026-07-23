@@ -18,6 +18,14 @@
 import { shallowRef, defineAsyncComponent } from 'vue'
 import store from '@/store'
 
+const activeFastCloneFlattenStatuses = ['pending', 'running']
+
+const isFastCloneFlattenActive = (record) => {
+  return activeFastCloneFlattenStatuses.includes(
+    String(record?.clonefastflattenstatus || record?.details?.['clone.fast.flatten.status'] || '').toLowerCase()
+  )
+}
+
 export default {
   name: 'storage',
   title: 'label.storage',
@@ -143,7 +151,11 @@ export default {
           label: 'label.action.detach.disk',
           message: 'message.detach.disk',
           dataView: true,
-          show: (record) => { return record.virtualmachineid && ['Running', 'Stopped', 'Destroyed'].includes(record.vmstate) }
+          show: (record) => {
+            return record.virtualmachineid &&
+              ['Running', 'Stopped', 'Destroyed'].includes(record.vmstate) &&
+              !isFastCloneFlattenActive(record)
+          }
         },
         {
           api: 'updateVolume',

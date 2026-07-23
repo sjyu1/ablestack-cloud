@@ -1599,6 +1599,7 @@ export default {
         }))
       } else {
         this.modalWidth = '30vw'
+        this.selectedItems = []
       }
       // this.modalWidth = '45vw'
 
