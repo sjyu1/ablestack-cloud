@@ -53,12 +53,19 @@ jobs:
       SYSTEMVM_VERSION: ${{ inputs.version }}
       SYSTEMVM_BUILD_NUMBER: ${{ inputs.build_number }}
       SYSTEMVM_ARTIFACT_NAME: ${{ inputs.artifact_name }}
+      SYSTEMVM_ISO_CACHE: ${{ github.workspace }}/.cache/systemvm
 
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ env.SYSTEMVM_REF }}
           fetch-depth: 0
+
+      - name: Restore Debian installer ISO cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/systemvm
+          key: systemvm-debian-12.12.0-amd64-c93055182057dd19
 
       - name: Install KVM System VM build prerequisites
         run: |
@@ -79,6 +86,46 @@ jobs:
           sudo unzip -o "$packer_archive" -d /usr/local/bin
           rm -f "$packer_archive" "packer_${PACKER_VERSION}_SHA256SUMS"
           packer version
+
+      - name: Download and verify Debian installer ISO
+        run: |
+          template=tools/appliance/systemvmtemplate/template-base_x86_64-target_x86_64.json
+          iso_url=$(jq -r '.builders[0].iso_url' "$template")
+          iso_checksum=$(jq -r '.builders[0].iso_checksum' "$template")
+          iso_checksum=${iso_checksum#sha512:}
+          iso_path="$SYSTEMVM_ISO_CACHE/$(basename "$iso_url")"
+          mkdir -p "$SYSTEMVM_ISO_CACHE"
+
+          if [ -f "$iso_path" ] &&
+             ! printf '%s  %s\n' "$iso_checksum" "$iso_path" | sha512sum -c -; then
+            rm -f "$iso_path"
+          fi
+
+          if [ ! -f "$iso_path" ]; then
+            partial_path="${iso_path}.part"
+            rm -f "$partial_path"
+            curl \
+              --fail \
+              --location \
+              --retry 8 \
+              --retry-delay 15 \
+              --retry-all-errors \
+              --connect-timeout 60 \
+              --max-time 3600 \
+              --output "$partial_path" \
+              "$iso_url"
+            printf '%s  %s\n' "$iso_checksum" "$partial_path" | sha512sum -c -
+            mv "$partial_path" "$iso_path"
+          fi
+
+          local_iso_url=$(python3 -c \
+            'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())' \
+            "$iso_path")
+          jq --arg iso_url "$local_iso_url" \
+            '.builders[0].iso_url = $iso_url' \
+            "$template" > "${template}.tmp"
+          mv "${template}.tmp" "$template"
+          jq -e '.builders[0].iso_url | startswith("file://")' "$template"
 
       - name: Validate KVM and NBD support
         run: |
