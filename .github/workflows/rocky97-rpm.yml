@@ -37,11 +37,11 @@ on:
       pack:
         description: Package variant
         required: false
-        default: oss
+        default: noredist
         type: choice
         options:
-          - oss
           - noredist
+          - oss
       simulator:
         description: Include simulator packaging
         required: false
@@ -97,7 +97,7 @@ on:
         type: string
       pack:
         required: false
-        default: oss
+        default: noredist
         type: string
       simulator:
         required: false
@@ -165,7 +165,7 @@ jobs:
       ROCKY97_URL: https://download.rockylinux.org/pub/rocky/9.7/images/x86_64/Rocky-9-Container-Base.latest.x86_64.tar.xz
       ROCKY97_SHA256: 2213bb44c0f1bfd0bbef16118ab5a1ec6875362c5ad6c6dafdecf28d14151ad2
       BUILD_REF: ${{ inputs.ref || github.event.inputs.ref || github.ref }}
-      BUILD_PACK: ${{ inputs.pack || github.event.inputs.pack || 'oss' }}
+      BUILD_PACK: ${{ inputs.pack || github.event.inputs.pack || 'noredist' }}
       BUILD_SIMULATOR: ${{ inputs.simulator || github.event.inputs.simulator || 'default' }}
       BUILD_RELEASE: ${{ inputs.release || github.event.inputs.release || '' }}
       BUILD_BRAND: ${{ inputs.brand || github.event.inputs.brand || '' }}
