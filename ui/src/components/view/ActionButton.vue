@@ -127,7 +127,10 @@
       :key="actionIndex"
       arrowPointAtCenter
       placement="bottomRight">
-      <template v-if="!dataView && action.hoverLabel" #title>
+      <template v-if="getActionTooltip(action)" #title>
+        {{ getActionTooltip(action) }}
+      </template>
+      <template v-else-if="!dataView && action.hoverLabel" #title>
         {{ $t(action.hoverLabel) }}
       </template>
       <template v-else-if="!dataView" #title>
@@ -142,8 +145,9 @@
             (!dataView && ((action.listView && ('show' in action ? action.show(resource, $store.getters) : true)) || (action.groupAction && selectedRowKeys.length > 0 && ('groupShow' in action ? action.groupShow(selectedItems, $store.getters) : true)))) ||
             (dataView && action.dataView && ('show' in action ? action.show(resource, $store.getters) : true))
           )"
-        :disabled="'disabled' in action ? action.disabled(resource, $store.getters) : false" >
+        :disabled="isActionDisabled(action)" >
         <a-button
+          :disabled="isActionDisabled(action)"
           :type="dataView ? 'text' : (primaryIconList.includes(action.icon) ? 'primary' : 'default')"
           :shape="dataView ? null : (['PlusOutlined', 'plus-outlined'].includes(action.icon) ? 'round' : 'circle')"
           :danger="dangerIconList.includes(action.icon)"
@@ -167,7 +171,7 @@
             (!dataView && ((action.listView && ('show' in action ? action.show(resource, $store.getters) : true)) || (action.groupAction && selectedRowKeys.length > 0 && ('groupShow' in action ? action.groupShow(selectedItems, $store.getters) : true)))) ||
             (dataView && action.dataView && ('show' in action ? action.show(resource, $store.getters) : true))
           )"
-        :disabled="'disabled' in action ? action.disabled(resource, $store.getters) : false"
+        :disabled="isActionDisabled(action)"
         :type="dataView ? 'text' : (primaryIconList.includes(action.icon) ? 'primary' : 'default')"
         :danger="dangerIconList.includes(action.icon)"
         :shape="dataView ? null : (['PlusOutlined', 'plus-outlined', 'UserAddOutlined', 'user-add-outlined'].includes(action.icon) ? 'round' : 'circle')"
@@ -363,14 +367,26 @@ export default {
       this.updateWallLinkUrl()
     },
     execAction (action) {
+      if (this.isActionDisabled(action)) {
+        return
+      }
       action.resource = this.resource
       if (action.docHelp) {
         action.docHelp = this.$applyDocHelpMappings(action.docHelp)
       }
       this.$emit('exec-action', action)
     },
-    async openConsole (copyUrlToClipboard) {
-      console.log('copyUrlToClipboard :>> ', copyUrlToClipboard)
+    isActionDisabled (action) {
+      return 'disabled' in action ? action.disabled(this.resource, this.$store.getters, this.selectedItems) : false
+    },
+    getActionTooltip (action) {
+      if (!('tooltip' in action)) {
+        return ''
+      }
+      const tooltip = action.tooltip(this.resource, this.$store.getters, this.selectedItems)
+      return tooltip ? this.$t(tooltip) : ''
+    },
+    openConsole (copyUrlToClipboard) {
       if (!this.resource || !this.resource.id) {
         return
       }
