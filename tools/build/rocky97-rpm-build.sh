@@ -122,6 +122,7 @@ if [ ! -x "/opt/node-v${NODE_VERSION}-linux-x64/bin/node" ]; then
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
         | tar -xJf - -C /opt
 fi
+NODE_BIN_DIR="/opt/node-v${NODE_VERSION}-linux-x64/bin"
 
 JAVA17_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
 if [ -d /usr/lib/jvm/java-17-openjdk ]; then
@@ -129,9 +130,9 @@ if [ -d /usr/lib/jvm/java-17-openjdk ]; then
 fi
 
 export JAVA_HOME="$JAVA17_HOME"
-export PATH="/opt/node-v${NODE_VERSION}-linux-x64/bin:$JAVA_HOME/bin:$PATH"
+export PATH="$NODE_BIN_DIR:$JAVA_HOME/bin:$PATH"
 export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true --add-opens=java.base/java.lang=ALL-UNNAMED"
-export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider"
+export RPM_NODE_BIN_DIR="$NODE_BIN_DIR"
 
 git config --global --add safe.directory "$ROOT_DIR"
 
