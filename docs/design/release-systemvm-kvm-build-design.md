@@ -17,10 +17,11 @@ The release policy is intentionally fixed:
 
 ## Current State
 
-The current release path has three relevant workflows:
+The current release path has four relevant workflows:
 
 - `.github/workflows/release.yml`
 - `.github/workflows/dev-release.yml`
+- `.github/workflows/branch-dev-release.yml`
 - `.github/workflows/rocky97-rpm.yml`
 
 Current behavior:
@@ -147,7 +148,24 @@ Keep the reusable `templates` input for standalone RPM packaging compatibility,
 but the release workflows must pass the fixed value `kvm`. This input must not
 be presented as a bootable System VM image selector.
 
-### 4. New `.github/workflows/systemvm-kvm.yml`
+### 4. `.github/workflows/branch-dev-release.yml`
+
+Branch test releases must build the operator-provided `source_ref` without
+switching to the base product branch. They follow the same artifact contract as
+the normal development release:
+
+- Default `pack` to `noredist`.
+- Remove the free-form `templates` input and pass `templates: kvm` to RPM
+  packaging.
+- Invoke `systemvm-kvm.yml` with the exact commit resolved from `source_ref`.
+- Include the KVM System VM image, manifest, and checksums in the branch
+  development release.
+- Block publication when either the RPM build or System VM build fails.
+
+The branch test release tag remains isolated by a sanitized `source_ref`, so it
+does not replace the normal product-line development release.
+
+### 5. New `.github/workflows/systemvm-kvm.yml`
 
 Create a reusable workflow with these inputs:
 
