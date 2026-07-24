@@ -10150,7 +10150,6 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 if (cloneVM == null) {
                     throw new CloudRuntimeException("Unable to record the VM to DB!");
                 }
-                cloneVolumesToCleanup.removeAll(cloneVolumes);
                 cmd.setEntityUuid(cloneVM.getUuid());
                 cmd.setEntityId(cloneVM.getId());
                 markFastCloneVmStatus(cloneVM.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
@@ -10167,6 +10166,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 Map<VirtualMachineProfile.Param, Object> additonalParams = getCloneVmAdditionalParams(curVm);
                 Map<Long, DiskOffering> diskOfferingMap = new HashMap<>();
                 lastCloneVm = cmd.getStartVm() ? startVirtualMachine(cmd.getEntityId(), podId, clusterId, hostId, diskOfferingMap, additonalParams, null) : getUserVm(cmd.getEntityId());
+                cloneVolumesToCleanup.removeAll(cloneVolumes);
             }
         } catch (Exception e) {
             cleanupFailedFastCloneVolumes(cloneVolumesToCleanup);
@@ -10327,7 +10327,30 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         Account caller = CallContext.current().getCallingAccount();
         for (VolumeVO cloneVolume : cloneVolumes) {
             try {
-                _volumeService.destroyVolume(cloneVolume.getId(), caller, true, false);
+                VolumeVO volume = _volsDao.findById(cloneVolume.getId());
+                if (volume == null) {
+                    continue;
+                }
+
+                clearFastCloneVolumeDetails(volume.getId());
+                if (volume.getInstanceId() != null) {
+                    clearFastCloneVmStatus(volume.getInstanceId());
+                }
+
+                if (volume.getState() == Volume.State.Destroy || volume.getState() == Volume.State.Expunged) {
+                    logger.debug("Skipping cleanup of SharedMountPoint clone volume [{}] because it is already in [{}] state.", volume, volume.getState());
+                    continue;
+                }
+
+                if (volume.getInstanceId() != null) {
+                    volumeMgr.destroyVolume(volume);
+                    continue;
+                }
+
+                Volume result = _volumeService.destroyVolume(volume.getId(), caller, true, true);
+                if (result == null) {
+                    logger.warn("Failed to expunge unattached SharedMountPoint clone volume [{}] after clone failure.", volume);
+                }
             } catch (Exception e) {
                 logger.warn("Failed to cleanup clone volume [{}] after SharedMountPoint clone failure.", cloneVolume, e);
             }
