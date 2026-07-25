@@ -955,7 +955,7 @@ Phase 5 완료 기록(2026-07-24):
 - [x] 22.x 공유 환경 최소 artifact 배포 계획 작성
 - [x] feature flag off rollback 자동 검증 및 운영 절차 작성
 - [x] 운영 문서 및 사용자 도움말 작성
-- [ ] DB clone에서 fresh/upgrade SQL 실제 적용
+- [x] DB clone에서 fresh/upgrade SQL 실제 적용
 - [ ] shared 파일럿에서 기능 on QGA/DB write/queue depth 측정
 - [ ] shared 파일럿에서 VM/volume/NIC p95 회귀 측정
 - [ ] shared 파일럿에서 management/agent CPU 측정
@@ -968,15 +968,20 @@ Phase 6 repository 완료 기록(2026-07-25):
 - host/zone DB ID allowlist를 추가했으며 잘못된 non-empty 설정은 전체 허용이 아니라 수집 0으로 닫힌다.
 - KVM section 실행 시간, Backend snapshot write 결과, Agent queue 지표의 운영 측정 지점을 준비했다.
 - Maven 관련 통합 테스트, UI lint와 production build를 완료했다.
+- 격리 MariaDB schema clone에서 fresh/upgrade SQL 실제 적용, migration 재실행,
+  DDL 일치, unique/FK/cascade와 network payload DML을 검증했다.
 - 최소 artifact 배포, 성능 수락, rollback 절차는
   `docs/guest_network_observability_operations.md`에 기록했다.
 - 상세 결과는 `docs/guest_network_observability_phase6_report.md`에 기록한다.
+- artifact checksum과 DB 적용 결과는
+  `docs/guest_network_observability_release_validation.md`에 기록했다.
 - shared 22.x DB/artifact/service는 변경하지 않았다.
 
-repository gate와 실제 환경 acceptance gate를 분리한다. DB clone 적용, 실제
-libvirt 작업 p95, Management/Agent CPU와 feature-on queue/write 측정은 artifact
-배포 전에는 유효한 값을 만들 수 없으므로 다음 승인된 파일럿 배포에서 수행한다.
-측정 전에는 해당 acceptance 항목을 통과로 간주하지 않는다.
+repository gate와 실제 환경 acceptance gate를 분리한다. DB clone 적용은
+완료했으며, 실제 libvirt 작업 p95, Management/Agent CPU와 feature-on
+queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없으므로 다음
+승인된 파일럿 배포에서 수행한다. 측정 전에는 해당 acceptance 항목을 통과로
+간주하지 않는다.
 
 종료 조건:
 
@@ -1091,7 +1096,7 @@ libvirt 작업 p95, Management/Agent CPU와 feature-on queue/write 측정은 art
 - [x] jitter, 동시성/cycle limit, capability cache, section cadence, backoff가 구현된다.
 - [x] unchanged snapshot의 payload DB rewrite가 발생하지 않는다.
 - [ ] 핵심 command p95, management/agent CPU, DB write, queue 지표가 성능 예산을 충족한다.
-- [ ] DB clone에서 fresh install 및 upgrade 실제 적용이 검증된다.
+- [x] DB clone에서 fresh install 및 upgrade 실제 적용이 검증된다.
 - [x] backend, agent, API, UI test/build가 통과한다.
 - [x] 보안 제한과 payload 상한이 테스트된다.
 - [x] shared 22.x 최소 배포 및 rollback 절차가 준비된다.
@@ -1115,6 +1120,7 @@ libvirt 작업 p95, Management/Agent CPU와 feature-on queue/write 측정은 art
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-07-25 | 배포 artifact와 SHA-256 기록, 격리 MariaDB schema clone의 fresh/upgrade 실제 적용 검증 완료 | 배포 입력물의 무결성과 fresh/upgrade 최종 DDL 및 제약조건 일치 확인 |
 | 2026-07-25 | Phase 6 repository 통합 검증, 파일럿 allowlist, 운영 측정 지점과 최소 배포/복구 절차 반영 | shared 환경 부하와 배포 위험을 제한하고 실제 환경 acceptance를 분리 |
 | 2026-07-24 | Phase 1 구현 및 검증 결과 반영 | 전용 Agent 실행 격리, Core DTO, QGA interface/IP parser와 회귀 테스트 완료 |
 | 2026-07-24 | Phase 2 구현 및 검증 결과 반영 | DB snapshot, Management collector, stale/hash/cleanup, 부하 제한 및 전용 global lock 구현 완료 |
