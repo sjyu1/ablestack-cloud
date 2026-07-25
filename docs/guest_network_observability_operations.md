@@ -150,7 +150,7 @@ slow/timeout QGA를 재현할 때는 파일럿 VM만 대상으로 하고, 동시
 ## 7. 롤백
 
 1. `vm.guest.network.details.enabled=false`로 변경하고 Management Server를 재시작한다.
-2. 신규 scheduler/QGA/DB write가 0인지 확인한다.
+2. 동적 활성화용 scheduler의 유휴 flag 확인 외 worker/QGA/DB write가 0인지 확인한다.
 3. UI는 snapshot이 없을 때 기존 Cloud NIC 표시로 fallback하는지 확인한다.
 4. 문제가 계속되면 UI, Management artifact, host jar를 역순으로 백업본에 복원한다.
 5. 각 host에서 `mold-agent.service`와 ReadyAnswer/stats를 확인한다.

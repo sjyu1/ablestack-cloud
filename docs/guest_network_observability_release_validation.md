@@ -130,9 +130,29 @@ upgrade: dde3246a9059941fa4acb34013e2d16593f93c307b40d9ff1f5e850cba6837d9
 
 따라서 fresh와 upgrade 경로의 최종 table DDL은 일치한다.
 
-## 5. 범위와 후속 검증
+## 5. 1차 격리 검증 범위
 
 - 이번 검증은 직전 Git 커밋으로 재구성한 격리 schema clone을 사용했다.
 - 실제 shared 22.x 운영 DB dump나 운영 credential은 사용하지 않았다.
 - 전체 `schema-42100to42200.sql`은 최소 fresh baseline에 과거 `router_health_check` table이 없어 단독 재생할 수 없으므로, 이번 기능의 predecessor인 import VM table 구간과 직전 Europa migration 전체를 적용해 이전 상태를 구성했다.
-- 다음 단계는 shared 22.x의 비식별화 DB dump clone에 동일 upgrade를 적용하고, 최소 artifact 배포·성능 예산·rollback을 파일럿으로 확인하는 것이다.
+- 이 단계 이후 실제 shared 22.x의 비식별화 DB dump clone과 최소
+  artifact 배포 파일럿을 별도로 수행했다.
+
+## 6. 실제 22.x DB Clone 및 최소 배포
+
+운영자 승인과 SSH key 인증 확인 후 다음 검증을 추가 완료했다.
+
+- 실제 MySQL 8.0.41 `cloud` DB를 raw dump 파일 없이 socket-only clone으로 복제
+- 사용자/API key/host/VM/detail/import credential 비식별화 또는 제거
+- 596개 기존 VM을 보존한 upgrade migration과 재실행 성공
+- fresh/actual-upgrade 정규화 DDL SHA-256 일치
+- 실제 관리 DB migration 성공, 기능 기본값 `false`
+- 실제 배포 revision 기준 관리/API/DAO/UI artifact 재빌드
+- KVM Host 1에만 최소 Agent/Core/KVM class patch
+- Host 2/3 artifact 미변경
+- 전체 IPv4/IPv6와 section 상태 API 확인
+- VM/Volume/NIC 각 20회 비활성/활성 p95 비교
+- 최종 기능 및 exec fallback `false`
+
+세부 수치, 배포 SHA-256, 발견 사항과 rollback 정보는
+`docs/guest_network_observability_22x_pilot_report.md`에 기록했다.

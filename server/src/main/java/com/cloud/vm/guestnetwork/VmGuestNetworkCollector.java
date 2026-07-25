@@ -133,6 +133,7 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
     private final VmGuestNetworkCollectionPolicy policy;
     private final AtomicBoolean cycleRunning = new AtomicBoolean();
     private final Set<Long> activeHostIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Map<Long, Long> lastSelectedVmIdByHost = new java.util.concurrent.ConcurrentHashMap<>();
     private ScheduledExecutorService scheduler;
     private ExecutorService collectionExecutor;
 
@@ -146,10 +147,6 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
 
     @Override
     public boolean start() {
-        if (!isEnabled()) {
-            LOGGER.info("Guest network collector is disabled; no scheduler or worker is created");
-            return true;
-        }
         int concurrentHosts = Math.max(1, getMaxConcurrentHosts());
         int queueSize = Math.max(concurrentHosts, getMaxHostsPerCycle());
         collectionExecutor = new ThreadPoolExecutor(concurrentHosts, concurrentHosts, 0L, TimeUnit.MILLISECONDS,
@@ -158,6 +155,9 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
         scheduler = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("VmGuestNetwork-Scheduler"));
         scheduler.scheduleWithFixedDelay(this::runCycleSafely, 10L,
                 COLLECTOR_SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        if (!isEnabled()) {
+            LOGGER.info("Guest network collector is disabled; scheduler will remain idle until dynamically enabled");
+        }
         return true;
     }
 
@@ -172,6 +172,7 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
             collectionExecutor = null;
         }
         activeHostIds.clear();
+        lastSelectedVmIdByHost.clear();
         cycleRunning.set(false);
         return true;
     }
@@ -211,15 +212,39 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
             return;
         }
         try {
+            List<VMInstanceVO> orderedVms = rotateAfterLastSelectedVm(hostId, vms);
             int batchSize = Math.max(1, getMaxConcurrentVmsPerHost());
-            int limit = Math.min(vms.size(), Math.max(1, getMaxVmsPerHostCycle()));
+            int limit = Math.min(orderedVms.size(), Math.max(1, getMaxVmsPerHostCycle()));
             for (int offset = 0; offset < limit; offset += batchSize) {
                 int toIndex = Math.min(limit, offset + batchSize);
-                collectBatch(hostId, vms.subList(offset, toIndex));
+                List<VMInstanceVO> batch = orderedVms.subList(offset, toIndex);
+                collectBatch(hostId, batch);
+                lastSelectedVmIdByHost.put(hostId, batch.get(batch.size() - 1).getId());
             }
         } finally {
             activeHostIds.remove(hostId);
         }
+    }
+
+    private List<VMInstanceVO> rotateAfterLastSelectedVm(long hostId, List<VMInstanceVO> vms) {
+        if (vms.size() < 2) {
+            return vms;
+        }
+        Long lastSelectedVmId = lastSelectedVmIdByHost.get(hostId);
+        if (lastSelectedVmId == null) {
+            return vms;
+        }
+        int start = 0;
+        while (start < vms.size() && vms.get(start).getId() <= lastSelectedVmId) {
+            start++;
+        }
+        if (start == 0 || start == vms.size()) {
+            return vms;
+        }
+        List<VMInstanceVO> rotated = new ArrayList<>(vms.size());
+        rotated.addAll(vms.subList(start, vms.size()));
+        rotated.addAll(vms.subList(0, start));
+        return rotated;
     }
 
     void collectBatch(long hostId, List<VMInstanceVO> vms) {

@@ -282,6 +282,10 @@
 
     <bean id="statsCollector" class="com.cloud.server.StatsCollector" />
 
+    <bean id="vmGuestNetworkApiServiceImpl" class="com.cloud.vm.guestnetwork.VmGuestNetworkApiServiceImpl" />
+
+    <bean id="vmGuestNetworkStateServiceImpl" class="com.cloud.vm.guestnetwork.VmGuestNetworkStateServiceImpl" />
+
     <bean id="vmGuestNetworkCollector" class="com.cloud.vm.guestnetwork.VmGuestNetworkCollector" />
 
     <bean id="storagePoolAutomationImpl" class="com.cloud.storage.StoragePoolAutomationImpl" />

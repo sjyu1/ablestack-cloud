@@ -64,7 +64,7 @@ under the License.
 - 기존 `nics.ip4_address` 및 `nics.ip6_address` API 호환성을 깨지 않는다.
 - 수집 실패 시 마지막 정상 정보를 삭제하지 않고 stale 상태로 표시한다.
 - 정상적인 빈 응답은 이전 관측값을 제거하는 신호로 처리한다.
-- 기능 비활성 시 추가 QGA 호출, DB 쓰기, collector 작업이 발생하지 않아야 한다.
+- 기능 비활성 시 유휴 flag 확인 외 추가 QGA 호출, DB 쓰기, collector 작업이 발생하지 않아야 한다.
 - 활성 시에도 기존 핵심 명령 지연, 관리 서버/agent CPU, DB 쓰기 부하를 측정 가능한 예산 안으로 제한한다.
 - 임의 명령 실행이나 사용자 입력 기반 shell 실행을 추가하지 않는다.
 
@@ -566,7 +566,7 @@ agent wire 객체는 Gson 직렬화 호환성을 유지하고 기본 생성자�
 - 전용 bounded executor/admission gate 사용
 - section due schedule, jitter, backoff 및 queue metric 관리
 - VM lifecycle/device operation 중 수집 생략
-- 기능 비활성 시 scheduler와 Agent request를 생성하지 않음
+- 기능 비활성 시 동적 활성화용 단일 scheduler만 유휴 상태로 유지하고 worker와 Agent request를 생성하지 않음
 
 ### 9.4 기존 대표 IP 호환
 
@@ -834,7 +834,7 @@ Ant Design table의 가로 스크롤을 사용한다.
 - [x] feature enable/interval global setting 추가
 - [x] jitter, section due schedule, capability cache, failure backoff 구현
 - [x] host/VM 동시성, cycle limit, overlap 방지 구현
-- [x] disabled 상태에서 scheduler/QGA/DB 작업 0 검증
+- [x] disabled 상태에서 유휴 flag 확인 외 worker/QGA/DB 작업 0 검증
 - [x] unchanged payload DB rewrite 0 검증
 - [x] management unit test 및 DAO test
 
@@ -843,7 +843,9 @@ Ant Design table의 가로 스크롤을 사용한다.
 - `vm_guest_network_state` 테이블을 fresh schema와 Europa upgrade hook에 동일하게 추가했다.
 - 독립 `VmGuestNetworkCollector`가 전용 Agent command만 사용하며 기존 stats/lifecycle/볼륨/NIC command 경로를 호출하지 않도록 구현했다.
 - 다중 Management Server 중복 실행은 전용 global scan lock으로 차단하고, 단일 서버 내 cycle/host 중복도 별도 gate로 제한했다.
-- 기능 기본값은 비활성이다. 비활성 상태에서는 scheduler와 worker를 만들지 않으므로 신규 QGA 호출 및 신규 DB 작업이 0이다.
+- 기능 기본값은 비활성이다. 비활성 상태에서는 동적 활성화용 단일
+  scheduler가 flag만 확인하며 worker를 만들지 않으므로 신규 QGA 호출 및
+  신규 DB 작업은 0이다.
 - payload hash가 같을 때는 상태 시각 등 metadata만 갱신하고 `payload`와 `payload_hash` column을 다시 쓰지 않는다.
 - 상세 구현·DB migration·검증 결과는 `docs/guest_network_observability_phase2_report.md`에 기록했다.
 
@@ -1016,7 +1018,7 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 | API compatibility | 기존 details 요청 | 기존 응답 유지 |
 | Collector isolation | 한 VM parser 예외 | 다른 VM 정상 저장 |
 | Layer boundary | read API 반복 호출 | Agent/QGA 호출 수 증가 없음 |
-| Feature disabled | collector 비활성 | 신규 scheduler/QGA/DB write 0 |
+| Feature disabled | collector 비활성 | 유휴 flag 확인 외 worker/QGA/DB write 0 |
 | Unchanged payload | 같은 snapshot 반복 | payload DB rewrite 0 |
 | Queue saturation | 수집 queue bound 도달 | 수집 지연/STALE, 핵심 command 정상 |
 | Core isolation | slow QGA + VM start/stop | 핵심 command timeout/실패 증가 없음 |
@@ -1095,12 +1097,12 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 - [x] 기능 비활성 시 신규 QGA 호출, collector 작업, 신규 테이블 DB write가 0이다.
 - [x] jitter, 동시성/cycle limit, capability cache, section cadence, backoff가 구현된다.
 - [x] unchanged snapshot의 payload DB rewrite가 발생하지 않는다.
-- [ ] 핵심 command p95, management/agent CPU, DB write, queue 지표가 성능 예산을 충족한다.
+- [x] 핵심 command p95, management/agent CPU, DB write, queue 지표가 성능 예산을 충족한다.
 - [x] DB clone에서 fresh install 및 upgrade 실제 적용이 검증된다.
 - [x] backend, agent, API, UI test/build가 통과한다.
 - [x] 보안 제한과 payload 상한이 테스트된다.
 - [x] shared 22.x 최소 배포 및 rollback 절차가 준비된다.
-- [ ] shared 22.x 파일럿에서 최소 배포 및 rollback 절차가 실행 검증된다.
+- [x] shared 22.x 파일럿에서 최소 배포 및 rollback 절차가 실행 검증된다.
 - [x] 사용자 및 운영 문서가 갱신된다.
 
 ## 18. 작업 진행 규칙
@@ -1120,6 +1122,7 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-07-25 | 실제 22.x 비식별 DB clone migration과 단일 호스트 최소 배포 파일럿 완료, 동적 활성화 및 VM 순환 선택 보완 | 실제 runtime 호환성, 핵심 작업 p95, CPU/queue 예산과 rollback 가능성 확인 |
 | 2026-07-25 | 배포 artifact와 SHA-256 기록, 격리 MariaDB schema clone의 fresh/upgrade 실제 적용 검증 완료 | 배포 입력물의 무결성과 fresh/upgrade 최종 DDL 및 제약조건 일치 확인 |
 | 2026-07-25 | Phase 6 repository 통합 검증, 파일럿 allowlist, 운영 측정 지점과 최소 배포/복구 절차 반영 | shared 환경 부하와 배포 위험을 제한하고 실제 환경 acceptance를 분리 |
 | 2026-07-24 | Phase 1 구현 및 검증 결과 반영 | 전용 Agent 실행 격리, Core DTO, QGA interface/IP parser와 회귀 테스트 완료 |

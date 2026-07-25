@@ -17,7 +17,7 @@
 package com.cloud.vm.guestnetwork;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -80,15 +80,16 @@ public class VmGuestNetworkCollectorTest {
     }
 
     @Test
-    public void testDisabledStartCreatesNoSchedulerWorkerOrCalls() {
+    public void testDisabledStartCreatesIdleSchedulerAndMakesNoCalls() {
         collector.enabled = false;
 
         assertTrue(collector.start());
         collector.runCycle();
 
-        assertNull(ReflectionTestUtils.getField(collector, "scheduler"));
-        assertNull(ReflectionTestUtils.getField(collector, "collectionExecutor"));
+        assertNotNull(ReflectionTestUtils.getField(collector, "scheduler"));
+        assertNotNull(ReflectionTestUtils.getField(collector, "collectionExecutor"));
         verifyNoInteractions(agentManager, vmInstanceDao, nicDao, stateService);
+        assertTrue(collector.stop());
     }
 
     @Test
@@ -150,6 +151,28 @@ public class VmGuestNetworkCollectorTest {
         verify(agentManager).easySend(eq(HOST_ID), captor.capture());
         assertEquals(Arrays.asList("vm-one", "vm-two"), captor.getValue().getVmNames());
         verify(stateService, times(2)).persistSuccess(any(Long.class), any(), any());
+    }
+
+    @Test
+    public void testHostCycleLimitRotatesAcrossDueVms() {
+        VMInstanceVO first = vm(1L, "vm-one", HypervisorType.KVM);
+        VMInstanceVO second = vm(2L, "vm-two", HypervisorType.KVM);
+        VMInstanceVO third = vm(3L, "vm-three", HypervisorType.KVM);
+        collector.maxVmsPerCycle = 1;
+        when(nicDao.listByVmId(any(Long.class))).thenReturn(Collections.emptyList());
+        when(agentManager.easySend(eq(HOST_ID), any(GetVmGuestNetworkStateCommand.class)))
+                .thenAnswer(invocation -> successfulAnswerForCommand(invocation.getArgument(1)));
+
+        collector.collectHost(HOST_ID, Arrays.asList(first, second, third));
+        collector.collectHost(HOST_ID, Arrays.asList(first, second, third));
+        collector.collectHost(HOST_ID, Arrays.asList(first, second, third));
+
+        ArgumentCaptor<GetVmGuestNetworkStateCommand> captor =
+                ArgumentCaptor.forClass(GetVmGuestNetworkStateCommand.class);
+        verify(agentManager, times(3)).easySend(eq(HOST_ID), captor.capture());
+        assertEquals(Collections.singletonList("vm-one"), captor.getAllValues().get(0).getVmNames());
+        assertEquals(Collections.singletonList("vm-two"), captor.getAllValues().get(1).getVmNames());
+        assertEquals(Collections.singletonList("vm-three"), captor.getAllValues().get(2).getVmNames());
     }
 
     @Test
