@@ -4,7 +4,7 @@
 
 - 검증 일자: 2026-07-25
 - 작업 브랜치: `codex/guest-network-observability`
-- 소스 커밋: `90f0fc825671e9f06fd9e649e76ba69e4be83301`
+- 소스 커밋: `9796c3c2253e6a5596abce9785354bab2006b5ac`
 - 기준 브랜치: `ablestack-europa`
 - DB 엔진: MariaDB `10.5.29`
 - DB 실행 방식: `/tmp` 임시 datadir, Unix socket 전용, `skip_networking=1`
@@ -15,7 +15,7 @@
 Artifact bundle:
 
 ```text
-/root/work/ablestack-cloud/dist/guest-network-observability/90f0fc825671e9f06fd9e649e76ba69e4be83301
+/root/work/ablestack-cloud/dist/guest-network-observability/9796c3c2253e6a5596abce9785354bab2006b5ac
 ```
 
 Backend/Agent/API/KVM artifact는 다음 명령의 clean build 결과에서 추출했다.
@@ -26,7 +26,7 @@ mvn -pl agent,api,engine/schema,server,plugins/hypervisors/kvm -am -DskipTests c
 
 - Maven reactor: 37개 모듈 모두 성공
 - 결과: `BUILD SUCCESS`
-- 소요 시간: 311.26초
+- 소요 시간: 293.18초
 
 UI artifact는 다음 production build 결과를 재현 가능한 tarball로 묶었다.
 
@@ -35,20 +35,20 @@ NODE_OPTIONS=--openssl-legacy-provider npm run build
 ```
 
 - 결과: `DONE Build complete`
-- 소요 시간: 348.52초
+- 소요 시간: 329.90초
 - tar 조건: 파일명 정렬, numeric owner `0`, 소스 커밋 시각 고정, gzip timestamp 제거
 
 ### 2.1 파일 및 SHA-256
 
 | 파일 | 크기(byte) | SHA-256 |
 |---|---:|---|
-| `cloud-agent-4.22.0.0-SNAPSHOT.jar` | 96,642 | `5cf604f0e2bc75797a7f1dbd6bcab01c2331d35e09110ba9cf1d39e00b12189b` |
-| `cloud-api-4.22.0.0-SNAPSHOT.jar` | 3,082,380 | `527025a3dc3af1237442b13113d509a2b4155f1596528b892450c43a6b7eedc1` |
-| `cloud-core-4.22.0.0-SNAPSHOT.jar` | 849,212 | `98d301b81e6ccd80636bf1fe9cc35160ce15ae5f6a551a0e9f560a274b049e7a` |
-| `cloud-engine-schema-4.22.0.0-SNAPSHOT.jar` | 2,424,695 | `a69930bfae4f32ff17631fdbaab07b17d5896b5b63642a593147b20a98782d73` |
-| `cloud-plugin-hypervisor-kvm-4.22.0.0-SNAPSHOT.jar` | 1,166,556 | `47d2ce18cc67dbe7a04fd10d8cf50bca4f602386d5a4677d829892e6c7cd3254` |
-| `cloud-server-4.22.0.0-SNAPSHOT.jar` | 4,691,197 | `ae854abdb48cb41f6c63841ef7bf0d456ec0c1b0a906cceab9901b49505e02f2` |
-| `cloudstack-ui-dist-4.22.0.0-SNAPSHOT.tar.gz` | 13,063,918 | `70a208e91f7f39894bf82284312d08e0cd9dfa22f9955b703327af1162c5c24c` |
+| `cloud-agent-4.22.0.0-SNAPSHOT.jar` | 96,642 | `4518320d968ad3dcc3715607d48dbf7324c93d6652258ca0e02920efbcab6e2b` |
+| `cloud-api-4.22.0.0-SNAPSHOT.jar` | 3,082,380 | `2262e4b844974e4f0b438cc9df5e255f0c99fe40b67e7d22c86262a80869709e` |
+| `cloud-core-4.22.0.0-SNAPSHOT.jar` | 849,212 | `8e213fc7ef863ec31bf17b754961439dd572d6f2e0fb27f2f9e829aac80e8d90` |
+| `cloud-engine-schema-4.22.0.0-SNAPSHOT.jar` | 2,424,695 | `4ba9023c2e726281b5a6031e9d6256b42142ad0ab17b08fd7a0cb6742a9efb75` |
+| `cloud-plugin-hypervisor-kvm-4.22.0.0-SNAPSHOT.jar` | 1,166,556 | `7c320f849a5b0a17c65a4ea3839afe173af0ff999d3fb17f218a56e1aa3ddffb` |
+| `cloud-server-4.22.0.0-SNAPSHOT.jar` | 4,691,675 | `c2a1fb49d4f2dea66ee69b1c15c49af8c4a67e2dd29d5efb8b919461602767af` |
+| `cloudstack-ui-dist-4.22.0.0-SNAPSHOT.tar.gz` | 13,064,005 | `f9cb23ed9bf34fbb5c41cbbe1490b1ddbf51b0b73f89bbc4549d4919a5beae9d` |
 | `create-schema.sql` | 142,669 | `59b372d2a4f05957aae6f2501798f9291ba6d9f95d0eb837b220e13545567db2` |
 | `schema-Europa-After.sql` | 11,006 | `5af1438dd8ff8729c3ffddae690306998701698f1c98a0e1ef2dcd6183991365` |
 
