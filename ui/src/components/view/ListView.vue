@@ -340,25 +340,31 @@
         v-if="column.key === 'ipaddress'"
         href="javascript:;"
       >
-        <router-link
-          v-if="['/publicip', '/privategw'].includes($route.path)"
-          :to="{ path: $route.path + '/' + record.id }"
-        >{{ ipAddress(text, record) }}</router-link>
-        <span v-else>
-          <copy-label v-if="ipAddress(text, record)" :label="ipAddress(text, record)" />
-        </span>
-        <span v-if="record.issourcenat">
-          &nbsp;
-          <a-tag>source-nat</a-tag>
-        </span>
-        <span v-if="record.isstaticnat">
-          &nbsp;
-          <a-tag>static-nat</a-tag>
-        </span>
-        <span v-if="record.issystem">
-          &nbsp;
-          <a-tag>system</a-tag>
-        </span>
+        <guest-network-summary
+          v-if="$route.path.startsWith('/vm') && record.guestnetwork"
+          :cloudAddress="ipAddress(text, record)"
+          :summary="record.guestnetwork" />
+        <template v-else>
+          <router-link
+            v-if="['/publicip', '/privategw'].includes($route.path)"
+            :to="{ path: $route.path + '/' + record.id }"
+          >{{ ipAddress(text, record) }}</router-link>
+          <span v-else>
+            <copy-label v-if="ipAddress(text, record)" :label="ipAddress(text, record)" />
+          </span>
+          <span v-if="record.issourcenat">
+            &nbsp;
+            <a-tag>source-nat</a-tag>
+          </span>
+          <span v-if="record.isstaticnat">
+            &nbsp;
+            <a-tag>static-nat</a-tag>
+          </span>
+          <span v-if="record.issystem">
+            &nbsp;
+            <a-tag>system</a-tag>
+          </span>
+        </template>
       </template>
       <template
         v-if="column.key === 'ip6address'"
@@ -1180,6 +1186,7 @@ import Status from '@/components/widgets/Status'
 import ActionButton from '@/components/view/ActionButton'
 import ResourceIcon from '@/components/view/ResourceIcon'
 import CopyLabel from '@/components/widgets/CopyLabel'
+import GuestNetworkSummary from '@/components/view/GuestNetworkSummary'
 import ResourceLabel from '@/components/widgets/ResourceLabel'
 import TooltipButton from '@/components/widgets/TooltipButton'
 import { createPathBasedOnVmType } from '@/utils/plugins'
@@ -1196,6 +1203,7 @@ export default {
     Status,
     ActionButton,
     CopyLabel,
+    GuestNetworkSummary,
     TooltipButton,
     ResourceIcon,
     ResourceLabel,

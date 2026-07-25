@@ -101,3 +101,23 @@ CREATE TABLE IF NOT EXISTS `cloud`.`import_vm_task_credential`(
 
 ALTER TABLE `cloud`.`import_vm_task_event` CONVERT TO CHARACTER SET utf8mb4;
 ALTER TABLE `cloud`.`import_vm_task_credential` CONVERT TO CHARACTER SET utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cloud`.`vm_guest_network_state` (
+    `id` bigint unsigned NOT NULL auto_increment,
+    `vm_id` bigint unsigned NOT NULL COMMENT 'VM instance id',
+    `schema_version` smallint unsigned NOT NULL DEFAULT 1 COMMENT 'Guest network payload schema version',
+    `status` varchar(32) NOT NULL COMMENT 'Current collection status',
+    `qga_version` varchar(64) COMMENT 'Last observed QEMU guest agent version',
+    `observed_at` datetime NOT NULL COMMENT 'Last collection attempt time',
+    `last_success_at` datetime COMMENT 'Last successful collection time',
+    `payload_hash` char(64) COMMENT 'SHA-256 of canonical payload',
+    `payload` mediumtext COMMENT 'Canonical guest network state JSON',
+    `error_code` varchar(64) COMMENT 'Structured collection error code',
+    `error_message` varchar(255) COMMENT 'Bounded collection error message',
+    `created` datetime NOT NULL COMMENT 'Creation time',
+    `updated` datetime NOT NULL COMMENT 'Last update time',
+    PRIMARY KEY (`id`),
+    CONSTRAINT `uc_vm_guest_network_state__vm_id` UNIQUE (`vm_id`),
+    CONSTRAINT `fk_vm_guest_network_state__vm_id` FOREIGN KEY `fk_vm_guest_network_state__vm_id` (`vm_id`) REFERENCES `vm_instance` (`id`) ON DELETE CASCADE,
+    INDEX `i_vm_guest_network_state__status_observed_at` (`status`, `observed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

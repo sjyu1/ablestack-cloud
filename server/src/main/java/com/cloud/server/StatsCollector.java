@@ -1602,6 +1602,23 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
             }
         }
 
+        /**
+         * Applies the current legacy QGA address projection to L2 NIC records.
+         * MAC addresses are compared exactly and the NIC lookup is global by MAC.
+         */
+        protected void updateL2NicAddresses(Map<String, String> agentNicMap, List<String> l2NicMacAddresses) {
+            if (agentNicMap == null) {
+                return;
+            }
+            for (String macAddress : agentNicMap.keySet()) {
+                NicVO nicVO = _nicDao.findByMacAddress(macAddress);
+                if (l2NicMacAddresses.contains(macAddress)) {
+                    nicVO.setIPv4Address(agentNicMap.get(macAddress));
+                    _nicDao.update(nicVO.getId(), nicVO);
+                }
+            }
+        }
+
         @Override
         protected Point createInfluxDbPoint(Object metricsObject) {
             return createInfluxDbPointForVmMetrics(metricsObject);

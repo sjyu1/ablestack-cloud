@@ -435,6 +435,7 @@ import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VMInstanceDao;
 import com.cloud.vm.dao.VbmcDao;
 import com.cloud.vm.dao.VMInstanceDetailsDao;
+import com.cloud.vm.dao.VmGuestNetworkStateDao;
 import com.cloud.vm.dao.VmStatsDao;
 import com.cloud.vm.snapshot.VMSnapshot;
 import com.cloud.vm.snapshot.VMSnapshotDetailsVO;
@@ -660,6 +661,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private AnnotationDao annotationDao;
     @Inject
     private VmStatsDao vmStatsDao;
+    @Inject
+    private VmGuestNetworkStateDao vmGuestNetworkStateDao;
     @Inject
     private DataCenterDao dataCenterDao;
     @Inject
@@ -2783,6 +2786,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 }
 
                 _vmDao.remove(vm.getId());
+                vmGuestNetworkStateDao.removeByVmId(vm.getId());
             }
 
             return true;
