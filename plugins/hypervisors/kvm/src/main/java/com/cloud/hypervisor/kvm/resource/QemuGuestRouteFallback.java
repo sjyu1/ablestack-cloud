@@ -51,17 +51,21 @@ public class QemuGuestRouteFallback {
         this.parser = parser;
     }
 
-    public FallbackResult collect(AgentCommandExecutor executor, String osId,
+    public FallbackResult collect(AgentCommandExecutor executor, QemuGuestOsFamilyResolution os,
             int timeoutSeconds, int maxOutputBytes) throws Exception {
-        String normalizedOs = osId == null ? "" : osId.toLowerCase(Locale.ROOT);
-        if (normalizedOs.contains("linux")) {
-            return collectLinux(executor, timeoutSeconds, maxOutputBytes);
+        if (os != null) {
+            switch (os.getFamily()) {
+                case LINUX:
+                    return collectLinux(executor, timeoutSeconds, maxOutputBytes);
+                case WINDOWS:
+                    return collectWindows(executor, timeoutSeconds, maxOutputBytes);
+                case UNSUPPORTED:
+                default:
+                    break;
+            }
         }
-        if (normalizedOs.contains("windows") || normalizedOs.contains("mswindows")
-                || normalizedOs.contains("win32")) {
-            return collectWindows(executor, timeoutSeconds, maxOutputBytes);
-        }
-        throw new UnsupportedOperationException("Unsupported guest OS for route fallback: " + osId);
+        throw new UnsupportedOperationException("Unsupported guest OS for route fallback: "
+                + (os == null ? "id=-, kernel-name=-, name=-, pretty-name=-" : os.describe()));
     }
 
     private FallbackResult collectLinux(AgentCommandExecutor executor,

@@ -17,6 +17,7 @@
 
 <template>
   <a-spin :spinning="loading">
+    <div class="guest-network-tab">
     <div class="guest-network-header">
       <a-alert
         type="info"
@@ -238,9 +239,10 @@
         </template>
       </template>
     </a-table>
-    <a-empty
-      v-else
-      :description="$t('message.guest.network.no.dns')" />
+      <a-empty
+        v-else
+        :description="$t('message.guest.network.no.dns')" />
+    </div>
   </a-spin>
 </template>
 

@@ -336,6 +336,26 @@ capability 결과는 VM 단위로 짧게 캐시하되 VM 재부팅, agent 재연
 - 동일 NIC에 여러 IPv4/IPv6가 있어도 모두 보존한다.
 - MAC이 없거나 Cloud NIC와 일치하지 않는 인터페이스도 게스트 전용 인터페이스로 보존한다.
 
+### 6.2.1 QGA OS 계열 판별
+
+route와 DNS의 guest-exec fallback은 `guest-get-osinfo`의 배포판 `id`를
+단순 문자열 포함 여부로 판별하지 않는다. QGA OS 정보의 `id`,
+`kernel-name`, `name`, `pretty-name`을 독립적으로 보존하고 내부
+fail-closed resolver가 `LINUX`, `WINDOWS`, `UNSUPPORTED`를 결정한다.
+
+- `debian`, `ubuntu`, `rocky`, `centos` 등 검증된 Linux 배포판 ID를
+  immutable 집합으로 관리한다.
+- `kernel-name=Linux` 또는 표시 이름의 명시적 Linux token은 보조 근거다.
+- 실제 22.x QGA 7.2.22는 Linux/Windows 표본 모두 `kernel-name`을
+  제공하지 않았으므로 이 필드에만 의존하지 않는다.
+- 알 수 없는 OS는 guest-exec를 실행하지 않고 `UNSUPPORTED`로 닫힌다.
+- resolver는 고정 adapter만 선택하며 실행 파일과 인수 allowlist를
+  확장하거나 외부 입력을 받지 않는다.
+- route와 DNS가 함께 due여도 OS 정보는 cycle당 한 번만 조회한다.
+
+상세 코드 설계와 22.x preflight 결과는
+`docs/guest_network_observability_os_family_design.md`를 기준으로 한다.
+
 ### 6.3 라우팅
 
 수집 순서는 다음과 같다.
@@ -655,20 +675,40 @@ Vue 3 및 Ant Design Vue 3.2.20을 사용하는 프로토타입을 작성했다.
 
 #### VM 목록
 
-![VM 목록 프로토타입](prototypes/guest-network-observability/guest-network-list.jpg)
+일반 테마:
+
+![VM 목록 압축 요약 일반 테마 프로토타입](prototypes/guest-network-observability/guest-network-list-compact-light.jpg)
+
+다크 테마:
+
+![VM 목록 압축 요약 다크 테마 프로토타입](prototypes/guest-network-observability/guest-network-list-compact-dark.jpg)
 
 목록에서는 운영자가 VM별 네트워크 상태를 빠르게 비교할 수 있도록 다음 순서로
 표시한다.
 
-1. `Cloud` 행에는 Cloud가 관리하는 대표 주소를 표시한다.
-2. `Guest` 행에는 게스트 OS에서 관측한 IPv4와 IPv6를 색이 다른 tag로 표시한다.
-3. 공간을 초과한 주소는 `+N 더보기`로 접고, 펼치면 해당 VM의 모든 주소를
-   확인할 수 있게 한다.
-4. 별도 열을 추가하지 않고 기존 `IP 주소` cell의 Guest 행 끝에 `정상`,
-   `부분 수집`, `오래됨`과 마지막 관측 시각 또는 실패 사유를 표시한다.
-5. 목록에는 DNS와 route를 싣지 않고 상세 탭으로 이동시킨다.
+1. 한 행 안에 `C` source marker와 Cloud 관리 IP를 먼저 표시한다.
+2. 구분선 뒤에 `G` source marker와 게스트 대표 주소 하나만 표시한다.
+3. 나머지 주소는 `+N`으로 접고, popover에서 모든 IPv4/IPv6와 prefix를
+   family별로 확인한다. `+N`은 마우스뿐 아니라 키보드 focus/click도 지원한다.
+4. IPv6가 하나라도 있으면 작은 `v6` marker를 표시한다. 주소 자체를 추가로
+   펼쳐 목록 폭을 늘리지는 않는다.
+5. 수집 상태는 `정상`, `일부 수집`, `오래됨`, `마지막 값`, `미수집`처럼
+   짧은 현지화 tag로 표시하고 마지막 관측 시각과 원래 실패 사유는 tooltip에
+   둔다.
+6. 게스트 주소가 없으면 `G — 미수집`으로 표시해 불필요한 두 번째 줄을
+   만들지 않는다.
+7. 목록에는 DNS와 route를 싣지 않고 상세 탭으로 이동시킨다.
 
-IP cell이 넓어져 기존 후행 열이 가려지는 경우에는 현재 `ListView`의 가로
+현재 목록 summary API에는 주소와 route/interface 연결 정보가 없으므로
+UI-only 구현에서는 non-loopback/non-link-local IPv4를 우선하고, 없으면
+동일 조건의 IPv6, 그 다음 첫 non-loopback 주소 순서로 대표 주소를 선택한다.
+default route interface 우선 선택은 summary API 계약 확장이 필요한 후속
+범위다. 전체 주소의 저장·API 계약은 변경하지 않으며 대표 주소는 목록 표시
+정책일 뿐이다.
+
+파일럿 기준 IP column 폭은 `510px`에서 `390px`, table horizontal scroll
+기준은 `1580px`에서 `1460px`로 줄었다. 주소 수가 증가해도 한 줄 구조와
+동일한 행 높이를 유지한다. 좁은 viewport에서는 기존 `ListView`의 가로
 스크롤과 열 선택 기능을 그대로 사용한다.
 
 #### VM 상세
@@ -676,7 +716,7 @@ IP cell이 넓어져 기존 후행 열이 가려지는 경우에는 현재 `List
 ![VM 상세 게스트 네트워크 프로토타입](prototypes/guest-network-observability/guest-network-detail.jpg)
 
 상세 화면은 기존 `ResourceView`의 왼쪽 VM 정보 카드와 오른쪽 세로 탭 구조를
-유지한다. `게스트 네트워크`는 `NIC`와 `VM 스냅샷` 사이에 추가하고 다음과 같이
+유지한다. `IP 구성`은 `NIC`와 `VM 스냅샷` 사이에 추가하고 다음과 같이
 배치한다.
 
 | 영역 | 표시 내용 | 주요 동작 |
@@ -703,18 +743,22 @@ Ant Design table의 가로 스크롤을 사용한다.
 
 기존 IP 컬럼을 다음과 같이 확장한다.
 
-- Cloud 관리 주소와 게스트 관측 주소를 구분
-- IPv4와 IPv6 tag 구분
+- `C`/`G` source marker와 tooltip으로 Cloud 관리 주소와 게스트 관측 주소를 구분
+- Cloud IP, 게스트 대표 IP, `+N`, IPv6 존재 marker, 수집 상태를 한 줄로 표시
 - prefix 포함
-- 기본 표시 개수를 제한하고 `+N`으로 펼치기
-- 주소별 복사 및 전체 주소 복사
-- stale 상태 및 마지막 관측 시각 tooltip
+- 기본 표시를 대표 주소 한 개로 제한하고 `+N` popover에서 전체 IPv4/IPv6 확인
+- popover에서 주소별 복사 및 전체 주소 복사
+- 짧은 현지화 상태 tag와 stale 상태·마지막 관측 시각·실패 사유 tooltip
+- 일반/다크 테마에서 같은 정보 위계와 WCAG AA 수준의 대비 유지
+- guest summary가 없는 VM은 `G — 미수집`으로 단일 행 표시
 
 링크가 DOWN인 Cloud NIC도 게스트 전용 인터페이스와 혼동하지 않도록 상태를 표시한다.
 
 ### 11.3 VM 상세
 
-신규 `게스트 네트워크` 탭을 추가한다.
+신규 `IP 구성` 탭을 추가한다. 실제 Guest Network 리소스에 사용하는 공용
+`label.guest.network`와 분리해 VM 상세 전용 `label.vm.ip.configuration` 키를
+사용한다.
 
 섹션:
 
@@ -865,7 +909,7 @@ Ant Design table의 가로 스크롤을 사용한다.
 - [x] 승인된 프로토타입의 정보 구조와 상태 표현을 실제 UI 컴포넌트에 반영
 - [x] UI에서 Agent/host endpoint 직접 호출이 없음을 검증
 - [x] VM 목록 IPv4/IPv6 다중 주소 표시
-- [x] VM 상세 `게스트 네트워크` 탭 기본 구조 추가
+- [x] VM 상세 `IP 구성` 탭 기본 구조 추가
 - [x] 인터페이스 및 전체 주소 표시
 - [x] stale/partial/unsupported 상태 표시
 - [x] locale 문구 추가 및 JSON 검증
@@ -909,6 +953,17 @@ Phase 4 완료 기록(2026-07-24):
 - 상세 API와 UI에 IPv4/IPv6 route, default route, gateway, interface, metric, table, protocol, scope를 추가했다.
 - 상세 구현 및 검증 결과는 `docs/guest_network_observability_phase4_report.md`에 기록한다.
 
+Phase 4 사후 보완 구현 및 검증(2026-07-26):
+
+- 실제 22.x QGA는 Linux 배포판 ID를 `debian`, `rocky`, `centos`로
+  반환했으며 기존 `contains("linux")` 판별은 고정 route 명령 실행 전에
+  이를 거부했다.
+- `/usr/sbin/ip` 고정 IPv4/IPv6 명령은 동일 Debian VM에서 exit 0과
+  유효한 JSON을 반환해 command allowlist 자체는 정상임을 확인했다.
+- 문자열 판별을 제거하고 명시적 OS family resolver로 교체했다.
+- resolver/parser/route/DNS/wrapper 테스트와 22.x Debian 단일 VM
+  gate를 통과했으며 route 10개가 `OK`로 저장됐다.
+
 종료 조건:
 
 - IPv4/IPv6 default route와 다중 route가 표시된다.
@@ -936,6 +991,17 @@ Phase 5 완료 기록(2026-07-24):
 - interface, route, DNS cadence와 failure backoff를 독립적으로 유지하며 DNS-only cycle은 NIC DAO와 interface/route 요청을 생성하지 않는다.
 - DNS 실패 시 마지막 성공값을 `STALE`로 보존하고, 상세 API와 Ant Design UI는 DB snapshot만 조회한다.
 - 상세 구현 및 검증 결과는 `docs/guest_network_observability_phase5_report.md`에 기록한다.
+
+Phase 5 사후 보완 설계(2026-07-26):
+
+- 동일 Debian preflight에서 `resolvectl`과 `nmcli`는 없었지만 고정
+  `/usr/bin/cat /etc/resolv.conf` fallback은 exit 0으로 동작했다.
+- DNS source 우선순위와 command allowlist는 유지하고, DNS adapter에
+  도달하지 못하게 하는 OS family 판별만 교체한다.
+- Ubuntu 실행 표본은 현재 22.x에서 찾지 못했으므로 `id=ubuntu` fixture와
+  배포 전 Ubuntu preflight를 필수 gate로 남긴다.
+- resolver 구현 후 동일 Debian VM에서 `/etc/resolv.conf` source의
+  DNS 서버 2개가 `OK`로 저장됐다.
 
 종료 조건:
 
@@ -1009,6 +1075,10 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 | VM stopped | 마지막 정상 수집 후 정지 | STOPPED + 마지막 시각 |
 | Native route | QGA route 명령 지원 | 표준 결과 표시 |
 | Legacy route | QGA route 미지원 | fallback 또는 UNSUPPORTED |
+| Debian OS ID | `id=debian`, kernel-name 없음 | LINUX adapter 선택 |
+| Ubuntu OS ID | `id=ubuntu`, kernel-name 없음 | LINUX adapter 선택 |
+| Rocky/CentOS OS ID | 배포판별 ID, kernel-name 없음 | LINUX adapter 선택 |
+| Unknown OS ID | Linux/Windows 근거 없음 | guest-exec 0 + UNSUPPORTED |
 | Linux DNS | systemd-resolved | upstream/per-link 표시 |
 | Linux DNS | NetworkManager | 인터페이스별 DNS 표시 |
 | Linux DNS | resolv.conf only | fallback source 표시 |
@@ -1070,6 +1140,7 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 | 반복 미지원/timeout 호출 | capability cache와 exponential backoff |
 | route payload 과대 | 개수/크기 상한, truncated 표시 |
 | DNS 도구 배포판 차이 | resolver별 adapter와 source 표시 |
+| QGA OS ID가 `linux`가 아닌 배포판 ID | 명시적 OS family resolver, 실제 22.x fixture와 preflight |
 | MAC 대소문자 및 표기 차이 | 정규화 후 동일 VM NIC에서만 매칭 |
 | Cloud IP와 게스트 IP 불일치 | 두 값을 분리 표시하고 자동 동일시 금지 |
 | stale 정보를 최신으로 오인 | 상태와 마지막 성공 시각 필수 표시 |
@@ -1104,6 +1175,10 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 - [x] shared 22.x 최소 배포 및 rollback 절차가 준비된다.
 - [x] shared 22.x 파일럿에서 최소 배포 및 rollback 절차가 실행 검증된다.
 - [x] 사용자 및 운영 문서가 갱신된다.
+- [x] 문자열 `contains("linux")` OS dispatch가 명시적 family resolver로 교체된다.
+- [x] Debian/Ubuntu/Rocky/CentOS OS ID 회귀 테스트가 통과한다.
+- [x] 22.x Debian 단일 VM route/DNS 수집이 preflight 결과와 일치한다.
+- [ ] 22.x Ubuntu 실행 표본이 확보되면 Ubuntu 수집 gate를 통과한다.
 
 ## 18. 작업 진행 규칙
 
@@ -1122,6 +1197,9 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-07-26 | VM 목록 IP cell을 대표 주소 한 개, `+N` popover, IPv6 marker, 짧은 상태 tag의 단일 행 요약으로 재설계하고 일반/다크 테마 파일럿 추가 | 모든 주소 접근성을 유지하면서 IP column 폭과 행 높이를 줄이고 목록 비교성을 높이기 위함 |
+| 2026-07-26 | OS family resolver와 collector backoff 정합성 수정 구현, 22.x Debian 단일 VM 최소 배포 검증 완료 | route 10개와 DNS 서버 2개가 모두 `OK`로 저장되는 실제 기능 경로 확인 |
+| 2026-07-26 | QGA OS 계열 판별 결함과 코드 수준 개선 설계, 22.x Debian preflight 및 Ubuntu 후속 gate 반영 | 실제 QGA 배포판 ID가 `linux` 문자열을 포함하지 않아 route/DNS adapter에 도달하지 못하는 문제 보완 |
 | 2026-07-25 | 실제 22.x 비식별 DB clone migration과 단일 호스트 최소 배포 파일럿 완료, 동적 활성화 및 VM 순환 선택 보완 | 실제 runtime 호환성, 핵심 작업 p95, CPU/queue 예산과 rollback 가능성 확인 |
 | 2026-07-25 | 배포 artifact와 SHA-256 기록, 격리 MariaDB schema clone의 fresh/upgrade 실제 적용 검증 완료 | 배포 입력물의 무결성과 fresh/upgrade 최종 DDL 및 제약조건 일치 확인 |
 | 2026-07-25 | Phase 6 repository 통합 검증, 파일럿 allowlist, 운영 측정 지점과 최소 배포/복구 절차 반영 | shared 환경 부하와 배포 위험을 제한하고 실제 환경 acceptance를 분리 |

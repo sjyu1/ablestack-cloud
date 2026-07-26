@@ -156,11 +156,35 @@ DNS 실패는 interface와 route 결과를 제거하지 않으며, 전체 상태
 기존 KVM plugin POM의 중복 `org.json:json` 경고와 Browserslist DB 갱신 안내는
 이번 변경과 무관한 기존 경고다.
 
-## 9. 배포 상태와 다음 단계
+## 9. 22.x 사후 preflight와 보완 설계
 
-- local WSL 작업 트리에만 구현했다.
-- commit, push, PR은 수행하지 않았다.
-- 공용 22.x management/UI/host에 배포하지 않았다.
-- service restart와 DB migration은 수행하지 않았다.
+2026-07-26 실제 Debian VM에서 DNS adapter의 고정 명령을 읽기 전용으로
+검증했다.
 
-다음 단계는 Phase 6의 통합 검증 및 좁은 범위 배포 준비다.
+- QGA 7.2.22의 `guest-exec`, `guest-exec-status`,
+  `guest-get-osinfo`는 enabled였다.
+- OS ID는 `debian`이고 `kernel-name`은 제공되지 않았다.
+- `/usr/bin/resolvectl`과 `/usr/bin/nmcli`는 설치되어 있지 않았다.
+- 최종 source인 `/usr/bin/cat /etc/resolv.conf`는 exit 0과 74 byte
+  출력을 반환했다.
+
+따라서 DNS source 우선순위와 고정 allowlist는 실제 Debian 환경에서
+의도대로 동작한다. 현재 수집이 `UNSUPPORTED`인 원인은 DNS 명령이 아니라
+그 전에 `debian`을 거부하는 OS dispatch다.
+
+문자열 포함 판별을 명시적 OS family resolver로 교체했다. Debian 실제
+VM에서 최종 `/etc/resolv.conf` fallback으로 DNS 서버 2개가 `OK`로
+저장됐다. 현재 22.x에는 실행 중 Ubuntu 표본이 없으므로 `id=ubuntu`
+fixture 자동 테스트는 완료하고 실제 Ubuntu VM 확보 후 preflight를
+별도 gate로 남긴다.
+상세 설계는
+`docs/guest_network_observability_os_family_design.md`를 따른다.
+
+## 10. 현재 배포 상태
+
+- Host 3 기존 KVM plugin JAR에 OS family 관련 class만 최소 patch했다.
+- 대상 Debian VM의 DNS 상태는 `OK`, source는 `resolv.conf`, 서버는
+  2개이며 upstream 확인 값은 `true`다.
+- 관리 서버에는 실환경에서 발견한 section backoff 정합성 수정 class
+  한 개만 patch했다.
+- commit, push, PR은 이번 보완 구현 단계에서 수행하지 않았다.

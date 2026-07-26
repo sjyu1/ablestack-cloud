@@ -274,43 +274,98 @@ under the License.
       margin: 0;
     }
 
-    .ip-summary {
-      min-width: 360px;
-    }
-
-    .ip-line {
-      align-items: flex-start;
+    .ip-summary-compact {
+      align-items: center;
       display: flex;
-      gap: 8px;
-      line-height: 22px;
-      margin-bottom: 4px;
+      gap: 7px;
+      min-width: 0;
+      white-space: nowrap;
     }
 
-    .ip-line:last-child {
-      margin-bottom: 0;
-    }
-
-    .ip-label {
+    .ip-source {
+      align-items: center;
+      border: 1px solid #d9d9d9;
+      border-radius: 50%;
       color: var(--secondary);
-      flex: 0 0 44px;
-      font-size: 12px;
-      font-weight: 600;
+      display: inline-flex;
+      flex: 0 0 18px;
+      font-size: 10px;
+      font-weight: 700;
+      height: 18px;
+      justify-content: center;
+      line-height: 16px;
+      width: 18px;
     }
 
-    .ip-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
+    .ip-source.guest {
+      border-color: #91d5ff;
+      color: #096dd9;
     }
 
-    .ip-tags .ant-tag {
+    .ip-separator {
+      background: #e8e8e8;
+      display: inline-block;
+      height: 18px;
+      margin: 0 2px;
+      width: 1px;
+    }
+
+    .guest-primary {
+      color: var(--heading);
+      font-size: 13px;
+    }
+
+    .guest-empty {
+      color: var(--secondary);
+    }
+
+    .ip-more.ant-btn {
+      border-radius: 10px;
+      color: #096dd9;
+      font-size: 11px;
+      height: 20px;
+      line-height: 18px;
+      padding: 0 7px;
+    }
+
+    .family-hint.ant-tag,
+    .guest-health.ant-tag {
+      border-radius: 10px;
+      font-size: 10px;
+      line-height: 18px;
       margin: 0;
       padding: 0 6px;
     }
 
-    .guest-health {
-      font-size: 11px;
-      margin-left: 3px !important;
+    .address-popover {
+      min-width: 310px;
+    }
+
+    .address-popover-title {
+      color: var(--heading);
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .address-popover-row {
+      align-items: center;
+      display: flex;
+      gap: 7px;
+      margin: 5px 0;
+    }
+
+    .address-popover-row .ant-tag {
+      font-size: 10px;
+      margin: 0;
+      min-width: 42px;
+      text-align: center;
+    }
+
+    .address-popover-address {
+      color: var(--heading);
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 12px;
     }
 
     .pagination-row {
@@ -532,6 +587,147 @@ under the License.
       color: var(--secondary);
     }
 
+    body.prototype-dark {
+      --layout-bg: #171b20;
+      --border: #434343;
+      --heading: rgba(255, 255, 255, 0.85);
+      --text: rgba(255, 255, 255, 0.65);
+      --secondary: rgba(255, 255, 255, 0.45);
+    }
+
+    .prototype-dark .app-sider,
+    .prototype-dark .app-header,
+    .prototype-dark .toolbar-card,
+    .prototype-dark .list-card,
+    .prototype-dark .ant-layout,
+    .prototype-dark .ant-card {
+      background: #22282f !important;
+      color: var(--text);
+    }
+
+    .prototype-dark .app-sider,
+    .prototype-dark .app-logo,
+    .prototype-dark .app-header {
+      border-color: #353b42;
+    }
+
+    .prototype-dark .side-menu,
+    .prototype-dark .side-menu .ant-menu-submenu,
+    .prototype-dark .side-menu .ant-menu-item,
+    .prototype-dark .side-menu .ant-menu-submenu-title {
+      background: #22282f !important;
+      color: var(--text);
+    }
+
+    .prototype-dark .side-menu .ant-menu-item-selected {
+      background: #111d2c !important;
+      color: #40a9ff;
+    }
+
+    .prototype-dark .page-content {
+      background: #171b20;
+    }
+
+    .prototype-dark .ant-breadcrumb,
+    .prototype-dark .ant-breadcrumb a,
+    .prototype-dark .ant-breadcrumb-separator,
+    .prototype-dark .header-trigger,
+    .prototype-dark .header-icon,
+    .prototype-dark .header-user {
+      color: var(--text);
+    }
+
+    .prototype-dark .vm-table .ant-table,
+    .prototype-dark .vm-table .ant-table-container,
+    .prototype-dark .vm-table .ant-table-content,
+    .prototype-dark .vm-table .ant-table-tbody > tr > td {
+      background: #22282f;
+      color: var(--text);
+    }
+
+    .prototype-dark .vm-table .ant-table-thead > tr > th {
+      background: #20262d;
+      border-color: #434343;
+      color: var(--heading);
+    }
+
+    .prototype-dark .vm-table .ant-table-tbody > tr > td {
+      border-color: #434343;
+    }
+
+    .prototype-dark .vm-table .ant-table-tbody > tr:hover > td {
+      background: #282f37;
+    }
+
+    .prototype-dark .ip-source {
+      border-color: #595959;
+      color: var(--secondary);
+    }
+
+    .prototype-dark .ip-source.guest {
+      border-color: #15395b;
+      color: #69c0ff;
+    }
+
+    .prototype-dark .ip-separator {
+      background: #434343;
+    }
+
+    .prototype-dark .ip-more.ant-btn {
+      background: #111d2c;
+      border-color: #15395b;
+      color: #69c0ff;
+    }
+
+    .prototype-dark .vm-table .ant-tag {
+      background: #303030;
+      border-color: #595959;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .prototype-dark .vm-table .ant-tag-success,
+    .prototype-dark .vm-table .ant-tag-green {
+      background: #162312;
+      border-color: #274916;
+      color: #b7eb8f;
+    }
+
+    .prototype-dark .vm-table .ant-tag-purple {
+      background: #22075e;
+      border-color: #391085;
+      color: #d3adf7;
+    }
+
+    .prototype-dark .vm-table .ant-tag-warning,
+    .prototype-dark .vm-table .ant-tag-orange,
+    .prototype-dark .vm-table .ant-tag-gold {
+      background: #2b2111;
+      border-color: #594214;
+      color: #ffd591;
+    }
+
+    .prototype-dark .ant-btn:not(.ant-btn-primary),
+    .prototype-dark .ant-input,
+    .prototype-dark .ant-input-affix-wrapper,
+    .prototype-dark .ant-select-selector {
+      background: #22282f !important;
+      border-color: #434343 !important;
+      color: var(--text) !important;
+    }
+
+    .prototype-dark .ant-pagination,
+    .prototype-dark .ant-pagination-total-text,
+    .prototype-dark .ant-pagination-item a {
+      color: var(--text);
+    }
+
+    .prototype-dark .ant-pagination-item,
+    .prototype-dark .ant-pagination-prev .ant-pagination-item-link,
+    .prototype-dark .ant-pagination-next .ant-pagination-item-link {
+      background: #22282f;
+      border-color: #434343;
+    }
+
     @media (max-width: 1180px) {
       .app-sider {
         width: 220px !important;
@@ -620,7 +816,7 @@ under the License.
                 <span class="menu-glyph">⌁</span>
                 <span>네트워크</span>
               </template>
-              <a-menu-item key="guestnetwork">게스트 네트워크</a-menu-item>
+              <a-menu-item key="guestnetwork">IP 구성</a-menu-item>
               <a-menu-item key="publicip">공인 IP 주소</a-menu-item>
             </a-sub-menu>
             <a-sub-menu key="image">
@@ -701,7 +897,7 @@ under the License.
                 :columns="listColumns"
                 :data-source="vms"
                 :pagination="false"
-                :scroll="{ x: 1580 }"
+                :scroll="{ x: 1460 }"
                 row-key="name">
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'select'">
@@ -725,33 +921,58 @@ under the License.
                     </a-tag>
                   </template>
                   <template v-else-if="column.key === 'ip'">
-                    <div class="ip-summary">
-                      <div class="ip-line">
-                        <span class="ip-label">Cloud</span>
-                        <a href="javascript:;">{{ record.cloudIp }}</a>
-                      </div>
-                      <div class="ip-line">
-                        <span class="ip-label">Guest</span>
-                        <div class="ip-tags">
-                          <a-tag
-                            v-for="address in record.visibleGuestAddresses"
-                            :key="address.value"
-                            :color="address.family === 'IPv6' ? 'purple' : 'green'">
-                            {{ address.family }} {{ address.value }}
-                          </a-tag>
-                          <a-button
-                            v-if="record.hiddenCount > 0"
-                            size="small"
-                            @click="record.expanded = !record.expanded">
-                            {{ record.expanded ? '접기' : '+' + record.hiddenCount + ' 더보기' }}
-                          </a-button>
-                          <a-tag
-                            class="guest-health"
-                            :color="healthColor(record.health)">
-                            {{ record.health }}
-                          </a-tag>
-                        </div>
-                      </div>
+                    <div class="ip-summary-compact">
+                      <a-tooltip title="Cloud 관리 IP">
+                        <span class="ip-source">C</span>
+                      </a-tooltip>
+                      <a href="javascript:;">{{ record.cloudIp }}</a>
+                      <span class="ip-separator"></span>
+                      <a-tooltip title="게스트 OS 관측 IP">
+                        <span class="ip-source guest">G</span>
+                      </a-tooltip>
+                      <span
+                        v-if="record.primaryGuestAddress"
+                        class="guest-primary">
+                        {{ record.primaryGuestAddress.value }}
+                      </span>
+                      <span v-else class="guest-empty">—</span>
+                      <a-popover
+                        v-if="record.remainingAddressCount > 0"
+                        placement="bottomLeft"
+                        trigger="click">
+                        <template #content>
+                          <div class="address-popover">
+                            <div class="address-popover-title">
+                              게스트 IP 전체 {{ record.guestAddresses.length }}개
+                            </div>
+                            <div
+                              v-for="address in record.guestAddresses"
+                              :key="address.value"
+                              class="address-popover-row">
+                              <a-tag :color="address.family === 'IPv6' ? 'purple' : 'green'">
+                                {{ address.family }}
+                              </a-tag>
+                              <span class="address-popover-address">{{ address.value }}</span>
+                            </div>
+                          </div>
+                        </template>
+                        <a-button class="ip-more" size="small">
+                          +{{ record.remainingAddressCount }}
+                        </a-button>
+                      </a-popover>
+                      <a-tag
+                        v-if="record.hasIpv6"
+                        class="family-hint"
+                        color="purple">
+                        v6
+                      </a-tag>
+                      <a-tooltip :title="record.health">
+                        <a-tag
+                          class="guest-health"
+                          :color="healthColor(record.health)">
+                          {{ record.healthLabel }}
+                        </a-tag>
+                      </a-tooltip>
                     </div>
                   </template>
                   <template v-else-if="column.key === 'host'">
@@ -903,7 +1124,7 @@ under the License.
                     <a-tab-pane key="nics" tab="NIC">
                       <a-empty description="NIC 탭"></a-empty>
                     </a-tab-pane>
-                    <a-tab-pane key="guestnetwork" tab="게스트 네트워크">
+                    <a-tab-pane key="guestnetwork" tab="IP 구성">
                       <div class="guest-panel">
                         <a-alert
                           type="info"
@@ -1090,6 +1311,8 @@ under the License.
     createApp({
       setup() {
         const params = new URLSearchParams(window.location.search);
+        const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
+        document.body.classList.toggle('prototype-dark', theme === 'dark');
         const view = ref(params.get('view') === 'detail' ? 'detail' : 'list');
         const detailTab = ref('guestnetwork');
         const routeFilter = ref('전체 8');
@@ -1146,46 +1369,87 @@ under the License.
           {
             title: 'IP 주소',
             key: 'ip',
-            width: 510,
-            customRender: ({ record }) => h('div', { class: 'ip-summary' }, [
-              h('div', { class: 'ip-line' }, [
-                h('span', { class: 'ip-label' }, 'Cloud'),
-                h('a', { href: 'javascript:;' }, record.cloudIp)
-              ]),
-              h('div', { class: 'ip-line' }, [
-                h('span', { class: 'ip-label' }, 'Guest'),
-                h('div', { class: 'ip-tags' }, [
-                  ...record.visibleGuestAddresses.map(address => h(
-                    antd.Tag,
-                    {
-                      color: address.family === 'IPv6' ? 'purple' : 'green',
-                      key: address.value
-                    },
-                    () => `${address.family} ${address.value}`
-                  )),
-                  record.hiddenCount > 0
-                    ? h(
-                        antd.Button,
-                        {
-                          size: 'small',
-                          onClick: () => {
-                            record.expanded = !record.expanded;
-                          }
-                        },
-                        () => record.expanded ? '접기' : `+${record.hiddenCount} 더보기`
-                      )
-                    : null,
-                  h(
+            width: 390,
+            customRender: ({ record }) => {
+              const summary = [
+                h(
+                  antd.Tooltip,
+                  { title: 'Cloud 관리 IP' },
+                  { default: () => h('span', { class: 'ip-source' }, 'C') }
+                ),
+                h('a', { href: 'javascript:;' }, record.cloudIp),
+                h('span', { class: 'ip-separator' }),
+                h(
+                  antd.Tooltip,
+                  { title: '게스트 OS 관측 IP' },
+                  { default: () => h('span', { class: 'ip-source guest' }, 'G') }
+                ),
+                record.primaryGuestAddress
+                  ? h('span', { class: 'guest-primary' }, record.primaryGuestAddress.value)
+                  : h('span', { class: 'guest-empty' }, '—')
+              ];
+
+              if (record.remainingAddressCount > 0) {
+                summary.push(h(
+                  antd.Popover,
+                  {
+                    placement: 'bottomLeft',
+                    trigger: 'click'
+                  },
+                  {
+                    default: () => h(
+                      antd.Button,
+                      { class: 'ip-more', size: 'small' },
+                      () => `+${record.remainingAddressCount}`
+                    ),
+                    content: () => h('div', { class: 'address-popover' }, [
+                      h(
+                        'div',
+                        { class: 'address-popover-title' },
+                        `게스트 IP 전체 ${record.guestAddresses.length}개`
+                      ),
+                      ...record.guestAddresses.map(address => h(
+                        'div',
+                        { class: 'address-popover-row', key: address.value },
+                        [
+                          h(
+                            antd.Tag,
+                            { color: address.family === 'IPv6' ? 'purple' : 'green' },
+                            () => address.family
+                          ),
+                          h('span', { class: 'address-popover-address' }, address.value)
+                        ]
+                      ))
+                    ])
+                  }
+                ));
+              }
+
+              if (record.hasIpv6) {
+                summary.push(h(
+                  antd.Tag,
+                  { class: 'family-hint', color: 'purple' },
+                  () => 'v6'
+                ));
+              }
+
+              summary.push(h(
+                antd.Tooltip,
+                { title: record.health },
+                {
+                  default: () => h(
                     antd.Tag,
                     {
                       class: 'guest-health',
                       color: healthColor(record.health)
                     },
-                    () => record.health
+                    () => record.healthLabel
                   )
-                ])
-              ])
-            ])
+                }
+              ));
+
+              return h('div', { class: 'ip-summary-compact' }, summary);
+            }
           },
           { title: 'CPU 아키텍처', dataIndex: 'arch', key: 'arch', width: 120 },
           {
@@ -1212,86 +1476,124 @@ under the License.
 
         const vmSeed = [
           {
-            name: 'erp-app-01',
-            os: '◔',
-            running: true,
-            agent: '8.2.0',
-            instanceName: 'i-2-184-VM',
-            cloudIp: '192.168.10.20',
-            guestAddresses: [
-              { family: 'IPv4', value: '192.168.10.20/24' },
-              { family: 'IPv4', value: '192.168.10.21/24' },
-              { family: 'IPv6', value: '2001:db8::20/64' },
-              { family: 'IPv6', value: 'fe80::5054:ff:fe12:3456/64' },
-              { family: 'IPv4', value: '10.50.0.15/24' }
-            ],
-            health: '정상 · 18초 전',
-            arch: 'x86_64',
-            host: 'ablecube22-1',
-            account: 'admin',
-            zone: 'Zone-22'
-          },
-          {
-            name: 'win-db-02',
-            os: '⊞',
-            running: true,
-            agent: '109.1.0',
-            instanceName: 'i-2-190-VM',
-            cloudIp: '10.30.5.17',
-            guestAddresses: [
-              { family: 'IPv4', value: '10.30.5.17/24' },
-              { family: 'IPv6', value: '2001:db8:30::17/64' },
-              { family: 'IPv6', value: 'fe80::8c2a:13ff:fe77:2a10/64' }
-            ],
-            health: '부분 수집 · route 미지원',
-            arch: 'x86_64',
-            host: 'ablecube22-2',
-            account: 'admin',
-            zone: 'Zone-22'
-          },
-          {
-            name: 'legacy-api-03',
-            os: '◔',
-            running: true,
-            agent: '7.2.22',
-            instanceName: 'i-2-193-VM',
-            cloudIp: '172.16.44.31',
-            guestAddresses: [
-              { family: 'IPv4', value: '172.16.44.31/24' }
-            ],
-            health: '오래됨 · 17분 전',
-            arch: 'x86_64',
-            host: 'ablecube22-3',
-            account: 'admin',
-            zone: 'Zone-22'
-          },
-          {
-            name: 'batch-worker-04',
+            name: 'WESTPAC-Manager-VM',
             os: '◔',
             running: false,
-            agent: '8.2.0',
-            instanceName: 'i-2-201-VM',
-            cloudIp: '10.40.2.31',
-            guestAddresses: [
-              { family: 'IPv4', value: '10.40.2.31/24' }
-            ],
-            health: '마지막 정상값',
+            agent: '9.1.0',
+            instanceName: 'i-2-193-VM',
+            cloudIp: '10.1.1.211',
+            guestAddresses: [],
+            health: '수집 불가',
             arch: 'x86_64',
             host: '',
             account: 'admin',
             zone: 'Zone-22'
           },
           {
-            name: 'network-test-05',
-            os: '◉',
-            running: true,
-            agent: '미설치',
-            instanceName: 'network-test-05',
+            name: 'WESTPAC-ConnectorServer-VM',
+            os: '◔',
+            running: false,
+            agent: '9.1.0',
+            instanceName: 'i-2-195-VM',
+            cloudIp: '10.1.1.187',
+            guestAddresses: [],
+            health: '수집 불가',
+            arch: 'x86_64',
+            host: '',
+            account: 'admin',
+            zone: 'Zone-22'
+          },
+          {
+            name: 'WESTPAC-WinSever2022AD-VM',
+            os: '⊞',
+            running: false,
+            agent: '109.1.0',
+            instanceName: 'i-2-207-VM',
+            cloudIp: '10.1.1.93',
+            guestAddresses: [],
+            health: '수집 불가',
+            arch: 'x86_64',
+            host: '',
+            account: 'admin',
+            zone: 'Zone-22'
+          },
+          {
+            name: 'WESTPAC-Win11-VM',
+            os: '⊞',
+            running: false,
+            agent: '109.1.0',
+            instanceName: 'i-2-216-VM',
+            cloudIp: '10.1.1.155',
+            guestAddresses: [],
+            health: '수집 불가',
+            arch: 'x86_64',
+            host: '',
+            account: 'admin',
+            zone: 'Zone-22'
+          },
+          {
+            name: 'BASTION-SERVER-NEW',
+            os: '◔',
+            running: false,
+            agent: '9.1.0',
+            instanceName: 'i-2-232-VM',
+            cloudIp: '10.1.1.87',
+            guestAddresses: [],
+            health: '수집 불가',
+            arch: 'x86_64',
+            host: '',
+            account: 'admin',
+            zone: 'Zone-22'
+          },
+          {
+            name: 'bctp-ktcheon',
+            os: '◔',
+            running: false,
+            agent: '8.2.0',
+            instanceName: 'i-2-235-VM',
             cloudIp: '10.10.254.229',
             guestAddresses: [],
             health: '수집 불가',
             arch: 'x86_64',
+            host: '',
+            account: 'admin',
+            zone: 'Zone-22'
+          },
+          {
+            name: 'foms-control-19ce0ede800',
+            os: '◔',
+            running: true,
+            agent: '7.2.22',
+            instanceName: 'i-2-253-VM',
+            cloudIp: '10.1.1.153',
+            guestAddresses: [
+              { family: 'IPv4', value: '10.1.1.153/24' },
+              { family: 'IPv4', value: '127.0.0.1/8' },
+              { family: 'IPv4', value: '192.168.110.0/32' },
+              { family: 'IPv6', value: '::1/128' },
+              { family: 'IPv6', value: 'fe80::5054:ff:fe12:3456/64' }
+            ],
+            health: '부분 수집 · 일부 인터페이스 주소 없음',
+            arch: 'x86_64',
             host: 'ablecube22-1',
+            account: 'admin',
+            zone: 'Zone-22'
+          },
+          {
+            name: 'foms-node-19ce0ee2f6e',
+            os: '◔',
+            running: true,
+            agent: '7.2.22',
+            instanceName: 'i-2-254-VM',
+            cloudIp: '10.1.1.162',
+            guestAddresses: [
+              { family: 'IPv4', value: '10.1.1.162/24' },
+              { family: 'IPv4', value: '127.0.0.1/8' },
+              { family: 'IPv6', value: '2001:db8:22::162/64' }
+            ],
+            health: '정상 · 18초 전',
+            arch: 'x86_64',
+            host: 'ablecube22-3',
             account: 'admin',
             zone: 'Zone-22'
           }
@@ -1299,12 +1601,21 @@ under the License.
 
         const vms = reactive(vmSeed.map(vm => ({
           ...vm,
-          expanded: false,
-          get visibleGuestAddresses() {
-            return this.expanded ? this.guestAddresses : this.guestAddresses.slice(0, 3);
+          get primaryGuestAddress() {
+            return this.guestAddresses.length > 0 ? this.guestAddresses[0] : null;
           },
-          get hiddenCount() {
-            return this.expanded ? 0 : Math.max(0, this.guestAddresses.length - 3);
+          get remainingAddressCount() {
+            return Math.max(0, this.guestAddresses.length - 1);
+          },
+          get hasIpv6() {
+            return this.guestAddresses.some(address => address.family === 'IPv6');
+          },
+          get healthLabel() {
+            if (this.health.startsWith('정상')) return '정상';
+            if (this.health.startsWith('부분')) return '일부 수집';
+            if (this.health.startsWith('오래됨')) return '오래됨';
+            if (this.health.startsWith('마지막')) return '마지막 값';
+            return '미수집';
           }
         })));
 

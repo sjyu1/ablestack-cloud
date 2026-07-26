@@ -37,6 +37,8 @@ import com.cloud.hypervisor.kvm.resource.QemuGuestRouteFallback.FallbackResult;
 public class QemuGuestRouteFallbackTest {
     private final QemuGuestRouteFallback fallback =
             new QemuGuestRouteFallback(new QemuGuestNetworkStateParser());
+    private final QemuGuestOsFamilyResolver osFamilyResolver =
+            new QemuGuestOsFamilyResolver();
 
     @Test
     public void testLinuxFallbackUsesOnlyAbsoluteAllowlistedIpCommands() throws Exception {
@@ -44,7 +46,7 @@ public class QemuGuestRouteFallbackTest {
         executor.addCompleted(101L, readFixture("guest-exec-linux-route-v4.json"));
         executor.addCompleted(102L, readFixture("guest-exec-linux-route-v6.json"));
 
-        FallbackResult result = fallback.collect(executor, "linux", 1, 65536);
+        FallbackResult result = fallback.collect(executor, resolve("debian"), 1, 65536);
 
         assertEquals(4, result.getRoutes().size());
         assertEquals("guest-exec-linux-ip", result.getSource());
@@ -58,7 +60,7 @@ public class QemuGuestRouteFallbackTest {
         RecordingExecutor executor = new RecordingExecutor();
         executor.addCompleted(201L, readFixture("guest-exec-windows-route.json"));
 
-        FallbackResult result = fallback.collect(executor, "mswindows", 1, 65536);
+        FallbackResult result = fallback.collect(executor, resolve("mswindows"), 1, 65536);
 
         assertEquals(3, result.getRoutes().size());
         assertEquals("guest-exec-windows-get-net-route", result.getSource());
@@ -74,7 +76,7 @@ public class QemuGuestRouteFallbackTest {
         executor.addCompleted(151L, readFixture("guest-exec-linux-route-v4.json"));
         executor.addCompleted(152L, readFixture("guest-exec-linux-route-v6.json"));
 
-        FallbackResult result = fallback.collect(executor, "linux", 1, 65536);
+        FallbackResult result = fallback.collect(executor, resolve("ubuntu"), 1, 65536);
 
         assertEquals(4, result.getRoutes().size());
         assertTrue(executor.commands.get(1).contains("\"path\":\"/usr/bin/ip\""));
@@ -97,7 +99,7 @@ public class QemuGuestRouteFallbackTest {
         executor.addCompleted(301L, "0123456789");
 
         try {
-            fallback.collect(executor, "linux", 1, 4);
+            fallback.collect(executor, resolve("rocky"), 1, 4);
             fail("Oversized output must fail");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("output"));
@@ -123,7 +125,7 @@ public class QemuGuestRouteFallbackTest {
         executor.addCompleted(351L, ipv4.toString());
         executor.addCompleted(352L, ipv6.toString());
 
-        FallbackResult result = fallback.collect(executor, "linux", 1, 1024 * 1024);
+        FallbackResult result = fallback.collect(executor, resolve("centos"), 1, 1024 * 1024);
 
         assertEquals(QemuGuestNetworkStateParser.MAX_ROUTES, result.getRoutes().size());
         assertEquals(routesPerFamily * 2, result.getOriginalCount());
@@ -142,7 +144,7 @@ public class QemuGuestRouteFallbackTest {
         };
 
         try {
-            fallback.collect(executor, "linux", 1, 65536);
+            fallback.collect(executor, resolve("debian"), 1, 65536);
             fail("Timed out process must fail");
         } catch (Exception e) {
             assertTrue(e.getMessage().contains("timed out"));
@@ -157,6 +159,10 @@ public class QemuGuestRouteFallbackTest {
             }
             return IOUtils.toString(input, StandardCharsets.UTF_8);
         }
+    }
+
+    private QemuGuestOsFamilyResolution resolve(String osId) {
+        return osFamilyResolver.resolve(new QemuGuestOsInfo(osId, null, null, null));
     }
 
     private static final class RecordingExecutor

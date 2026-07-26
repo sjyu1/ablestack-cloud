@@ -21,6 +21,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -220,7 +221,7 @@ public class LibvirtGetVmGuestNetworkStateCommandWrapperTest {
                 + "\"}}";
         when(domainOne.qemuAgentCommand(anyString(), eq(3), eq(0))).thenReturn(
                 readFixture("guest-info-capabilities.json"),
-                readFixture("guest-get-osinfo-linux.json"),
+                readFixture("guest-get-osinfo-debian.json"),
                 "{\"return\":{\"pid\":601}}",
                 dnsStatus);
         GetVmGuestNetworkStateCommand command = new GetVmGuestNetworkStateCommand(
@@ -240,6 +241,70 @@ public class LibvirtGetVmGuestNetworkStateCommandWrapperTest {
         assertEquals(2, state.getDns().getConfigurations().size());
         assertTrue(state.getDns().isUpstreamServersKnown());
         verify(domainOne, times(4)).qemuAgentCommand(anyString(), eq(3), eq(0));
+    }
+
+    @Test
+    public void testRouteAndDnsShareOneOsInfoLookupForDebian() throws Exception {
+        String capabilitiesWithoutRoute = "{\"return\":{\"version\":\"7.2.22\","
+                + "\"supported_commands\":["
+                + "{\"name\":\"guest-exec\",\"enabled\":true},"
+                + "{\"name\":\"guest-exec-status\",\"enabled\":true},"
+                + "{\"name\":\"guest-get-osinfo\",\"enabled\":true}]}}";
+        when(domainOne.qemuAgentCommand(anyString(), eq(3), eq(0))).thenReturn(
+                capabilitiesWithoutRoute,
+                readFixture("guest-get-osinfo-debian.json"),
+                "{\"return\":{\"pid\":701}}",
+                completedStatus(readFixture("guest-exec-linux-route-v4.json")),
+                "{\"return\":{\"pid\":702}}",
+                completedStatus(readFixture("guest-exec-linux-route-v6.json")),
+                "{\"return\":{\"pid\":703}}",
+                completedStatus(readFixture("guest-exec-linux-dns-resolvectl.txt")));
+        GetVmGuestNetworkStateCommand command = new GetVmGuestNetworkStateCommand(
+                Collections.singletonList(VM_ONE), Collections.emptyMap(), 3,
+                Collections.emptySet(), Collections.emptySet(),
+                Collections.singleton(VM_ONE), Collections.singleton(VM_ONE),
+                true, 65536);
+
+        GetVmGuestNetworkStateAnswer answer =
+                (GetVmGuestNetworkStateAnswer) wrapper.execute(command, resource);
+        VmGuestNetworkState state = answer.getStates().get(VM_ONE);
+
+        assertEquals("OK", state.getStatus());
+        assertEquals("OK", state.getSectionStatuses().get("routes").getStatus());
+        assertEquals("OK", state.getSectionStatuses().get("dns").getStatus());
+        assertEquals(4, state.getRoutes().size());
+        assertEquals("resolvectl", state.getDns().getSource());
+        verify(domainOne, times(1)).qemuAgentCommand(
+                contains("\"execute\":\"guest-get-osinfo\""), eq(3), eq(0));
+    }
+
+    @Test
+    public void testUnknownOsFailsClosedWithoutGuestExec() throws Exception {
+        String capabilitiesWithoutRoute = "{\"return\":{\"version\":\"7.2.22\","
+                + "\"supported_commands\":["
+                + "{\"name\":\"guest-exec\",\"enabled\":true},"
+                + "{\"name\":\"guest-exec-status\",\"enabled\":true},"
+                + "{\"name\":\"guest-get-osinfo\",\"enabled\":true}]}}";
+        String freeBsdOsInfo = "{\"return\":{\"id\":\"freebsd\","
+                + "\"name\":\"FreeBSD\",\"pretty-name\":\"FreeBSD 14.0\"}}";
+        when(domainOne.qemuAgentCommand(anyString(), eq(3), eq(0))).thenReturn(
+                capabilitiesWithoutRoute, freeBsdOsInfo);
+        GetVmGuestNetworkStateCommand command = new GetVmGuestNetworkStateCommand(
+                Collections.singletonList(VM_ONE), Collections.emptyMap(), 3,
+                Collections.emptySet(), Collections.emptySet(),
+                Collections.singleton(VM_ONE), Collections.singleton(VM_ONE),
+                true, 65536);
+
+        GetVmGuestNetworkStateAnswer answer =
+                (GetVmGuestNetworkStateAnswer) wrapper.execute(command, resource);
+        VmGuestNetworkState state = answer.getStates().get(VM_ONE);
+
+        assertEquals("UNSUPPORTED", state.getStatus());
+        assertEquals("UNSUPPORTED", state.getSectionStatuses().get("routes").getStatus());
+        assertEquals("UNSUPPORTED", state.getSectionStatuses().get("dns").getStatus());
+        verify(domainOne, times(2)).qemuAgentCommand(anyString(), eq(3), eq(0));
+        verify(domainOne, never()).qemuAgentCommand(
+                contains("\"execute\":\"guest-exec\""), eq(3), eq(0));
     }
 
     @Test
@@ -265,5 +330,11 @@ public class LibvirtGetVmGuestNetworkStateCommandWrapperTest {
             }
             return IOUtils.toString(input, StandardCharsets.UTF_8);
         }
+    }
+
+    private String completedStatus(String stdout) {
+        return "{\"return\":{\"exited\":true,\"exitcode\":0,\"out-data\":\""
+                + Base64.getEncoder().encodeToString(stdout.getBytes(StandardCharsets.UTF_8))
+                + "\"}}";
     }
 }

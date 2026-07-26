@@ -123,10 +123,19 @@ public class QemuGuestNetworkStateParser {
     }
 
     public String parseOsId(String json) {
+        QemuGuestOsInfo osInfo = parseOsInfo(json);
+        String osId = firstNonBlank(osInfo.getId(), osInfo.getKernelName(), osInfo.getName());
+        return osId == null ? null : osId.toLowerCase(Locale.ROOT);
+    }
+
+    public QemuGuestOsInfo parseOsInfo(String json) {
         JsonObject response = parseResponseObject(json);
         JsonObject result = requireObject(response, "return");
-        String osId = readAnyString(result, "id", "kernel-name", "name");
-        return osId == null ? null : osId.toLowerCase(Locale.ROOT);
+        return new QemuGuestOsInfo(
+                readString(result, "id"),
+                readString(result, "kernel-name"),
+                readString(result, "name"),
+                readString(result, "pretty-name"));
     }
 
     private RouteParseResult parseRouteArray(JsonArray sourceRoutes, String forcedFamily, RouteSource source) {
@@ -370,6 +379,15 @@ public class QemuGuestNetworkStateParser {
     private String readAnyString(JsonObject object, String... members) {
         for (String member : members) {
             String value = readString(object, member);
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
             if (value != null && !value.trim().isEmpty()) {
                 return value.trim();
             }

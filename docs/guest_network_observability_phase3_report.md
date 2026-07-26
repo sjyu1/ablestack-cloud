@@ -88,7 +88,7 @@ VM에 snapshot이 없으면 실패시키지 않고 `NOT_COLLECTED`를 반환한�
 
 ### 4.2 VM 상세
 
-KVM VM이며 새 API 권한이 노출된 경우에만 `게스트 네트워크` 탭을 표시한다.
+KVM VM이며 새 API 권한이 노출된 경우에만 `IP 구성` 탭을 표시한다.
 
 - 저장 snapshot 조회라는 안내
 - 수집 상태, QGA 버전, 최근 관측/성공 시각, interface 수, schema version

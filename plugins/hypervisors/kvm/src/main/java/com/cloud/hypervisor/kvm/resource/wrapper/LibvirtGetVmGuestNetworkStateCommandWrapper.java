@@ -41,6 +41,8 @@ import com.cloud.hypervisor.kvm.resource.QemuGuestDnsParser;
 import com.cloud.hypervisor.kvm.resource.QemuGuestDnsParser.DnsParseResult;
 import com.cloud.hypervisor.kvm.resource.QemuGuestNetworkStateParser;
 import com.cloud.hypervisor.kvm.resource.QemuGuestNetworkStateParser.RouteParseResult;
+import com.cloud.hypervisor.kvm.resource.QemuGuestOsFamilyResolution;
+import com.cloud.hypervisor.kvm.resource.QemuGuestOsFamilyResolver;
 import com.cloud.hypervisor.kvm.resource.QemuGuestRouteFallback;
 import com.cloud.hypervisor.kvm.resource.QemuGuestRouteFallback.FallbackResult;
 import com.cloud.resource.CommandWrapper;
@@ -57,6 +59,7 @@ public final class LibvirtGetVmGuestNetworkStateCommandWrapper
     private final QemuGuestNetworkStateParser parser;
     private final QemuGuestRouteFallback routeFallback;
     private final QemuGuestDnsFallback dnsFallback;
+    private final QemuGuestOsFamilyResolver osFamilyResolver;
 
     public LibvirtGetVmGuestNetworkStateCommandWrapper() {
         this(new QemuGuestNetworkStateParser(), null, null);
@@ -77,6 +80,7 @@ public final class LibvirtGetVmGuestNetworkStateCommandWrapper
         this.routeFallback = routeFallback == null ? new QemuGuestRouteFallback(parser) : routeFallback;
         this.dnsFallback = dnsFallback == null
                 ? new QemuGuestDnsFallback(new QemuGuestDnsParser()) : dnsFallback;
+        this.osFamilyResolver = new QemuGuestOsFamilyResolver();
     }
 
     @Override
@@ -240,7 +244,7 @@ public final class LibvirtGetVmGuestNetworkStateCommandWrapper
         try {
             FallbackResult result = routeFallback.collect(
                     (request, timeout) -> domain.qemuAgentCommand(request, timeout, 0),
-                    getOsId(command, domain, guestContext),
+                    getOsFamily(command, domain, guestContext),
                     command.getTimeoutSeconds(), command.getMaxExecOutputBytes());
             state.setAgentConnected(true);
             state.setRoutes(result.getRoutes());
@@ -272,7 +276,7 @@ public final class LibvirtGetVmGuestNetworkStateCommandWrapper
         try {
             DnsParseResult result = dnsFallback.collect(
                     (request, timeout) -> domain.qemuAgentCommand(request, timeout, 0),
-                    getOsId(command, domain, guestContext),
+                    getOsFamily(command, domain, guestContext),
                     command.getTimeoutSeconds(), command.getMaxExecOutputBytes());
             VmGuestDnsState dns = result.getState();
             state.setAgentConnected(true);
@@ -290,15 +294,17 @@ public final class LibvirtGetVmGuestNetworkStateCommandWrapper
         }
     }
 
-    private String getOsId(GetVmGuestNetworkStateCommand command, Domain domain,
+    private QemuGuestOsFamilyResolution getOsFamily(GetVmGuestNetworkStateCommand command, Domain domain,
             GuestContext context) throws LibvirtException {
-        if (context.osId == null) {
+        if (context.osFamily == null) {
             String osInfoJson = domain.qemuAgentCommand(
                     QemuCommand.buildQemuCommand(QemuCommand.AGENT_GET_OSINFO, null),
                     command.getTimeoutSeconds(), 0);
-            context.osId = parser.parseOsId(osInfoJson);
+            context.osFamily = osFamilyResolver.resolve(parser.parseOsInfo(osInfoJson));
+            logger.debug("Resolved QGA guest OS family [{}] from [{}]",
+                    context.osFamily.getFamily(), context.osFamily.getSource());
         }
-        return context.osId;
+        return context.osFamily;
     }
 
     private VmGuestNetworkSectionStatus sectionStatus(String status, String details,
@@ -401,7 +407,7 @@ public final class LibvirtGetVmGuestNetworkStateCommandWrapper
     }
 
     private static final class GuestContext {
-        private String osId;
+        private QemuGuestOsFamilyResolution osFamily;
     }
 
     private void freeDomain(Domain domain, String vmName) {

@@ -38,13 +38,15 @@ import com.cloud.hypervisor.kvm.resource.QemuGuestDnsParser.DnsParseResult;
 public class QemuGuestDnsFallbackTest {
     private final QemuGuestDnsFallback fallback =
             new QemuGuestDnsFallback(new QemuGuestDnsParser());
+    private final QemuGuestOsFamilyResolver osFamilyResolver =
+            new QemuGuestOsFamilyResolver();
 
     @Test
     public void testLinuxPrefersAllowlistedResolvectl() throws Exception {
         RecordingExecutor executor = new RecordingExecutor();
         executor.addCompleted(501L, readFixture("guest-exec-linux-dns-resolvectl.txt"));
 
-        DnsParseResult result = fallback.collect(executor, "linux", 1, 65536);
+        DnsParseResult result = fallback.collect(executor, resolve("debian"), 1, 65536);
 
         assertEquals("resolvectl", result.getState().getSource());
         assertTrue(result.getState().isUpstreamServersKnown());
@@ -59,7 +61,7 @@ public class QemuGuestDnsFallbackTest {
         nmcliExecutor.addMissing();
         nmcliExecutor.addCompleted(502L, readFixture("guest-exec-linux-dns-nmcli.txt"));
 
-        DnsParseResult nmcli = fallback.collect(nmcliExecutor, "linux", 1, 65536);
+        DnsParseResult nmcli = fallback.collect(nmcliExecutor, resolve("ubuntu"), 1, 65536);
 
         assertEquals("nmcli", nmcli.getState().getSource());
         assertTrue(nmcliExecutor.commands.get(2).contains("\"path\":\"/usr/bin/nmcli\""));
@@ -70,7 +72,8 @@ public class QemuGuestDnsFallbackTest {
         }
         resolvConfExecutor.addCompleted(503L, readFixture("guest-exec-linux-dns-resolv-conf.txt"));
 
-        DnsParseResult resolvConf = fallback.collect(resolvConfExecutor, "linux", 1, 65536);
+        DnsParseResult resolvConf = fallback.collect(
+                resolvConfExecutor, resolve("rocky"), 1, 65536);
 
         assertEquals("resolv.conf", resolvConf.getState().getSource());
         assertFalse(resolvConf.getState().isUpstreamServersKnown());
@@ -83,7 +86,7 @@ public class QemuGuestDnsFallbackTest {
         RecordingExecutor executor = new RecordingExecutor();
         executor.addCompleted(504L, readFixture("guest-exec-windows-dns.json"));
 
-        DnsParseResult result = fallback.collect(executor, "windows", 1, 65536);
+        DnsParseResult result = fallback.collect(executor, resolve("windows"), 1, 65536);
 
         assertEquals("windows-dns-client", result.getState().getSource());
         assertTrue(executor.commands.get(0).contains("Get-DnsClientServerAddress"));
@@ -110,7 +113,7 @@ public class QemuGuestDnsFallbackTest {
         executor.addCompleted(507L, "0123456789");
 
         try {
-            fallback.collect(executor, "linux", 1, 4);
+            fallback.collect(executor, resolve("centos"), 1, 4);
             fail("Oversized DNS output must fail");
         } catch (Exception e) {
             assertTrue(e.getSuppressed().length > 0);
@@ -125,6 +128,10 @@ public class QemuGuestDnsFallbackTest {
             }
             return IOUtils.toString(input, StandardCharsets.UTF_8);
         }
+    }
+
+    private QemuGuestOsFamilyResolution resolve(String osId) {
+        return osFamilyResolver.resolve(new QemuGuestOsInfo(osId, null, null, null));
     }
 
     private static final class RecordingExecutor

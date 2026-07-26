@@ -154,6 +154,19 @@ public class QemuGuestNetworkStateParserTest {
     }
 
     @Test
+    public void testOsInfoPreservesIndependentFieldsWhenKernelNameIsMissing() throws IOException {
+        QemuGuestOsInfo osInfo = parser.parseOsInfo(
+                readFixture("guest-get-osinfo-debian.json"));
+
+        assertEquals("debian", osInfo.getId());
+        assertNull(osInfo.getKernelName());
+        assertEquals("Debian GNU/Linux", osInfo.getName());
+        assertEquals("Debian GNU/Linux 12 (bookworm)", osInfo.getPrettyName());
+        assertEquals("debian", parser.parseOsId(
+                readFixture("guest-get-osinfo-debian.json")));
+    }
+
+    @Test
     public void testStandardRouteCountIsBoundedAndReportedAsTruncated() {
         StringBuilder json = new StringBuilder("{\"return\":[");
         for (int index = 0; index < QemuGuestNetworkStateParser.MAX_ROUTES + 2; index++) {

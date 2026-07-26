@@ -171,15 +171,30 @@ class만 반영하는 절차를 사용한다.
 - feature flag off 및 artifact 역순 복원
 - 신규 table을 즉시 삭제하지 않는 DB rollback 원칙
 
-## 7. 완료 경계
+## 7. QGA OS family 사후 보완
 
-Phase 6의 코드, 자동화 검증, build, migration 계약, 최소 배포/복구 문서 준비는
-완료했다. shared 22.x에는 어떤 artifact도 배포하지 않았고 DB와 서비스도 변경하지
-않았다.
+2026-07-26 실제 22.x preflight에서 QGA의 배포판 ID가 `debian`,
+`rocky`, `centos`로 반환되고 `kernel-name`은 제공되지 않는 것을
+확인했다. 기존 `contains("linux")` dispatch는 이 Linux VM들을 고정
+route/DNS adapter 실행 전에 `UNSUPPORTED`로 처리한다.
 
-실제 환경 수락은 다음 사용자 승인 단계에서 수행한다.
+동일 Debian VM에서 고정 `/usr/sbin/ip` IPv4/IPv6 명령과
+`/usr/bin/cat /etc/resolv.conf`는 성공했다. 따라서 기존 command
+allowlist와 executor 격리는 유지하고 KVM plugin 내부 OS family 판별만
+교체하는 설계를 채택한다.
 
-1. DB clone 실제 migration 적용
-2. 파일럿 Management/Agent/UI 최소 배포
-3. off/on CPU와 실제 VM/볼륨/NIC p95 측정
-4. gate 통과 시에만 범위 확장
+상세 코드 설계, 테스트와 구현 후 22.x gate는
+`docs/guest_network_observability_os_family_design.md`에 기록했다.
+보완 구현과 Debian acceptance는 완료했다. Ubuntu fixture 테스트는
+통과했지만 현재 클러스터에 실행 표본이 없어 Ubuntu 실환경 gate만 남아 있다.
+
+## 8. 완료 경계
+
+Phase 6의 코드, 자동화 검증, build, migration 계약과 최초 22.x 파일럿은
+완료했다. 추가 OS family 보완은 Host 3 KVM plugin의 관련 class 19개와
+Management collector class 한 개만 최소 patch해 검증했다.
+
+대상 Debian VM의 최종 snapshot은 interface `OK` 2개, route `OK` 10개,
+DNS `OK` 서버 2개이며 전체 상태는 `OK`다. Agent ReadyAnswer, 기존 stats,
+관리 API와 호스트 연결을 확인했다. Ubuntu 실환경 gate는 실행 VM이
+준비될 때 동일 단일 VM scope로 수행한다.

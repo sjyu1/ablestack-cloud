@@ -17,28 +17,62 @@
 
 <template>
   <div class="guest-network-summary">
-    <div class="summary-line">
-      <span class="summary-label">{{ $t('label.cloud.ip') }}</span>
+    <div class="summary-line summary-line-compact">
+      <a-tooltip :title="$t('label.cloud.ip')">
+        <span class="summary-source">C</span>
+      </a-tooltip>
       <copy-label v-if="cloudAddress" :label="cloudAddress" />
       <span v-else>-</span>
-    </div>
-    <div class="summary-line">
-      <span class="summary-label">{{ $t('label.guest.ip') }}</span>
-      <span v-if="visibleAddresses.length">
-        <a-tag
-          v-for="item in visibleAddresses"
-          :key="item.family + item.address"
-          :color="item.family === 'IPv6' ? 'purple' : 'green'"
-          class="address-tag">
-          {{ item.address }}
-        </a-tag>
-        <a-tooltip v-if="hiddenAddressCount > 0" :title="hiddenAddresses.join(', ')">
-          <a-tag>+{{ hiddenAddressCount }} {{ $t('label.more') }}</a-tag>
-        </a-tooltip>
-      </span>
+      <span class="summary-separator"></span>
+      <a-tooltip :title="$t('label.guest.ip')">
+        <span class="summary-source summary-source-guest">G</span>
+      </a-tooltip>
+      <copy-label
+        v-if="primaryAddress"
+        class="primary-address"
+        :label="primaryAddress.address" />
       <span v-else>-</span>
+      <a-popover
+        v-if="remainingAddressCount > 0"
+        overlayClassName="guest-network-summary-popover"
+        placement="bottomLeft"
+        trigger="click">
+        <template #content>
+          <div class="address-popover">
+            <div class="address-popover-header">
+              <strong>{{ $t('label.guest.ip') }} {{ allAddresses.length }}</strong>
+              <copy-label
+                :label="$t('label.copy.all')"
+                :copyValue="allAddressCopyValue" />
+            </div>
+            <div
+              v-for="item in allAddresses"
+              :key="item.family + item.address"
+              class="address-popover-row">
+              <a-tag :color="item.family === 'IPv6' ? 'purple' : 'green'">
+                {{ item.family }}
+              </a-tag>
+              <copy-label :label="item.address" />
+            </div>
+          </div>
+        </template>
+        <a-button
+          class="summary-more"
+          size="small"
+          :aria-label="'+' + remainingAddressCount + ' ' + $t('label.more')">
+          +{{ remainingAddressCount }}
+        </a-button>
+      </a-popover>
+      <a-tag
+        v-if="hasIpv6"
+        class="address-family-indicator"
+        color="purple">
+        v6
+      </a-tag>
       <a-tooltip v-if="showStatus" :title="statusTooltip">
-        <a-tag :color="statusColor">{{ summary.status }}</a-tag>
+        <a-tag class="summary-status" :color="statusColor">
+          {{ statusLabel }}
+        </a-tag>
       </a-tooltip>
     </div>
   </div>
@@ -69,20 +103,28 @@ export default {
         ...(this.summary.ipv6addresses || []).map(address => ({ family: 'IPv6', address }))
       ]
     },
-    visibleAddresses () {
-      return this.allAddresses.slice(0, 3)
+    primaryAddress () {
+      return this.allAddresses.find(item => item.family === 'IPv4' && this.isPreferredAddress(item.address)) ||
+        this.allAddresses.find(item => item.family === 'IPv6' && this.isPreferredAddress(item.address)) ||
+        this.allAddresses.find(item => this.isNonLoopbackAddress(item.address)) ||
+        this.allAddresses[0] ||
+        null
     },
-    hiddenAddresses () {
-      return this.allAddresses.slice(3).map(item => item.address)
+    remainingAddressCount () {
+      return Math.max(0, this.allAddresses.length - (this.primaryAddress ? 1 : 0))
     },
-    hiddenAddressCount () {
-      return this.hiddenAddresses.length
+    hasIpv6 () {
+      return (this.summary.ipv6addresses || []).length > 0
+    },
+    allAddressCopyValue () {
+      return this.allAddresses.map(item => item.address).join('\n')
     },
     showStatus () {
-      return this.summary.status && this.summary.status !== 'OK'
+      return Boolean(this.summary.status)
     },
     statusColor () {
       const colors = {
+        OK: 'green',
         PARTIAL: 'orange',
         STALE: 'gold',
         STOPPED: 'default',
@@ -92,9 +134,34 @@ export default {
       }
       return colors[this.summary.status] || 'default'
     },
+    statusLabel () {
+      const key = 'label.guest.network.status.' + String(this.summary.status || '').toLowerCase()
+      return this.$t(key)
+    },
     statusTooltip () {
       const key = 'message.guest.network.status.' + String(this.summary.status || '').toLowerCase()
-      return this.$t(key)
+      const message = this.$t(key)
+      if (!this.summary.observed) {
+        return message
+      }
+      return message + ' · ' + this.$t('label.guest.network.observed') + ': ' +
+        this.$toLocaleDate(this.summary.observed)
+    }
+  },
+  methods: {
+    normalizedAddress (address) {
+      return String(address || '').split('/')[0].toLowerCase()
+    },
+    isNonLoopbackAddress (address) {
+      const normalized = this.normalizedAddress(address)
+      return normalized !== '::1' && !normalized.startsWith('127.')
+    },
+    isPreferredAddress (address) {
+      const normalized = this.normalizedAddress(address)
+      return this.isNonLoopbackAddress(address) &&
+        normalized !== '0.0.0.0' &&
+        !normalized.startsWith('169.254.') &&
+        !normalized.startsWith('fe80:')
     }
   }
 }
@@ -102,24 +169,96 @@ export default {
 
 <style scoped lang="less">
 .guest-network-summary {
-  min-width: 260px;
+  min-width: 330px;
 }
 
 .summary-line {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  min-height: 28px;
+  min-height: 24px;
 }
 
-.summary-label {
-  width: 54px;
-  margin-right: 8px;
+.summary-line-compact {
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.summary-source {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1px solid #d9d9d9;
+  border-radius: 50%;
   color: rgba(0, 0, 0, 0.45);
-  font-size: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
-.address-tag {
-  margin-bottom: 2px;
+.summary-source-guest {
+  color: #096dd9;
+  border-color: #91d5ff;
+}
+
+.summary-separator {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: #e8e8e8;
+}
+
+.primary-address {
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.summary-more {
+  height: 20px;
+  padding: 0 7px;
+  color: #096dd9;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 10px;
+}
+
+.address-family-indicator,
+.summary-status {
+  margin: 0;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 18px;
+  border-radius: 10px;
+}
+
+.address-popover {
+  min-width: 310px;
+  max-width: 520px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.address-popover-header,
+.address-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.address-popover-header {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.address-popover-row {
+  margin: 5px 0;
+}
+
+.address-popover-row .ant-tag {
+  min-width: 42px;
+  margin: 0;
+  font-size: 10px;
+  text-align: center;
 }
 </style>

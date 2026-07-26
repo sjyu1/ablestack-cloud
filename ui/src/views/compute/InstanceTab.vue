@@ -59,7 +59,7 @@
         <NicsTab :resource="vm"/>
       </a-tab-pane>
       <a-tab-pane
-        :tab="$t('label.guest.network')"
+        :tab="$t('label.vm.ip.configuration')"
         key="guestnetwork"
         v-if="resource.hypervisor === 'KVM' && 'getVirtualMachineGuestNetworkState' in $store.getters.apis">
         <GuestNetworkTab :resource="vm"/>

@@ -133,7 +133,7 @@ route별로 가능한 범위에서 다음 필드를 보존한다.
 
 ## 8. UI
 
-VM 상세 `게스트 네트워크` 탭 아래에 routing table을 추가했다.
+VM 상세 `IP 구성` 탭 아래에 routing table을 추가했다.
 
 - default route 강조
 - IPv4/IPv6 색상 구분
@@ -220,11 +220,34 @@ git diff --check
 
 기존 KVM plugin POM의 중복 `org.json:json` 경고와 Browserslist DB 갱신 안내는 이번 변경과 무관한 기존 경고다.
 
-## 11. 배포 상태와 다음 단계
+## 11. 22.x 사후 preflight와 보완 설계
 
-- local WSL 작업 트리에만 구현했다.
-- commit, push, PR은 수행하지 않았다.
-- 공용 22.x management/UI/host에 배포하지 않았다.
-- service restart와 DB migration은 수행하지 않았다.
+2026-07-26 실제 22.x QGA 7.2.22에서 route fallback의 OS 계열 판별
+결함을 확인했다.
 
-다음 단계는 Phase 5의 DNS 수집과 UI 구현이다.
+- Debian VM은 `guest-exec`, `guest-exec-status`, `guest-get-osinfo`가
+  모두 enabled였다.
+- `guest-get-osinfo`는 `id=debian`, `kernel-name` 미제공,
+  `pretty-name=Debian GNU/Linux 12 (bookworm)`를 반환했다.
+- 기존 `normalizedOs.contains("linux")`는 `debian`을 거부하므로 고정
+  route adapter에 도달하지 못한다.
+- 동일 VM에서 `/usr/sbin/ip -j -4 route show table all`은 exit 0,
+  유효한 JSON route 10건을 반환했다.
+- `/usr/sbin/ip -j -6 route show table all`도 exit 0과 유효한 빈
+  JSON 배열을 반환했다.
+
+Phase 4 사후 보완으로 문자열 포함 판별을 명시적 fail-closed OS family
+resolver로 교체했다. Debian/Ubuntu/Rocky/CentOS/Windows/unsupported
+회귀 테스트와 22.x Debian 단일 VM gate를 통과했으며, 실제 IPv4/IPv6
+route 명령 결과에서 route 10개가 `OK`로 저장됐다.
+
+상세 설계는
+`docs/guest_network_observability_os_family_design.md`를 따른다.
+
+## 12. 현재 배포 상태
+
+- Host 3 기존 KVM plugin JAR에 OS family 관련 class 19개만 patch했다.
+- `mold-agent.service` 재시작 후 ReadyAnswer와 기존 stats를 확인했다.
+- 대상 Debian VM에서 route 10개와 DNS 서버 2개가 모두 `OK`로 저장됐다.
+- Ubuntu fixture 검증은 통과했지만 실행 표본이 없어 실제 VM gate는 남아 있다.
+- commit, push, PR은 이번 보완 구현 단계에서 수행하지 않았다.

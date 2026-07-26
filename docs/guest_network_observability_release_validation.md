@@ -156,3 +156,27 @@ upgrade: dde3246a9059941fa4acb34013e2d16593f93c307b40d9ff1f5e850cba6837d9
 
 세부 수치, 배포 SHA-256, 발견 사항과 rollback 정보는
 `docs/guest_network_observability_22x_pilot_report.md`에 기록했다.
+
+## 7. QGA OS family 사후 preflight
+
+2026-07-26 배포 UI 확인 과정에서 Debian route/DNS가
+`Unsupported guest OS ... debian`으로 표시되는 원인을 재검증했다.
+
+- 실제 QGA capability와 고정 guest-exec route/DNS 명령은 정상이다.
+- QGA 7.2.22는 `id=debian`을 반환하고 `kernel-name`을 제공하지 않았다.
+- 기존 production 코드는 OS ID에 `linux` 문자열이 포함된 경우만 Linux
+  adapter를 선택하므로 Debian/Rocky/CentOS를 실행 전에 거부한다.
+- 실제 Debian VM에서 IPv4 route JSON 10건과 `/etc/resolv.conf` 읽기를
+  확인했다.
+
+기존 migration, API/UI, command allowlist 및 부하 검증을 유지하면서
+fail-closed OS family resolver를 구현했다. KVM 관련 테스트 38개와
+Management collector 테스트 12개가 통과했다.
+
+Host 3 단일 VM 최소 배포 후 Debian 대상의 최종 snapshot은 전체 `OK`,
+interface `OK` 2개, route `OK` 10개, DNS `OK` 서버 2개
+(`source=resolv.conf`)다. Ubuntu 실행 표본은 현재 22.x에 없어 자동
+fixture 검증은 완료하고 후속 실환경 gate를 남긴다.
+
+상세 변경 범위와 수락 조건은
+`docs/guest_network_observability_os_family_design.md`에 기록했다.

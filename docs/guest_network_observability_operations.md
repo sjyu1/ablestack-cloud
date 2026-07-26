@@ -34,7 +34,7 @@ VM, 볼륨, NIC와 기존 VM 통계 명령에 관측 payload를 결합하지 않
 
 ## 2. 사용자 화면 해석
 
-VM 목록의 게스트 네트워크 요약과 상세의 `게스트 네트워크` 탭에서 다음을 확인한다.
+VM 목록의 게스트 네트워크 요약과 상세의 `IP 구성` 탭에서 다음을 확인한다.
 
 - Cloud 관리 IP와 게스트에서 실제 관측한 IP는 별도 영역이다.
 - 한 인터페이스의 여러 IPv4/IPv6와 prefix가 모두 표시된다.
@@ -44,6 +44,13 @@ VM 목록의 게스트 네트워크 요약과 상세의 `게스트 네트워크`
 - `STALE`은 마지막 성공값을 보존한 상태이며 마지막 성공 시각을 함께 확인해야 한다.
 - `UNSUPPORTED`는 QGA/게스트 도구가 해당 section을 제공하지 않는 상태다.
 - `PARTIAL`은 일부 section 실패 또는 안전 상한으로 데이터가 잘린 상태다.
+
+`Unsupported guest OS for route fallback: <id>` 또는
+`Unsupported guest OS for DNS fallback: <id>`는 guest-exec command
+allowlist 거부와 구분한다. 이 메시지는 capability와 OS 정보 조회를 통과한
+뒤 OS family resolver가 adapter를 선택하지 못했다는 뜻이다. 배포판 ID,
+QGA OS 정보와 resolver 지원 여부를 먼저 확인하고 guest 내부 권한 문제로
+단정하지 않는다.
 
 ## 3. 변경 artifact
 
@@ -94,8 +101,23 @@ fresh schema와 Europa upgrade를 각각 실제 적용하고 `SHOW CREATE TABLE`
 4. Management Server를 재시작하고 기존 VM 목록, VM stats, Agent 연결을 먼저 확인한다.
 5. host 한 대에 기존 배포 jar 백업 기반으로 Agent/KVM 변경 class만 반영한다.
 6. 해당 host의 `mold-agent.service`를 재시작하고 ReadyAnswer, stats 수신을 확인한다.
-7. UI 정적 artifact를 반영하고 기존 화면 회귀를 확인한다.
-8. 아래처럼 실제 DB ID를 사용해 zone/host allowlist와 최소 상한을 먼저 설정한다.
+7. UI 정적 artifact만 반영하고 기존 화면 회귀를 확인한다.
+   - `/usr/share/cloudstack-management/webapp` 전체를 삭제하거나 교체하지 않는다.
+   - backend servlet/resource가 있는 기존 `WEB-INF`는 반드시 보존한다.
+   - 배포 후 UI HTTP 200뿐 아니라 비인증 API가 JSON `401`을 반환하는지
+     확인한다. API `404`이면 `WEB-INF` 누락 여부를 먼저 점검한다.
+8. 기능 활성화 전에 파일럿 VM의 `guest-info`, `guest-get-osinfo`와
+   고정 route/DNS 명령을 읽기 전용으로 preflight한다.
+   - Debian과 Ubuntu는 각각 `id=debian`, `id=ubuntu`가 Linux family로
+     분류되는지 확인한다.
+   - 실제 22.x QGA 7.2.22는 `kernel-name`을 제공하지 않을 수 있으므로
+     이 필드만으로 판별하지 않는다.
+   - `ip -j` 출력의 exit code와 JSON validity를 확인한다.
+   - DNS는 `resolvectl` → `nmcli` → `/etc/resolv.conf` 순으로 실제
+     사용 가능한 source를 확인한다.
+   - Ubuntu 실행 표본이 없으면 미검증으로 기록하고 Debian 한 VM으로
+     파일럿 범위를 제한한다.
+9. 아래처럼 실제 DB ID를 사용해 zone/host allowlist와 최소 상한을 먼저 설정한다.
 
 ```text
 vm.guest.network.details.enabled=false
@@ -107,8 +129,8 @@ vm.guest.network.details.max.vms.per.host.cycle=1
 vm.guest.network.details.exec.fallback.enabled=false
 ```
 
-9. baseline을 확보한 뒤 기능을 `true`로 바꾸고 Management Server를 재시작한다.
-10. 15분 이상 수락 gate를 측정한 뒤 VM 상한을 1 → 5 → 10 순으로만 확장한다.
+10. baseline을 확보한 뒤 기능을 `true`로 바꾸고 Management Server를 재시작한다.
+11. 15분 이상 수락 gate를 측정한 뒤 VM 상한을 1 → 5 → 10 순으로만 확장한다.
 
 `host.ids`와 `zone.ids`는 Cloud API UUID가 아니라 DB의 양의 숫자 ID다.
 
@@ -167,3 +189,4 @@ slow/timeout QGA를 재현할 때는 파일럿 VM만 대상으로 하고, 동시
 - off/on 측정 구간과 p95/CPU/queue/write/section 결과
 - ReadyAnswer, 기존 VM stats, VM/volume/NIC 회귀 결과
 - rollback 실행 여부와 백업 위치
+- QGA OS ID/family 판별 source와 Debian/Ubuntu preflight 결과

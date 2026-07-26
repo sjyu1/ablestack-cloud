@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -46,6 +47,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.cloud.agent.AgentManager;
 import com.cloud.agent.api.GetVmGuestNetworkStateAnswer;
 import com.cloud.agent.api.GetVmGuestNetworkStateCommand;
+import com.cloud.agent.api.VmGuestNetworkSectionStatus;
 import com.cloud.agent.api.VmGuestNetworkState;
 import com.cloud.hypervisor.Hypervisor.HypervisorType;
 import com.cloud.utils.db.GlobalLock;
@@ -289,6 +291,35 @@ public class VmGuestNetworkCollectorTest {
         verifyNoInteractions(nicDao);
     }
 
+    @Test
+    public void testPersistenceMergeDoesNotExtendNotDueSectionBackoff() {
+        VMInstanceVO vm = vm(1L, "vm-one", HypervisorType.KVM);
+        collector.markRouteNotDue(1L);
+        collector.markDnsNotDue(1L);
+        long nextRouteAt = collector.getNextRouteAt(1L);
+        long nextDnsAt = collector.getNextDnsAt(1L);
+        when(agentManager.easySend(eq(HOST_ID), any(GetVmGuestNetworkStateCommand.class)))
+                .thenAnswer(invocation -> {
+                    VmGuestNetworkState state = successState("vm-one", true);
+                    state.putSectionStatus("interfaces", new VmGuestNetworkSectionStatus("OK"));
+                    state.putSectionStatus("routes", new VmGuestNetworkSectionStatus("NOT_DUE"));
+                    state.putSectionStatus("dns", new VmGuestNetworkSectionStatus("NOT_DUE"));
+                    return new GetVmGuestNetworkStateAnswer(invocation.getArgument(1),
+                            Collections.singletonMap("vm-one", state), Collections.emptyMap());
+                });
+        doAnswer(invocation -> {
+            VmGuestNetworkState persisted = invocation.getArgument(1);
+            persisted.putSectionStatus("routes", new VmGuestNetworkSectionStatus("UNSUPPORTED"));
+            persisted.putSectionStatus("dns", new VmGuestNetworkSectionStatus("UNSUPPORTED"));
+            return null;
+        }).when(stateService).persistSuccess(eq(1L), any(), any());
+
+        collector.collectBatch(HOST_ID, Collections.singletonList(vm));
+
+        assertEquals(nextRouteAt, collector.getNextRouteAt(1L));
+        assertEquals(nextDnsAt, collector.getNextDnsAt(1L));
+    }
+
     private GetVmGuestNetworkStateAnswer successfulAnswer(
             GetVmGuestNetworkStateCommand command, String vmName, boolean includeCapability) {
         VmGuestNetworkState state = successState(vmName, includeCapability);
@@ -347,6 +378,14 @@ public class VmGuestNetworkCollectorTest {
 
         void markDnsNotDue(long vmId) {
             policy.recordDnsSuccess(vmId, System.currentTimeMillis(), 600, 0);
+        }
+
+        long getNextRouteAt(long vmId) {
+            return policy.getNextRouteAt(vmId);
+        }
+
+        long getNextDnsAt(long vmId) {
+            return policy.getNextDnsAt(vmId);
         }
 
         @Override

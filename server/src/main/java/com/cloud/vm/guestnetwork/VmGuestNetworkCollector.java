@@ -311,9 +311,11 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
                 continue;
             }
             Date observedAt = state.getObservedAt() > 0 ? new Date(state.getObservedAt()) : new Date(now);
+            Map<String, VmGuestNetworkSectionStatus> collectedSectionStatuses =
+                    new LinkedHashMap<>(state.getSectionStatuses());
             try {
                 stateService.persistSuccess(vm.getId(), state, observedAt);
-                recordSectionSchedules(vm.getId(), state, now);
+                recordSectionSchedules(vm.getId(), collectedSectionStatuses, now);
             } catch (RuntimeException e) {
                 LOGGER.warn("Unable to persist guest network state for VM [{}]", vm.getId(), e);
                 recordFailure(vm, state, "PERSISTENCE_FAILED",
@@ -453,8 +455,9 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
         }
     }
 
-    private void recordSectionSchedules(long vmId, VmGuestNetworkState state, long now) {
-        VmGuestNetworkSectionStatus interfaceStatus = state.getSectionStatuses().get("interfaces");
+    private void recordSectionSchedules(long vmId,
+            Map<String, VmGuestNetworkSectionStatus> sectionStatuses, long now) {
+        VmGuestNetworkSectionStatus interfaceStatus = sectionStatuses.get("interfaces");
         if (interfaceStatus != null && !"NOT_DUE".equals(interfaceStatus.getStatus())) {
             if (isSuccessfulSection(interfaceStatus)) {
                 policy.recordInterfaceSuccess(vmId, now, getInterfaceInterval(), getJitterPercent());
@@ -463,7 +466,7 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
                         getFailureBackoffMax(), getJitterPercent());
             }
         }
-        VmGuestNetworkSectionStatus routeStatus = state.getSectionStatuses().get("routes");
+        VmGuestNetworkSectionStatus routeStatus = sectionStatuses.get("routes");
         if (routeStatus != null && !"NOT_DUE".equals(routeStatus.getStatus())) {
             if (isSuccessfulSection(routeStatus)) {
                 policy.recordRouteSuccess(vmId, now, getRouteInterval(), getJitterPercent());
@@ -472,7 +475,7 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
                         getFailureBackoffMax(), getJitterPercent());
             }
         }
-        VmGuestNetworkSectionStatus dnsStatus = state.getSectionStatuses().get("dns");
+        VmGuestNetworkSectionStatus dnsStatus = sectionStatuses.get("dns");
         if (dnsStatus != null && !"NOT_DUE".equals(dnsStatus.getStatus())) {
             if (isSuccessfulSection(dnsStatus)) {
                 policy.recordDnsSuccess(vmId, now, getDnsInterval(), getJitterPercent());

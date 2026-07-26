@@ -65,19 +65,23 @@ public class QemuGuestDnsFallback {
         this.parser = parser;
     }
 
-    public DnsParseResult collect(AgentCommandExecutor executor, String osId,
+    public DnsParseResult collect(AgentCommandExecutor executor, QemuGuestOsFamilyResolution os,
             int timeoutSeconds, int maxOutputBytes) throws Exception {
-        String normalizedOs = osId == null ? "" : osId.toLowerCase(Locale.ROOT);
-        if (normalizedOs.contains("linux")) {
-            return collectLinux(executor, timeoutSeconds, maxOutputBytes);
+        if (os != null) {
+            switch (os.getFamily()) {
+                case LINUX:
+                    return collectLinux(executor, timeoutSeconds, maxOutputBytes);
+                case WINDOWS:
+                    String output = execute(executor, WINDOWS_POWERSHELL, WINDOWS_ARGS,
+                            timeoutSeconds, maxOutputBytes);
+                    return parser.parseWindows(output);
+                case UNSUPPORTED:
+                default:
+                    break;
+            }
         }
-        if (normalizedOs.contains("windows") || normalizedOs.contains("mswindows")
-                || normalizedOs.contains("win32")) {
-            String output = execute(executor, WINDOWS_POWERSHELL, WINDOWS_ARGS,
-                    timeoutSeconds, maxOutputBytes);
-            return parser.parseWindows(output);
-        }
-        throw new UnsupportedOperationException("Unsupported guest OS for DNS fallback: " + osId);
+        throw new UnsupportedOperationException("Unsupported guest OS for DNS fallback: "
+                + (os == null ? "id=-, kernel-name=-, name=-, pretty-name=-" : os.describe()));
     }
 
     private DnsParseResult collectLinux(AgentCommandExecutor executor,
