@@ -47,6 +47,28 @@ public class VmGuestNetworkStateVO {
     @Column(name = "qga_version")
     private String qgaVersion;
 
+    @Column(name = "collector_build_id")
+    private String collectorBuildId;
+
+    @Column(name = "collector_host_id")
+    private Long collectorHostId;
+
+    @Column(name = "capability_hash")
+    private String capabilityHash;
+
+    @Column(name = "guest_tools_version")
+    private String guestToolsVersion;
+
+    @Column(name = "qga_policy_mode")
+    private String qgaPolicyMode;
+
+    @Column(name = "readiness_status")
+    private String readinessStatus;
+
+    @Column(name = "readiness_checked_at")
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date readinessCheckedAt;
+
     @Column(name = "observed_at", nullable = false)
     @Temporal(TemporalType.TIMESTAMP)
     private Date observedAt;
@@ -116,6 +138,62 @@ public class VmGuestNetworkStateVO {
 
     public void setQgaVersion(String qgaVersion) {
         this.qgaVersion = qgaVersion;
+    }
+
+    public String getCollectorBuildId() {
+        return collectorBuildId;
+    }
+
+    public void setCollectorBuildId(String collectorBuildId) {
+        this.collectorBuildId = collectorBuildId;
+    }
+
+    public Long getCollectorHostId() {
+        return collectorHostId;
+    }
+
+    public void setCollectorHostId(Long collectorHostId) {
+        this.collectorHostId = collectorHostId;
+    }
+
+    public String getCapabilityHash() {
+        return capabilityHash;
+    }
+
+    public void setCapabilityHash(String capabilityHash) {
+        this.capabilityHash = capabilityHash;
+    }
+
+    public String getGuestToolsVersion() {
+        return guestToolsVersion;
+    }
+
+    public void setGuestToolsVersion(String guestToolsVersion) {
+        this.guestToolsVersion = guestToolsVersion;
+    }
+
+    public String getQgaPolicyMode() {
+        return qgaPolicyMode;
+    }
+
+    public void setQgaPolicyMode(String qgaPolicyMode) {
+        this.qgaPolicyMode = qgaPolicyMode;
+    }
+
+    public String getReadinessStatus() {
+        return readinessStatus;
+    }
+
+    public void setReadinessStatus(String readinessStatus) {
+        this.readinessStatus = readinessStatus;
+    }
+
+    public Date getReadinessCheckedAt() {
+        return readinessCheckedAt;
+    }
+
+    public void setReadinessCheckedAt(Date readinessCheckedAt) {
+        this.readinessCheckedAt = readinessCheckedAt;
     }
 
     public Date getObservedAt() {

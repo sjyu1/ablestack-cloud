@@ -108,6 +108,13 @@ CREATE TABLE IF NOT EXISTS `cloud`.`vm_guest_network_state` (
     `schema_version` smallint unsigned NOT NULL DEFAULT 1 COMMENT 'Guest network payload schema version',
     `status` varchar(32) NOT NULL COMMENT 'Current collection status',
     `qga_version` varchar(64) COMMENT 'Last observed QEMU guest agent version',
+    `collector_build_id` varchar(128) COMMENT 'Collector build or manifest identifier',
+    `collector_host_id` bigint unsigned COMMENT 'Host that produced the snapshot',
+    `capability_hash` char(64) COMMENT 'SHA-256 of enabled QGA capabilities',
+    `guest_tools_version` varchar(64) COMMENT 'ABLESTACK guest tools version',
+    `qga_policy_mode` varchar(16) COMMENT 'Observed QGA RPC policy mode',
+    `readiness_status` varchar(32) COMMENT 'Guest tools readiness status',
+    `readiness_checked_at` datetime COMMENT 'Last readiness check time',
     `observed_at` datetime NOT NULL COMMENT 'Last collection attempt time',
     `last_success_at` datetime COMMENT 'Last successful collection time',
     `payload_hash` char(64) COMMENT 'SHA-256 of canonical payload',
@@ -120,4 +127,38 @@ CREATE TABLE IF NOT EXISTS `cloud`.`vm_guest_network_state` (
     CONSTRAINT `uc_vm_guest_network_state__vm_id` UNIQUE (`vm_id`),
     CONSTRAINT `fk_vm_guest_network_state__vm_id` FOREIGN KEY `fk_vm_guest_network_state__vm_id` (`vm_id`) REFERENCES `vm_instance` (`id`) ON DELETE CASCADE,
     INDEX `i_vm_guest_network_state__status_observed_at` (`status`, `observed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.vm_guest_network_state','collector_build_id', 'varchar(128) COMMENT "Collector build or manifest identifier"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.vm_guest_network_state','collector_host_id', 'bigint unsigned COMMENT "Host that produced the snapshot"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.vm_guest_network_state','capability_hash', 'char(64) COMMENT "SHA-256 of enabled QGA capabilities"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.vm_guest_network_state','guest_tools_version', 'varchar(64) COMMENT "ABLESTACK guest tools version"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.vm_guest_network_state','qga_policy_mode', 'varchar(16) COMMENT "Observed QGA RPC policy mode"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.vm_guest_network_state','readiness_status', 'varchar(32) COMMENT "Guest tools readiness status"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.vm_guest_network_state','readiness_checked_at', 'datetime COMMENT "Last readiness check time"');
+
+CREATE TABLE IF NOT EXISTS `cloud`.`vm_guest_network_section_state` (
+    `id` bigint unsigned NOT NULL auto_increment,
+    `vm_id` bigint unsigned NOT NULL,
+    `section` varchar(32) NOT NULL,
+    `status` varchar(32) NOT NULL DEFAULT 'NOT_COLLECTED',
+    `source` varchar(64),
+    `observed_at` datetime,
+    `last_success_at` datetime,
+    `next_due_at` datetime NOT NULL,
+    `failure_count` smallint unsigned NOT NULL DEFAULT 0,
+    `error_code` varchar(64),
+    `error_message` varchar(255),
+    `payload_hash` char(64),
+    `payload` mediumtext,
+    `lease_owner` varchar(128),
+    `lease_until` datetime,
+    `created` datetime NOT NULL,
+    `updated` datetime NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uc_vm_guest_network_section__vm_section` (`vm_id`, `section`),
+    KEY `i_vm_guest_network_section__due_lease` (`next_due_at`, `lease_until`),
+    KEY `i_vm_guest_network_section__vm_status` (`vm_id`, `status`),
+    CONSTRAINT `fk_vm_guest_network_section__vm_id`
+      FOREIGN KEY (`vm_id`) REFERENCES `vm_instance` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

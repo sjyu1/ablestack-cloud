@@ -286,6 +286,8 @@
 
     <bean id="vmGuestNetworkStateServiceImpl" class="com.cloud.vm.guestnetwork.VmGuestNetworkStateServiceImpl" />
 
+    <bean id="vmGuestNetworkScheduleServiceImpl" class="com.cloud.vm.guestnetwork.VmGuestNetworkScheduleServiceImpl" />
+
     <bean id="vmGuestNetworkCollector" class="com.cloud.vm.guestnetwork.VmGuestNetworkCollector" />
 
     <bean id="storagePoolAutomationImpl" class="com.cloud.storage.StoragePoolAutomationImpl" />

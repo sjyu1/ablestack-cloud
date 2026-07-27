@@ -227,6 +227,7 @@
   <bean id="vMSnapshotDetailsDaoImpl" class="com.cloud.vm.snapshot.dao.VMSnapshotDetailsDaoImpl" />
   <bean id="vmStatsDaoImpl" class="com.cloud.vm.dao.VmStatsDaoImpl" />
   <bean id="vmGuestNetworkStateDaoImpl" class="com.cloud.vm.dao.VmGuestNetworkStateDaoImpl" />
+  <bean id="vmGuestNetworkSectionStateDaoImpl" class="com.cloud.vm.dao.VmGuestNetworkSectionStateDaoImpl" />
   <bean id="vMTemplateDetailsDaoImpl" class="com.cloud.storage.dao.VMTemplateDetailsDaoImpl" />
   <bean id="vMTemplatePoolDaoImpl" class="com.cloud.storage.dao.VMTemplatePoolDaoImpl" />
   <bean id="vMTemplateZoneDaoImpl" class="com.cloud.storage.dao.VMTemplateZoneDaoImpl" />

@@ -38,6 +38,18 @@ public class GuestNetworkAddressResponse extends BaseResponse {
     @Param(description = "Address scope such as global, private, link-local, or loopback")
     private String scope;
 
+    @SerializedName("role")
+    @Param(description = "QGA-observed address role: PRIMARY, SECONDARY, or UNKNOWN")
+    private String role;
+
+    @SerializedName("rolesource")
+    @Param(description = "Source used to determine the QGA address role")
+    private String roleSource;
+
+    @SerializedName("representative")
+    @Param(description = "Whether this is the QGA-selected representative address")
+    private boolean representative;
+
     public String getFamily() {
         return family;
     }
@@ -68,5 +80,29 @@ public class GuestNetworkAddressResponse extends BaseResponse {
 
     public void setScope(String scope) {
         this.scope = scope;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public String getRoleSource() {
+        return roleSource;
+    }
+
+    public void setRoleSource(String roleSource) {
+        this.roleSource = roleSource;
+    }
+
+    public boolean isRepresentative() {
+        return representative;
+    }
+
+    public void setRepresentative(boolean representative) {
+        this.representative = representative;
     }
 }

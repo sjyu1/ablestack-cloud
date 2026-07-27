@@ -18,20 +18,21 @@
 <template>
   <div class="guest-network-summary">
     <div class="summary-line summary-line-compact">
-      <a-tooltip :title="$t('label.cloud.ip')">
-        <span class="summary-source">C</span>
+      <a-tooltip v-if="primaryAddress" :title="primaryAddressTooltip">
+        <span class="primary-address">
+          <copy-label :label="primaryAddress.address" />
+        </span>
       </a-tooltip>
-      <copy-label v-if="cloudAddress" :label="cloudAddress" />
       <span v-else>-</span>
-      <span class="summary-separator"></span>
-      <a-tooltip :title="$t('label.guest.ip')">
-        <span class="summary-source summary-source-guest">G</span>
+      <a-tooltip
+        v-if="isCloudFallback"
+        :title="$t('message.representative.ip.cloud.fallback')">
+        <a-tag
+          class="cloud-fallback"
+          color="default">
+          {{ $t('label.cloud.ip') }}
+        </a-tag>
       </a-tooltip>
-      <copy-label
-        v-if="primaryAddress"
-        class="primary-address"
-        :label="primaryAddress.address" />
-      <span v-else>-</span>
       <a-popover
         v-if="remainingAddressCount > 0"
         overlayClassName="guest-network-summary-popover"
@@ -53,6 +54,9 @@
                 {{ item.family }}
               </a-tag>
               <copy-label :label="item.address" />
+              <a-tag v-if="item.representative" class="popover-role" color="blue">
+                {{ $t('label.representative') }}
+              </a-tag>
             </div>
           </div>
         </template>
@@ -91,6 +95,10 @@ export default {
       type: String,
       default: ''
     },
+    cloudNics: {
+      type: Array,
+      default: () => []
+    },
     summary: {
       type: Object,
       default: () => ({})
@@ -98,20 +106,64 @@ export default {
   },
   computed: {
     allAddresses () {
-      return [
+      const addresses = [
         ...(this.summary.ipv4addresses || []).map(address => ({ family: 'IPv4', address })),
         ...(this.summary.ipv6addresses || []).map(address => ({ family: 'IPv6', address }))
       ]
+      const seen = new Set()
+      return addresses.filter(item => {
+        const key = this.normalizedAddress(item.address)
+        if (!key || seen.has(key)) {
+          return false
+        }
+        seen.add(key)
+        return true
+      }).map(item => ({
+        ...item,
+        representative: this.primaryAddress &&
+          this.normalizedAddress(item.address) ===
+            this.normalizedAddress(this.primaryAddress.address)
+      }))
+    },
+    cloudPrimaryAddress () {
+      const active = (this.cloudNics || []).filter(nic => nic.linkstate !== false)
+      const defaultNic = active.find(nic => nic.isdefault) || active[0]
+      if (defaultNic) {
+        return defaultNic.ipaddress || defaultNic.ip6address || ''
+      }
+      return String(this.cloudAddress || '').split(',')[0].trim()
     },
     primaryAddress () {
-      return this.allAddresses.find(item => item.family === 'IPv4' && this.isPreferredAddress(item.address)) ||
-        this.allAddresses.find(item => item.family === 'IPv6' && this.isPreferredAddress(item.address)) ||
-        this.allAddresses.find(item => this.isNonLoopbackAddress(item.address)) ||
-        this.allAddresses[0] ||
-        null
+      if (this.summary.representativeaddress) {
+        const prefix = this.summary.representativeprefix
+        return {
+          family: this.summary.representativefamily || 'IPv4',
+          address: prefix === null || prefix === undefined
+            ? this.summary.representativeaddress
+            : this.summary.representativeaddress + '/' + prefix,
+          source: 'QGA'
+        }
+      }
+      if (this.cloudPrimaryAddress) {
+        return {
+          family: this.cloudPrimaryAddress.includes(':') ? 'IPv6' : 'IPv4',
+          address: this.cloudPrimaryAddress,
+          source: 'CLOUD'
+        }
+      }
+      return null
+    },
+    isCloudFallback () {
+      return this.primaryAddress?.source === 'CLOUD'
     },
     remainingAddressCount () {
-      return Math.max(0, this.allAddresses.length - (this.primaryAddress ? 1 : 0))
+      if (!this.primaryAddress) {
+        return this.allAddresses.length
+      }
+      const included = this.allAddresses.some(item =>
+        this.normalizedAddress(item.address) ===
+          this.normalizedAddress(this.primaryAddress.address))
+      return Math.max(0, this.allAddresses.length - (included ? 1 : 0))
     },
     hasIpv6 () {
       return (this.summary.ipv6addresses || []).length > 0
@@ -146,22 +198,16 @@ export default {
       }
       return message + ' · ' + this.$t('label.guest.network.observed') + ': ' +
         this.$toLocaleDate(this.summary.observed)
+    },
+    primaryAddressTooltip () {
+      return this.primaryAddress.source === 'QGA'
+        ? this.$t('message.representative.ip.qga')
+        : this.$t('message.representative.ip.cloud.fallback')
     }
   },
   methods: {
     normalizedAddress (address) {
       return String(address || '').split('/')[0].toLowerCase()
-    },
-    isNonLoopbackAddress (address) {
-      const normalized = this.normalizedAddress(address)
-      return normalized !== '::1' && !normalized.startsWith('127.')
-    },
-    isPreferredAddress (address) {
-      const normalized = this.normalizedAddress(address)
-      return this.isNonLoopbackAddress(address) &&
-        normalized !== '0.0.0.0' &&
-        !normalized.startsWith('169.254.') &&
-        !normalized.startsWith('fe80:')
     }
   }
 }
@@ -169,7 +215,7 @@ export default {
 
 <style scoped lang="less">
 .guest-network-summary {
-  min-width: 330px;
+  min-width: 220px;
 }
 
 .summary-line {
@@ -183,35 +229,17 @@ export default {
   white-space: nowrap;
 }
 
-.summary-source {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  border: 1px solid #d9d9d9;
-  border-radius: 50%;
-  color: rgba(0, 0, 0, 0.45);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
-.summary-source-guest {
-  color: #096dd9;
-  border-color: #91d5ff;
-}
-
-.summary-separator {
-  width: 1px;
-  height: 18px;
-  margin: 0 2px;
-  background: #e8e8e8;
-}
-
 .primary-address {
-  color: rgba(0, 0, 0, 0.85);
+  color: inherit;
+}
+
+.cloud-fallback,
+.popover-role {
+  margin: 0;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 17px;
+  border-radius: 9px;
 }
 
 .summary-more {

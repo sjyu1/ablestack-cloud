@@ -190,3 +190,71 @@ slow/timeout QGA를 재현할 때는 파일럿 VM만 대상으로 하고, 동시
 - ReadyAnswer, 기존 VM stats, VM/volume/NIC 회귀 결과
 - rollback 실행 여부와 백업 위치
 - QGA OS ID/family 판별 source와 Debian/Ubuntu preflight 결과
+
+## 9. qemu-exec-tools 및 Agent 일관성 gate
+
+게스트 준비와 Host Agent 배포는 서로 다른 artifact gate로 관리한다.
+
+### 9.1 게스트 readiness
+
+향후 qemu-exec-tools 개선 버전에서는 다음 결과를 기록한다.
+
+```text
+agent_policy_fix --policy full --check --json
+agent_policy_fix --check-profile cloud-network-observability --json
+```
+
+확인 항목:
+
+- QGA package/service/version
+- `policyMode=FULL`
+- 지원 RPC 수, policy enabled 수, runtime disabled 목록
+- qemu-exec-tools/Helper/profile version
+- SELinux/AppArmor 상태
+- 실제 Helper address/route/DNS 결과
+
+전체 QGA RPC 허용 성공만으로 network profile을 `READY`로 판정하지 않는다.
+qemu-exec-tools 미설치 VM은 `TOOLS_NOT_INSTALLED`로 기록하고 Agent legacy fallback
+결과를 별도로 확인한다.
+
+### 9.2 Host Agent manifest
+
+각 host의 활성 `cloud-core`와 KVM plugin에서 기능 관련 class SHA-256을 기록한다.
+
+- `GetVmGuestNetworkStateCommand`
+- `VmGuestNetworkState`
+- `VmGuestIpAddress`
+- `LibvirtGetVmGuestNetworkStateCommandWrapper`
+- `QemuGuestOsFamilyResolver`
+- address/route/DNS/Helper source class
+
+Host 1·2·3 manifest가 다르면 기능 검증을 시작하지 않는다. shared 22.x에서는 현재
+runtime jar backup에 필요한 class만 patch하고 호스트별로 순차 재시작한다.
+
+### 9.3 실제 재수집
+
+- UI `새로고침`: DB snapshot 조회만 수행
+- UI `지금 재수집`: async API가 section schedule을 due로 변경
+- API thread는 Agent를 직접 호출하지 않음
+- refresh 전후 section `observed_at`을 비교해 실제 실행을 판정
+
+상세 절차와 DB lease/fingerprint 계약은
+`docs/guest_network_observability_integrated_improvement_design.md`를 따른다.
+
+## 10. 부분 section 실패 운영 규칙
+
+Agent answer에 VM별 `VmGuestNetworkState`가 있으면 최상위 상태가
+`UNAVAILABLE`이어도 구조화된 관측으로 처리한다.
+
+- `interfaces`, `routes`, `dns`, `readiness`를 section별로 저장·backoff한다.
+- 이번 요청에서 실패한 section만 `UNAVAILABLE` 또는 기존 성공 payload가 있으면
+  `STALE`로 만든다.
+- `NOT_DUE` section은 기존 payload와 마지막 성공 시각을 유지한다.
+- Agent transport 실패나 VM state 객체 부재만 `COLLECTION_FAILED` 전역 실패다.
+- 운영 확인은 aggregate 상태만 보지 않고 section의 `status`, `error_code`,
+  `observed_at`, `last_success_at`, `next_due_at`을 함께 조회한다.
+
+Rocky guest에서 `policyMode=FULL`과 `TOOLS_NOT_INSTALLED`가 동시에 표시되는 것은
+모순이 아니다. 전자는 QGA RPC 정책이고 후자는 Helper/security profile 준비 상태다.
+Host에 qemu-exec-tools를 설치해도 guest package는 자동 설치되지 않으므로,
+console/SSH/image provisioning 등 별도 privileged guest lifecycle로 설치한다.

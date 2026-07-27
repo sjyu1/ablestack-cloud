@@ -89,6 +89,8 @@ public class VmGuestNetworkApiServiceImplTest {
             assertEquals(1, response.getInterfaces().size());
             assertEquals(2, response.getInterfaces().get(0).getAddresses().size());
             assertEquals("IPv4", response.getInterfaces().get(0).getAddresses().get(0).getFamily());
+            assertEquals("PRIMARY", response.getInterfaces().get(0).getAddresses().get(0).getRole());
+            assertEquals(true, response.getInterfaces().get(0).getAddresses().get(0).isRepresentative());
             assertEquals("IPv6", response.getInterfaces().get(0).getAddresses().get(1).getFamily());
             assertEquals(1, response.getRoutes().size());
             assertEquals("IPv4", response.getRoutes().get(0).getFamily());
@@ -122,8 +124,19 @@ public class VmGuestNetworkApiServiceImplTest {
         assertEquals(Arrays.asList("10.10.22.10/24"), responses.get(41L).getIpv4Addresses());
         assertEquals(Arrays.asList("2001:db8::10/64"), responses.get(41L).getIpv6Addresses());
         assertEquals("STALE", responses.get(41L).getStatus());
+        assertEquals(null, responses.get(41L).getRepresentativeAddress());
         assertEquals("NOT_COLLECTED", responses.get(42L).getStatus());
         verify(stateDao).listByVmIds(Arrays.asList(41L, 42L));
+    }
+
+    @Test
+    public void testFreshSummaryPublishesOnlyQgaRepresentativeAddress() {
+        GuestNetworkSummaryResponse response = service.toSummaryResponse(snapshot(41L, "OK"));
+
+        assertEquals("10.10.22.10", response.getRepresentativeAddress());
+        assertEquals(Integer.valueOf(24), response.getRepresentativePrefix());
+        assertEquals("IPv4", response.getRepresentativeFamily());
+        assertEquals("QGA_LINUX_ADDRESS_FLAGS", response.getRepresentativeSource());
     }
 
     @Test
@@ -152,14 +165,16 @@ public class VmGuestNetworkApiServiceImplTest {
         snapshot.setStatus(status);
         snapshot.setLastSuccessAt(observed);
         snapshot.setPayload("{"
-                + "\"schemaVersion\":1,"
+                + "\"schemaVersion\":2,"
                 + "\"interfaces\":[{"
                 + "\"name\":\"eth0\","
                 + "\"hardwareAddress\":\"52:54:00:12:34:56\","
                 + "\"cloudNicId\":\"nic-uuid\","
                 + "\"loopback\":false,"
                 + "\"addresses\":["
-                + "{\"family\":\"IPv4\",\"address\":\"10.10.22.10\",\"prefix\":24,\"scope\":\"private\"},"
+                + "{\"family\":\"IPv4\",\"address\":\"10.10.22.10\",\"prefix\":24,"
+                + "\"scope\":\"private\",\"role\":\"PRIMARY\","
+                + "\"roleSource\":\"QGA_LINUX_ADDRESS_FLAGS\",\"representative\":true},"
                 + "{\"family\":\"IPv6\",\"address\":\"2001:db8::10\",\"prefix\":64,\"scope\":\"global\"}"
                 + "]}],"
                 + "\"routes\":[{\"family\":\"ipv4\",\"destination\":\"0.0.0.0\","

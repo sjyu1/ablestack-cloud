@@ -23,6 +23,7 @@ under the License.
 
 - 상태: 작업 기준 계획(Approved Baseline)
 - 작성일: 2026-07-24
+- 최근 변경: 2026-07-27(게스트 준비 도구 연계 및 수집 공정성 통합 개선 설계)
 - 작업 브랜치: `codex/guest-network-observability`
 - 기준 브랜치: `ablestack-europa`
 - 기준 커밋: `507c57b8696bf243a4138e45d7fecca0f78b1608`
@@ -55,6 +56,8 @@ under the License.
 - default route, destination/prefix, gateway 또는 next hop, interface, metric을 표시한다.
 - QGA 미설치, 연결 실패, 명령 미지원, 부분 성공, 오래된 정보 상태를 구분한다.
 - VM 목록에서는 IP 요약을, VM 상세에서는 전체 네트워크 상태를 제공한다.
+- QGA가 게스트 OS 내부의 주 IP를 확인할 수 있으면 Cloud 주소보다 우선해 가상머신 대표 IP로 사용한다.
+- NIC별 QGA 주·보조 IP와 Cloud 주·보조 IP 역할을 혼합하지 않고 함께 표시한다.
 
 ### 2.2 품질 목표
 
@@ -74,7 +77,7 @@ under the License.
 
 - 게스트 내부 IP, DNS 또는 route 설정 변경
 - 비 KVM 하이퍼바이저 지원
-- QGA 자동 설치 또는 업그레이드
+- Cloud Management/Agent가 QGA 또는 게스트 패키지를 직접 설치·업그레이드하는 기능
 - 게스트 네트워크 정보의 장기 이력 및 시계열 보관
 - 게스트 라우팅 테이블을 이용한 Cloud 네트워크 정책 자동 변경
 - 관측 주소를 이용한 포트 포워딩 또는 방화벽 규칙 자동 생성
@@ -99,6 +102,9 @@ UI는 다음을 구분해 표시한다.
 - address
 - prefix
 - scope: `global`, `private`, `link-local`, `loopback`, `multicast`, `other`
+- role: `PRIMARY`, `SECONDARY`, `UNKNOWN`
+- roleSource: 역할 판정 근거
+- representative: QGA가 선택한 가상머신 대표 주소 여부
 
 scope는 IP 값으로부터 서버에서 일관되게 계산하며, 원본 주소와 prefix는 변형하지 않는다.
 
@@ -128,8 +134,9 @@ QGA 버전 문자열만으로 명령 지원 여부를 판단하지 않는다. `g
 수집 우선순위는 다음과 같다.
 
 1. QGA 표준 읽기 명령
-2. 고정된 OS별 읽기 전용 `guest-exec` 어댑터
-3. 미지원 상태 반환
+2. `ablestack-qemu-exec-tools`의 versioned read-only Helper
+3. 고정된 OS별 읽기 전용 `guest-exec` 어댑터
+4. 미지원 상태 반환
 
 ### 4.6 UI, API, Backend/DB, Agent 계층 분리
 
@@ -196,21 +203,46 @@ dispatcher만으로 위 격리를 증명할 수 없으면 신규 수집용 execu
 5. capability 결과 캐시와 미지원/실패 VM exponential backoff
 6. interface, DNS, route의 서로 다른 수집 주기 적용
 7. 요청 시점에 이번 cycle에서 due인 section만 실행
-8. 동일 VM/host의 중복 실행 및 이전 cycle overlap 방지
-9. canonical payload hash가 같으면 큰 payload DB rewrite 생략
-10. 목록 API에는 작은 summary만 제공하고 DNS/route payload를 포함하지 않음
-11. 조회 API는 DB snapshot만 읽고 Agent 부하를 만들지 않음
+8. 단일 유효 주소는 추가 명령 없이 QGA 주 IP로 확정하고, 다중 주소 VM에만 고정 allowlist address-role `guest-exec` 실행
+9. 동일 VM/host의 중복 실행 및 이전 cycle overlap 방지
+10. canonical payload hash가 같으면 큰 payload DB rewrite 생략
+11. 목록 API에는 작은 summary만 제공하고 DNS/route payload를 포함하지 않음
+12. 조회 API는 DB snapshot만 읽고 Agent 부하를 만들지 않음
 
 주기를 줄이거나 동시성을 높이는 변경은 부하 측정 결과와 변경 사유를 이 문서에
 기록한 뒤 적용한다.
 
+### 4.9 qemu-exec-tools 게스트 준비 계층
+
+QGA의 파일 및 향후 게스트 자동화 기능을 보존하기 위해
+`ablestack-qemu-exec-tools`의 `policyMode=FULL`은 유지한다. 전체 RPC 허용과 Cloud
+네트워크 수집 준비 상태는 서로 다른 상태다.
+
+- qemu-exec-tools: QGA 전체 RPC 정책, 전용 read-only Helper, SELinux/AppArmor,
+  OS별 package lifecycle을 담당
+- Cloud Agent: Helper 또는 고정 fallback만 호출하고 게스트 설정을 변경하지 않음
+- Backend/DB: Helper/QGA/Agent fingerprint와 section별 schedule을 관리
+- API: 전체 정책 상태와 network readiness를 구분해 운영 진단 데이터로 제공
+- UI: readiness/collector/Helper 상세 카드는 노출하지 않고, 일부 OS에서 route/DNS
+  수집에 ABLESTACK 게스트 도구가 필요할 수 있다는 비에러성 안내만 제공
+
+Cloud Agent의 고정 command allowlist는 QGA 전체 RPC 정책을 축소하기 위한 것이 아니라
+네트워크 collector가 임의 명령을 만들지 못하도록 하는 코드 경계다. 파일 쓰기 등 향후
+기능은 별도 Agent command/API/RBAC로 구현하며 이 collector에 추가하지 않는다.
+
+상세 코드 계약과 22.x preflight는
+`docs/guest_network_observability_integrated_improvement_design.md`를 기준으로 한다.
+
 ## 5. 목표 데이터 계약
 
-스냅샷 payload의 초기 스키마 버전은 `1`이다.
+스냅샷 payload의 초기 스키마 버전은 `1`, 주·보조 IP 역할과 대표 IP를 추가한
+버전은 `2`다. qemu-exec-tools/readiness/collector metadata와 section별 시각을
+추가하는 목표 버전은 `3`이다. v1/v2 payload는 신규 필드를 optional로 읽어 하위
+호환한다.
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "vmId": "vm-uuid",
   "status": "PARTIAL",
   "observedAt": "2026-07-24T15:20:00+09:00",
@@ -244,13 +276,19 @@ dispatcher만으로 위 격리를 증명할 수 없으면 신규 수집용 execu
           "family": "IPv4",
           "address": "192.168.10.20",
           "prefix": 24,
-          "scope": "private"
+          "scope": "private",
+          "role": "PRIMARY",
+          "roleSource": "QGA_LINUX_ADDRESS_FLAGS",
+          "representative": true
         },
         {
           "family": "IPv4",
           "address": "192.168.10.21",
           "prefix": 24,
-          "scope": "private"
+          "scope": "private",
+          "role": "SECONDARY",
+          "roleSource": "QGA_LINUX_ADDRESS_FLAGS",
+          "representative": false
         },
         {
           "family": "IPv6",
@@ -323,6 +361,8 @@ OS 또는 QGA가 제공하지 않는 필드는 `null` 또는 생략으로 처리
 - `guest-exec` 지원 및 활성 상태
 
 capability 결과는 VM 단위로 짧게 캐시하되 VM 재부팅, agent 재연결 또는 TTL 만료 시 다시 조회한다.
+QGA capability, Agent build, Helper version/profile을 합친 fingerprint가 변경되면
+실패 또는 미지원 section의 backoff를 즉시 초기화한다.
 
 ### 6.2 인터페이스와 IP
 
@@ -414,7 +454,7 @@ DNS 정보에는 가능한 범위에서 다음을 보존한다.
 
 `/etc/resolv.conf`가 local stub만 제공하는 경우 source를 명시하고, 실제 upstream을 확인할 수 없으면 임의로 추정하지 않는다.
 
-### 6.5 안전한 guest-exec
+### 6.5 안전한 guest-exec 및 Helper
 
 - 외부 입력으로 실행 파일, 인수 또는 shell 문자열을 만들지 않는다.
 - 허용된 절대 경로와 인수 템플릿만 사용한다.
@@ -423,6 +463,9 @@ DNS 정보에는 가능한 범위에서 다음을 보존한다.
 - timeout 후 `guest-exec-status`를 정리한다.
 - 비정상 또는 잘린 JSON은 해당 section만 실패 처리한다.
 - generic guest command API는 추가하지 않는다.
+- Helper 호출 경로와 argument도 enum 기반 고정 allowlist로 관리한다.
+- address-role, route, DNS가 함께 due이면 Helper 결과 한 건을 cycle 내에서 공유한다.
+- Helper가 없거나 schema가 호환되지 않을 때만 기존 OS별 고정 fallback을 사용한다.
 
 ### 6.6 수집 주기
 
@@ -495,8 +538,11 @@ section 상태:
 - `EMPTY`
 - `UNSUPPORTED`
 - `DISABLED`
-- `ERROR`
-- `TIMEOUT`
+- `UNAVAILABLE`
+- `PARTIAL`
+- `STALE`
+- `NOT_DUE`
+- `NOT_COLLECTED`
 
 처리 원칙:
 
@@ -507,7 +553,9 @@ section 상태:
 
 ## 8. DB 변경 계획
 
-신규 테이블 `vm_guest_network_state`를 추가한다.
+기존 aggregate 테이블 `vm_guest_network_state`를 유지하고 section별 payload,
+시각, schedule, backoff, lease의 authoritative store로
+`vm_guest_network_section_state`를 추가한다.
 
 | 컬럼 | 형식 | 설명 |
 |---|---|---|
@@ -525,6 +573,19 @@ section 상태:
 | `created` | datetime | 생성 시각 |
 | `updated` | datetime | 갱신 시각 |
 
+aggregate 테이블에는 `collector_build_id`, `collector_host_id`,
+`capability_hash`, `guest_tools_version`, `qga_policy_mode`,
+`readiness_status`, `readiness_checked_at`을 추가한다.
+
+section 테이블 핵심 컬럼:
+
+- `vm_id`, `section` unique key
+- `status`, `source`
+- `observed_at`, `last_success_at`, `next_due_at`
+- `failure_count`, `error_code`, `error_message`
+- `payload_hash`, `payload`
+- `lease_owner`, `lease_until`
+
 DB 작업 원칙:
 
 - `vm_id` unique index를 둔다.
@@ -534,6 +595,11 @@ DB 작업 원칙:
 - payload는 schema version별 parser를 통해 읽는다.
 - 신규 upgrade SQL과 fresh schema 양쪽을 갱신한다.
 - 실제 적용 전 대상 DB 엔진에서 `MEDIUMTEXT`, index, foreign key 사용 방식을 검증한다.
+- global lock은 due work claim 동안만 보유하고 Agent I/O 전에 해제한다.
+- 오래된 `next_due_at`을 기준으로 host를 선택해 host ID starvation을 제거한다.
+
+정확한 DDL과 migration 순서는
+`docs/guest_network_observability_integrated_improvement_design.md`를 따른다.
 
 향후 게스트 IP 검색 요구가 생길 경우 별도의 `vm_guest_ip_address` 현재값 인덱스 테이블을 추가한다. 이번 구현에서는 검색용 테이블을 먼저 만들지 않는다.
 
@@ -565,6 +631,9 @@ agent wire 객체는 Gson 직렬화 호환성을 유지하고 기본 생성자�
 - DNS OS별 fallback
 - section별 오류 격리
 - 결과 크기 제한
+- QGA 표준/Helper/legacy fallback source 선택
+- 공통 bounded guest-exec launch/poll/decode
+- Agent build, Helper/readiness, 구조화 오류 반환
 
 신규 wrapper는 VM/volume/network device 변경 메서드를 호출하지 않는다. 기존
 `LibvirtComputingResource.getVmStat()`의 QGA 네트워크 파싱은 신규 수집기가 안정화된
@@ -587,6 +656,8 @@ agent wire 객체는 Gson 직렬화 호환성을 유지하고 기본 생성자�
 - section due schedule, jitter, backoff 및 queue metric 관리
 - VM lifecycle/device operation 중 수집 생략
 - 기능 비활성 시 동적 활성화용 단일 scheduler만 유휴 상태로 유지하고 worker와 Agent request를 생성하지 않음
+- oldest-due host/VM section을 DB lease로 짧게 claim한 뒤 global lock 해제
+- capability/Agent/Helper fingerprint 변경 시 실패 section만 즉시 retry
 
 ### 9.4 기존 대표 IP 호환
 
@@ -640,7 +711,8 @@ details=guestnetworksummary
 
 ### 10.3 즉시 갱신
 
-초기 필수 범위에는 넣지 않되, 기본 수집 안정화 후 다음 async API를 추가할 수 있다.
+화면의 DB 재조회와 실제 Agent 수집을 구분하기 위해 다음 async API를 필수 후속 범위로
+추가한다.
 
 ```text
 refreshVirtualMachineGuestNetworkState
@@ -648,8 +720,12 @@ refreshVirtualMachineGuestNetworkState
 
 - 별도 권한 등록
 - 중복 refresh 방지
-- async job 결과로 완료 여부 제공
+- VM별 cooldown과 pending request 합치기
+- section 선택적 refresh
+- schedule을 due로 만들고 실패 backoff 초기화
+- async job 결과로 접수 및 완료 여부 제공
 - read API와 분리
+- API thread에서 Agent/QGA를 직접 호출하지 않음
 
 ## 11. UI 계획
 
@@ -808,6 +884,11 @@ Ant Design table의 가로 스크롤을 사용한다.
 - 제한 초과 시 임의 절단 대신 `truncated=true`와 원래 개수 정보를 제공한다.
 - command stdout/stderr 전체를 management log에 기록하지 않는다.
 - IP, DNS, route 정보에 포함된 값을 shell 명령으로 재사용하지 않는다.
+- qemu-exec-tools는 향후 파일 기능을 위해 QGA 지원 RPC 전체를 허용한다.
+- 전체 QGA RPC 허용과 Cloud 네트워크 collector의 실행 allowlist를 혼동하지 않는다.
+- Cloud collector는 Helper와 고정 OS별 조회 operation 외 임의 guest-exec/file RPC를
+  사용하지 않는다.
+- 파일 작업 기능은 별도 Agent command/API/RBAC/audit 경계로 구현한다.
 
 초기 상한 제안:
 
@@ -1133,7 +1214,8 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 | 위험 | 대응 |
 |---|---|
 | 구버전 QGA의 route 미지원 | capability 검사와 제한된 fallback |
-| guest-exec 보안 위험 | 기본 비활성, 고정 allowlist, shell 금지 |
+| 전체 QGA RPC 허용의 오용 위험 | qemu-exec-tools는 FULL 정책을 유지하되 Cloud 기능별 Agent command/API/RBAC/audit를 분리 |
+| guest-exec 보안 위험 | Cloud collector 고정 operation allowlist, shell 금지, Helper 전용 SELinux/AppArmor |
 | QGA 응답 지연으로 stats 영향 | 전용 collector와 timeout |
 | Agent worker 고갈로 핵심 명령 지연 | 전용 bounded executor, 낮은 동시성, 포화 시 수집 생략 |
 | 수집 burst | deterministic jitter, cycle limit, host/VM 동시성 제한 |
@@ -1146,6 +1228,10 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 | stale 정보를 최신으로 오인 | 상태와 마지막 성공 시각 필수 표시 |
 | DB write 증가 | payload hash, 변경 시 payload 갱신 |
 | shared 환경 agent jar 불일치 | 기존 runtime 기준 최소 class 배포 |
+| Host ID 정렬 starvation | persisted oldest-due 선택과 section lease |
+| QGA 설정 변경 후 긴 backoff | capability/Helper/Agent fingerprint 변경 시 실패 section 즉시 retry |
+| 전체 observed 시각이 section freshness를 은폐 | section table에 attempt/success/next-due 저장 |
+| `/bin/true` 성공을 기능 준비 완료로 오판 | 실제 Helper 및 고정 수집 command preflight |
 
 ## 17. Definition of Done
 
@@ -1179,6 +1265,13 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 - [x] Debian/Ubuntu/Rocky/CentOS OS ID 회귀 테스트가 통과한다.
 - [x] 22.x Debian 단일 VM route/DNS 수집이 preflight 결과와 일치한다.
 - [ ] 22.x Ubuntu 실행 표본이 확보되면 Ubuntu 수집 gate를 통과한다.
+- [x] Host 1·2·3에 동일 source build의 Agent guest-network class set을 최소 배포하고 collector build ID를 확인한다.
+- [x] qemu-exec-tools FULL QGA policy와 network readiness가 별도 상태로 반환된다.
+- [x] Rocky SELinux enforcing QGA context에서 전용 Helper address/route/DNS 수집이 통과한다.
+- [x] qemu-exec-tools 미설치 VM이 legacy fallback과 정확한 readiness를 반환한다.
+- [x] oldest-due host 선택과 DB lease가 Host 3 starvation을 제거한다.
+- [x] section별 시각/backoff/error가 DB/API/UI에서 일치한다.
+- [x] DB 새로고침과 async 실제 재수집이 UI에서 분리된다.
 
 ## 18. 작업 진행 규칙
 
@@ -1197,6 +1290,7 @@ queue/write 측정은 artifact 배포 전에는 유효한 값을 만들 수 없�
 
 | 날짜 | 변경 | 사유 |
 |---|---|---|
+| 2026-07-27 | qemu-exec-tools FULL QGA 정책, 전용 Helper/SELinux, Agent source abstraction, persisted section schedule/lease, async 재수집을 통합한 상세 설계 반영 | 전체 RPC 허용 목적을 유지하면서 Rocky 실행 권한, Agent 배포 불일치, host starvation, section freshness 문제를 구조적으로 해결 |
 | 2026-07-26 | VM 목록 IP cell을 대표 주소 한 개, `+N` popover, IPv6 marker, 짧은 상태 tag의 단일 행 요약으로 재설계하고 일반/다크 테마 파일럿 추가 | 모든 주소 접근성을 유지하면서 IP column 폭과 행 높이를 줄이고 목록 비교성을 높이기 위함 |
 | 2026-07-26 | OS family resolver와 collector backoff 정합성 수정 구현, 22.x Debian 단일 VM 최소 배포 검증 완료 | route 10개와 DNS 서버 2개가 모두 `OK`로 저장되는 실제 기능 경로 확인 |
 | 2026-07-26 | QGA OS 계열 판별 결함과 코드 수준 개선 설계, 22.x Debian preflight 및 Ubuntu 후속 gate 반영 | 실제 QGA 배포판 ID가 `linux` 문자열을 포함하지 않아 route/DNS adapter에 도달하지 못하는 문제 보완 |

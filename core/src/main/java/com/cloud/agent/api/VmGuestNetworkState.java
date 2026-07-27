@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 public class VmGuestNetworkState {
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
 
     private int schemaVersion;
     private String vmName;
@@ -30,6 +30,10 @@ public class VmGuestNetworkState {
     private long observedAt;
     private boolean agentConnected;
     private String agentVersion;
+    private String collectorBuildId;
+    private Long collectorHostId;
+    private String capabilityHash;
+    private VmGuestToolsInfo guestTools;
     private Map<String, Boolean> capabilities;
     private Map<String, VmGuestNetworkSectionStatus> sectionStatuses;
     private List<VmGuestNetworkInterface> interfaces;
@@ -43,6 +47,7 @@ public class VmGuestNetworkState {
         interfaces = new ArrayList<>();
         dns = new VmGuestDnsState();
         routes = new ArrayList<>();
+        guestTools = new VmGuestToolsInfo();
     }
 
     public VmGuestNetworkState(String vmName) {
@@ -96,6 +101,38 @@ public class VmGuestNetworkState {
 
     public void setAgentVersion(String agentVersion) {
         this.agentVersion = agentVersion;
+    }
+
+    public String getCollectorBuildId() {
+        return collectorBuildId;
+    }
+
+    public void setCollectorBuildId(String collectorBuildId) {
+        this.collectorBuildId = collectorBuildId;
+    }
+
+    public Long getCollectorHostId() {
+        return collectorHostId;
+    }
+
+    public void setCollectorHostId(Long collectorHostId) {
+        this.collectorHostId = collectorHostId;
+    }
+
+    public String getCapabilityHash() {
+        return capabilityHash;
+    }
+
+    public void setCapabilityHash(String capabilityHash) {
+        this.capabilityHash = capabilityHash;
+    }
+
+    public VmGuestToolsInfo getGuestTools() {
+        return guestTools;
+    }
+
+    public void setGuestTools(VmGuestToolsInfo guestTools) {
+        this.guestTools = guestTools;
     }
 
     public Map<String, Boolean> getCapabilities() {

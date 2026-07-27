@@ -24,21 +24,26 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Date;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
 import org.apache.cloudstack.api.response.GuestNetworkAddressResponse;
+import org.apache.cloudstack.api.response.GuestNetworkCollectorResponse;
 import org.apache.cloudstack.api.response.GuestNetworkDnsConfigResponse;
 import org.apache.cloudstack.api.response.GuestNetworkDnsDomainResponse;
 import org.apache.cloudstack.api.response.GuestNetworkDnsResponse;
 import org.apache.cloudstack.api.response.GuestNetworkDnsServerResponse;
 import org.apache.cloudstack.api.response.GuestNetworkInterfaceResponse;
 import org.apache.cloudstack.api.response.GuestNetworkRouteResponse;
+import org.apache.cloudstack.api.response.GuestNetworkRefreshResponse;
 import org.apache.cloudstack.api.response.GuestNetworkSectionResponse;
 import org.apache.cloudstack.api.response.GuestNetworkStateResponse;
 import org.apache.cloudstack.api.response.GuestNetworkSummaryResponse;
+import org.apache.cloudstack.api.response.GuestToolsResponse;
+import org.apache.cloudstack.acl.SecurityChecker.AccessType;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.vm.guestnetwork.VmGuestNetworkApiService;
 import org.apache.commons.lang3.StringUtils;
@@ -59,6 +64,7 @@ import com.cloud.user.Account;
 import com.cloud.user.AccountManager;
 import com.cloud.vm.UserVmVO;
 import com.cloud.vm.VmGuestNetworkStateVO;
+import com.cloud.vm.VmGuestNetworkSectionStateVO;
 import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VmGuestNetworkStateDao;
 import com.google.gson.Gson;
@@ -74,6 +80,8 @@ public class VmGuestNetworkApiServiceImpl implements VmGuestNetworkApiService {
     private UserVmDao userVmDao;
     @Inject
     private AccountManager accountManager;
+    @Inject
+    private VmGuestNetworkScheduleService scheduleService;
 
     private final Gson gson = GsonHelper.getGson();
 
@@ -115,10 +123,24 @@ public class VmGuestNetworkApiServiceImpl implements VmGuestNetworkApiService {
         response.setLastSuccess(snapshot.getLastSuccessAt());
         response.setErrorCode(snapshot.getErrorCode());
         response.setErrorMessage(snapshot.getErrorMessage());
+        GuestNetworkCollectorResponse collector = new GuestNetworkCollectorResponse();
+        collector.setBuildId(snapshot.getCollectorBuildId());
+        collector.setHostId(snapshot.getCollectorHostId());
+        collector.setCapabilityHash(snapshot.getCapabilityHash());
+        response.setCollector(collector);
+        GuestToolsResponse guestTools = new GuestToolsResponse();
+        guestTools.setInstalled(StringUtils.isNotBlank(snapshot.getGuestToolsVersion()));
+        guestTools.setVersion(snapshot.getGuestToolsVersion());
+        guestTools.setQgaPolicyMode(snapshot.getQgaPolicyMode());
+        guestTools.setReadinessStatus(snapshot.getReadinessStatus());
+        guestTools.setChecked(snapshot.getReadinessCheckedAt());
+        response.setGuestTools(guestTools);
 
         VmGuestNetworkState state = parsePayload(snapshot.getPayload());
         response.setInterfaces(toInterfaceResponses(state.getInterfaces()));
-        response.setSections(toSectionResponses(state.getSectionStatuses()));
+        response.setSections(toSectionResponses(state.getSectionStatuses(),
+                scheduleService == null ? Collections.emptyList()
+                        : scheduleService.listByVmId(snapshot.getVmId())));
         response.setRoutes(toRouteResponses(state.getRoutes()));
         response.setDns(toDnsResponse(state.getDns()));
         return response;
@@ -141,6 +163,7 @@ public class VmGuestNetworkApiServiceImpl implements VmGuestNetworkApiService {
         response.setInterfaceCount(interfaces.size());
         Set<String> ipv4 = new LinkedHashSet<>();
         Set<String> ipv6 = new LinkedHashSet<>();
+        VmGuestIpAddress representative = null;
         for (VmGuestNetworkInterface networkInterface : interfaces) {
             if (networkInterface.getAddresses() == null) {
                 continue;
@@ -155,11 +178,34 @@ public class VmGuestNetworkApiServiceImpl implements VmGuestNetworkApiService {
                 } else if ("IPv6".equalsIgnoreCase(address.getFamily())) {
                     ipv6.add(value);
                 }
+                if (address.isRepresentative()) {
+                    representative = address;
+                }
             }
         }
         response.setIpv4Addresses(new ArrayList<>(ipv4));
         response.setIpv6Addresses(new ArrayList<>(ipv6));
+        if (representative != null && isInterfaceSnapshotFresh(state, snapshot.getStatus())) {
+            response.setRepresentativeAddress(representative.getAddress());
+            response.setRepresentativePrefix(representative.getPrefix());
+            response.setRepresentativeFamily(normalizeAddressFamily(representative.getFamily()));
+            response.setRepresentativeSource(representative.getRoleSource());
+        }
         return response;
+    }
+
+    private boolean isInterfaceSnapshotFresh(VmGuestNetworkState state, String snapshotStatus) {
+        if ("STALE".equals(snapshotStatus) || "STOPPED".equals(snapshotStatus)
+                || "UNAVAILABLE".equals(snapshotStatus)
+                || "UNSUPPORTED".equals(snapshotStatus)) {
+            return false;
+        }
+        if (state.getSectionStatuses() == null
+                || state.getSectionStatuses().get("interfaces") == null) {
+            return true;
+        }
+        String status = state.getSectionStatuses().get("interfaces").getStatus();
+        return "OK".equals(status) || "PARTIAL".equals(status) || "EMPTY".equals(status);
     }
 
     private VmGuestNetworkState parsePayload(String payload) {
@@ -208,25 +254,80 @@ public class VmGuestNetworkApiServiceImpl implements VmGuestNetworkApiService {
         response.setAddress(address.getAddress());
         response.setPrefix(address.getPrefix());
         response.setScope(address.getScope());
+        response.setRole(StringUtils.defaultIfBlank(address.getRole(), "UNKNOWN"));
+        response.setRoleSource(address.getRoleSource());
+        response.setRepresentative(address.isRepresentative());
         return response;
     }
 
-    private List<GuestNetworkSectionResponse> toSectionResponses(
-            Map<String, VmGuestNetworkSectionStatus> sectionStatuses) {
-        List<GuestNetworkSectionResponse> responses = new ArrayList<>();
-        if (sectionStatuses == null) {
-            return responses;
+    private String normalizeAddressFamily(String family) {
+        if ("ipv4".equalsIgnoreCase(family)) {
+            return "IPv4";
         }
-        sectionStatuses.forEach((name, section) -> {
+        if ("ipv6".equalsIgnoreCase(family)) {
+            return "IPv6";
+        }
+        return family;
+    }
+
+    private List<GuestNetworkSectionResponse> toSectionResponses(
+            Map<String, VmGuestNetworkSectionStatus> sectionStatuses,
+            List<VmGuestNetworkSectionStateVO> persistedSections) {
+        List<GuestNetworkSectionResponse> responses = new ArrayList<>();
+        Map<String, VmGuestNetworkSectionStateVO> persisted = new LinkedHashMap<>();
+        if (persistedSections != null) {
+            persistedSections.forEach(row -> persisted.put(row.getSection(), row));
+        }
+        Set<String> names = new LinkedHashSet<>(persisted.keySet());
+        if (sectionStatuses != null) {
+            names.addAll(sectionStatuses.keySet());
+        }
+        names.forEach(name -> {
+            VmGuestNetworkSectionStatus section =
+                    sectionStatuses == null ? null : sectionStatuses.get(name);
+            VmGuestNetworkSectionStateVO row = persisted.get(name);
             GuestNetworkSectionResponse response = new GuestNetworkSectionResponse();
             response.setName(name);
-            response.setStatus(section.getStatus());
-            response.setDetails(section.getDetails());
-            response.setTruncated(section.isTruncated());
-            response.setOriginalCount(section.getOriginalCount());
+            response.setStatus(row == null
+                    ? section == null ? NOT_COLLECTED : section.getStatus() : row.getStatus());
+            response.setDetails(row != null && StringUtils.isNotBlank(row.getErrorMessage())
+                    ? row.getErrorMessage() : section == null ? null : section.getDetails());
+            response.setTruncated(section != null && section.isTruncated());
+            response.setOriginalCount(section == null ? null : section.getOriginalCount());
+            response.setSource(row == null
+                    ? section == null ? null : section.getSource() : row.getSource());
+            response.setErrorCode(row == null
+                    ? section == null ? null : section.getErrorCode() : row.getErrorCode());
+            response.setObserved(row == null ? null : row.getObservedAt());
+            response.setLastSuccess(row == null ? null : row.getLastSuccessAt());
+            response.setNextDue(row == null ? null : row.getNextDueAt());
             responses.add(response);
         });
         return responses;
+    }
+
+    @Override
+    public GuestNetworkRefreshResponse requestRefresh(long vmId, Set<String> sections) {
+        UserVmVO vm = userVmDao.findById(vmId);
+        if (vm == null) {
+            throw new InvalidParameterValueException("Unable to find Instance with ID " + vmId);
+        }
+        Account caller = CallContext.current().getCallingAccount();
+        accountManager.checkAccess(caller, AccessType.OperateEntry, true, vm);
+        Set<String> allowed = new LinkedHashSet<>(
+                java.util.Arrays.asList("interfaces", "routes", "dns", "readiness"));
+        Set<String> requested = sections == null || sections.isEmpty()
+                ? allowed : new LinkedHashSet<>(sections);
+        if (!allowed.containsAll(requested)) {
+            throw new InvalidParameterValueException(
+                    "Guest network sections must be interfaces, routes, dns, or readiness");
+        }
+        boolean accepted = scheduleService.requestRefresh(
+                vmId, requested, new Date(), 30);
+        GuestNetworkRefreshResponse response = new GuestNetworkRefreshResponse();
+        response.setAccepted(accepted);
+        response.setRequestedSections(new ArrayList<>(requested));
+        return response;
     }
 
     private List<GuestNetworkRouteResponse> toRouteResponses(List<VmGuestRoute> routes) {

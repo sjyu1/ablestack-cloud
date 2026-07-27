@@ -343,6 +343,7 @@
         <guest-network-summary
           v-if="$route.path.startsWith('/vm') && record.guestnetwork"
           :cloudAddress="ipAddress(text, record)"
+          :cloudNics="record.nic || []"
           :summary="record.guestnetwork" />
         <template v-else>
           <router-link

@@ -299,6 +299,18 @@
                 <copy-label :label="ipaddress" />
               </span>
             </span>
+            <a-tooltip
+              v-if="ipaddressSource"
+              :title="ipaddressSource === 'QGA'
+                ? $t('message.representative.ip.qga')
+                : $t('message.representative.ip.cloud.fallback')">
+              <a-tag
+                class="representative-ip-source"
+                :color="ipaddressSource === 'QGA' ? 'blue' : 'default'">
+                {{ ipaddressSource === 'QGA' ? 'QGA' : $t('label.cloud') }}
+                · {{ $t('label.primary.ip') }}
+              </a-tag>
+            </a-tooltip>
           </div>
         </div>
         <div class="resource-detail-item" v-if="('cpunumber' in resource && 'cpuspeed' in resource) || resource.cputotal">
@@ -1205,6 +1217,7 @@ export default {
   data () {
     return {
       ipaddress: '',
+      ipaddressSource: '',
       drclusterip: '',
       resourceType: '',
       inputVisible: false,
@@ -1528,10 +1541,20 @@ export default {
       }
     },
     setData () {
-      if (this.resource.nic && this.resource.nic.length > 0) {
-        this.ipaddress = this.resource.nic.filter(e => e.linkstate !== false && e.ipaddress).map(e => e.ipaddress).join(', ')
+      const summary = this.resource.guestnetwork || {}
+      if (summary.representativeaddress) {
+        this.ipaddress = summary.representativeaddress
+        this.ipaddressSource = 'QGA'
+      } else if (this.resource.nic && this.resource.nic.length > 0) {
+        const activeNics = this.resource.nic.filter(e => e.linkstate !== false)
+        const defaultNic = activeNics.find(e => e.isdefault) || activeNics[0]
+        this.ipaddress = defaultNic
+          ? (defaultNic.ipaddress || defaultNic.ip6address || '')
+          : ''
+        this.ipaddressSource = this.ipaddress ? 'CLOUD' : ''
       } else {
         this.ipaddress = this.resource.ipaddress
+        this.ipaddressSource = ''
       }
     },
     toSize (kb) {
@@ -1845,6 +1868,10 @@ export default {
 .progress-bar {
   padding-right: 60px;
   width: 100%;
+}
+
+.representative-ip-source {
+  margin-left: 8px;
 }
 
 .clone-fast-flatten-status-row {

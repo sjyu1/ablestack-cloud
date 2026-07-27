@@ -21,6 +21,9 @@ public class VmGuestIpAddress {
     private String address;
     private Integer prefix;
     private String scope;
+    private String role;
+    private String roleSource;
+    private boolean representative;
 
     public VmGuestIpAddress() {
     }
@@ -62,5 +65,29 @@ public class VmGuestIpAddress {
 
     public void setScope(String scope) {
         this.scope = scope;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public String getRoleSource() {
+        return roleSource;
+    }
+
+    public void setRoleSource(String roleSource) {
+        this.roleSource = roleSource;
+    }
+
+    public boolean isRepresentative() {
+        return representative;
+    }
+
+    public void setRepresentative(boolean representative) {
+        this.representative = representative;
     }
 }

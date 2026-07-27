@@ -39,6 +39,9 @@ public class GetVmGuestNetworkStateCommand extends Command {
     private boolean execFallbackEnabled;
     private int maxExecOutputBytes;
     private int timeoutSeconds;
+    private boolean preferGuestToolsHelper;
+    private Set<String> vmNamesRequiringReadiness;
+    private Long collectorHostId;
 
     protected GetVmGuestNetworkStateCommand() {
         vmNames = new ArrayList<>();
@@ -49,6 +52,7 @@ public class GetVmGuestNetworkStateCommand extends Command {
         vmNamesRequiringDns = new LinkedHashSet<>();
         maxExecOutputBytes = DEFAULT_MAX_EXEC_OUTPUT_BYTES;
         timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
+        vmNamesRequiringReadiness = new LinkedHashSet<>();
     }
 
     public GetVmGuestNetworkStateCommand(List<String> vmNames,
@@ -106,6 +110,7 @@ public class GetVmGuestNetworkStateCommand extends Command {
                 ? new LinkedHashSet<>() : new LinkedHashSet<>(vmNamesRequiringDns);
         this.execFallbackEnabled = execFallbackEnabled;
         this.maxExecOutputBytes = Math.max(1024, maxExecOutputBytes);
+        this.vmNamesRequiringReadiness = new LinkedHashSet<>();
     }
 
     private Map<String, Map<String, String>> copyCloudNicIds(
@@ -177,6 +182,35 @@ public class GetVmGuestNetworkStateCommand extends Command {
 
     public int getMaxExecOutputBytes() {
         return maxExecOutputBytes;
+    }
+
+    public boolean isPreferGuestToolsHelper() {
+        return preferGuestToolsHelper;
+    }
+
+    public void setPreferGuestToolsHelper(boolean preferGuestToolsHelper) {
+        this.preferGuestToolsHelper = preferGuestToolsHelper;
+    }
+
+    public boolean shouldCollectReadiness(String vmName) {
+        return vmNamesRequiringReadiness != null && vmNamesRequiringReadiness.contains(vmName);
+    }
+
+    public Set<String> getVmNamesRequiringReadiness() {
+        return vmNamesRequiringReadiness;
+    }
+
+    public void setVmNamesRequiringReadiness(Set<String> vmNamesRequiringReadiness) {
+        this.vmNamesRequiringReadiness = vmNamesRequiringReadiness == null
+                ? new LinkedHashSet<>() : new LinkedHashSet<>(vmNamesRequiringReadiness);
+    }
+
+    public Long getCollectorHostId() {
+        return collectorHostId;
+    }
+
+    public void setCollectorHostId(Long collectorHostId) {
+        this.collectorHostId = collectorHostId;
     }
 
     @Override

@@ -18,7 +18,10 @@ Linux 가상머신에서 route와 DNS가 `UNSUPPORTED`로 저장되는 문제를
 - 기존 VM, 볼륨, NIC, stats, HA 명령과 신규 관측 명령의 executor를 결합하지 않는다.
 - OS 판별은 고정된 route/DNS adapter를 선택하는 용도로만 사용한다.
 - 실행 파일과 인수의 고정 allowlist, shell 금지, timeout, 출력 제한을 유지한다.
-- DB schema와 API response 계약은 변경하지 않는다.
+- 이 OS family 판별 변경 자체는 DB schema와 API response 계약을 변경하지
+  않는다. 이후 주·보조 IP 역할 확장은 payload schema v2와 API response
+  필드를 추가하며 `guest_network_observability_primary_ip_design.md`를
+  기준으로 한다.
 
 ## 2. 결함 분석
 
@@ -474,3 +477,52 @@ Ubuntu 실행 표본은 현재 클러스터에 없어 fixture/단위 테스트�
 위 조건 중 Ubuntu 실환경 표본 검증을 제외한 항목을 충족했다. Ubuntu
 실행 VM이 준비되면 동일한 단일 VM scope로 Gate A와 Gate C만 추가
 수행한다.
+
+## 11. 2026-07-27 Rocky 및 qemu-exec-tools 연계 보완
+
+### 11.1 추가 원인
+
+Rocky 9.4 대상 `i-2-379-VM`은 `guest-get-osinfo`에서 `id=rocky`를
+반환하고 `guest-exec`도 enabled였다. 그러나 Host 2의 활성 KVM plugin에는
+이 문서에서 구현한 `QemuGuestOsFamilyResolver` 계열 class가 없었다.
+
+- Host 1·2: 구형 wrapper/route/DNS fallback
+- Host 3: 로컬 최신 build와 관련 class SHA-256 일치
+
+따라서 OS resolver 코드 자체뿐 아니라 모든 대상 host의 runtime class
+manifest 일치가 배포 gate에 포함되어야 한다.
+
+최신 Agent를 배포한 이후에도 Rocky의 `/usr/sbin/ip` guest-exec는
+`virt_qemu_ga_t`에서 `Permission denied`가 발생한다. `/bin/true`,
+`/usr/bin/cat /etc/resolv.conf`, QGA file read RPC는 성공하므로
+`guest-exec enabled`를 network readiness와 동일시할 수 없다.
+
+### 11.2 조정된 source 선택
+
+OS family resolver는 유지하되 Linux adapter source는 다음 순서로 변경한다.
+
+1. QGA 표준 명령
+2. qemu-exec-tools `guest-network-snapshot` Helper
+3. 기존 고정 `ip`/`resolvectl`/`nmcli`/`cat` fallback
+
+Helper는 `ID`와 `ID_LIKE`를 함께 반환한다. Agent resolver는 QGA OS 정보가
+우선이며 Helper OS 정보는 adapter 진단과 일치성 확인에 사용한다.
+
+### 11.3 책임 경계
+
+- qemu-exec-tools는 QGA 전체 RPC 허용 정책을 유지한다.
+- qemu-exec-tools가 전용 Helper와 SELinux/AppArmor 준비를 담당한다.
+- Cloud Agent는 게스트 policy/package를 변경하지 않는다.
+- Cloud Agent는 enum 기반 Helper/legacy operation만 실행한다.
+
+상세 class, payload, DDL, schedule 설계는
+`docs/guest_network_observability_integrated_improvement_design.md`를 따른다.
+
+### 11.4 추가 gate
+
+- Host 1·2·3 collector class manifest 일치
+- QGA `policyMode=FULL`과 network readiness 상태 분리
+- Rocky SELinux enforcing에서 Helper address/routes/DNS 성공
+- Helper 미설치 VM legacy fallback
+- `EXEC_PERMISSION_DENIED`와 `HELPER_NOT_INSTALLED` 구조화 오류
+- capability/Helper/Agent fingerprint 변경 후 실패 section 즉시 retry

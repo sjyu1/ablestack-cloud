@@ -18,7 +18,9 @@ package org.apache.cloudstack.vm.guestnetwork;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 
+import org.apache.cloudstack.api.response.GuestNetworkRefreshResponse;
 import org.apache.cloudstack.api.response.GuestNetworkStateResponse;
 import org.apache.cloudstack.api.response.GuestNetworkSummaryResponse;
 
@@ -26,4 +28,6 @@ public interface VmGuestNetworkApiService {
     GuestNetworkStateResponse getState(long vmId);
 
     Map<Long, GuestNetworkSummaryResponse> listSummaries(Collection<Long> vmIds);
+
+    GuestNetworkRefreshResponse requestRefresh(long vmId, Set<String> sections);
 }

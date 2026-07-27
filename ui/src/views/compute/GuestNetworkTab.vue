@@ -23,13 +23,22 @@
         type="info"
         show-icon
         :message="$t('message.guest.network.persisted.snapshot')" />
-      <a-button
-        class="refresh-button"
-        :loading="loading"
-        @click="fetchData">
-        <template #icon><reload-outlined /></template>
-        {{ $t('label.refresh') }}
-      </a-button>
+      <a-space>
+        <a-button
+          class="refresh-button"
+          :loading="loading"
+          @click="fetchData">
+          <template #icon><reload-outlined /></template>
+          {{ $t('label.refresh') }}
+        </a-button>
+        <a-button
+          type="primary"
+          :loading="recollecting"
+          :disabled="resource.state !== 'Running'"
+          @click="requestRecollection">
+          {{ $t('label.guest.network.recollect.now') }}
+        </a-button>
+      </a-space>
     </div>
 
     <a-alert
@@ -64,7 +73,18 @@
       </a-descriptions-item>
     </a-descriptions>
 
-    <a-divider orientation="left">{{ $t('label.guest.network.interfaces.addresses') }}</a-divider>
+    <div class="guest-network-section-title">
+      <strong>{{ $t('label.guest.network.interfaces.addresses') }}</strong>
+      <a-tooltip :title="$t('message.guest.network.interfaces.addresses.help')">
+        <span
+          class="section-info-icon"
+          role="img"
+          tabindex="0"
+          :aria-label="$t('message.guest.network.interfaces.addresses.help')">
+          <info-circle-outlined />
+        </span>
+      </a-tooltip>
+    </div>
     <a-empty
       v-if="!interfaces.length"
       :description="$t('message.guest.network.no.interfaces')" />
@@ -96,27 +116,66 @@
         </a-descriptions>
         <div class="address-list">
           <span class="address-list-label">{{ $t('label.addresses') }}</span>
-          <template v-if="networkInterface.addresses && networkInterface.addresses.length">
-            <a-tooltip
-              v-for="address in networkInterface.addresses"
-              :key="address.family + address.address + address.prefix"
-              :title="address.scope || ''">
-              <a-tag
-                :color="String(address.family).toLowerCase() === 'ipv6' ? 'purple' : 'green'"
-                class="address-tag">
-                {{ address.family }} {{ formatAddress(address) }}
-              </a-tag>
-            </a-tooltip>
-          </template>
-          <span v-else>-</span>
+          <div class="address-items">
+            <template v-if="networkInterface.addresses && networkInterface.addresses.length">
+              <div
+                v-for="address in sortedAddresses(networkInterface)"
+                :key="address.family + address.address + address.prefix"
+                class="address-item">
+                <a-tag
+                  :color="String(address.family).toLowerCase() === 'ipv6' ? 'purple' : 'green'"
+                  class="address-family-tag">
+                  {{ address.family }}
+                </a-tag>
+                <span class="address-value">
+                  <copy-label :label="formatAddress(address)" />
+                </span>
+                <span class="address-role-group">
+                  <a-tooltip :title="addressRoleTooltip(address)">
+                    <a-tag
+                      class="address-role-tag"
+                      :color="addressRoleColor(address.role)">
+                      {{ addressRoleLabel(address.role) }}
+                    </a-tag>
+                  </a-tooltip>
+                  <a-tag
+                    v-if="address.representative"
+                    class="address-role-tag"
+                    color="blue">
+                    {{ $t('label.representative') }}
+                  </a-tag>
+                  <a-tag
+                    v-if="cloudAddressRole(networkInterface, address)"
+                    class="address-role-tag"
+                    :color="cloudAddressRole(networkInterface, address) === 'PRIMARY' ? 'cyan' : 'default'">
+                    {{ cloudAddressRole(networkInterface, address) === 'PRIMARY'
+                      ? $t('label.cloud.primary.ip')
+                      : $t('label.cloud.secondary.ip') }}
+                  </a-tag>
+                </span>
+              </div>
+            </template>
+            <span v-else>-</span>
+          </div>
         </div>
       </a-card>
     </template>
 
-    <a-divider orientation="left">{{ $t('label.guest.network.routes') }}</a-divider>
+    <div class="guest-network-section-title">
+      <strong>{{ $t('label.guest.network.routes') }}</strong>
+      <a-tooltip :title="$t('message.guest.network.routes.help')">
+        <span
+          class="section-info-icon"
+          role="img"
+          tabindex="0"
+          :aria-label="$t('message.guest.network.routes.help')">
+          <info-circle-outlined />
+        </span>
+      </a-tooltip>
+    </div>
     <a-alert
       v-if="routeSection && !['OK', 'EMPTY'].includes(routeSection.status)"
-      class="route-alert"
+      class="section-status-alert"
       show-icon
       :type="routeSection.status === 'UNAVAILABLE' ? 'error' : 'warning'"
       :message="$t('message.guest.network.route.status', { status: routeSection.status })"
@@ -165,10 +224,21 @@
       v-else
       :description="$t('message.guest.network.no.routes')" />
 
-    <a-divider orientation="left">{{ $t('label.guest.network.dns') }}</a-divider>
+    <div class="guest-network-section-title">
+      <strong>{{ $t('label.guest.network.dns') }}</strong>
+      <a-tooltip :title="$t('message.guest.network.dns.help')">
+        <span
+          class="section-info-icon"
+          role="img"
+          tabindex="0"
+          :aria-label="$t('message.guest.network.dns.help')">
+          <info-circle-outlined />
+        </span>
+      </a-tooltip>
+    </div>
     <a-alert
       v-if="dnsSection && !['OK', 'EMPTY'].includes(dnsSection.status)"
-      class="dns-alert"
+      class="section-status-alert"
       show-icon
       :type="dnsSection.status === 'UNAVAILABLE' ? 'error' : 'warning'"
       :message="$t('message.guest.network.dns.status', { status: dnsSection.status })"
@@ -247,7 +317,7 @@
 </template>
 
 <script>
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { getAPI } from '@/api'
 import { mixinDevice } from '@/utils/mixin.js'
 import CopyLabel from '@/components/widgets/CopyLabel'
@@ -256,6 +326,7 @@ export default {
   name: 'GuestNetworkTab',
   components: {
     CopyLabel,
+    InfoCircleOutlined,
     ReloadOutlined
   },
   mixins: [mixinDevice],
@@ -268,6 +339,8 @@ export default {
   data () {
     return {
       loading: false,
+      recollecting: false,
+      pollTimer: null,
       state: {
         status: 'NOT_COLLECTED',
         interfaces: [],
@@ -382,6 +455,11 @@ export default {
   created () {
     this.fetchData()
   },
+  beforeUnmount () {
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer)
+    }
+  },
   methods: {
     fetchData () {
       if (!this.resource.id) {
@@ -405,10 +483,128 @@ export default {
         this.loading = false
       })
     },
+    requestRecollection () {
+      if (!this.resource.id || this.recollecting) {
+        return
+      }
+      const previousObserved = this.state.observed
+      this.recollecting = true
+      getAPI('refreshVirtualMachineGuestNetworkState', {
+        virtualmachineid: this.resource.id,
+        sections: 'interfaces,routes,dns,readiness'
+      }).then(json => {
+        const response = json.refreshvirtualmachineguestnetworkstateresponse || {}
+        if (!response.guestnetworkrefresh || !response.guestnetworkrefresh.accepted) {
+          this.$message.info(this.$t('message.guest.network.recollect.pending'))
+        }
+        this.pollRecollection(previousObserved, Date.now() + 30000, 2000)
+      }).catch(error => {
+        this.recollecting = false
+        this.$notifyError(error)
+      })
+    },
+    pollRecollection (previousObserved, deadline, delay) {
+      this.pollTimer = setTimeout(() => {
+        getAPI('getVirtualMachineGuestNetworkState', {
+          virtualmachineid: this.resource.id
+        }).then(json => {
+          const next = json.getvirtualmachineguestnetworkstateresponse.guestnetworkstate
+          if (next) {
+            this.state = next
+          }
+          if ((next && next.observed && next.observed !== previousObserved) ||
+              Date.now() >= deadline) {
+            this.recollecting = false
+            this.pollTimer = null
+            return
+          }
+          this.pollRecollection(previousObserved, deadline, Math.min(delay * 1.5, 5000))
+        }).catch(error => {
+          this.recollecting = false
+          this.pollTimer = null
+          this.$notifyError(error)
+        })
+      }, delay)
+    },
     formatAddress (address) {
       return address.prefix === null || address.prefix === undefined
         ? address.address
         : address.address + '/' + address.prefix
+    },
+    normalizedAddress (address) {
+      return String(address || '').split('/')[0].toLowerCase()
+    },
+    cloudNic (networkInterface) {
+      const nics = this.resource.nic || []
+      if (networkInterface.cloudnicid) {
+        const match = nics.find(nic => nic.id === networkInterface.cloudnicid)
+        if (match) {
+          return match
+        }
+      }
+      const mac = String(networkInterface.hardwareaddress || '')
+        .replace(/-/g, ':').toLowerCase()
+      return nics.find(nic =>
+        String(nic.macaddress || '').replace(/-/g, ':').toLowerCase() === mac)
+    },
+    cloudAddressRole (networkInterface, address) {
+      const nic = this.cloudNic(networkInterface)
+      if (!nic) {
+        return ''
+      }
+      const value = this.normalizedAddress(address.address)
+      if ([nic.ipaddress, nic.ip6address].some(candidate =>
+        this.normalizedAddress(candidate) === value)) {
+        return 'PRIMARY'
+      }
+      const secondary = Array.isArray(nic.secondaryip)
+        ? nic.secondaryip
+        : (nic.secondaryip ? [nic.secondaryip] : [])
+      return secondary.some(item =>
+        this.normalizedAddress(item.ipaddress || item.ip6address || item) === value)
+        ? 'SECONDARY'
+        : ''
+    },
+    addressRoleLabel (role) {
+      if (role === 'PRIMARY') {
+        return this.$t('label.primary.ip')
+      }
+      if (role === 'SECONDARY') {
+        return this.$t('label.secondary.ip')
+      }
+      return this.$t('label.ip.role.unknown')
+    },
+    addressRoleColor (role) {
+      if (role === 'PRIMARY') {
+        return 'blue'
+      }
+      if (role === 'SECONDARY') {
+        return 'gold'
+      }
+      return 'default'
+    },
+    addressRoleTooltip (address) {
+      const parts = [
+        this.addressRoleLabel(address.role),
+        address.rolesource || this.$t('message.ip.role.unavailable'),
+        address.scope
+      ]
+      return parts.filter(Boolean).join(' · ')
+    },
+    sortedAddresses (networkInterface) {
+      const rank = address => {
+        if (address.representative) return 0
+        if (address.role === 'PRIMARY') return 1
+        if (address.role === 'SECONDARY') return 2
+        return 3
+      }
+      return [...(networkInterface.addresses || [])].sort((a, b) => {
+        const role = rank(a) - rank(b)
+        if (role !== 0) return role
+        const family = String(a.family).localeCompare(String(b.family))
+        if (family !== 0) return family
+        return String(a.address).localeCompare(String(b.address))
+      })
     },
     formatRouteDestination (route) {
       return route.prefix === null || route.prefix === undefined
@@ -459,6 +655,28 @@ export default {
   margin-bottom: 16px;
 }
 
+.guest-network-section-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 24px 0 12px;
+  line-height: 22px;
+}
+
+.section-info-icon {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  cursor: help;
+  opacity: 0.65;
+}
+
+.section-info-icon:focus-visible {
+  border-radius: 50%;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .interface-card {
   margin-bottom: 12px;
 }
@@ -468,24 +686,87 @@ export default {
 }
 
 .address-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
   padding-top: 8px;
   border-top: 1px solid #f0f0f0;
 }
 
 .address-list-label {
-  min-width: 96px;
-  color: rgba(0, 0, 0, 0.45);
+  padding-top: 4px;
+  color: inherit;
+  opacity: 0.65;
 }
 
-.address-tag {
-  margin-bottom: 4px;
+.address-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
 }
 
-.route-alert {
+.address-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 4px;
+  background: transparent;
+}
+
+.address-value {
+  white-space: nowrap;
+}
+
+.address-role-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+.address-family-tag,
+.address-role-tag {
+  margin: 0;
+}
+
+.address-role-tag {
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.section-status-alert {
+  align-items: flex-start;
   margin-bottom: 12px;
+  padding: 9px 12px;
+}
+
+.section-status-alert :deep(.ant-alert-icon) {
+  flex: none;
+  margin-right: 8px;
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.section-status-alert :deep(.ant-alert-content) {
+  min-width: 0;
+}
+
+.section-status-alert :deep(.ant-alert-message) {
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.section-status-alert :deep(.ant-alert-description) {
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-word;
 }
 
 .route-toolbar {
@@ -505,11 +786,8 @@ export default {
 }
 
 .route-count {
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.dns-alert {
-  margin-bottom: 12px;
+  color: inherit;
+  opacity: 0.65;
 }
 
 .dns-summary {
@@ -522,5 +800,16 @@ export default {
 
 .dns-tag {
   margin-bottom: 4px;
+}
+
+@media (max-width: 576px) {
+  .address-list {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
+  }
+
+  .address-list-label {
+    padding-top: 0;
+  }
 }
 </style>

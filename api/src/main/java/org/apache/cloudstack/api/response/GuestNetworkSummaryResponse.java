@@ -50,6 +50,22 @@ public class GuestNetworkSummaryResponse extends BaseResponse {
     @Param(description = "Number of observed guest interfaces")
     private int interfaceCount;
 
+    @SerializedName("representativeaddress")
+    @Param(description = "QGA-selected representative guest address without prefix")
+    private String representativeAddress;
+
+    @SerializedName("representativeprefix")
+    @Param(description = "Network prefix length of the QGA-selected representative address")
+    private Integer representativePrefix;
+
+    @SerializedName("representativefamily")
+    @Param(description = "Address family of the QGA-selected representative address")
+    private String representativeFamily;
+
+    @SerializedName("representativesource")
+    @Param(description = "Source used by QGA collection to select the representative address")
+    private String representativeSource;
+
     public String getStatus() {
         return status;
     }
@@ -96,5 +112,37 @@ public class GuestNetworkSummaryResponse extends BaseResponse {
 
     public void setInterfaceCount(int interfaceCount) {
         this.interfaceCount = interfaceCount;
+    }
+
+    public String getRepresentativeAddress() {
+        return representativeAddress;
+    }
+
+    public void setRepresentativeAddress(String representativeAddress) {
+        this.representativeAddress = representativeAddress;
+    }
+
+    public Integer getRepresentativePrefix() {
+        return representativePrefix;
+    }
+
+    public void setRepresentativePrefix(Integer representativePrefix) {
+        this.representativePrefix = representativePrefix;
+    }
+
+    public String getRepresentativeFamily() {
+        return representativeFamily;
+    }
+
+    public void setRepresentativeFamily(String representativeFamily) {
+        this.representativeFamily = representativeFamily;
+    }
+
+    public String getRepresentativeSource() {
+        return representativeSource;
+    }
+
+    public void setRepresentativeSource(String representativeSource) {
+        this.representativeSource = representativeSource;
     }
 }

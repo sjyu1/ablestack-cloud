@@ -73,6 +73,13 @@ public class VmGuestNetworkStateDaoImpl extends GenericDaoBase<VmGuestNetworkSta
         builder.set(state, "schemaVersion", state.getSchemaVersion());
         builder.set(state, "status", state.getStatus());
         builder.set(state, "qgaVersion", state.getQgaVersion());
+        builder.set(state, "collectorBuildId", state.getCollectorBuildId());
+        builder.set(state, "collectorHostId", state.getCollectorHostId());
+        builder.set(state, "capabilityHash", state.getCapabilityHash());
+        builder.set(state, "guestToolsVersion", state.getGuestToolsVersion());
+        builder.set(state, "qgaPolicyMode", state.getQgaPolicyMode());
+        builder.set(state, "readinessStatus", state.getReadinessStatus());
+        builder.set(state, "readinessCheckedAt", state.getReadinessCheckedAt());
         builder.set(state, "observedAt", state.getObservedAt());
         builder.set(state, "lastSuccessAt", state.getLastSuccessAt());
         builder.set(state, "errorCode", state.getErrorCode());

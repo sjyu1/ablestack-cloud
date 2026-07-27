@@ -600,6 +600,7 @@ import org.apache.cloudstack.api.command.user.vm.ListNicsCmd;
 import org.apache.cloudstack.api.command.user.vm.GetVirtualMachineGuestNetworkStateCmd;
 import org.apache.cloudstack.api.command.user.vm.ListVMsCmd;
 import org.apache.cloudstack.api.command.user.vm.ListVmDeviceAssignmentsCmd;
+import org.apache.cloudstack.api.command.user.vm.RefreshVirtualMachineGuestNetworkStateCmd;
 import org.apache.cloudstack.api.command.user.vm.RebootVMCmd;
 import org.apache.cloudstack.api.command.user.vm.RemoveIpFromVmNicCmd;
 import org.apache.cloudstack.api.command.user.vm.RemoveNicFromVMCmd;
@@ -6844,6 +6845,7 @@ public class ManagementServerImpl extends MutualExclusiveIdsManagerBase implemen
         cmdList.add(GetVMPasswordCmd.class);
         cmdList.add(ListVMsCmd.class);
         cmdList.add(GetVirtualMachineGuestNetworkStateCmd.class);
+        cmdList.add(RefreshVirtualMachineGuestNetworkStateCmd.class);
         cmdList.add(ScaleVMCmd.class);
         cmdList.add(RebootVMCmd.class);
         cmdList.add(RemoveNicFromVMCmd.class);

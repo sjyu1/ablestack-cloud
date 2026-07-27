@@ -320,6 +320,48 @@ public class VmGuestNetworkCollectorTest {
         assertEquals(nextDnsAt, collector.getNextDnsAt(1L));
     }
 
+    @Test
+    public void testStructuredUnavailableStateUsesSectionAwarePersistence() {
+        VMInstanceVO vm = vm(1L, "vm-one", HypervisorType.KVM);
+        when(nicDao.listByVmId(1L)).thenReturn(Collections.emptyList());
+        when(agentManager.easySend(eq(HOST_ID), any(GetVmGuestNetworkStateCommand.class)))
+                .thenAnswer(invocation -> {
+                    VmGuestNetworkState state = new VmGuestNetworkState("vm-one");
+                    state.setStatus("UNAVAILABLE");
+                    state.setObservedAt(System.currentTimeMillis());
+                    state.putSectionStatus("interfaces",
+                            new VmGuestNetworkSectionStatus("NOT_DUE"));
+                    state.putSectionStatus("routes",
+                            new VmGuestNetworkSectionStatus("UNAVAILABLE", "ip denied"));
+                    state.putSectionStatus("dns",
+                            new VmGuestNetworkSectionStatus("NOT_DUE"));
+                    return new GetVmGuestNetworkStateAnswer(invocation.getArgument(1),
+                            Collections.singletonMap("vm-one", state),
+                            Collections.singletonMap("vm-one", "route collection failed"));
+                });
+
+        collector.collectBatch(HOST_ID, Collections.singletonList(vm));
+
+        verify(stateService).persistSuccess(eq(1L), any(), any());
+        verify(stateService, never()).persistFailure(eq(1L), any(), any(), any(), any());
+    }
+
+    @Test
+    public void testMissingStateStillUsesGlobalFailurePersistence() {
+        VMInstanceVO vm = vm(1L, "vm-one", HypervisorType.KVM);
+        when(nicDao.listByVmId(1L)).thenReturn(Collections.emptyList());
+        when(agentManager.easySend(eq(HOST_ID), any(GetVmGuestNetworkStateCommand.class)))
+                .thenAnswer(invocation -> new GetVmGuestNetworkStateAnswer(
+                        invocation.getArgument(1), Collections.emptyMap(),
+                        Collections.singletonMap("vm-one", "transport failed")));
+
+        collector.collectBatch(HOST_ID, Collections.singletonList(vm));
+
+        verify(stateService).persistFailure(eq(1L), eq(null), eq("COLLECTION_FAILED"),
+                eq("transport failed"), any());
+        verify(stateService, never()).persistSuccess(eq(1L), any(), any());
+    }
+
     private GetVmGuestNetworkStateAnswer successfulAnswer(
             GetVmGuestNetworkStateCommand command, String vmName, boolean includeCapability) {
         VmGuestNetworkState state = successState(vmName, includeCapability);

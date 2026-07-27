@@ -153,6 +153,37 @@ public class LibvirtGetVmGuestNetworkStateCommandWrapperTest {
     }
 
     @Test
+    public void testMultiAddressRoleEnrichmentUsesPreflightPrimary() throws Exception {
+        when(domainOne.qemuAgentCommand(anyString(), eq(3), eq(0))).thenReturn(
+                readFixture("guest-info-capabilities.json"),
+                readFixture("guest-network-get-interfaces-primary-secondary.json"),
+                readFixture("guest-get-osinfo-debian.json"),
+                "{\"return\":{\"pid\":801}}",
+                completedStatus(readFixture(
+                        "guest-exec-linux-address-primary-secondary.json")));
+        GetVmGuestNetworkStateCommand command = new GetVmGuestNetworkStateCommand(
+                Collections.singletonList(VM_ONE), Collections.emptyMap(), 3,
+                Collections.emptySet(), Collections.singleton(VM_ONE),
+                Collections.emptySet(), Collections.emptySet(), true, 65536);
+
+        GetVmGuestNetworkStateAnswer answer =
+                (GetVmGuestNetworkStateAnswer) wrapper.execute(command, resource);
+        VmGuestNetworkState state = answer.getStates().get(VM_ONE);
+
+        assertEquals("OK", state.getStatus());
+        assertEquals(VmGuestNetworkState.CURRENT_SCHEMA_VERSION, state.getSchemaVersion());
+        assertEquals("PRIMARY",
+                state.getInterfaces().get(1).getAddresses().get(0).getRole());
+        assertTrue(state.getInterfaces().get(1).getAddresses().get(0).isRepresentative());
+        assertEquals("10.10.254.230",
+                state.getInterfaces().get(1).getAddresses().get(0).getAddress());
+        assertEquals("SECONDARY",
+                state.getInterfaces().get(1).getAddresses().get(3).getRole());
+        verify(domainOne, times(1)).qemuAgentCommand(
+                contains("\"execute\":\"guest-exec\""), eq(3), eq(0));
+    }
+
+    @Test
     public void testNonRunningVmSkipsQgaCalls() throws Exception {
         DomainInfo stopped = new DomainInfo();
         stopped.state = DomainState.VIR_DOMAIN_SHUTOFF;

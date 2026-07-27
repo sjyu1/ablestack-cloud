@@ -16,6 +16,8 @@
 // under the License.
 package org.apache.cloudstack.api.response;
 
+import java.util.Date;
+
 import org.apache.cloudstack.api.BaseResponse;
 
 import com.cloud.serializer.Param;
@@ -41,6 +43,26 @@ public class GuestNetworkSectionResponse extends BaseResponse {
     @SerializedName("originalcount")
     @Param(description = "Original item count before truncation")
     private Integer originalCount;
+
+    @SerializedName("source")
+    @Param(description = "Collection source used for the section")
+    private String source;
+
+    @SerializedName("errorcode")
+    @Param(description = "Structured section error code")
+    private String errorCode;
+
+    @SerializedName("observed")
+    @Param(description = "Last section collection attempt")
+    private Date observed;
+
+    @SerializedName("lastsuccess")
+    @Param(description = "Last successful section collection")
+    private Date lastSuccess;
+
+    @SerializedName("nextdue")
+    @Param(description = "Next scheduled section collection")
+    private Date nextDue;
 
     public String getName() {
         return name;
@@ -81,4 +103,15 @@ public class GuestNetworkSectionResponse extends BaseResponse {
     public void setOriginalCount(Integer originalCount) {
         this.originalCount = originalCount;
     }
+
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
+    public String getErrorCode() { return errorCode; }
+    public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
+    public Date getObserved() { return observed; }
+    public void setObserved(Date observed) { this.observed = observed; }
+    public Date getLastSuccess() { return lastSuccess; }
+    public void setLastSuccess(Date lastSuccess) { this.lastSuccess = lastSuccess; }
+    public Date getNextDue() { return nextDue; }
+    public void setNextDue(Date nextDue) { this.nextDue = nextDue; }
 }

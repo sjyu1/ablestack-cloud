@@ -21,6 +21,10 @@ public class VmGuestNetworkSectionStatus {
     private String details;
     private boolean truncated;
     private Integer originalCount;
+    private String source;
+    private String errorCode;
+    private long attemptedAt;
+    private Long succeededAt;
 
     public VmGuestNetworkSectionStatus() {
     }
@@ -64,5 +68,37 @@ public class VmGuestNetworkSectionStatus {
 
     public void setOriginalCount(Integer originalCount) {
         this.originalCount = originalCount;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public void setErrorCode(String errorCode) {
+        this.errorCode = errorCode;
+    }
+
+    public long getAttemptedAt() {
+        return attemptedAt;
+    }
+
+    public void setAttemptedAt(long attemptedAt) {
+        this.attemptedAt = attemptedAt;
+    }
+
+    public Long getSucceededAt() {
+        return succeededAt;
+    }
+
+    public void setSucceededAt(Long succeededAt) {
+        this.succeededAt = succeededAt;
     }
 }

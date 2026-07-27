@@ -74,6 +74,14 @@ public class GuestNetworkStateResponse extends BaseResponse {
     @Param(description = "Guest-observed DNS configuration")
     private GuestNetworkDnsResponse dns = new GuestNetworkDnsResponse();
 
+    @SerializedName("collector")
+    @Param(description = "Collector build and host metadata")
+    private GuestNetworkCollectorResponse collector;
+
+    @SerializedName("guesttools")
+    @Param(description = "ABLESTACK guest tools readiness")
+    private GuestToolsResponse guestTools;
+
     public String getVirtualMachineId() {
         return virtualMachineId;
     }
@@ -168,5 +176,21 @@ public class GuestNetworkStateResponse extends BaseResponse {
 
     public void setDns(GuestNetworkDnsResponse dns) {
         this.dns = dns;
+    }
+
+    public GuestNetworkCollectorResponse getCollector() {
+        return collector;
+    }
+
+    public void setCollector(GuestNetworkCollectorResponse collector) {
+        this.collector = collector;
+    }
+
+    public GuestToolsResponse getGuestTools() {
+        return guestTools;
+    }
+
+    public void setGuestTools(GuestToolsResponse guestTools) {
+        this.guestTools = guestTools;
     }
 }

@@ -35,6 +35,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.UUID;
 
 import javax.inject.Inject;
 
@@ -56,6 +57,7 @@ import com.cloud.utils.db.GlobalLock;
 import com.cloud.utils.net.NetUtils;
 import com.cloud.vm.NicVO;
 import com.cloud.vm.VMInstanceVO;
+import com.cloud.vm.VmGuestNetworkStateVO;
 import com.cloud.vm.VirtualMachine;
 import com.cloud.vm.dao.NicDao;
 import com.cloud.vm.dao.VMInstanceDao;
@@ -129,11 +131,14 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
     private NicDao nicDao;
     @Inject
     private VmGuestNetworkStateService stateService;
+    @Inject
+    private VmGuestNetworkScheduleService scheduleService;
 
     private final VmGuestNetworkCollectionPolicy policy;
     private final AtomicBoolean cycleRunning = new AtomicBoolean();
     private final Set<Long> activeHostIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Map<Long, Long> lastSelectedVmIdByHost = new java.util.concurrent.ConcurrentHashMap<>();
+    private final String leaseOwner = "guest-network-" + UUID.randomUUID();
     private ScheduledExecutorService scheduler;
     private ExecutorService collectionExecutor;
 
@@ -182,25 +187,31 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
             return;
         }
         GlobalLock scanLock = getCollectorGlobalLock();
+        List<Callable<Void>> tasks = new ArrayList<>();
         try {
             if (!scanLock.lock(GLOBAL_LOCK_TIMEOUT_SECONDS)) {
                 return;
             }
             try {
                 reconcileTrackedVmStates();
-                Map<Long, List<VMInstanceVO>> dueVmsByHost = selectDueVmsByHost(System.currentTimeMillis());
-                List<Callable<Void>> tasks = new ArrayList<>();
-                dueVmsByHost.entrySet().stream()
-                        .sorted(Map.Entry.comparingByKey())
-                        .limit(Math.max(1, getMaxHostsPerCycle()))
-                        .forEach(entry -> tasks.add(() -> {
-                            collectHost(entry.getKey(), entry.getValue());
-                            return null;
-                        }));
-                executeTasks(tasks);
+                long now = System.currentTimeMillis();
+                Map<Long, List<VMInstanceVO>> dueVmsByHost = selectDueVmsByHost(now);
+                dueVmsByHost.forEach((hostId, vms) -> {
+                    if (scheduleService != null) {
+                        List<Long> vmIds = new ArrayList<>();
+                        vms.forEach(vm -> vmIds.add(vm.getId()));
+                        scheduleService.claim(vmIds, leaseOwner, new Date(now), getCycleTimeout());
+                    }
+                    tasks.add(() -> {
+                        collectHost(hostId, vms);
+                        return null;
+                    });
+                });
             } finally {
                 scanLock.unlock();
             }
+            // Never hold the management global lock during host/Agent I/O.
+            executeTasks(tasks);
         } finally {
             scanLock.releaseRef();
             cycleRunning.set(false);
@@ -258,11 +269,19 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
         Set<String> interfacesDue = new LinkedHashSet<>();
         Set<String> routesDue = new LinkedHashSet<>();
         Set<String> dnsDue = new LinkedHashSet<>();
+        Set<String> readinessDue = new LinkedHashSet<>();
         for (VMInstanceVO vm : vms) {
-            boolean collectInterfaces = policy.isInterfaceDue(vm.getId(), now);
-            boolean collectRoutes = policy.isRouteDue(vm.getId(), now);
-            boolean collectDns = policy.isDnsDue(vm.getId(), now);
-            if (!collectInterfaces && !collectRoutes && !collectDns) {
+            Set<String> claimed = scheduleService == null
+                    ? Collections.emptySet()
+                    : scheduleService.getClaimedSections(vm.getId(), leaseOwner, new Date(now));
+            boolean collectInterfaces = scheduleService == null
+                    ? policy.isInterfaceDue(vm.getId(), now) : claimed.contains("interfaces");
+            boolean collectRoutes = scheduleService == null
+                    ? policy.isRouteDue(vm.getId(), now) : claimed.contains("routes");
+            boolean collectDns = scheduleService == null
+                    ? policy.isDnsDue(vm.getId(), now) : claimed.contains("dns");
+            boolean collectReadiness = scheduleService != null && claimed.contains("readiness");
+            if (!collectInterfaces && !collectRoutes && !collectDns && !collectReadiness) {
                 continue;
             }
             vmsByName.put(vm.getInstanceName(), vm);
@@ -277,6 +296,9 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
             if (collectDns) {
                 dnsDue.add(vm.getInstanceName());
             }
+            if (collectReadiness) {
+                readinessDue.add(vm.getInstanceName());
+            }
             if (collectInterfaces && policy.hasCachedEnabledInterfaceCapability(vm.getId(), now)) {
                 cachedCapabilities.add(vm.getInstanceName());
             }
@@ -290,6 +312,9 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
                 Math.max(1, getCommandTimeout()), cachedCapabilities,
                 interfacesDue, routesDue, dnsDue,
                 isExecFallbackEnabled(), getExecOutputLimitBytes());
+        command.setVmNamesRequiringReadiness(readinessDue);
+        command.setPreferGuestToolsHelper(true);
+        command.setCollectorHostId(hostId);
         Answer rawAnswer = agentManager.easySend(hostId, command);
         if (!(rawAnswer instanceof GetVmGuestNetworkStateAnswer) || !rawAnswer.getResult()) {
             vmsByName.values().forEach(vm ->
@@ -304,18 +329,28 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
             VmGuestNetworkState state = answer.getStates().get(vmName);
             String error = answer.getErrors().get(vmName);
             recordCapability(vm.getId(), state, now);
-            if (state == null || error != null || "UNAVAILABLE".equals(state.getStatus())) {
-                String errorCode = state != null && "UNSUPPORTED".equals(state.getStatus())
-                        ? "QGA_UNSUPPORTED" : "COLLECTION_FAILED";
-                recordFailure(vm, state, errorCode, error == null ? "Guest network state is unavailable" : error);
+            if (state == null) {
+                recordFailure(vm, null, "COLLECTION_FAILED",
+                        error == null ? "Agent returned no guest network state" : error);
                 continue;
             }
+            // An overall UNAVAILABLE status can represent a valid, structured observation
+            // where only the requested section failed. Persist it so the state service can
+            // retain successful sections and the scheduler can back off only failed work.
             Date observedAt = state.getObservedAt() > 0 ? new Date(state.getObservedAt()) : new Date(now);
             Map<String, VmGuestNetworkSectionStatus> collectedSectionStatuses =
                     new LinkedHashMap<>(state.getSectionStatuses());
+            VmGuestNetworkStateVO previous = stateService.findByVmId(vm.getId());
+            boolean fingerprintChanged = previous != null
+                    && previous.getCapabilityHash() != null
+                    && !previous.getCapabilityHash().equals(state.getCapabilityHash());
             try {
                 stateService.persistSuccess(vm.getId(), state, observedAt);
-                recordSectionSchedules(vm.getId(), collectedSectionStatuses, now);
+                state.setSectionStatuses(collectedSectionStatuses);
+                recordSectionSchedules(vm.getId(), state, observedAt, now);
+                if (fingerprintChanged && scheduleService != null) {
+                    scheduleService.invalidateFailedSections(vm.getId(), observedAt);
+                }
             } catch (RuntimeException e) {
                 LOGGER.warn("Unable to persist guest network state for VM [{}]", vm.getId(), e);
                 recordFailure(vm, state, "PERSISTENCE_FAILED",
@@ -327,23 +362,59 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
     Map<Long, List<VMInstanceVO>> selectDueVmsByHost(long now) {
         List<VMInstanceVO> running = vmInstanceDao.listByTypeAndState(
                 VirtualMachine.Type.User, VirtualMachine.State.Running);
-        Map<Long, List<VMInstanceVO>> result = new HashMap<>();
+        Map<Long, List<VMInstanceVO>> result = new LinkedHashMap<>();
         if (running == null) {
             return result;
         }
         Set<Long> allowedHostIds = parseScopeIds(getHostIdScope(), HOST_IDS.key());
         Set<Long> allowedZoneIds = parseScopeIds(getZoneIdScope(), ZONE_IDS.key());
+        List<VMInstanceVO> eligible = new ArrayList<>();
         running.stream()
                 .filter(vm -> vm.getHostId() != null)
                 .filter(vm -> HypervisorType.KVM.equals(vm.getHypervisorType()))
                 .filter(vm -> isInScope(vm.getHostId(), allowedHostIds))
                 .filter(vm -> isInScope(vm.getDataCenterId(), allowedZoneIds))
-                .filter(vm -> policy.isInterfaceDue(vm.getId(), now)
-                        || policy.isRouteDue(vm.getId(), now)
-                        || policy.isDnsDue(vm.getId(), now))
                 .sorted(Comparator.comparingLong(VMInstanceVO::getId))
-                .forEach(vm -> result.computeIfAbsent(vm.getHostId(), ignored -> new ArrayList<>()).add(vm));
-        return result;
+                .forEach(eligible::add);
+        if (scheduleService == null) {
+            eligible.stream()
+                    .filter(vm -> policy.isInterfaceDue(vm.getId(), now)
+                            || policy.isRouteDue(vm.getId(), now)
+                            || policy.isDnsDue(vm.getId(), now))
+                    .forEach(vm -> result.computeIfAbsent(
+                            vm.getHostId(), ignored -> new ArrayList<>()).add(vm));
+            return result.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .limit(Math.max(1, getMaxHostsPerCycle()))
+                    .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey,
+                            Map.Entry::getValue, (left, right) -> left, LinkedHashMap::new));
+        }
+        List<Long> vmIds = new ArrayList<>();
+        eligible.forEach(vm -> vmIds.add(vm.getId()));
+        Map<Long, VmGuestNetworkScheduleService.DueWork> due =
+                scheduleService.findDueWork(vmIds, new Date(now));
+        Map<Long, Date> oldestDueByHost = new HashMap<>();
+        for (VMInstanceVO vm : eligible) {
+            VmGuestNetworkScheduleService.DueWork work = due.get(vm.getId());
+            if (work == null) {
+                continue;
+            }
+            result.computeIfAbsent(vm.getHostId(), ignored -> new ArrayList<>()).add(vm);
+            Date current = oldestDueByHost.get(vm.getHostId());
+            if (current == null || work.getOldestDueAt().before(current)) {
+                oldestDueByHost.put(vm.getHostId(), work.getOldestDueAt());
+            }
+        }
+        return result.entrySet().stream()
+                .sorted((left, right) -> {
+                    int dueComparison = oldestDueByHost.get(left.getKey())
+                            .compareTo(oldestDueByHost.get(right.getKey()));
+                    return dueComparison != 0 ? dueComparison
+                            : Long.compare(left.getKey(), right.getKey());
+                })
+                .limit(Math.max(1, getMaxHostsPerCycle()))
+                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey,
+                        Map.Entry::getValue, (left, right) -> left, LinkedHashMap::new));
     }
 
     private Set<Long> parseScopeIds(String configuredValue, String key) {
@@ -440,15 +511,19 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
         } catch (RuntimeException e) {
             LOGGER.warn("Unable to persist guest network collection failure for VM [{}]", vm.getId(), e);
         } finally {
-            if (policy.isInterfaceDue(vm.getId(), now)) {
+            if (scheduleService != null) {
+                scheduleService.fail(vm.getId(), code, details, new Date(now),
+                        getInterfaceInterval(), getRouteInterval(), getDnsInterval(),
+                        getJitterPercent(), getFailureBackoffMax());
+            } else if (policy.isInterfaceDue(vm.getId(), now)) {
                 policy.recordInterfaceFailure(vm.getId(), now, getInterfaceInterval(),
                         getFailureBackoffMax(), getJitterPercent());
             }
-            if (policy.isRouteDue(vm.getId(), now)) {
+            if (scheduleService == null && policy.isRouteDue(vm.getId(), now)) {
                 policy.recordRouteFailure(vm.getId(), now, getRouteInterval(),
                         getFailureBackoffMax(), getJitterPercent());
             }
-            if (policy.isDnsDue(vm.getId(), now)) {
+            if (scheduleService == null && policy.isDnsDue(vm.getId(), now)) {
                 policy.recordDnsFailure(vm.getId(), now, getDnsInterval(),
                         getFailureBackoffMax(), getJitterPercent());
             }
@@ -456,7 +531,15 @@ public class VmGuestNetworkCollector extends ManagerBase implements Configurable
     }
 
     private void recordSectionSchedules(long vmId,
-            Map<String, VmGuestNetworkSectionStatus> sectionStatuses, long now) {
+            VmGuestNetworkState state, Date observedAt, long scheduleNow) {
+        if (scheduleService != null) {
+            scheduleService.complete(vmId, state, observedAt,
+                    getInterfaceInterval(), getRouteInterval(), getDnsInterval(),
+                    getJitterPercent(), getFailureBackoffMax());
+            return;
+        }
+        long now = scheduleNow;
+        Map<String, VmGuestNetworkSectionStatus> sectionStatuses = state.getSectionStatuses();
         VmGuestNetworkSectionStatus interfaceStatus = sectionStatuses.get("interfaces");
         if (interfaceStatus != null && !"NOT_DUE".equals(interfaceStatus.getStatus())) {
             if (isSuccessfulSection(interfaceStatus)) {

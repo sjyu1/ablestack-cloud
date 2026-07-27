@@ -29,6 +29,7 @@ import org.springframework.stereotype.Component;
 
 import com.cloud.agent.api.VmGuestNetworkState;
 import com.cloud.agent.api.VmGuestNetworkSectionStatus;
+import com.cloud.agent.api.VmGuestToolsInfo;
 import com.cloud.serializer.GsonHelper;
 import com.cloud.vm.VmGuestNetworkStateVO;
 import com.cloud.vm.dao.VmGuestNetworkStateDao;
@@ -144,6 +145,18 @@ public class VmGuestNetworkStateServiceImpl implements VmGuestNetworkStateServic
         incoming.setCapabilities(capabilities);
         if (StringUtils.isBlank(incoming.getAgentVersion())) {
             incoming.setAgentVersion(previous.getAgentVersion());
+        }
+        if (StringUtils.isBlank(incoming.getCollectorBuildId())) {
+            incoming.setCollectorBuildId(previous.getCollectorBuildId());
+        }
+        if (incoming.getCollectorHostId() == null) {
+            incoming.setCollectorHostId(previous.getCollectorHostId());
+        }
+        if (StringUtils.isBlank(incoming.getCapabilityHash())) {
+            incoming.setCapabilityHash(previous.getCapabilityHash());
+        }
+        if (incoming.getGuestTools() == null) {
+            incoming.setGuestTools(previous.getGuestTools());
         }
         incoming.setStatus(deriveOverallStatus(incomingSections, incoming.getStatus()));
         return incoming;
@@ -284,6 +297,16 @@ public class VmGuestNetworkStateServiceImpl implements VmGuestNetworkStateServic
         target.setStatus(StringUtils.defaultIfBlank(state.getStatus(), "OK"));
         if (StringUtils.isNotBlank(state.getAgentVersion())) {
             target.setQgaVersion(state.getAgentVersion());
+        }
+        target.setCollectorBuildId(state.getCollectorBuildId());
+        target.setCollectorHostId(state.getCollectorHostId());
+        target.setCapabilityHash(state.getCapabilityHash());
+        VmGuestToolsInfo tools = state.getGuestTools();
+        if (tools != null) {
+            target.setGuestToolsVersion(tools.getVersion());
+            target.setQgaPolicyMode(tools.getQgaPolicyMode());
+            target.setReadinessStatus(tools.getReadinessStatus());
+            target.setReadinessCheckedAt(now);
         }
         target.setObservedAt(now);
         target.setLastSuccessAt(now);

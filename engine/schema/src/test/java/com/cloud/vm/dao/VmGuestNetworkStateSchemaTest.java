@@ -61,6 +61,13 @@ public class VmGuestNetworkStateSchemaTest {
         assertTrue(table.contains("`schema_version` smallint unsigned NOT NULL DEFAULT 1"));
         assertTrue(table.contains("`status` varchar(32) NOT NULL"));
         assertTrue(table.contains("`qga_version` varchar(64)"));
+        assertTrue(table.contains("`collector_build_id` varchar(128)"));
+        assertTrue(table.contains("`collector_host_id` bigint unsigned"));
+        assertTrue(table.contains("`capability_hash` char(64)"));
+        assertTrue(table.contains("`guest_tools_version` varchar(64)"));
+        assertTrue(table.contains("`qga_policy_mode` varchar(16)"));
+        assertTrue(table.contains("`readiness_status` varchar(32)"));
+        assertTrue(table.contains("`readiness_checked_at` datetime"));
         assertTrue(table.contains("`observed_at` datetime NOT NULL"));
         assertTrue(table.contains("`last_success_at` datetime"));
         assertTrue(table.contains("`payload_hash` char(64)"));
@@ -74,6 +81,23 @@ public class VmGuestNetworkStateSchemaTest {
         assertTrue(table.contains("REFERENCES `vm_instance` (`id`) ON DELETE CASCADE"));
         assertTrue(table.contains("(`status`, `observed_at`)"));
         assertTrue(table.endsWith("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"));
+        assertSectionSchemaContract(schema, idempotentCreate);
+    }
+
+    private void assertSectionSchemaContract(String schema, boolean idempotentCreate) {
+        String tableName = "vm_guest_network_section_state";
+        int start = schema.indexOf((idempotentCreate
+                ? "CREATE TABLE IF NOT EXISTS" : "CREATE TABLE")
+                + " `cloud`.`" + tableName + "`");
+        assertTrue("Missing " + tableName + " CREATE TABLE statement", start >= 0);
+        int end = schema.indexOf("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", start);
+        assertTrue("Missing " + tableName + " table terminator", end >= 0);
+        String table = schema.substring(start, end);
+        assertTrue(table.contains("UNIQUE KEY `uc_vm_guest_network_section__vm_section`"));
+        assertTrue(table.contains("`next_due_at` datetime NOT NULL"));
+        assertTrue(table.contains("`lease_owner` varchar(128)"));
+        assertTrue(table.contains("`lease_until` datetime"));
+        assertTrue(table.contains("ON DELETE CASCADE"));
     }
 
     private String tableBlock(String schema) {
