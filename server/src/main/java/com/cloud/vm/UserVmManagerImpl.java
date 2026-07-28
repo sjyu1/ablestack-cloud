@@ -658,7 +658,6 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private int _expungeDelay;
     private int _flattenInterval;
     private int _flattenProgressInterval;
-    private int _flattenSharedMountPointBandwidth;
     private boolean _dailyOrHourly = false;
     private int capacityReleaseInterval;
     private ExecutorService _vmIpFetchThreadExecutor;
@@ -2498,7 +2497,6 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         int fwrks = NumbersUtil.parseInt(configs.get(FlattenWorkers.key()), Integer.parseInt(FlattenWorkers.defaultValue()));
         _flattenInterval = NumbersUtil.parseInt(configs.get(FlattenInterval.key()), Integer.parseInt(FlattenInterval.defaultValue()));
         _flattenProgressInterval = NumbersUtil.parseInt(configs.get(FlattenProgressInterval.key()), Integer.parseInt(FlattenProgressInterval.defaultValue()));
-        _flattenSharedMountPointBandwidth = NumbersUtil.parseInt(configs.get(FlattenSharedMountPointBandwidth.key()), Integer.parseInt(FlattenSharedMountPointBandwidth.defaultValue()));
 
         _flattenExecutor = Executors.newScheduledThreadPool(fwrks, new NamedThreadFactory("FlattenCloneImage-Scavenger"));
         _flattenProgressExecutor = Executors.newScheduledThreadPool(1, new NamedThreadFactory("FlattenCloneProgress-Scavenger"));
@@ -10546,7 +10544,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         FlattenSharedMountPointCommand flattenCommand = new FlattenSharedMountPointCommand(volumeTO);
         Map<String, String> options = new HashMap<>();
         options.put("operation", operation);
-        options.put("bandwidth", String.valueOf(_flattenSharedMountPointBandwidth));
+        options.put("bandwidth", String.valueOf(FlattenSharedMountPointBandwidth.value()));
         if (StringUtils.isNotBlank(backingPath)) {
             options.put("backingPath", backingPath);
         }
