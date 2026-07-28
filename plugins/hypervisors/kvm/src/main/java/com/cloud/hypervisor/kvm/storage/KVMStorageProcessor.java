@@ -2781,7 +2781,7 @@ public class KVMStorageProcessor implements StorageProcessor {
                     if (SHARED_MOUNT_POINT_FLATTEN_CHECK_OPERATION.equals(operation)) {
                         return checkRunningVolumeFlattenStatus(volume, cmd, volumePath, vm, diskLabel);
                     }
-                    String status = startFlattenRunningVolume(vm, diskLabel, volumePath);
+                    String status = startFlattenRunningVolume(cmd, vm, diskLabel, volumePath);
                     logger.info("SharedMountPoint volume [{}] flatten status for VM [{}] is [{}].", volumePath, vmName, status);
                     return new FlattenCmdAnswer(volume, cmd, true, status);
                 } finally {
@@ -2809,7 +2809,7 @@ public class KVMStorageProcessor implements StorageProcessor {
                     if (StringUtils.isBlank(diskLabel)) {
                         throw new CloudRuntimeException("Could not find source overlay disk " + overlayPath + " in VM " + vmName);
                     }
-                    String command = String.format("virsh blockcommit %s %s --base %s --active --wait --pivot", vm.getName(), diskLabel, backingPath);
+                    String command = String.format("virsh blockcommit %s %s --base %s --active --wait --pivot", shellQuote(vm.getName()), shellQuote(diskLabel), shellQuote(backingPath.toString()));
                     String result = Script.runSimpleBashScript(command);
                     if (result != null) {
                         throw new CloudRuntimeException("Failed to commit source overlay using command [" + command + "]. Result: " + result);
@@ -2859,10 +2859,10 @@ public class KVMStorageProcessor implements StorageProcessor {
 
         logger.warn("No active blockpull job was found for SharedMountPoint volume [{}] on VM [{}] disk [{}], but backing file still exists. " +
                 "Attempting to start or recover the flatten job. Block job output: [{}].", volumePath, vm.getName(), diskLabel, blockJobInfo);
-        return new FlattenCmdAnswer(volume, cmd, true, startFlattenRunningVolume(vm, diskLabel, volumePath));
+        return new FlattenCmdAnswer(volume, cmd, true, startFlattenRunningVolume(cmd, vm, diskLabel, volumePath));
     }
 
-    protected String startFlattenRunningVolume(Domain vm, String diskLabel, Path volumePath) throws LibvirtException, QemuImgException {
+    protected String startFlattenRunningVolume(FlattenSharedMountPointCommand cmd, Domain vm, String diskLabel, Path volumePath) throws LibvirtException, QemuImgException {
         String blockJobInfo = getBlockJobInfo(vm.getName(), diskLabel);
         if (isBlockJobActive(blockJobInfo)) {
             return getRunningBlockPullStatus(blockJobInfo);
@@ -2871,7 +2871,12 @@ public class KVMStorageProcessor implements StorageProcessor {
             return SHARED_MOUNT_POINT_FLATTENED;
         }
 
-        String command = String.format("virsh blockpull %s %s --bandwidth %d", shellQuote(vm.getName()), shellQuote(diskLabel), SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB);
+        int bandwidth = SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB;
+        if (cmd != null && cmd.getOptions() != null && cmd.getOptions().containsKey("bandwidth")) {
+            bandwidth = NumberUtils.toInt(cmd.getOptions().get("bandwidth"), SHARED_MOUNT_POINT_BLOCKPULL_BANDWIDTH_MIB);
+        }
+
+        String command = String.format("virsh blockpull %s %s --bandwidth %d", shellQuote(vm.getName()), shellQuote(diskLabel), bandwidth);
         Pair<Integer, String> result = runBashCommand(command);
         if (result.first() != 0) {
             blockJobInfo = getBlockJobInfo(vm.getName(), diskLabel);

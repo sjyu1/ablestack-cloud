@@ -2494,9 +2494,9 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
 
         _executor = Executors.newScheduledThreadPool(wrks, new NamedThreadFactory("UserVm-Scavenger"));
 
-        int fwrks = 1;
-        _flattenInterval = NumbersUtil.parseInt(configs.get("flatten.interval"), 300);
-        _flattenProgressInterval = NumbersUtil.parseInt(configs.get("flatten.progress.interval"), 15);
+        int fwrks = NumbersUtil.parseInt(configs.get(FlattenWorkers.key()), Integer.parseInt(FlattenWorkers.defaultValue()));
+        _flattenInterval = NumbersUtil.parseInt(configs.get(FlattenInterval.key()), Integer.parseInt(FlattenInterval.defaultValue()));
+        _flattenProgressInterval = NumbersUtil.parseInt(configs.get(FlattenProgressInterval.key()), Integer.parseInt(FlattenProgressInterval.defaultValue()));
 
         _flattenExecutor = Executors.newScheduledThreadPool(fwrks, new NamedThreadFactory("FlattenCloneImage-Scavenger"));
         _flattenProgressExecutor = Executors.newScheduledThreadPool(1, new NamedThreadFactory("FlattenCloneProgress-Scavenger"));
@@ -9073,7 +9073,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         return new ConfigKey<?>[] {EnableDynamicallyScaleVm, AllowDiskOfferingChangeDuringScaleVm, AllowUserExpungeRecoverVm, VmIpFetchWaitInterval, VmIpFetchTrialMax,
                 VmIpFetchThreadPoolMax, VmIpFetchTaskWorkers, AllowDeployVmIfGivenHostFails, EnableAdditionalVmConfig, DisplayVMOVFProperties,
                 KvmAdditionalConfigAllowList, XenServerAdditionalConfigAllowList, VmwareAdditionalConfigAllowList, DestroyRootVolumeOnVmDestruction,
-                EnforceStrictResourceLimitHostTagCheck, StrictHostTags, AllowUserForceStopVm, EnableVmNetwokFilterAllowAllTraffic};
+                EnforceStrictResourceLimitHostTagCheck, StrictHostTags, AllowUserForceStopVm, EnableVmNetwokFilterAllowAllTraffic,
+                FlattenInterval, FlattenProgressInterval, FlattenWorkers, FlattenSharedMountPointBandwidth};
     }
 
     @Override
@@ -10150,7 +10151,6 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 if (cloneVM == null) {
                     throw new CloudRuntimeException("Unable to record the VM to DB!");
                 }
-                cloneVolumesToCleanup.removeAll(cloneVolumes);
                 cmd.setEntityUuid(cloneVM.getUuid());
                 cmd.setEntityId(cloneVM.getId());
                 markFastCloneVmStatus(cloneVM.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
@@ -10167,6 +10167,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 Map<VirtualMachineProfile.Param, Object> additonalParams = getCloneVmAdditionalParams(curVm);
                 Map<Long, DiskOffering> diskOfferingMap = new HashMap<>();
                 lastCloneVm = cmd.getStartVm() ? startVirtualMachine(cmd.getEntityId(), podId, clusterId, hostId, diskOfferingMap, additonalParams, null) : getUserVm(cmd.getEntityId());
+                cloneVolumesToCleanup.removeAll(cloneVolumes);
             }
         } catch (Exception e) {
             cleanupFailedFastCloneVolumes(cloneVolumesToCleanup);
@@ -10327,7 +10328,30 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         Account caller = CallContext.current().getCallingAccount();
         for (VolumeVO cloneVolume : cloneVolumes) {
             try {
-                _volumeService.destroyVolume(cloneVolume.getId(), caller, true, false);
+                VolumeVO volume = _volsDao.findById(cloneVolume.getId());
+                if (volume == null) {
+                    continue;
+                }
+
+                clearFastCloneVolumeDetails(volume.getId());
+                if (volume.getInstanceId() != null) {
+                    clearFastCloneVmStatus(volume.getInstanceId());
+                }
+
+                if (volume.getState() == Volume.State.Destroy || volume.getState() == Volume.State.Expunged) {
+                    logger.debug("Skipping cleanup of SharedMountPoint clone volume [{}] because it is already in [{}] state.", volume, volume.getState());
+                    continue;
+                }
+
+                if (volume.getInstanceId() != null) {
+                    volumeMgr.destroyVolume(volume);
+                    continue;
+                }
+
+                Volume result = _volumeService.destroyVolume(volume.getId(), caller, true, true);
+                if (result == null) {
+                    logger.warn("Failed to expunge unattached SharedMountPoint clone volume [{}] after clone failure.", volume);
+                }
             } catch (Exception e) {
                 logger.warn("Failed to cleanup clone volume [{}] after SharedMountPoint clone failure.", cloneVolume, e);
             }
@@ -10520,6 +10544,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         FlattenSharedMountPointCommand flattenCommand = new FlattenSharedMountPointCommand(volumeTO);
         Map<String, String> options = new HashMap<>();
         options.put("operation", operation);
+        options.put("bandwidth", String.valueOf(FlattenSharedMountPointBandwidth.value()));
         if (StringUtils.isNotBlank(backingPath)) {
             options.put("backingPath", backingPath);
         }
