@@ -26,6 +26,7 @@ import com.cloud.host.Host;
 import com.cloud.host.HostVO;
 import com.cloud.host.Status;
 import com.cloud.host.dao.HostDao;
+import com.cloud.hypervisor.Hypervisor;
 import com.cloud.utils.Pair;
 import org.junit.Assert;
 import org.junit.Before;
