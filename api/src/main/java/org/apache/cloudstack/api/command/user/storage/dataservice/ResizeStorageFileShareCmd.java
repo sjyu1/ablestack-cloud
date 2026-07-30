@@ -50,7 +50,7 @@ public class ResizeStorageFileShareCmd extends BaseAsyncCmd implements UserCmd {
     @Parameter(name = "quotabytes", type = CommandType.LONG, description = "new file share capacity limit in bytes")
     private Long quotaBytes;
 
-    @Parameter(name = "resizevolume", type = CommandType.BOOLEAN, description = "resize the CloudStack backing volume before growing the filesystem")
+    @Parameter(name = "resizevolume", type = CommandType.BOOLEAN, description = "resize the ABLESTACK backing volume before growing the filesystem")
     private Boolean resizeVolume;
 
     public Long getId() {

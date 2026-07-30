@@ -33,7 +33,7 @@ import org.apache.cloudstack.storage.dataservice.StorageService;
 
 @APICommand(name = "attachStorageVolumeToFileShare",
         responseObject = StorageFileShareResponse.class,
-        description = "Attaches an existing CloudStack volume to a Storage Service file share and inspects it through the Storage Service System VM.",
+        description = "Attaches an existing ABLESTACK volume to a Storage Service file share and inspects it through the Storage Service System VM.",
         requestHasSensitiveInfo = false,
         responseHasSensitiveInfo = false,
         since = "4.21.0",
@@ -45,7 +45,7 @@ public class AttachStorageVolumeToFileShareCmd extends BaseAsyncCmd implements U
     @Parameter(name = ApiConstants.ID, type = CommandType.UUID, entityType = StorageFileShareResponse.class, required = true, description = "Storage Service file share ID")
     private Long id;
 
-    @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, required = true, description = "existing CloudStack volume ID")
+    @Parameter(name = ApiConstants.VOLUME_ID, type = CommandType.UUID, entityType = VolumeResponse.class, required = true, description = "existing ABLESTACK volume ID")
     private Long volumeId;
 
     @Parameter(name = ApiConstants.PATH, type = CommandType.STRING, description = "mount path inside the Storage Service System VM")

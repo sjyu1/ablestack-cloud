@@ -2776,7 +2776,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         try {
             final Volume resizedVolume = volumeApiService.resizeVolume(resizeVolumeCmd);
             if (resizedVolume == null) {
-                throw new CloudRuntimeException("CloudStack volume resize returned no volume for id " + volumeId);
+                throw new CloudRuntimeException("ABLESTACK volume resize returned no volume for id " + volumeId);
             }
         } catch (final ResourceAllocationException e) {
             throw new CloudRuntimeException("Failed to resize backing volume " + volumeId + ": " + e.getMessage(), e);

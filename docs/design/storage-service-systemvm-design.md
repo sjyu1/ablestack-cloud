@@ -4233,7 +4233,7 @@ Core engine rules:
   in DB, response objects, async job details, or monitor cache.
 
 Data model additions should be separate from the existing open-source
-CloudStack SharedFS API path and should follow the Storage Service independent
+ABLESTACK SharedFS API path and should follow the Storage Service independent
 API namespace used by the NFS extension. The preferred model is:
 
 - `storage_service_smb_share`
