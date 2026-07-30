@@ -386,7 +386,7 @@ export default {
       const tooltip = action.tooltip(this.resource, this.$store.getters, this.selectedItems)
       return tooltip ? this.$t(tooltip) : ''
     },
-    openConsole (copyUrlToClipboard) {
+    async openConsole (copyUrlToClipboard) {
       if (!this.resource || !this.resource.id) {
         return
       }
