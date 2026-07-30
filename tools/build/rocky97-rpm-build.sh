@@ -124,12 +124,29 @@ if [ ! -x "/opt/node-v${NODE_VERSION}-linux-x64/bin/node" ]; then
 fi
 NODE_BIN_DIR="/opt/node-v${NODE_VERSION}-linux-x64/bin"
 
-JAVA17_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
-if [ -d /usr/lib/jvm/java-17-openjdk ]; then
-    JAVA17_HOME=/usr/lib/jvm/java-17-openjdk
+PROJECT_JDK_VERSION=$(sed -n \
+    's:.*<cs\.jdk\.version>\([^<]*\)</cs\.jdk\.version>.*:\1:p' \
+    "$ROOT_DIR/pom.xml" | head -n 1)
+case "$PROJECT_JDK_VERSION" in
+    11|17) ;;
+    *)
+        echo "Unsupported or missing cs.jdk.version in pom.xml: ${PROJECT_JDK_VERSION:-<empty>}"
+        exit 1
+        ;;
+esac
+
+PROJECT_JAVA_HOME="/usr/lib/jvm/java-${PROJECT_JDK_VERSION}-openjdk"
+if [ ! -x "$PROJECT_JAVA_HOME/bin/javac" ]; then
+    project_javac=$(find /usr/lib/jvm -maxdepth 4 -type f \
+        -path "*java-${PROJECT_JDK_VERSION}*/bin/javac" -print -quit)
+    if [ -z "$project_javac" ]; then
+        echo "Unable to find JDK ${PROJECT_JDK_VERSION} under /usr/lib/jvm"
+        exit 1
+    fi
+    PROJECT_JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$project_javac")")")
 fi
 
-export JAVA_HOME="$JAVA17_HOME"
+export JAVA_HOME="$PROJECT_JAVA_HOME"
 export PATH="$NODE_BIN_DIR:$JAVA_HOME/bin:$PATH"
 export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true --add-opens=java.base/java.lang=ALL-UNNAMED"
 export RPM_NODE_BIN_DIR="$NODE_BIN_DIR"
