@@ -112,7 +112,6 @@ import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.libvirt.Connect;
 import org.libvirt.Domain;
 import org.libvirt.DomainInfo;
@@ -2110,6 +2109,8 @@ public class KVMStorageProcessor implements StorageProcessor {
             String diskPath = disk.getPath();
             String requestedSnapshotPath = getRequestedSnapshotPath(primaryPool, snapshotTO.getPath());
             String snapshotPath = StringUtils.defaultIfBlank(requestedSnapshotPath, diskPath + File.separator + snapshotName);
+            Long snapshotSize = null;
+            SnapshotObjectTO newSnapshot = new SnapshotObjectTO();
 
             if (state == DomainInfo.DomainState.VIR_DOMAIN_RUNNING && !primaryPool.isExternalSnapshot()) {
 
@@ -2117,9 +2118,6 @@ public class KVMStorageProcessor implements StorageProcessor {
 
                 try {
                     snapshotPath = StringUtils.defaultIfBlank(requestedSnapshotPath, getSnapshotPathInPrimaryStorage(primaryPool.getLocalPath(), snapshotName));
-                    String diskLabel = takeVolumeSnapshot(resource.getDisks(conn, vmName), snapshotName, diskPath, vm);
-                    String convertResult = convertBaseFileToSnapshotFileInPrimaryStorageDir(primaryPool, disk, snapshotPath, volume, cmd.getWait());
-
                     String diskLabel = takeVolumeSnapshot(resource.getDisks(conn, vmName), snapshotName, diskPath, vm);
                     Pair<String, String> fullSnapPathAndDirPath = getFullSnapshotOrCheckpointPathAndDirPathOnCorrectStorage(primaryPool, secondaryPool, snapshotName, volume, false);
 
@@ -2175,28 +2173,24 @@ public class KVMStorageProcessor implements StorageProcessor {
                     } catch (final Exception e) {
                         logger.error("A RBD snapshot operation on " + disk.getName() + " failed. The error was: " + e.getMessage());
                     }
-                } else if (primaryPool.getType() == StoragePoolType.CLVM) {
-                    /* VM is not running, create a snapshot by ourself */
-                    final Script command = new Script(_manageSnapshotPath, _cmdsTimeout, logger);
-                    command.add(MANAGE_SNAPSTHOT_CREATE_OPTION, disk.getPath());
-                    command.add(NAME_OPTION, snapshotName);
-                    final String result = command.execute();
-                    if (result != null) {
-                        logger.debug("Failed to manage snapshot: " + result);
-                        return new CreateObjectAnswer("Failed to manage snapshot: " + result);
-                    }
-                } else if (primaryPool.getType() == StoragePoolType.SharedMountPoint){
-                    snapshotPath = StringUtils.defaultIfBlank(requestedSnapshotPath, getSnapshotPathInPrimaryStorageGFS(primaryPool.getLocalPath(), disk.getName()+ "@"+snapshotName));
-                    String convertResult = convertBaseFileToSnapshotFileInPrimaryStorageDir(primaryPool, disk, snapshotPath, volume, cmd.getWait());
-                    validateConvertResult(convertResult, snapshotPath);
                 } else {
-                    snapshotPath = StringUtils.defaultIfBlank(requestedSnapshotPath, getSnapshotPathInPrimaryStorage(primaryPool.getLocalPath(), disk.getName()+ "@"+snapshotName));
-                    String convertResult = convertBaseFileToSnapshotFileInPrimaryStorageDir(primaryPool, disk, snapshotPath, volume, cmd.getWait());
-                    validateConvertResult(convertResult, snapshotPath);
+                    if (primaryPool.getType() == StoragePoolType.CLVM) {
+                        CreateObjectAnswer result = takeClvmVolumeSnapshotOfStoppedVm(disk, snapshotName);
+                        if (result != null) {
+                            return result;
+                        }
+                        newSnapshot.setPath(snapshotPath);
+                    } else if (snapshotTO.isKvmIncrementalSnapshot()) {
+                        newSnapshot = takeIncrementalVolumeSnapshotOfStoppedVm(snapshotTO, primaryPool, secondaryPool, imageStoreTo != null ? imageStoreTo.getUrl() : null, snapshotName, volume, conn, cmd.getWait());
+                    } else {
+                        newSnapshot = takeFullVolumeSnapshotOfStoppedVm(cmd, primaryPool, secondaryPool, snapshotName, disk, volume);
+                    }
                 }
             }
 
-            newSnapshot.setPath(snapshotPath);
+            if (StringUtils.isBlank(newSnapshot.getPath())) {
+                newSnapshot.setPath(snapshotPath);
+            }
             if (snapshotSize != null) {
                 newSnapshot.setPhysicalSize(snapshotSize);
             }
@@ -2591,7 +2585,7 @@ public class KVMStorageProcessor implements StorageProcessor {
                     + " and extract the disk instead. Consider upgrading your QEMU binary.", volume, vmName, e.getMessage());
 
             takeFullVmSnapshotForBinariesThatDoesNotSupportLiveDiskSnapshot(vm, snapshotName, vmName);
-            primaryPool.createFolder(TemplateConstants.DEFAULT_SNAPSHOT_ROOT_DIR);
+            ObjectUtils.defaultIfNull(secondaryPool, primaryPool).createFolder(TemplateConstants.DEFAULT_SNAPSHOT_ROOT_DIR);
             extractDiskFromFullVmSnapshot(disk, volume, snapshotPath, snapshotName, vmName, vm);
         }
 
@@ -2813,7 +2807,7 @@ public class KVMStorageProcessor implements StorageProcessor {
             logger.debug(
                     "Trying to convert volume [{}] ({}) to snapshot [{}].", volume, baseFile, snapshotPath);
 
-            primaryPool.createFolder(TemplateConstants.DEFAULT_SNAPSHOT_ROOT_DIR);
+            pool.createFolder(TemplateConstants.DEFAULT_SNAPSHOT_ROOT_DIR);
             Files.createDirectories(Paths.get(snapshotPath).toAbsolutePath().normalize().getParent());
             convertTheBaseFileToSnapshot(baseFile, snapshotPath, wait, srcKey);
         } catch (QemuImgException | LibvirtException | IOException ex) {

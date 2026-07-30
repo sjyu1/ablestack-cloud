@@ -17,9 +17,6 @@
 package com.cloud.api.query.dao;
 
 import java.text.DecimalFormat;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -29,6 +26,7 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -222,11 +220,11 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
 
         ApiResponseHelper.populateOwner(userVmResponse, userVm);
 
-        UserVmDetailVO fastCloneStatus = _userVmDetailsDao.findDetail(userVm.getId(), FAST_CLONE_STATUS);
+        VMInstanceDetailVO fastCloneStatus = _vmInstanceDetailsDao.findDetail(userVm.getId(), FAST_CLONE_STATUS);
         if (fastCloneStatus != null) {
             userVmResponse.setCloneFastStatus(fastCloneStatus.getValue());
         }
-        UserVmDetailVO fastCloneFlattenProgress = _userVmDetailsDao.findDetail(userVm.getId(), FAST_CLONE_FLATTEN_PROGRESS);
+        VMInstanceDetailVO fastCloneFlattenProgress = _vmInstanceDetailsDao.findDetail(userVm.getId(), FAST_CLONE_FLATTEN_PROGRESS);
         if (fastCloneFlattenProgress != null) {
             userVmResponse.setCloneFastFlattenProgress(fastCloneFlattenProgress.getValue());
         }
@@ -583,7 +581,7 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
         return userVmResponse;
     }
 
-    protected boolean isFastCloneFlattenActive(UserVmDetailVO fastCloneStatus) {
+    protected boolean isFastCloneFlattenActive(VMInstanceDetailVO fastCloneStatus) {
         if (fastCloneStatus == null) {
             return false;
         }
@@ -926,6 +924,13 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
         return listBy(sc);
     }
 
+    protected long computeLeaseDurationFromExpiryDate(Date currentDate, Date expiryDate) {
+        long remainingMillis = expiryDate.getTime() - currentDate.getTime();
+        if (remainingMillis <= 0) {
+            return 0;
+        }
+        return (long)Math.ceil((double)remainingMillis / TimeUnit.DAYS.toMillis(1));
+    }
 
     /**
      * This method will return instances which are expiring within days

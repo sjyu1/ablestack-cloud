@@ -511,7 +511,7 @@ public class VolumeServiceImpl implements VolumeService {
         VolumeApiResult apiResult = new VolumeApiResult(vo);
         try {
             if (result.isSuccess()) {
-                vo.processEvent(Event.OperationSuccessed);
+                vo.processEvent(Event.OperationSucceeded);
                 cleanupLinkedCloneBackingIfUnused(vo);
 
                 if (vo.getPassphraseId() != null) {
@@ -559,6 +559,21 @@ public class VolumeServiceImpl implements VolumeService {
         }
         context.getFuture().complete(apiResult);
         return null;
+    }
+
+    /**
+     * Deletes the snapshot from primary storage if the only storage associated with the snapshot is of the Primary role; else, just removes the primary record on the DB.
+     */
+    protected void deleteKvmSnapshotOnPrimary(SnapshotDataStoreVO snapshotDataStoreVO) {
+        List<SnapshotDataStoreVO> snapshotDataStoreVOList = _snapshotStoreDao.findBySnapshotId(snapshotDataStoreVO.getSnapshotId());
+        for (SnapshotDataStoreVO snapshotStore : snapshotDataStoreVOList) {
+            if (DataStoreRole.Image.equals(snapshotStore.getRole())) {
+                _snapshotStoreDao.remove(snapshotDataStoreVO.getId());
+                return;
+            }
+        }
+
+        snapshotApiService.deleteSnapshot(snapshotDataStoreVO.getSnapshotId(), null);
     }
 
     protected void cleanupLinkedCloneBackingIfUnused(VolumeObject volume) {

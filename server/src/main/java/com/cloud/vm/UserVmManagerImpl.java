@@ -10990,7 +10990,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create vm snapshot: " + e.getMessage(), e);
         }
 
-        List<VMSnapshotDetailsVO> listSnapshots = getVmSnapshotVolumeDetails(vmSnapshot.getId());
+        List<VMSnapshotDetailsVO> listSnapshots = vmSnapshotDetailsDao.listDetails(vmSnapshot.getId());
         if (CollectionUtils.isEmpty(listSnapshots)) {
             throw new CloudRuntimeException("Could not find volume snapshots mapped to VM snapshot");
         }
@@ -11187,7 +11187,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 cmd.setEntityUuid(cloneVM.getUuid());
                 cmd.setEntityId(cloneVM.getId());
                 markFastCloneVmStatus(cloneVM.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
-                userVmDetailsDao.addDetail(cloneVM.getId(), FAST_CLONE_SOURCE_VM_ID, String.valueOf(curVm.getId()), false);
+                vmInstanceDetailsDao.addDetail(cloneVM.getId(), FAST_CLONE_SOURCE_VM_ID, String.valueOf(curVm.getId()), false);
 
                 VMInstanceVO vmInstance = _vmInstanceDao.findById(cloneVM.getId());
                 vmInstance.setGuestOSId(cmd.getTargetVM().getGuestOSId());
@@ -11318,34 +11318,34 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     }
 
     protected void markFastCloneVmStatus(long vmId, String status, String operationId) {
-        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_STATUS);
-        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_OPERATION_ID);
-        userVmDetailsDao.addDetail(vmId, FAST_CLONE_STATUS, status, false);
-        userVmDetailsDao.addDetail(vmId, FAST_CLONE_OPERATION_ID, operationId, false);
+        vmInstanceDetailsDao.removeDetail(vmId, FAST_CLONE_STATUS);
+        vmInstanceDetailsDao.removeDetail(vmId, FAST_CLONE_OPERATION_ID);
+        vmInstanceDetailsDao.addDetail(vmId, FAST_CLONE_STATUS, status, false);
+        vmInstanceDetailsDao.addDetail(vmId, FAST_CLONE_OPERATION_ID, operationId, false);
         if (FAST_CLONE_FLATTEN_DONE.equalsIgnoreCase(status)) {
             setFastCloneVmFlattenProgress(vmId, "100.00");
         } else if (FAST_CLONE_FLATTEN_PENDING.equalsIgnoreCase(status) ||
-                (FAST_CLONE_FLATTEN_RUNNING.equalsIgnoreCase(status) && userVmDetailsDao.findDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS) == null)) {
+                (FAST_CLONE_FLATTEN_RUNNING.equalsIgnoreCase(status) && vmInstanceDetailsDao.findDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS) == null)) {
             setFastCloneVmFlattenProgress(vmId, "0.00");
         }
     }
 
     protected void clearFastCloneVmStatus(long vmId) {
-        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_STATUS);
-        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_OPERATION_ID);
-        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_SOURCE_VM_ID);
-        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS);
+        vmInstanceDetailsDao.removeDetail(vmId, FAST_CLONE_STATUS);
+        vmInstanceDetailsDao.removeDetail(vmId, FAST_CLONE_OPERATION_ID);
+        vmInstanceDetailsDao.removeDetail(vmId, FAST_CLONE_SOURCE_VM_ID);
+        vmInstanceDetailsDao.removeDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS);
     }
 
     protected void checkNoActiveFastCloneOperation(long vmId) {
-        UserVmDetailVO detail = userVmDetailsDao.findDetail(vmId, FAST_CLONE_STATUS);
+        VMInstanceDetailVO detail = vmInstanceDetailsDao.findDetail(vmId, FAST_CLONE_STATUS);
         if (detail != null && !FAST_CLONE_FLATTEN_DONE.equalsIgnoreCase(detail.getValue())) {
             throw new CloudRuntimeException("There is an active SharedMountPoint clone/flatten task on the VM, please try again later.");
         }
     }
 
     protected void checkFastCloneOperationAllowed(long vmId, String operation) {
-        UserVmDetailVO detail = userVmDetailsDao.findDetail(vmId, FAST_CLONE_STATUS);
+        VMInstanceDetailVO detail = vmInstanceDetailsDao.findDetail(vmId, FAST_CLONE_STATUS);
         if (detail == null) {
             return;
         }
@@ -11543,9 +11543,9 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     }
 
     protected void setFastCloneVmFlattenProgress(long vmId, String progress) {
-        userVmDetailsDao.removeDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS);
+        vmInstanceDetailsDao.removeDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS);
         if (StringUtils.isNotBlank(progress)) {
-            userVmDetailsDao.addDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS, progress, false);
+            vmInstanceDetailsDao.addDetail(vmId, FAST_CLONE_FLATTEN_PROGRESS, progress, false);
         }
     }
 

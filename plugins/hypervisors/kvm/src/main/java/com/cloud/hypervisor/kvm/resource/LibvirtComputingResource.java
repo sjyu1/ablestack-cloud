@@ -792,6 +792,23 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
     @Override
     public void disconnected() {
         cleanupUnavailableSecondaryNfsIsoMountsSafely("management server disconnect");
+        LOGGER.info("Detected agent disconnect event, running through " + _disconnectHooks.size() + " disconnect hooks");
+        for (DisconnectHook hook : _disconnectHooks) {
+            hook.start();
+        }
+        long start = System.currentTimeMillis();
+        for (DisconnectHook hook : _disconnectHooks) {
+            try {
+                long elapsed = System.currentTimeMillis() - start;
+                long remaining = hook.getTimeoutMs() - elapsed;
+                long joinWait = remaining > 0 ? remaining : 1;
+                hook.join(joinWait);
+                hook.interrupt();
+            } catch (InterruptedException ex) {
+                LOGGER.warn("Interrupted disconnect hook: " + ex.getMessage());
+            }
+        }
+        _disconnectHooks.clear();
     }
 
     protected void cleanupUnavailableSecondaryNfsIsoMountsSafely(String reason) {
@@ -7641,27 +7658,6 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
                 }
             }
         } catch (IOException e) {}
-    }
-
-    @Override
-    public void disconnected() {
-        LOGGER.info("Detected agent disconnect event, running through " + _disconnectHooks.size() + " disconnect hooks");
-        for (DisconnectHook hook : _disconnectHooks) {
-            hook.start();
-        }
-        long start = System.currentTimeMillis();
-        for (DisconnectHook hook : _disconnectHooks) {
-            try {
-                long elapsed = System.currentTimeMillis() - start;
-                long remaining = hook.getTimeoutMs() - elapsed;
-                long joinWait = remaining > 0 ? remaining : 1;
-                hook.join(joinWait);
-                hook.interrupt();
-            } catch (InterruptedException ex) {
-                LOGGER.warn("Interrupted disconnect hook: " + ex.getMessage());
-            }
-        }
-        _disconnectHooks.clear();
     }
 
     public void addDisconnectHook(DisconnectHook hook) {
