@@ -334,7 +334,7 @@ export default {
       if (!('listKubernetesClusters' in this.$store.getters.apis) || !this.resource?.id) {
         return
       }
-      api('listKubernetesClusters', {
+      getAPI('listKubernetesClusters', {
         listAll: true
       }).then(response => {
         const clusters = response.listkubernetesclustersresponse?.kubernetescluster || []

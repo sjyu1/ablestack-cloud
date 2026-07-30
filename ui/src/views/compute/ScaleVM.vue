@@ -190,7 +190,7 @@ export default {
       })
     },
     fetchCurrentServiceOffering () {
-      return api('listServiceOfferings', {
+      return getAPI('listServiceOfferings', {
         id: this.resource.serviceofferingid,
         details: 'min',
         response: 'json'
