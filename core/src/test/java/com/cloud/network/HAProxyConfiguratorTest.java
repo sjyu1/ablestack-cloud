@@ -142,7 +142,7 @@ public class HAProxyConfiguratorTest {
         LoadBalancerTO[] lba = new LoadBalancerTO[1];
         lba[0] = lb;
         HAProxyConfigurator hpg = new HAProxyConfigurator();
-        LoadBalancerConfigCommand cmd = new LoadBalancerConfigCommand(lba, "10.0.0.1", "10.1.0.1", "10.1.1.1", null, 1L, "12", false);
+        LoadBalancerConfigCommand cmd = new LoadBalancerConfigCommand(lba, "10.0.0.1", "10.1.0.1", "10.1.1.1", null, 1L, "12", false, 0L);
         String result = genConfig(hpg, cmd);
         assertTrue("'mode http' should result if protocol is 'http'", result.contains("\tmode http"));
     }
@@ -181,7 +181,7 @@ public class HAProxyConfiguratorTest {
         LoadBalancerTO[] lba = new LoadBalancerTO[1];
         lba[0] = lb;
         HAProxyConfigurator hpg = new HAProxyConfigurator();
-        LoadBalancerConfigCommand cmd = new LoadBalancerConfigCommand(lba, "10.0.0.1", "10.1.0.1", "10.1.1.1", null, 1L, "12", false);
+        LoadBalancerConfigCommand cmd = new LoadBalancerConfigCommand(lba, "10.0.0.1", "10.1.0.1", "10.1.1.1", null, 1L, "12", false, 0L);
         String result = genConfig(hpg, cmd);
         Assert.assertTrue(result.contains("\tserver 10_2_0_1-443_0 10.1.10.2:8443 ssl verify none check"));
     }
