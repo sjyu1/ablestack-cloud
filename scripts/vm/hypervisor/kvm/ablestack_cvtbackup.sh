@@ -238,21 +238,42 @@ parse_rbd_uri() {
 
   if [[ "$uri" == rbd:* ]]; then
     local payload="${uri#rbd:}"
-    RBD_IMAGE="${payload%%:*}"
+    local fields=()
+    local field=""
+    local escaped=0
+    local char
+    for ((i = 0; i < ${#payload}; i++)); do
+      char="${payload:i:1}"
+      if [[ "$char" == ":" && "$escaped" -eq 0 ]]; then
+        fields+=("$field")
+        field=""
+        continue
+      fi
+      field+="$char"
+      if [[ "$char" == "\\" && "$escaped" -eq 0 ]]; then
+        escaped=1
+      else
+        escaped=0
+      fi
+    done
+    fields+=("$field")
 
-    if [[ "$uri" =~ :mon_host=([^:]*) ]]; then
-      RBD_MON_HOST="${BASH_REMATCH[1]}"
-      RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
-      RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
-    fi
-
-    if [[ "$uri" =~ :id=([^:]*) ]]; then
-      RBD_USER="${BASH_REMATCH[1]}"
-    fi
-
-    if [[ "$uri" =~ :key=([^:]*) ]]; then
-      RBD_KEY="${BASH_REMATCH[1]}"
-    fi
+    RBD_IMAGE="${fields[0]}"
+    for field in "${fields[@]:1}"; do
+      case "$field" in
+        mon_host=*)
+          RBD_MON_HOST="${field#mon_host=}"
+          RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
+          RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
+          ;;
+        id=*)
+          RBD_USER="${field#id=}"
+          ;;
+        key=*)
+          RBD_KEY="${field#key=}"
+          ;;
+      esac
+    done
   elif [[ "$uri" == rbd/* ]]; then
     RBD_IMAGE="$uri"
   else
