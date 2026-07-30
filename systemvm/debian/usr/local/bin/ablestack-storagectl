@@ -44,6 +44,163 @@ log_command() {
   printf '%s command=%s payload=%s\n' "$(date -Is)" "${1:-}" "${2:-}" >> "$LOG_FILE"
 }
 
+runtime_health() {
+  python3 - <<'PY'
+import json
+import os
+import shutil
+import socket
+import subprocess
+import time
+
+def run(args):
+    try:
+        return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+    except Exception as exc:
+        return type("Result", (), {"returncode": 1, "stdout": "", "stderr": str(exc)})()
+
+def service_state(name):
+    if not shutil.which("systemctl"):
+        return "unknown"
+    result = run(["systemctl", "is-active", name])
+    return result.stdout.strip() or "unknown"
+
+def command_present(name):
+    return shutil.which(name) is not None
+
+def load_state(name):
+    path = os.path.join("/etc/ablestack-storage", name)
+    if not os.path.exists(path):
+        return False
+    return os.path.getsize(path) >= 0
+
+services = {
+    "qemuGuestAgent": service_state("qemu-guest-agent"),
+    "nfs": service_state("nfs-server") if service_state("nfs-server") != "unknown" else service_state("nfs-kernel-server"),
+    "smbd": service_state("smbd"),
+    "nmbd": service_state("nmbd"),
+    "winbind": service_state("winbind"),
+    "iscsiTarget": service_state("target"),
+}
+commands = {
+    "exportfs": command_present("exportfs"),
+    "smbd": command_present("smbd"),
+    "net": command_present("net"),
+    "targetcli": command_present("targetcli"),
+    "nvme": command_present("nvme"),
+}
+desired_state = {
+    "nfsQuotas": load_state("nfs-quotas.json"),
+    "smbQuotas": load_state("smb-quotas.json"),
+    "smbDomain": load_state("smb-domain.json"),
+    "iscsiTargets": load_state("iscsi-targets.json"),
+    "nvmeofSubsystems": load_state("nvmeof-subsystems.json"),
+}
+status = "ok"
+if services["qemuGuestAgent"] not in ("active", "unknown"):
+    status = "degraded"
+
+print(json.dumps({
+    "success": True,
+    "status": status,
+    "hostname": socket.gethostname(),
+    "uptimeSeconds": int(time.time() - os.stat("/proc/1").st_ctime) if os.path.exists("/proc/1") else None,
+    "services": services,
+    "commands": commands,
+    "desiredState": desired_state,
+}, sort_keys=True))
+PY
+}
+
+runtime_inventory() {
+  python3 - <<'PY'
+import glob
+import json
+import os
+
+def load_json(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            return json.load(fp)
+    except Exception:
+        return default
+
+exports = []
+for path in sorted(glob.glob("/etc/exports.d/ablestack-*.exports")):
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            lines = [line.strip() for line in fp.readlines() if line.strip()]
+    except Exception:
+        lines = []
+    exports.append({"file": os.path.basename(path), "entries": lines})
+
+smb_shares = []
+current = None
+try:
+    with open("/etc/samba/smb.conf", "r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if line.startswith("[") and line.endswith("]"):
+                name = line[1:-1]
+                if name != "global":
+                    current = {"name": name}
+                    smb_shares.append(current)
+            elif current is not None and "=" in line:
+                key, value = [part.strip() for part in line.split("=", 1)]
+                if key in ("path", "read only", "browseable", "guest ok", "valid users", "write list", "admin users"):
+                    current[key.replace(" ", "_")] = value
+except Exception:
+    pass
+
+print(json.dumps({
+    "success": True,
+    "status": "ok",
+    "nfsExports": exports,
+    "nfsQuotas": load_json("/etc/ablestack-storage/nfs-quotas.json", {}),
+    "smbShares": smb_shares,
+    "smbQuotas": load_json("/etc/ablestack-storage/smb-quotas.json", {}),
+    "smbDomain": load_json("/etc/ablestack-storage/smb-domain.json", {}),
+    "iscsiTargets": load_json("/etc/ablestack-storage/iscsi-targets.json", {}),
+    "nvmeofSubsystems": load_json("/etc/ablestack-storage/nvmeof-subsystems.json", {}),
+}, sort_keys=True))
+PY
+}
+
+runtime_sessions() {
+  python3 - <<'PY'
+import json
+import shutil
+import subprocess
+
+def ss_sessions():
+    if not shutil.which("ss"):
+        return []
+    result = subprocess.run(["ss", "-H", "-tn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    sessions = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        local = parts[3]
+        peer = parts[4] if len(parts) > 4 else ""
+        protocol = None
+        if local.endswith(":2049"):
+            protocol = "NFS"
+        elif local.endswith(":445") or local.endswith(":139"):
+            protocol = "SMB"
+        elif local.endswith(":3260"):
+            protocol = "ISCSI"
+        elif local.endswith(":4420"):
+            protocol = "NVME_OF"
+        if protocol:
+            sessions.append({"protocol": protocol, "state": parts[0], "local": local, "peer": peer})
+    return sessions
+
+sessions = ss_sessions()
+print(json.dumps({"success": True, "status": "ok", "sessions": sessions, "count": len(sessions)}, sort_keys=True))
+PY
+}
+
 apply_nfs_exports() {
   local payload_file="$1"
 
@@ -563,11 +720,15 @@ case "$command" in
     ;;
   health)
     log_command "$command" ""
-    printf '{"success":true,"status":"ok"}\n'
+    runtime_health
     ;;
   inventory)
     log_command "$command" ""
-    printf '{"success":true,"protocols":[],"exports":[],"targets":[]}\n'
+    runtime_inventory
+    ;;
+  sessions)
+    log_command "$command" ""
+    runtime_sessions
     ;;
   nfs)
     if [[ "$subcommand" != "export" || "$action" != "apply" ]]; then

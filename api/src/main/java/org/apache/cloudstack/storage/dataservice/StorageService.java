@@ -46,7 +46,10 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfs
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfHostAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfSubsystemsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceDomainStatusCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceHealthCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInventoryCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceSessionsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiAclCmd;
@@ -63,6 +66,7 @@ import org.apache.cloudstack.api.response.StorageAccessRuleResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageServiceProtocolResponse;
+import org.apache.cloudstack.api.response.StorageServiceRuntimeResponse;
 import org.apache.cloudstack.api.response.StorageSmbShareResponse;
 
 public interface StorageService {
@@ -109,6 +113,12 @@ public interface StorageService {
     StorageIdentityDomainResponse leaveStorageServiceFromAdDomain(LeaveStorageServiceFromAdDomainCmd cmd);
 
     ListResponse<StorageIdentityDomainResponse> listStorageServiceDomainStatus(ListStorageServiceDomainStatusCmd cmd);
+
+    ListResponse<StorageServiceRuntimeResponse> listStorageServiceHealth(ListStorageServiceHealthCmd cmd);
+
+    ListResponse<StorageServiceRuntimeResponse> listStorageServiceInventory(ListStorageServiceInventoryCmd cmd);
+
+    ListResponse<StorageServiceRuntimeResponse> listStorageServiceSessions(ListStorageServiceSessionsCmd cmd);
 
     StorageBlockTargetResponse createStorageIscsiTarget(CreateStorageIscsiTargetCmd cmd);
 

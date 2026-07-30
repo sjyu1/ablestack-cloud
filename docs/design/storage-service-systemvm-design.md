@@ -141,6 +141,10 @@ Candidate APIs:
   - `enableStorageServiceProtocol`
   - `disableStorageServiceProtocol`
   - `updateStorageServiceProtocol`
+- Operations
+  - `listStorageServiceHealth`
+  - `listStorageServiceInventory`
+  - `listStorageServiceSessions`
 - NFS
   - `createStorageNfsExport`
   - `listStorageNfsExports`
@@ -640,6 +644,7 @@ Implementation note:
 
 ### Phase 6: Operations
 
+- Add QGA-backed runtime health, inventory, and active session checks.
 - Add metrics and health checks.
 - Add event/audit details.
 - Add backup/snapshot/resize integration.

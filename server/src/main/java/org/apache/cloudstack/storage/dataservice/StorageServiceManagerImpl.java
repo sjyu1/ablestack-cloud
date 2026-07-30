@@ -55,7 +55,10 @@ import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNfs
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfHostAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageNvmeOfSubsystemsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceDomainStatusCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceHealthCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInventoryCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceInstancesCmd;
+import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageServiceSessionsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbAclsCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.ListStorageSmbSharesCmd;
 import org.apache.cloudstack.api.command.user.storage.dataservice.UpdateStorageIscsiAclCmd;
@@ -72,6 +75,7 @@ import org.apache.cloudstack.api.response.StorageIdentityDomainResponse;
 import org.apache.cloudstack.api.response.StorageNfsExportResponse;
 import org.apache.cloudstack.api.response.StorageServiceInstanceResponse;
 import org.apache.cloudstack.api.response.StorageServiceProtocolResponse;
+import org.apache.cloudstack.api.response.StorageServiceRuntimeResponse;
 import org.apache.cloudstack.api.response.StorageSmbShareResponse;
 import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.framework.config.ConfigKey;
@@ -159,6 +163,9 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         commands.add(JoinStorageServiceToAdDomainCmd.class);
         commands.add(LeaveStorageServiceFromAdDomainCmd.class);
         commands.add(ListStorageServiceDomainStatusCmd.class);
+        commands.add(ListStorageServiceHealthCmd.class);
+        commands.add(ListStorageServiceInventoryCmd.class);
+        commands.add(ListStorageServiceSessionsCmd.class);
         commands.add(CreateStorageIscsiTargetCmd.class);
         commands.add(UpdateStorageIscsiTargetCmd.class);
         commands.add(DeleteStorageIscsiTargetCmd.class);
@@ -660,6 +667,21 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final ListResponse<StorageIdentityDomainResponse> response = new ListResponse<>();
         response.setResponses(responses, responses.size());
         return response;
+    }
+
+    @Override
+    public ListResponse<StorageServiceRuntimeResponse> listStorageServiceHealth(final ListStorageServiceHealthCmd cmd) {
+        return listRuntimeOperation(cmd.getInstanceId(), "health");
+    }
+
+    @Override
+    public ListResponse<StorageServiceRuntimeResponse> listStorageServiceInventory(final ListStorageServiceInventoryCmd cmd) {
+        return listRuntimeOperation(cmd.getInstanceId(), "inventory");
+    }
+
+    @Override
+    public ListResponse<StorageServiceRuntimeResponse> listStorageServiceSessions(final ListStorageServiceSessionsCmd cmd) {
+        return listRuntimeOperation(cmd.getInstanceId(), "sessions");
     }
 
     @Override
@@ -1186,6 +1208,59 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         acl.addProperty("state", rule.getState().name());
         acl.add("config", parseJsonObject(rule.getConfigJson()));
         return acl;
+    }
+
+    protected ListResponse<StorageServiceRuntimeResponse> listRuntimeOperation(final Long instanceId, final String operation) {
+        final List<StorageServiceInstanceVO> instances = new ArrayList<>();
+        if (instanceId != null) {
+            instances.add(requireInstance(instanceId));
+        } else {
+            instances.addAll(storageServiceInstanceDao.listAll());
+        }
+
+        final List<StorageServiceRuntimeResponse> responses = new ArrayList<>();
+        for (final StorageServiceInstanceVO instance : instances) {
+            responses.add(createRuntimeResponse(instance, operation));
+        }
+        final ListResponse<StorageServiceRuntimeResponse> response = new ListResponse<>();
+        response.setResponses(responses, responses.size());
+        return response;
+    }
+
+    protected StorageServiceRuntimeResponse createRuntimeResponse(final StorageServiceInstanceVO instance, final String operation) {
+        if (instance.getVmId() == null) {
+            return createRuntimeResponse(instance, operation, false, "NOT_ATTACHED", "Storage Service instance has no System VM", "{}");
+        }
+        try {
+            final StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(instance.getVmId(),
+                    operation, "", StorageServiceInstance.StorageServiceCommandTimeout.value(), Collections.emptySet()));
+            final String status = extractRuntimeStatus(result);
+            return createRuntimeResponse(instance, operation, result.isSuccess(), status, result.getDetails(), result.getResultJson());
+        } catch (final RuntimeException e) {
+            logger.warn("Failed to query Storage Service runtime operation [{}] for instance [{}]", operation, instance.getUuid(), e);
+            return createRuntimeResponse(instance, operation, false, "ERROR", e.getMessage(), "{}");
+        }
+    }
+
+    protected StorageServiceRuntimeResponse createRuntimeResponse(final StorageServiceInstanceVO instance, final String operation,
+            final boolean success, final String status, final String details, final String resultJson) {
+        final StorageServiceRuntimeResponse response = new StorageServiceRuntimeResponse();
+        response.setId(instance.getUuid());
+        response.setOperation(operation);
+        response.setSuccess(success);
+        response.setStatus(status);
+        response.setDetails(details);
+        response.setResultJson(resultJson);
+        response.setObjectName("storageserviceruntime");
+        return response;
+    }
+
+    protected String extractRuntimeStatus(final StorageServiceGuestCommandResult result) {
+        final JsonObject json = parseJsonObject(result.getResultJson());
+        if (json.has("status")) {
+            return json.get("status").getAsString();
+        }
+        return result.isSuccess() ? "OK" : "ERROR";
     }
 
     protected StorageServiceInstanceVO requireInstance(final Long id) {
