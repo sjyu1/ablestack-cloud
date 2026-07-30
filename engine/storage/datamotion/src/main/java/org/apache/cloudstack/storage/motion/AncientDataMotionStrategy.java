@@ -19,6 +19,7 @@
 package org.apache.cloudstack.storage.motion;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -101,6 +102,11 @@ public class AncientDataMotionStrategy implements DataMotionStrategy {
     private static final String LINKED_CLONE_TYPE = "linked";
     private static final String LINKED_CLONE_BACKING_PATH = "linkedCloneBackingPath";
     private static final String CLONE_VM_SNAPSHOT_ID = "clone.vm.snapshot.id";
+    private static final List<StoragePoolType> SUPPORTED_POOL_TYPES_TO_BYPASS_SECONDARY_STORE = Arrays.asList(
+            StoragePoolType.NetworkFilesystem,
+            StoragePoolType.Filesystem,
+            StoragePoolType.RBD
+    );
 
     @Inject
     EndPointSelector selector;

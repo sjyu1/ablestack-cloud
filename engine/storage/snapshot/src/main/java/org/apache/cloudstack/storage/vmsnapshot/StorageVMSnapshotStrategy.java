@@ -457,7 +457,7 @@ public class StorageVMSnapshotStrategy extends DefaultVMSnapshotStrategy {
         }
 
         snapshot = snapshotDao.persist(snapshot);
-        CreateSnapshotPayload payload = setPayload(vol, snapshot);
+        CreateSnapshotPayload payload = setPayload(vol, snapshot, quiescevm);
         String cloneSnapshotPath = getCloneVmSnapshotBackingPath(vmSnapshot, vol);
         if (StringUtils.isNotBlank(cloneSnapshotPath)) {
             payload.setSnapshotPath(cloneSnapshotPath);
@@ -488,7 +488,7 @@ public class StorageVMSnapshotStrategy extends DefaultVMSnapshotStrategy {
         return details.get(0).getValue();
     }
 
-    protected CreateSnapshotPayload setPayload(VolumeInfo vol, SnapshotVO snapshotCreate) {
+    protected CreateSnapshotPayload setPayload(VolumeInfo vol, SnapshotVO snapshotCreate, boolean quiescevm) {
         CreateSnapshotPayload payload = new CreateSnapshotPayload();
         payload.setSnapshotId(snapshotCreate.getId());
         payload.setSnapshotPolicyId(SnapshotVO.MANUAL_POLICY_ID);
