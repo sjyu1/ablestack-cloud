@@ -52,7 +52,7 @@ export default {
         return filters
       },
       columns: () => {
-        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', 'qemuagentversion', 'ipaddress', 'templatetype']
+        const fields = [{ field: 'displayname', customTitle: 'vm.displayname' }, 'state', 'qemuagentversion', 'ipaddress', 'templatetype', 'backupofferingname']
         const metricsFields = ['cpunumber', 'cputotal', 'cpuused', 'memorytotal',
           {
             memoryused: (record) => {
@@ -304,7 +304,7 @@ export default {
           api: 'removeVirtualMachineFromBackupOffering',
           icon: 'scissor-outlined',
           label: 'label.backup.offering.remove',
-          message: 'label.backup.offering.remove',
+          message: 'message.backup.offering.remove',
           docHelp: 'adminguide/virtual_machines.html#restoring-vm-backups',
           dataView: true,
           args: ['virtualmachineid', 'forced'],

@@ -349,6 +349,8 @@
         <property name="asyncJobDispatcher" ref="ApiAsyncJobDispatcher" />
     </bean>
 
+    <bean id="netBackupRestoreCoordinator" class="org.apache.cloudstack.backup.NetBackupRestoreCoordinator" />
+
     <bean id="backupRepositoryService" class="org.apache.cloudstack.backup.BackupRepositoryServiceImpl" />
 
     <bean id="storageLayer" class="com.cloud.storage.JavaStorageLayer" />

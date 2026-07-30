@@ -234,8 +234,8 @@
       <template v-if="column.key === 'type'">
         <span
           v-if="['USER.LOGIN', 'USER.LOGOUT', 'ROUTER.HEALTH.CHECKS', 'FIREWALL.CLOSE', 'ALERT.SERVICE.DOMAINROUTER'].includes(text)"
-        >{{ $t(text.toLowerCase()) }}</span>
-        <span v-else>{{ text }}</span>
+        >{{ translateEventType(text) }}</span>
+        <span v-else>{{ translateEventType(text) }}</span>
       </template>
       <template v-if="column.key === 'schedule'">
         <div v-if="['/snapshotpolicy', '/backupschedule'].some(path => $route.path.endsWith(path))">
@@ -441,6 +441,9 @@
       </template>
       <template v-if="column.key === 'serviceofferingname'">
         <router-link :to="{ path: '/computeoffering/' + record.serviceofferingid }">{{ text }}</router-link>
+      </template>
+      <template v-if="column.key === 'backupofferingname'">
+        <router-link :to="{ path: '/backupoffering/' + record.backupofferingid }">{{ text }}</router-link>
       </template>
       <template v-if="column.key === 'hypervisor'">
         <span v-if="$route.name === 'hypervisorcapability'">
@@ -835,8 +838,8 @@
         <router-link
           v-if="$router.resolve('/event/' + record.eventid).matched[0].redirect !== '/exception/404'"
           :to="{ path: '/event/' + record.eventid }"
-        >{{ text }}</router-link>
-        <span v-else>{{ text }}</span>
+        >{{ translateEventType(text) }}</router-link>
+        <span v-else>{{ translateEventType(text) }}</span>
       </template>
       <template v-if="column.key === 'gpucardname'">
         <router-link
@@ -1344,6 +1347,14 @@ export default {
     }
   },
   methods: {
+    translateEventType (type) {
+      if (!type || typeof type !== 'string') {
+        return type
+      }
+      const translationKey = type.toLowerCase()
+      const translatedType = this.$t(translationKey)
+      return translatedType === translationKey ? type : translatedType
+    },
     convertKB (val) {
       if (val < 1024) return `${Number(val).toFixed(2)} KB`
       if (val < 1024 * 1024) return `${(val / 1024).toFixed(2)} MB`

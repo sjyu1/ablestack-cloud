@@ -3044,31 +3044,35 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             throw new InvalidParameterValueException("The owner of " + vmInstance + " does not exist: " + vmInstance.getAccountId());
         }
 
-        long newCpu = NumberUtils.toLong(details.get(VmDetailConstants.CPU_NUMBER));
-        long newMemory = NumberUtils.toLong(details.get(VmDetailConstants.MEMORY));
         ServiceOfferingVO currentServiceOffering = serviceOfferingDao.findByIdIncludingRemoved(vmInstance.getId(), vmInstance.getServiceOfferingId());
         ServiceOfferingVO svcOffering = serviceOfferingDao.findById(vmInstance.getServiceOfferingId());
+        long currentCpu = getLongValue(currentServiceOffering.getCpu());
+        long currentMemory = getLongValue(currentServiceOffering.getRamSize());
+        long currentCpuSpeed = getLongValue(currentServiceOffering.getSpeed());
+        long newCpu = getUpdatedVmResourceDetail(details, VmDetailConstants.CPU_NUMBER, currentCpu);
+        long newMemory = getUpdatedVmResourceDetail(details, VmDetailConstants.MEMORY, currentMemory);
+        long newCpuSpeed = getUpdatedVmResourceDetail(details, VmDetailConstants.CPU_SPEED, currentCpuSpeed);
+        boolean cpuChanged = details != null && details.containsKey(VmDetailConstants.CPU_NUMBER) && newCpu != currentCpu;
+        boolean memoryChanged = details != null && details.containsKey(VmDetailConstants.MEMORY) && newMemory != currentMemory;
+        boolean cpuSpeedChanged = details != null && details.containsKey(VmDetailConstants.CPU_SPEED) && newCpuSpeed != currentCpuSpeed;
+        if (!cpuChanged && !memoryChanged && !cpuSpeedChanged) {
+            return;
+        }
         boolean isDynamic = currentServiceOffering.isDynamic();
         if (isDynamic) {
             Map<String, String> customParameters = new HashMap<>();
             customParameters.put(VmDetailConstants.CPU_NUMBER, String.valueOf(newCpu));
             customParameters.put(VmDetailConstants.MEMORY, String.valueOf(newMemory));
-            if (details.containsKey(VmDetailConstants.CPU_SPEED)) {
-                customParameters.put(VmDetailConstants.CPU_SPEED, details.get(VmDetailConstants.CPU_SPEED));
+            if (svcOffering.getSpeed() == null || cpuSpeedChanged) {
+                customParameters.put(VmDetailConstants.CPU_SPEED, String.valueOf(newCpuSpeed));
             }
             validateCustomParameters(svcOffering, customParameters);
         } else {
-            if (details.containsKey(VmDetailConstants.CPU_NUMBER) || details.containsKey(VmDetailConstants.MEMORY) ||
-                    details.containsKey(VmDetailConstants.CPU_SPEED)) {
-                throw new InvalidParameterValueException("CPU number, Memory and CPU speed cannot be updated for a " +
-                        "non-dynamic offering");
-            }
+            throw new InvalidParameterValueException("CPU number, Memory and CPU speed cannot be updated for a non-dynamic offering");
         }
         if (VirtualMachineManager.ResourceCountRunningVMsonly.value()) {
             return;
         }
-        long currentCpu = currentServiceOffering.getCpu();
-        long currentMemory = currentServiceOffering.getRamSize();
         VMTemplateVO template = _templateDao.findByIdIncludingRemoved(vmInstance.getTemplateId());
         Long currentGpu = currentServiceOffering.getGpuCount() != null ? Long.valueOf(currentServiceOffering.getGpuCount()) : 0L;
         Long newGpu = svcOffering.getGpuCount() != null ? Long.valueOf(svcOffering.getGpuCount()) : 0L;
@@ -3079,6 +3083,17 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
             throw new InvalidParameterValueException(e.getLocalizedMessage());
         }
         adjustVmLimits(owner, vmInstance, svcOffering, template, newCpu, currentCpu, newMemory, currentMemory, newGpu, currentGpu);
+    }
+
+    private long getUpdatedVmResourceDetail(Map<String, String> details, String detailName, long currentValue) {
+        if (details == null || !details.containsKey(detailName)) {
+            return currentValue;
+        }
+        return NumberUtils.toLong(details.get(detailName), currentValue);
+    }
+
+    private long getLongValue(Integer value) {
+        return value != null ? value.longValue() : 0L;
     }
 
     private void checkVmLimits(Account owner, UserVmVO vmInstance, ServiceOfferingVO svcOffering,

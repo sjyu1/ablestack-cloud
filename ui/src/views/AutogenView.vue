@@ -1236,6 +1236,31 @@ export default {
     }
   },
   methods: {
+    isScheduleListRoute () {
+      return ['/snapshotpolicy', '/backupschedule'].some(path => this.$route.path.endsWith(path))
+    },
+    getScheduleSortValue (record) {
+      const schedule = String(record?.schedule || '')
+      const intervalType = record?.intervaltype
+      if (intervalType === 0 || intervalType === 'HOURLY') {
+        const minute = Number(schedule)
+        return Number.isFinite(minute) ? minute : Number.MAX_SAFE_INTEGER
+      }
+
+      const [minuteValue, hourValue] = schedule.split(':')
+      const minute = Number(minuteValue)
+      const hour = Number(hourValue)
+      if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+        return Number.MAX_SAFE_INTEGER
+      }
+      return (hour * 60) + minute
+    },
+    getColumnSorter (key) {
+      if (key === 'schedule' && this.isScheduleListRoute()) {
+        return (a, b) => this.getScheduleSortValue(a) - this.getScheduleSortValue(b)
+      }
+      return (a, b) => genericCompare(a[key] || '', b[key] || '')
+    },
     resetSelection () {
       this.selectedRowKeys = []
       this.selectedItems = []
@@ -1485,7 +1510,7 @@ export default {
           key: key,
           title: this.$t('label.' + String(title).toLowerCase()),
           dataIndex: key,
-          sorter: (a, b) => genericCompare(a[key] || '', b[key] || '')
+          sorter: this.getColumnSorter(key)
         })
         this.selectedColumns.push(key)
       }

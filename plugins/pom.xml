@@ -65,6 +65,7 @@
         <module>backup/nas</module>
         <module>backup/ablestack-nas</module>
         <module>backup/ablestack-commvault</module>
+        <module>backup/ablestack-netbackup</module>
         <module>backup/bx</module>
 
         <module>ca/root-ca</module>
