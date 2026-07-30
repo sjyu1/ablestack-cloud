@@ -238,42 +238,25 @@ parse_rbd_uri() {
 
   if [[ "$uri" == rbd:* ]]; then
     local payload="${uri#rbd:}"
-    local fields=()
-    local field=""
-    local escaped=0
-    local char
-    for ((i = 0; i < ${#payload}; i++)); do
-      char="${payload:i:1}"
-      if [[ "$char" == ":" && "$escaped" -eq 0 ]]; then
-        fields+=("$field")
-        field=""
-        continue
-      fi
-      field+="$char"
-      if [[ "$char" == "\\" && "$escaped" -eq 0 ]]; then
-        escaped=1
-      else
-        escaped=0
-      fi
-    done
-    fields+=("$field")
+    if [[ "$payload" == *":mon_host="* ]]; then
+      RBD_IMAGE="${payload%%:mon_host=*}"
+      local mon_part="${payload#*:mon_host=}"
+      RBD_MON_HOST="${mon_part%%:auth_supported=*}"
+      RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
+      RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
+    else
+      RBD_IMAGE="${payload%%:*}"
+    fi
 
-    RBD_IMAGE="${fields[0]}"
-    for field in "${fields[@]:1}"; do
-      case "$field" in
-        mon_host=*)
-          RBD_MON_HOST="${field#mon_host=}"
-          RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
-          RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
-          ;;
-        id=*)
-          RBD_USER="${field#id=}"
-          ;;
-        key=*)
-          RBD_KEY="${field#key=}"
-          ;;
-      esac
-    done
+    if [[ "$payload" == *":id="* ]]; then
+      local id_part="${payload#*:id=}"
+      RBD_USER="${id_part%%:*}"
+    fi
+
+    if [[ "$payload" == *":key="* ]]; then
+      local key_part="${payload#*:key=}"
+      RBD_KEY="${key_part%%:*}"
+    fi
   elif [[ "$uri" == rbd/* ]]; then
     RBD_IMAGE="$uri"
   else
