@@ -80,6 +80,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 import org.apache.xml.utils.URI;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.net.URISyntaxException;
 import java.security.KeyManagementException;
@@ -1770,24 +1771,40 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
         final String jobId = externalIdParts.second();
         final AblestackCommvaultClient client = getClient(zoneId);
         String jobDetails = client.getJobDetails(jobId);
-        if (jobDetails != null) {
+        if (StringUtils.isBlank(jobDetails)) {
+            return handleUnavailableCommvaultJobDetailsOnDelete(backup, forced, jobId, "empty response");
+        }
+        try {
             JSONObject jsonObject = new JSONObject(jobDetails);
+            if (!jsonObject.has("job")) {
+                return handleUnavailableCommvaultJobDetailsOnDelete(backup, forced, jobId, "missing job object");
+            }
             String subclientId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("subclientId"));
             String applicationId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("applicationId"));
             String instanceId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("instanceId"));
             String clientId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("clientId"));
             String clientName = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("clientName"));
             String backupsetId = String.valueOf(jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("generalInfo").getJSONObject("subclient").get("backupsetId"));
-            boolean result = client.deleteBackup(subclientId, applicationId, applicationId, clientId, clientName, backupsetId, path);
+            boolean result = client.deleteBackup(subclientId, applicationId, instanceId, clientId, clientName, backupsetId, path);
             if (result) {
                 cleanupBackupPathOnStageHost(clientName, path, forced, vm != null ? vm.getInstanceName() : null,
                         getBackupDetail(backup, DETAIL_CHECKPOINT_NAME), getUnreferencedQcow2CheckpointNamesAfterDelete(backup),
                         getBackupDetail(backup, DETAIL_RBD_DISK_PATHS));
             }
             return result;
-        } else {
-            throw new CloudRuntimeException("Failed to request backup job detail commvault api");
+        } catch (JSONException e) {
+            return handleUnavailableCommvaultJobDetailsOnDelete(backup, forced, jobId, e.getMessage());
         }
+    }
+
+    private boolean handleUnavailableCommvaultJobDetailsOnDelete(Backup backup, boolean forced, String jobId, String reason) {
+        String message = String.format("Commvault job details for backup [%s], job [%s] are unavailable: %s",
+                backup.getUuid(), jobId, reason);
+        if (!forced) {
+            throw new CloudRuntimeException(message);
+        }
+        LOG.warn("{}; skipping Commvault remote delete and allowing forced Mold backup metadata deletion.", message);
+        return true;
     }
 
     public void syncBackupMetrics(Long zoneId) {
