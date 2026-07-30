@@ -17,7 +17,6 @@
 
 package org.apache.cloudstack.storage.sharedfs.lifecycle;
 
-import static org.apache.cloudstack.storage.sharedfs.SharedFS.SharedFSPath;
 import static org.apache.cloudstack.storage.sharedfs.SharedFS.SharedFSVmNamePrefix;
 import static org.apache.cloudstack.storage.sharedfs.provider.StorageVmSharedFSProvider.SHAREDFSVM_MIN_CPU_COUNT;
 import static org.apache.cloudstack.storage.sharedfs.provider.StorageVmSharedFSProvider.SHAREDFSVM_MIN_RAM_SIZE;

@@ -145,6 +145,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 
 public class StorageServiceManagerImpl extends ManagerBase implements StorageService, PluggableService, Configurable {
     private static final Gson GSON = new Gson();
@@ -2660,7 +2661,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                 continue;
             }
             final JsonArray listenIps = new JsonArray();
-            listenIps.add(endpoint);
+            listenIps.add(new JsonPrimitive(endpoint));
             config.addProperty("endpointMode", "SELECTED");
             config.add("listenIps", listenIps);
             share.setConfigJson(GSON.toJson(config));
@@ -2753,14 +2754,14 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         payload.addProperty("volumeUuid", volume.getUuid());
         payload.addProperty("volumeName", volume.getName());
         payload.addProperty("volumeSizeBytes", volume.getSize());
-        final JsonObject config = parseJsonObject(share.getConfigJson()).deepCopy();
+        final JsonObject config = parseJsonObject(GSON.toJson(parseJsonObject(share.getConfigJson())));
         if (!config.has("volumeMountPath") || config.get("volumeMountPath").isJsonNull()) {
             config.addProperty("volumeMountPath", resolveFileShareVolumeMountRoot(instance, volume, share.getPath()));
         }
         config.remove("devicePath");
         final JsonObject inspection = getJsonObject(config, "lastInspection");
         if (inspection != null) {
-            final JsonObject commandInspection = inspection.deepCopy();
+            final JsonObject commandInspection = parseJsonObject(GSON.toJson(inspection));
             commandInspection.remove("devicePath");
             commandInspection.remove("observedDevicePath");
             config.add("lastInspection", commandInspection);
@@ -3984,7 +3985,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
 
     protected JsonArray singletonNfsListenerPortArray(final int port) {
         final JsonArray ports = new JsonArray();
-        ports.add(port);
+        ports.add(new JsonPrimitive(port));
         return ports;
     }
 
@@ -4028,7 +4029,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                 return;
             }
         }
-        ips.add(listenIp);
+        ips.add(new JsonPrimitive(listenIp));
         config.add("serviceIps", ips);
     }
 
@@ -4095,7 +4096,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                 throw new InvalidParameterValueException("Invalid NFS export listen IP: " + value);
             }
             seen.add(value);
-            result.add(value);
+            result.add(new JsonPrimitive(value));
         }
         return result;
     }
@@ -4125,7 +4126,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
             }
             validateNfsListenerPort(port);
             if (seen.add(port)) {
-                result.add(port);
+                result.add(new JsonPrimitive(port));
             }
         }
         return result;
@@ -4165,7 +4166,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                 continue;
             }
             if (StringUtils.isNotBlank(value)) {
-                next.add(value);
+                next.add(new JsonPrimitive(value));
             }
         }
         if (removed) {
@@ -4583,7 +4584,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         config.addProperty("attachedVolumeUuid", volume.getUuid());
         config.addProperty("attachedVolumeName", volume.getName());
         if (inspection != null && inspection.entrySet() != null) {
-            final JsonObject normalizedInspection = inspection.deepCopy();
+            final JsonObject normalizedInspection = parseJsonObject(GSON.toJson(inspection));
             normalizedInspection.addProperty("schemaVersion", 2);
             normalizedInspection.addProperty("volumeUuid", volume.getUuid());
             final String observedDevicePath = firstJsonString(null, normalizedInspection, "observedDevicePath", "devicePath");
@@ -4770,7 +4771,7 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
                 throw new InvalidParameterValueException("Invalid iSCSI listener port group: " + port);
             }
             if (seen.add(port)) {
-                result.add(port);
+                result.add(new JsonPrimitive(port));
             }
         }
         return result;

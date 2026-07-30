@@ -366,7 +366,7 @@ public class KVMStorageProcessorTest {
         AttachOrDetachDiskOverloadProbe probe = new AttachOrDetachDiskOverloadProbe(storagePoolManager, resource);
 
         probe.attachOrDetachDisk(null, true, "vm", null, 1, "serial", null, null, null, null, null, null, null, null, null, null, null, null,
-                "writeback", null, "ABLESTACK", "/dev/rbd", false, false, null, null);
+                "writeback", null, "ABLESTACK", "/dev/rbd", false, false, null);
 
         Assert.assertTrue(probe.waitDetachOverloadCalled);
         Assert.assertEquals(0L, probe.waitDetachDevice);
@@ -388,9 +388,8 @@ public class KVMStorageProcessorTest {
                                                        final Long iopsReadRateMaxLength, final Long iopsWriteRate, final Long iopsWriteRateMax,
                                                        final Long iopsWriteRateMaxLength, final String cacheMode,
                                                        final LibvirtVMDef.DiskDef.LibvirtDiskEncryptDetails encryptDetails, final String provider,
-                                                       final String krbdpath, final boolean shareable, final boolean kvdoEnable,
-                                                       final long waitDetachDevice, final Map<String, String> details,
-                                                       final Map<String, String> controllerInfo) {
+                                                       final String krbdpath, final long waitDetachDevice, final boolean shareable,
+                                                       final boolean kvdoEnable, final Map<String, String> details) {
             waitDetachOverloadCalled = true;
             this.waitDetachDevice = waitDetachDevice;
         }

@@ -296,7 +296,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         if (storagePool.getDataCenterId() != zone.getId()) {
             throw new InvalidParameterValueException("Selected primary storage does not belong to zone " + zone.getUuid());
         }
-        if (!volumeApiService.doesStoragePoolSupportDiskOffering(storagePool, diskOffering)) {
+        if (!volumeApiService.doesTargetStorageSupportDiskOffering(storagePool, diskOffering.getTags())) {
             throw new InvalidParameterValueException("Selected primary storage does not satisfy the disk offering storage tags");
         }
     }

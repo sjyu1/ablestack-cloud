@@ -1533,54 +1533,53 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
                                 }
                             }
 
-                                SearchCriteria<VolumeVO> sc_volume = _volsDao.createSearchCriteria();
-                                sc_volume.addAnd("removed", SearchCriteria.Op.NULL);
-                                sc_volume.addAnd("path", SearchCriteria.Op.NNULL);
-                                Map<String, Long> fsUsageMap = statsForCurrentIteration.getFsUsageMap();
-                                if (fsUsageMap != null) {
-                                    List<VolumeVO> volumes = _volsDao.search(sc_volume, null);
-                                    for (String key : fsUsageMap.keySet()) {
-                                        for (VolumeVO volVo : volumes){
-                                            if (volVo.getPath().contains(key)) {
-                                                volVo.setUsedFsBytes(fsUsageMap.get(key));
-                                                _volsDao.update(volVo.getId(), volVo);
-                                            }
+                            SearchCriteria<VolumeVO> scVolume = _volsDao.createSearchCriteria();
+                            scVolume.addAnd("removed", SearchCriteria.Op.NULL);
+                            scVolume.addAnd("path", SearchCriteria.Op.NNULL);
+                            Map<String, Long> fsUsageMap = statsForCurrentIteration.getFsUsageMap();
+                            if (fsUsageMap != null) {
+                                List<VolumeVO> volumes = _volsDao.search(scVolume, null);
+                                for (String key : fsUsageMap.keySet()) {
+                                    for (VolumeVO volVo : volumes) {
+                                        if (volVo.getPath().contains(key)) {
+                                            volVo.setUsedFsBytes(fsUsageMap.get(key));
+                                            _volsDao.update(volVo.getId(), volVo);
                                         }
                                     }
                                 }
+                            }
 
-                                Map<String, Long> rbdDuMap = statsForCurrentIteration.getRbdDuMap();
-                                if (rbdDuMap != null) {
-                                    List<VolumeVO> volumes = _volsDao.search(sc_volume, null);
-                                    for (String rbdUuid : rbdDuMap.keySet()) {
-                                        for (VolumeVO volVo : volumes){
-                                            if (volVo.getPath().contains(rbdUuid)) {
-                                                volVo.setUsedPhysicalSize(rbdDuMap.get(rbdUuid));
-                                                _volsDao.update(volVo.getId(), volVo);
-                                            }
+                            Map<String, Long> rbdDuMap = statsForCurrentIteration.getRbdDuMap();
+                            if (rbdDuMap != null) {
+                                List<VolumeVO> volumes = _volsDao.search(scVolume, null);
+                                for (String rbdUuid : rbdDuMap.keySet()) {
+                                    for (VolumeVO volVo : volumes) {
+                                        if (volVo.getPath().contains(rbdUuid)) {
+                                            volVo.setUsedPhysicalSize(rbdDuMap.get(rbdUuid));
+                                            _volsDao.update(volVo.getId(), volVo);
                                         }
                                     }
                                 }
-
-                                persistVirtualMachineStats(statsForCurrentIteration, timestamp);
-
-                                if (externalStatsType == ExternalStatsProtocol.GRAPHITE) {
-                                    prepareVmMetricsForGraphite(metrics, statsForCurrentIteration);
-                                } else {
-                                    metrics.put(statsForCurrentIteration.getVmId(), statsForCurrentIteration);
-                                }
                             }
 
-                            if (!metrics.isEmpty()) {
-                                if (externalStatsType == ExternalStatsProtocol.GRAPHITE) {
-                                    sendVmMetricsToGraphiteHost(metrics, host);
-                                } else if (externalStatsType == ExternalStatsProtocol.INFLUXDB) {
-                                    sendMetricsToInfluxdb(metrics);
-                                }
-                            }
+                            persistVirtualMachineStats(statsForCurrentIteration, timestamp);
 
-                            metrics.clear();
+                            if (externalStatsType == ExternalStatsProtocol.GRAPHITE) {
+                                prepareVmMetricsForGraphite(metrics, statsForCurrentIteration);
+                            } else {
+                                metrics.put(statsForCurrentIteration.getVmId(), statsForCurrentIteration);
+                            }
                         }
+
+                        if (!metrics.isEmpty()) {
+                            if (externalStatsType == ExternalStatsProtocol.GRAPHITE) {
+                                sendVmMetricsToGraphiteHost(metrics, host);
+                            } else if (externalStatsType == ExternalStatsProtocol.INFLUXDB) {
+                                sendMetricsToInfluxdb(metrics);
+                            }
+                        }
+
+                        metrics.clear();
                     } catch (Exception e) {
                         logger.debug("Failed to get VM stats for host: {}", host);
                         continue;

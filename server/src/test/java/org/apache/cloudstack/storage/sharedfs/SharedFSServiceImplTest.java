@@ -253,6 +253,7 @@ public class SharedFSServiceImplTest {
 
         DataCenterVO zone = mock(DataCenterVO.class);
         when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
+        when(zone.getId()).thenReturn(s_zoneId);
         when(zone.getAllocationState()).thenReturn(Grouping.AllocationState.Enabled);
 
         DiskOfferingVO diskOfferingVO = mock(DiskOfferingVO.class);
@@ -262,7 +263,8 @@ public class SharedFSServiceImplTest {
         StoragePoolVO storagePool = mock(StoragePoolVO.class);
         when(storagePoolDao.findById(s_storageId)).thenReturn(storagePool);
         when(storagePool.getDataCenterId()).thenReturn(s_zoneId);
-        when(volumeApiService.doesStoragePoolSupportDiskOffering(storagePool, diskOfferingVO)).thenReturn(true);
+        when(diskOfferingVO.getTags()).thenReturn("rbd");
+        when(volumeApiService.doesTargetStorageSupportDiskOffering(storagePool, "rbd")).thenReturn(true);
 
         SharedFSVO sharedFS = getMockSharedFS();
         ReflectionTestUtils.setField(sharedFS, "id", s_sharedFSId);
@@ -321,12 +323,18 @@ public class SharedFSServiceImplTest {
 
         DataCenterVO zone = mock(DataCenterVO.class);
         when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
+        when(zone.getId()).thenReturn(s_zoneId);
         when(zone.getAllocationState()).thenReturn(Grouping.AllocationState.Enabled);
 
         DiskOfferingVO diskOfferingVO = mock(DiskOfferingVO.class);
         when(diskOfferingDao.findById(s_diskOfferingId)).thenReturn(diskOfferingVO);
         when(diskOfferingVO.isCustomized()).thenReturn(true);
         when(diskOfferingVO.isCustomizedIops()).thenReturn(true);
+        when(diskOfferingVO.getTags()).thenReturn("rbd");
+        StoragePoolVO storagePool = mock(StoragePoolVO.class);
+        when(storagePoolDao.findById(s_storageId)).thenReturn(storagePool);
+        when(storagePool.getDataCenterId()).thenReturn(s_zoneId);
+        when(volumeApiService.doesTargetStorageSupportDiskOffering(storagePool, "rbd")).thenReturn(true);
 
         when(cmd.getNetworkId()).thenReturn(s_networkId);
         NetworkVO networkVO = mock(NetworkVO.class);
@@ -345,12 +353,18 @@ public class SharedFSServiceImplTest {
 
         DataCenterVO zone = mock(DataCenterVO.class);
         when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
+        when(zone.getId()).thenReturn(s_zoneId);
         when(zone.getAllocationState()).thenReturn(Grouping.AllocationState.Enabled);
 
         DiskOfferingVO diskOfferingVO = mock(DiskOfferingVO.class);
         when(diskOfferingDao.findById(s_diskOfferingId)).thenReturn(diskOfferingVO);
         when(diskOfferingVO.isCustomized()).thenReturn(true);
         when(diskOfferingVO.isCustomizedIops()).thenReturn(true);
+        when(diskOfferingVO.getTags()).thenReturn("rbd");
+        StoragePoolVO storagePool = mock(StoragePoolVO.class);
+        when(storagePoolDao.findById(s_storageId)).thenReturn(storagePool);
+        when(storagePool.getDataCenterId()).thenReturn(s_zoneId);
+        when(volumeApiService.doesTargetStorageSupportDiskOffering(storagePool, "rbd")).thenReturn(true);
 
         NetworkVO networkVO = mock(NetworkVO.class);
         when(networkVO.getId()).thenReturn(s_networkId);
