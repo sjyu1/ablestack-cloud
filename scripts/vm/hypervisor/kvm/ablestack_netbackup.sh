@@ -297,20 +297,24 @@ parse_rbd_uri() {
 
   if [[ "$uri" == rbd:* ]]; then
     local payload="${uri#rbd:}"
-    RBD_IMAGE="${payload%%:*}"
-
-    if [[ "$uri" =~ :mon_host=([^:]*) ]]; then
-      RBD_MON_HOST="${BASH_REMATCH[1]}"
+    if [[ "$payload" == *":mon_host="* ]]; then
+      RBD_IMAGE="${payload%%:mon_host=*}"
+      local mon_part="${payload#*:mon_host=}"
+      RBD_MON_HOST="${mon_part%%:auth_supported=*}"
       RBD_MON_HOST="${RBD_MON_HOST//\\;/,}"
       RBD_MON_HOST="${RBD_MON_HOST//\\:/:}"
+    else
+      RBD_IMAGE="${payload%%:*}"
     fi
 
-    if [[ "$uri" =~ :id=([^:]*) ]]; then
-      RBD_USER="${BASH_REMATCH[1]}"
+    if [[ "$payload" == *":id="* ]]; then
+      local id_part="${payload#*:id=}"
+      RBD_USER="${id_part%%:*}"
     fi
 
-    if [[ "$uri" =~ :key=([^:]*) ]]; then
-      RBD_KEY="${BASH_REMATCH[1]}"
+    if [[ "$payload" == *":key="* ]]; then
+      local key_part="${payload#*:key=}"
+      RBD_KEY="${key_part%%:*}"
     fi
   elif [[ "$uri" == rbd/* ]]; then
     RBD_IMAGE="$uri"
