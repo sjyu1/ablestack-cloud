@@ -1,4 +1,3 @@
-//
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -15,24 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-//
 
-package com.cloud.agent.api;
+package com.cloud.rack;
 
-public class UpdateHaStateCommand extends Command {
+import com.cloud.utils.db.GenericDao;
 
-    String hostHAState;
-
-    public UpdateHaStateCommand(String hostHAState) {
-        this.hostHAState = hostHAState;
-    }
-
-    public String getHostHAState() {
-        return hostHAState;
-    }
-
-    @Override
-    public boolean executeInSequence() {
-        return true;
-    }
+public interface RackLayoutDao extends GenericDao<RackLayoutVO, Long> {
+    RackLayoutVO findByZoneAndName(Long zoneId, String name);
 }

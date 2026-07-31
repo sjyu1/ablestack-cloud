@@ -477,23 +477,42 @@
         <span>{{ text ? $t('label.yes') : $t('label.no') }}</span>
       </template>
       <template v-if="column.key === 'state'">
-        <status
-          v-if="$route.path.startsWith('/host')"
-          :text="getHostState(record)"
-          displayText
-        />
-        <status
-          v-else
-          :text="text ? text : ''"
-          displayText
-          :styles="{ 'min-width': '80px' }"
-        />
+        <status v-if="$route.path.startsWith('/host')" :text="getHostState(record)" displayText />
+        <status v-else-if="isFastCloneFlattenVisible(record)" :text="text ? text : ''" displayText :styles="{ 'min-width': '80px' }">
+          <template #tooltip>
+            <div class="clone-fast-flatten-list-tooltip">
+              <div class="clone-fast-flatten-list-tooltip-title">{{ getCloneFastListTooltipTitle(record) }}</div>
+              <div
+                v-for="item in getCloneFastFlattenTooltipItems(record)"
+                :key="item.label"
+                class="clone-fast-flatten-list-tooltip-row">
+                <span class="clone-fast-flatten-list-tooltip-label">{{ item.label }} :</span>
+                <span class="clone-fast-flatten-list-tooltip-value">{{ item.value }}</span>
+              </div>
+            </div>
+          </template>
+        </status>
+        <status v-else-if="isFastCloneSourceFlattenActive(record)" :text="text ? text : ''" displayText :styles="{ 'min-width': '80px' }">
+          <template #tooltip>
+            <div class="clone-fast-flatten-list-tooltip">
+              <div class="clone-fast-flatten-list-tooltip-title">{{ getCloneFastSourceTooltipTitle(record) }}</div>
+              <div class="clone-fast-flatten-list-tooltip-description">{{ getCloneFastSourceTooltipDescription(record) }}</div>
+            </div>
+          </template>
+        </status>
+        <status v-else :text="text ? text : ''" displayText :styles="{ 'min-width': '80px' }" />
       </template>
       <template v-if="column.key === 'status'">
         <status
           :text="text ? text : ''"
           displayText
         />
+      </template>
+      <template v-if="column.key === 'clonefaststatus'">
+        <a-tag v-if="isFastCloneFlattenVisible(record)" color="processing">
+          {{ getCloneFastStatusLabel(record) }}
+        </a-tag>
+        <span v-else>-</span>
       </template>
       <template v-if="column.key === 'allocationstate'">
         <status
@@ -554,6 +573,24 @@
       <template v-if="column.key === 'qemuagentversion'">
         <a-tag v-if="text === 'Not Installed'" color="error">{{ this.$t('label.state.qemuagentversion.notinstalled') }}</a-tag>
         <a-tag v-else-if="text" color="success">{{ text }}</a-tag>
+      </template>
+      <template v-if="column.key === 'resources'">
+        <div v-if="hasValue(record.cpunumber) || hasValue(record.memory)" class="resource-summary">
+          <span v-if="hasValue(record.cpunumber)" class="resource-item resource-item--cpu">
+            <a-tooltip>
+              <template #title>{{ $t('label.cpu') }}</template>
+              <font-awesome-icon :icon="['fa-solid', 'fa-microchip']" class="resource-icon" />
+            </a-tooltip>
+            {{ record.cpunumber }} CPU
+          </span>
+          <span v-if="hasValue(record.memory)" class="resource-item resource-item--memory">
+            <a-tooltip>
+              <template #title>{{ $t('label.memory') }}</template>
+              <font-awesome-icon :icon="['fa-solid', 'fa-memory']" class="resource-icon" />
+            </a-tooltip>
+            {{ record.memory }} MB
+          </span>
+        </div>
       </template>
       <template v-if="column.key === 'mirroringagentstatus'">
         <status :text="text ? text : ''" displayText />
@@ -1770,6 +1807,83 @@ export default {
       }
       return host.state
     },
+    getCloneFastStatus (record) {
+      return String(record?.clonefaststatus || record?.details?.['clone.fast.status'] || '').toLowerCase()
+    },
+    isFastCloneFlattenActive (record) {
+      return ['pending', 'running'].includes(this.getCloneFastStatus(record))
+    },
+    hasCloneFastFlattenVolumeInfo (record) {
+      return [
+        record?.clonefastflattenvolumetype,
+        record?.clonefastflattenvolumename,
+        record?.clonefastflattendeviceid
+      ].some(value => value !== undefined && value !== null && value !== '')
+    },
+    isFastCloneFlattenVisible (record) {
+      return this.isFastCloneFlattenActive(record) && this.hasCloneFastFlattenVolumeInfo(record)
+    },
+    isFastCloneSourceFlattenActive (record) {
+      return this.isFastCloneFlattenActive(record) && !this.hasCloneFastFlattenVolumeInfo(record)
+    },
+    getCloneFastStatusLabel (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'running') {
+        return this.$t('label.sharedmountpoint.clone.flatten.running')
+      }
+      if (status === 'pending') {
+        return this.$t('label.sharedmountpoint.clone.flatten.pending')
+      }
+      return ''
+    },
+    getCloneFastSourceTooltipTitle (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'pending') {
+        return this.$t('message.sharedmountpoint.clone.source.flatten.pending.summary')
+      }
+      return this.$t('message.sharedmountpoint.clone.source.flatten.running.summary')
+    },
+    getCloneFastSourceTooltipDescription (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'pending') {
+        return this.$t('message.sharedmountpoint.clone.source.flatten.pending')
+      }
+      return this.$t('message.sharedmountpoint.clone.source.flatten.running')
+    },
+    getCloneFastListTooltipTitle (record) {
+      const status = this.getCloneFastStatus(record)
+      if (status === 'running') {
+        return this.$t('message.sharedmountpoint.clone.flatten.running.summary')
+      }
+      if (status === 'pending') {
+        return this.$t('message.sharedmountpoint.clone.flatten.pending.summary')
+      }
+      return this.$t('label.sharedmountpoint.clone.flatten.status')
+    },
+    getCloneFastFlattenVolumeTypeLabel (record) {
+      const volumeType = record?.clonefastflattenvolumetype
+      return volumeType ? volumeType + ' ' + this.$t('label.volume') : ''
+    },
+    getCloneFastFlattenProgress (record) {
+      const rawProgress = record?.clonefastflattenprogress ?? record?.details?.['clone.fast.flatten.progress']
+      const progress = Number.parseFloat(rawProgress)
+      if (!Number.isFinite(progress)) {
+        return null
+      }
+      return Math.min(Math.max(progress, 0), 100)
+    },
+    formatCloneFastFlattenProgress (record) {
+      const progress = this.getCloneFastFlattenProgress(record)
+      return progress === null ? '' : progress.toFixed(2) + '%'
+    },
+    getCloneFastFlattenTooltipItems (record) {
+      return [
+        { label: this.$t('label.type'), value: this.getCloneFastFlattenVolumeTypeLabel(record) },
+        { label: this.$t('label.name'), value: record?.clonefastflattenvolumename },
+        { label: this.$t('label.deviceid'), value: record?.clonefastflattendeviceid },
+        { label: this.$t('label.progress'), value: this.formatCloneFastFlattenProgress(record) }
+      ].filter(item => item.value !== undefined && item.value !== null && item.value !== '')
+    },
     getColumnKey (name) {
       if (typeof name !== 'object' || name === null) {
         return name
@@ -1808,6 +1922,9 @@ export default {
       }
       var duration = Date.parse(enddate) - Date.parse(startdate)
       return (duration > 0 ? duration / 1000.0 : 0) + ''
+    },
+    hasValue (value) {
+      return value !== undefined && value !== null && value !== ''
     },
     getUsageTypes () {
       if (this.$route.path.split('/')[1] === 'usage') {
@@ -1922,6 +2039,36 @@ export default {
 .filter-dropdown .ant-menu:not(.ant-menu-horizontal) .ant-menu-item-selected {
   background-color: transparent;
 }
+
+.clone-fast-flatten-list-tooltip {
+  min-width: 220px;
+}
+
+.clone-fast-flatten-list-tooltip-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.clone-fast-flatten-list-tooltip-description {
+  line-height: 20px;
+}
+
+.clone-fast-flatten-list-tooltip-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  line-height: 20px;
+}
+
+.clone-fast-flatten-list-tooltip-label {
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+
+.clone-fast-flatten-list-tooltip-value {
+  color: #fff;
+  overflow-wrap: anywhere;
+}
 </style>
 
 <style scoped lang="scss">
@@ -1985,6 +2132,33 @@ export default {
     .icon-monthly:before {
       content: "***";
     }
+
+  .resource-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    line-height: 20px;
+    white-space: nowrap;
+    color: inherit;
+
+    .resource-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .resource-icon {
+      font-size: 13px;
+    }
+
+    .resource-item--cpu .resource-icon {
+      color: #5b6b84;
+    }
+
+    .resource-item--memory .resource-icon {
+      color: #68758a;
+    }
+  }
 
   .quickview-context-menu {
     position: fixed;
