@@ -1,0 +1,32 @@
+html {
+  scrollbar-gutter: stable;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: var(--ui-scroll-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--ui-scroll-thumb);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-scroll-thumb-hover);
+  background-clip: padding-box;
+}
