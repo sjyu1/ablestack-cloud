@@ -1009,21 +1009,13 @@
         </a-spin>
       </div>
     </a-card>
-    <div
+    <ResourceContextMenu
       v-if="showContextQuickView"
-      ref="contextQuickViewMenu"
-      class="quickview-context-menu"
-      :style="{ top: contextQuickViewPosition.y + 'px', left: contextQuickViewPosition.x + 'px' }"
-      @click.stop
-      @contextmenu.stop.prevent>
-      <ActionButton
-        :actions="contextMenuActions"
-        :resource="resource"
-        :dataView="true"
-        :show-resource-title="true"
-        size="default"
-        @exec-action="handleContextAction" />
-    </div>
+      :actions="contextMenuActions"
+      :resource="resource"
+      :position="contextQuickViewPosition"
+      @close="closeContextQuickView"
+      @exec-action="handleContextAction" />
   </a-spin>
 </template>
 
@@ -1040,7 +1032,7 @@ import UploadResourceIcon from '@/components/view/UploadResourceIcon'
 import eventBus from '@/config/eventBus'
 import ResourceIcon from '@/components/view/ResourceIcon'
 import ResourceLabel from '@/components/widgets/ResourceLabel'
-import ActionButton from '@/components/view/ActionButton'
+import ResourceContextMenu from '@/components/view/ResourceContextMenu'
 
 export default {
   name: 'InfoCard',
@@ -1053,7 +1045,7 @@ export default {
     UploadResourceIcon,
     ResourceIcon,
     ResourceLabel,
-    ActionButton
+    ResourceContextMenu
   },
   props: {
     resource: {
@@ -1110,8 +1102,7 @@ export default {
       contextQuickViewPosition: {
         x: 0,
         y: 0
-      },
-      contextMenuListenerRegistered: false
+      }
     }
   },
   watch: {
@@ -1146,9 +1137,6 @@ export default {
       this.showUploadModal(showModal)
     })
     this.updateResourceAdditionalData()
-  },
-  beforeUnmount () {
-    this.removeContextMenuListeners()
   },
   computed: {
     tagsSupportingResourceTypes () {
@@ -1541,52 +1529,10 @@ export default {
         y: event.clientY
       }
       this.contextQuickViewVisible = true
-      this.$nextTick(() => {
-        this.adjustContextMenuPosition()
-      })
-      this.addContextMenuListeners()
-    },
-    addContextMenuListeners () {
-      if (this.contextMenuListenerRegistered) {
-        return
-      }
-      document.addEventListener('click', this.closeContextQuickView)
-      this.contextMenuListenerRegistered = true
-    },
-    removeContextMenuListeners () {
-      if (!this.contextMenuListenerRegistered) {
-        return
-      }
-      document.removeEventListener('click', this.closeContextQuickView)
-      this.contextMenuListenerRegistered = false
     },
     closeContextQuickView () {
       this.contextQuickViewVisible = false
       this.contextQuickViewPosition = { x: 0, y: 0 }
-      this.removeContextMenuListeners()
-    },
-    adjustContextMenuPosition () {
-      const padding = 8
-      const menu = this.$refs.contextQuickViewMenu
-      if (!menu) {
-        return
-      }
-      const rect = menu.getBoundingClientRect()
-      let x = this.contextQuickViewPosition.x
-      let y = this.contextQuickViewPosition.y
-      const maxX = window.innerWidth - rect.width - padding
-      const maxY = window.innerHeight - rect.height - padding
-      if (x > maxX) {
-        x = Math.max(padding, maxX)
-      }
-      if (y > maxY) {
-        y = Math.max(padding, maxY)
-      }
-      x = Math.max(padding, x)
-      y = Math.max(padding, y)
-      if (x !== this.contextQuickViewPosition.x || y !== this.contextQuickViewPosition.y) {
-        this.contextQuickViewPosition = { x, y }
-      }
     },
     handleContextAction (action) {
       this.closeContextQuickView()
@@ -1804,13 +1750,4 @@ export default {
   border: 1px solid rgba(177, 177, 177, 0.788);
 }
 
-.quickview-context-menu {
-  position: fixed;
-  z-index: 2000;
-  background-color: #fff;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  padding: 10px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-}
 </style>

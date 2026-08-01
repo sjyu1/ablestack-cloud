@@ -28,7 +28,7 @@
     </template>
     <template #right>
       <a-card
-        class="spin-content"
+        class="spin-content resource-content-card"
         :loading="loading"
         :bordered="true"
         style="width:100%">
@@ -224,4 +224,13 @@ export default {
 </script>
 
 <style lang="less" scoped>
+.resource-content-card {
+  background: var(--ui-bg-surface);
+}
+
+:deep(.resource-content-card > .ant-card-body),
+:deep(.resource-content-card .ant-spin-nested-loading),
+:deep(.resource-content-card .ant-spin-container) {
+  background: var(--ui-bg-surface);
+}
 </style>
