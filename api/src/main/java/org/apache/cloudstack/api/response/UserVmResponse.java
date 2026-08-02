@@ -496,6 +496,10 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
     @Param(description = "Instance lease expiry action", since = "4.21.0")
     private String leaseExpiryAction;
 
+    @SerializedName("guestnetwork")
+    @Param(description = "Latest guest-observed IP summary. Included only when details=guestnetwork or details=all.", since = "4.22.0")
+    private GuestNetworkSummaryResponse guestNetwork;
+
     public UserVmResponse() {
         securityGroupList = new LinkedHashSet<>();
         nics = new TreeSet<>(Comparator.comparingInt(x -> Integer.parseInt(x.getDeviceId())));
@@ -514,6 +518,14 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
 
     public String getId() {
         return this.id;
+    }
+
+    public GuestNetworkSummaryResponse getGuestNetwork() {
+        return guestNetwork;
+    }
+
+    public void setGuestNetwork(GuestNetworkSummaryResponse guestNetwork) {
+        this.guestNetwork = guestNetwork;
     }
 
     public Boolean getDisplayVm() {

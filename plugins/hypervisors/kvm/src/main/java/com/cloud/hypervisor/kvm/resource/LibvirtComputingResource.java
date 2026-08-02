@@ -5859,34 +5859,8 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
                 try {
                     result = dm.qemuAgentCommand(QemuCommand.buildQemuCommand(QemuCommand.AGENT_NETWORK_GET_INTERFACES, null), 2, 0);
                     if (StringUtils.isNotBlank(result) && !(result.startsWith("error"))) {
-                        JsonArray arrData = (JsonArray) new JsonParser().parse(result).getAsJsonObject().get("return");
-                        for (JsonElement je : arrData) {
-                            JsonElement nicName = je.getAsJsonObject().get("name") == null ? null : je.getAsJsonObject().get("name");
-                            JsonElement nicAddrs = je.getAsJsonObject().get("ip-addresses") == null ? null : je.getAsJsonObject().get("ip-addresses");
-                            if (nicName == null || "lo".equals(nicName.getAsString())) {
-                                continue;
-                            } else {
-                                if (nicAddrs == null) {
-                                    continue;
-                                } else {
-                                    JsonElement nicMac = je.getAsJsonObject().get("hardware-address") == null ? null : je.getAsJsonObject().get("hardware-address");
-                                    if (nicMac == null) {
-                                        continue;
-                                    } else {
-                                        JsonArray arrData2 = (JsonArray) je.getAsJsonObject().get("ip-addresses");
-                                        for (JsonElement je2 : arrData2) {
-                                            JsonElement nicAddrIp = je2.getAsJsonObject().get("ip-address") == null ? null : je2.getAsJsonObject().get("ip-address");
-                                            JsonElement nicAddrIpType = je2.getAsJsonObject().get("ip-address-type") == null ? null : je2.getAsJsonObject().get("ip-address-type");
-                                            if (nicAddrIp == null || nicAddrIpType == null || !"ipv4".equals(nicAddrIpType.getAsString())) {
-                                                continue;
-                                            } else {
-                                                nicAddrMap.put(nicMac.getAsString(), nicAddrIp.getAsString());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        LOGGER.debug(dm.getName() + " >>  " + result);
+                        nicAddrMap.putAll(parseQemuGuestNetworkInterfaces(result));
                         metrics.setNicAddrMap(nicAddrMap);
                     }
                 } catch (Exception e) {
@@ -5941,6 +5915,40 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
                 dm.free();
             }
         }
+    }
+
+    /**
+     * Parses the QEMU guest agent {@code guest-network-get-interfaces} response using the
+     * current legacy projection: loopback and IPv6 addresses are ignored, and multiple
+     * IPv4 addresses on one interface collapse to the last reported value.
+     */
+    protected Map<String, String> parseQemuGuestNetworkInterfaces(final String result) {
+        Map<String, String> nicAddrMap = new HashMap<>();
+        JsonArray arrData = (JsonArray) new JsonParser().parse(result).getAsJsonObject().get("return");
+        for (JsonElement je : arrData) {
+            JsonElement nicName = je.getAsJsonObject().get("name") == null ? null : je.getAsJsonObject().get("name");
+            JsonElement nicAddrs = je.getAsJsonObject().get("ip-addresses") == null ? null : je.getAsJsonObject().get("ip-addresses");
+            if (nicName == null || "lo".equals(nicName.getAsString())) {
+                continue;
+            }
+            if (nicAddrs == null) {
+                continue;
+            }
+            JsonElement nicMac = je.getAsJsonObject().get("hardware-address") == null ? null : je.getAsJsonObject().get("hardware-address");
+            if (nicMac == null) {
+                continue;
+            }
+            JsonArray addresses = (JsonArray) je.getAsJsonObject().get("ip-addresses");
+            for (JsonElement address : addresses) {
+                JsonElement nicAddrIp = address.getAsJsonObject().get("ip-address") == null ? null : address.getAsJsonObject().get("ip-address");
+                JsonElement nicAddrIpType = address.getAsJsonObject().get("ip-address-type") == null ? null : address.getAsJsonObject().get("ip-address-type");
+                if (nicAddrIp == null || nicAddrIpType == null || !"ipv4".equals(nicAddrIpType.getAsString())) {
+                    continue;
+                }
+                nicAddrMap.put(nicMac.getAsString(), nicAddrIp.getAsString());
+            }
+        }
+        return nicAddrMap;
     }
 
     /**

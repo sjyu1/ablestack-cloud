@@ -75,7 +75,7 @@ export default {
       permission: ['listVirtualMachinesMetrics'],
       resourceType: 'UserVm',
       params: () => {
-        var params = { details: 'group,nics,secgrp,tmpl,servoff,diskoff,iso,volume,affgrp,backoff' }
+        var params = { details: 'group,nics,secgrp,tmpl,servoff,diskoff,iso,volume,affgrp,backoff,guestnetwork' }
         if (store.getters.metrics) {
           params = { details: 'all,stats' }
         }
