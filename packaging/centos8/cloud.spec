@@ -197,9 +197,9 @@ if [ "%{_sim}" == "SIMULATOR" -o "%{_sim}" == "simulator" ] ; then
    FLAGS="$FLAGS -Dsimulator"
 fi
 
-if [ \"%{_temp}\" != "" ]; then
+if [ -n "%{?_temp}" ]; then
     echo "Adding flags to package requested templates"
-    FLAGS="$FLAGS `rpm --eval %{?_temp}`"
+    FLAGS="$FLAGS %{?_temp}"
 fi
 
 mvn -T 2C -Psystemvm,developer -DskipTests $FLAGS clean package

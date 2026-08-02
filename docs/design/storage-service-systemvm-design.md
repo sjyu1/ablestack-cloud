@@ -518,7 +518,7 @@ ablestack-storagectl nvmeof subsystem apply <payload.json>
 The tool should be idempotent:
 
 - Reapplying the same payload should be safe.
-- Partial failures should retun structured error details.
+- Partial failures should return structured error details.
 - Existing OS-level config should be reconciled to desired state.
 - Existing-volume import and filesystem resize commands must be non-destructive
   unless the payload explicitly requests a destructive mode.
@@ -591,12 +591,12 @@ Storage Service monitoring cache:
   files.
 - The status APIs must check monitor health first:
   - if the monitor service is active and cache freshness is within
-    `staleAfterSeconds`, retun cached data;
-  - if the monitor service is inactive but cache exists, retun stale data with
+    `staleAfterSeconds`, return cached data;
+  - if the monitor service is inactive but cache exists, return stale data with
     a clear stale waning;
   - if no cache exists, fall back to targeted QGA command execution only for the
     requested status scope, and mark the response as non-cached;
-  - if QGA is unavailable, retun the last cached data plus QGA/monitor error
+  - if QGA is unavailable, return the last cached data plus QGA/monitor error
     state when available.
 - Desired-state apply commands such as export/share/target creation must still
   execute synchronously through the existing async job -> host Agent -> QGA ->
@@ -769,12 +769,12 @@ NVMe-oF template and service-offering strategy:
 NFS must be upgraded from the legacy fixed `/export` share to first-class export
 management. In the expanded Storage Service design, `/export` is not a
 user-facing NFS export. It is a legacy SharedFS compatibility root and may be
-used only as an intenal mount/root directory for existing lifecycle code while
+used only as an internal mount/root directory for existing lifecycle code while
 the compatibility layer is being retired.
 
 The Storage Service must never advertise `/export` itself through NFS or SMB.
 The client-visible service name is always the protocol object name, not the
-intenal filesystem path:
+internal filesystem path:
 
 - NFS clients mount `<service-ip>:/<export-name>`.
 - SMB clients mount `\\<service-ip>\<share-name>`.
@@ -787,24 +787,24 @@ root identifier is the operator-defined protocol object name: export name for
 NFS, share name for SMB, target IQN for iSCSI, and subsystem NQN for NVMe-oF.
 UI connection guidance, API responses intended for operators, and SystemVM
 runtime rendering must derive client connection examples from those protocol
-object names. Intenal backing directories or device paths may be shown for
+object names. Internal backing directories or device paths may be shown for
 administration, capacity, and troubleshooting, but they must not be presented
 as the client root path.
 
-The intenal directory may be `/export/<share-name>` during the SharedFS
+The internal directory may be `/export/<share-name>` during the SharedFS
 compatibility transition, or the preferred long-term path
-`/srv/ablestack-storage/.../<share-name>`. Operators may choose the intenal
+`/srv/ablestack-storage/.../<share-name>`. Operators may choose the internal
 directory, but the UI and API must reject the root path `/export` as an
-intenal share/export path. They should also normalize and validate
+internal share/export path. They should also normalize and validate
 user-provided paths so that an operator cannot accidentally publish the entire
-backing filesystem root. The UI must label this field as an intenal/backing
+backing filesystem root. The UI must label this field as an internal/backing
 directory and show the client-visible root name separately.
 
 Features:
 
 - export create/update/delete
 - export enable/disable
-- intenal export directory management
+- internal export directory management
 - client-visible export name management
 - export-level backing volume
 - export-level capacity limit
@@ -834,11 +834,11 @@ Runtime implementation:
   be mounted at `/export`, but `/export` itself must not be rendered into
   `/etc/exports` or `/etc/exports.d`.
 - User-facing NFS exports must be root-level service names, for example:
-  `/nfs01` for export name `nfs01`. They must not expose the intenal backing
+  `/nfs01` for export name `nfs01`. They must not expose the internal backing
   path such as `/export/nfs01` or
   `/srv/ablestack-storage/nfs/<share-uuid>`.
 - `ablestack-storagectl` must create a controlled bind-mount alias from the
-  intenal backing path to the root-level client-visible export name, and render
+  internal backing path to the root-level client-visible export name, and render
   only the alias path into `/etc/exports.d`.
 - The alias path is derived from the export name by allowing
   `[A-Za-z0-9_.-]` and normalizing other characters to `-`; names that would
@@ -873,7 +873,7 @@ Runtime implementation:
 - NFS ACL create/update APIs may override the squashing and anonymous UID/GID
   behavior per principal with `rootSquash`, `allSquash`, `anonUid`, and
   `anonGid`.
-- `ablestack-storagectl` must apply POSIX owner/mode to the intenal backing
+- `ablestack-storagectl` must apply POSIX owner/mode to the internal backing
   directory before rendering `exportfs` rules. Recursive application is an
   explicit operator choice because it can be expensive and destructive on
   existing data.
@@ -919,12 +919,12 @@ Runtime implementation:
 Path validation rules:
 
 - Reject `/export`, `/export/`, `/`, empty paths, relative paths, and paths with
-  traversal segments such as `..` for the intenal/backing directory.
+  traversal segments such as `..` for the internal/backing directory.
 - Allow managed child backing paths under `/export/<name>` only for
   compatibility SharedFS-backed instances.
 - Prefer native Storage Service paths under `/srv/ablestack-storage/...` for new
   protocol objects.
-- Display a clear UI hint that the selected path is the intenal directory. The
+- Display a clear UI hint that the selected path is the internal directory. The
   client mount example must use the share/export name as the root export. For
   v4-only exports, prefer `mount -t nfs4 -o vers=4.1,port=<endpoint-port>
   <service-ip>:/<export-name> <mount-path>`. When `V3V4_DUAL` is selected, the
@@ -998,7 +998,7 @@ Existing volume safety rules:
   `FORMAT_EMPTY` was requested for a newly created empty volume.
 - Destructive force-format is not exposed in this implementation. If it is
   added later, it must be explicit, async, and auditable.
-- If the filesystem is dirty or requires repair, retun a blocked state and
+- If the filesystem is dirty or requires repair, return a blocked state and
   expose the needed operator action. Do not run destructive repairs
   automatically in the first implementation.
 - NFS/SMB ACLs must be rendered before the service is advertised to clients.
@@ -1079,7 +1079,7 @@ Resize workflow:
    - ext4: `resize2fs <device>` after ensuring the block device is resized
 7. If XFS project quota is used, update the project hard limit to
    `quota_bytes`.
-8. Retun health, size, used bytes, filesystem, and mount path in the async job
+8. Return health, size, used bytes, filesystem, and mount path in the async job
    result.
 
 Capacity meaning:
@@ -1521,9 +1521,9 @@ Features:
 - namespace resize
 
 DH-HMAC-CHAP enforcement is mandatory when requested. `ablestack-storagectl`
-must verify that the selected SystemVM kenel/configfs exposes the required
+must verify that the selected SystemVM kernel/configfs exposes the required
 `dhchap_key` and `dhchap_ctrl_key` attributes before reporting a host ACL as
-applied. If the template/kenel cannot enforce the requested authentication,
+applied. If the template/kernel cannot enforce the requested authentication,
 the QGA apply command must fail and the affected ACL must remain `Error`
 instead of being reported as `Ready`.
 
@@ -1531,11 +1531,11 @@ DH-HMAC-CHAP is capability gated. `ablestack-storagectl health` and
 `ablestack-storagectl inventory` must report
 `capabilities.nvmeof.dhChapSupported` and
 `capabilities.nvmeof.dhChapCtrlSupported` by probing the live
-`/sys/kenel/config/nvmet/hosts/<sample-host>/dhchap_key` and
+`/sys/kernel/config/nvmet/hosts/<sample-host>/dhchap_key` and
 `dhchap_ctrl_key` attributes. The UI must disable DH-HMAC-CHAP host and
 controller authentication controls when those attributes are missing, while
 still displaying that DH-HMAC-CHAP authentication is unsupported by the current
-SystemVM kenel/configfs. For create workflows where the target SystemVM does
+SystemVM kernel/configfs. For create workflows where the target SystemVM does
 not exist yet, the current Storage Service SystemVM template baseline is treated
 as unsupported until a future template exposes the capability.
 
@@ -1992,7 +1992,7 @@ NVMe-oF desired-state lifecycle consistency:
   Storage Service System VM exists and `Allocated` when the object is stored but
   cannot yet be applied because no System VM is mapped.
 - If QGA apply fails, the engine must persist the affected API object as
-  `Error` and retun the failure to the async job. This prevents stale
+  `Error` and return the failure to the async job. This prevents stale
   `Creating`/`Updating` rows from being shown as pending forever and prevents
   the System VM state file from disagreeing with API state after a later
   successful reapply.
@@ -2006,8 +2006,8 @@ NVMe-oF should support two target engines:
 
 - `KERNEL_NVMET`
   - Default first implementation.
-  - Uses Linux kenel `nvmet` with configfs and TCP transport.
-  - Requires kenel modules such as `nvmet`, `nvmet-tcp`, and `configfs`.
+  - Uses Linux kernel `nvmet` with configfs and TCP transport.
+  - Requires kernel modules such as `nvmet`, `nvmet-tcp`, and `configfs`.
   - Does not require guest hugepages by design.
 - `SPDK`
   - Planned high-performance mode.
@@ -2033,9 +2033,9 @@ Management-side VM preparation:
 
 1. Validate the Storage Service System VM service offering.
 2. For `KERNEL_NVMET`, ensure the template has `nvme-cli`, `nvmetcli` when
-   available, and a kenel with NVMe target modules.
+   available, and a kernel with NVMe target modules.
 3. For `SPDK`, do not attempt guest-side HugePage or NUMA changes from Storage
-   Service. Retun `PreparationRequired` until a VM Runtime Capability profile
+   Service. Return `PreparationRequired` until a VM Runtime Capability profile
    can be attached to the System VM.
 4. Generate a desired capability document in `StorageServiceProtocol.config_json`.
 5. Send QGA `nvmeof prepare` to the System VM only for supported engine states.
@@ -2066,7 +2066,7 @@ from the existing `Shared FileSystems` list and use the existing
 `Create Shared FileSystem` action to create a SharedFS-backed Storage Service.
 The detail page is reserved for post-creation operations and ongoing management.
 
-The UI implementation must follow the existing Vue and Ant Design Vue pattens
+The UI implementation must follow the existing Vue and Ant Design Vue patterns
 used by the ABLESTACK UI. The SharedFS extension must reuse the current
 section/action, detail tab, async job polling, status, metric, and event tab
 conventions instead of introducing an unrelated visual system.
@@ -2171,7 +2171,7 @@ Creation dialog structure:
     a file share quota
   - DH-HMAC-CHAP keys are available only when a host NQN ACL is configured, and
     the review panel shows only whether authentication is enabled
-  - if the current SystemVM template/kenel capability does not support
+  - if the current SystemVM template/kernel capability does not support
     DH-HMAC-CHAP, the host and controller authentication switches are disabled
     and the dialog shows an explicit unsupported message
 - `Existing volume`
@@ -2253,8 +2253,8 @@ Dialog usability rules:
 - After `createSharedFileSystem` completes, the UI should reload the created
   SharedFS by ID and use that fresh response as the preferred source for VM,
   backing volume, zone, network, and account information. This reload is a
-  freshness step, not the only gate for follow-up setup. If the reload retuns
-  a different wrapper shape or temporarily retuns no row, the UI must fall back
+  freshness step, not the only gate for follow-up setup. If the reload returns
+  a different wrapper shape or temporarily returns no row, the UI must fall back
   to the completed async job result and continue setup when the SharedFS ID and
   VM ID are already available.
 - The setup code must accept both current and legacy response wrappers, including
@@ -2325,7 +2325,7 @@ Dialog usability rules:
   `last_error`; the UI must display only actually applied rows as `Ready`.
 - `File Service Management` must expose a retry action for incomplete initial
   setup. Retry APIs and UI orchestration must be idempotent: enabling an already
-  enabled protocol or creating an already existing desired object should retun
+  enabled protocol or creating an already existing desired object should return
   the existing state or reconcile it rather than creating duplicates.
 - The progress UI should show each setup phase and the current service being
   configured. This is required so operators can distinguish VM creation delays
@@ -2381,7 +2381,7 @@ and `File Service Status`. The detailed UI must now be protocol-oriented while
 keeping common service state in the first details tab.
 
 - The legacy `Access` tab must be removed from the expanded Storage Service
-  UI. It exposes only the old NFS mount patten and can show the deprecated
+  UI. It exposes only the old NFS mount pattern and can show the deprecated
   `/export` root, which conflicts with the new explicit export/share model.
 - The previous `File Service Management` and `File Service Status` tabs must be
   replaced by protocol-oriented tabs:
@@ -2470,7 +2470,7 @@ keeping common service state in the first details tab.
   - Tables must follow the existing ABLESTACK network-tab table look and feel:
     compact row height, restrained borders, readable header contrast, and
     normal/dark mode compatible background and hover states.
-  - Tables with many columns must use intenal horizontal scrolling rather than
+  - Tables with many columns must use internal horizontal scrolling rather than
     breaking the tab layout. The tab itself should remain stable while the table
     body scrolls inside its own boundary.
   - Table scrollbars must be visually small and must match the normal and dark
@@ -2504,7 +2504,7 @@ keeping common service state in the first details tab.
     ellipsis plus tooltip for long values, compact scrollbar, and dark-mode
     safe colors.
 - NFS tab table standard:
-  - `NFS exports` table: export name, client-visible mount root, intenal path,
+  - `NFS exports` table: export name, client-visible mount root, internal path,
     service IP/port, permission, ACL summary, quota/capacity, backing volume,
     runtime state, and actions.
     The only row action in this table should be file-share capacity expansion;
@@ -2547,7 +2547,7 @@ keeping common service state in the first details tab.
     Storage Service NIC, the backend must not create a duplicate secondary-IP
     record; it should treat the primary address as already registered.
     Initial SharedFS creation must verify NFS runtime state by the
-    client-visible export root name, not by the intenal backing path. The UI
+    client-visible export root name, not by the internal backing path. The UI
     must tolerate monitor-cache lag by polling the runtime inventory for a
     bounded period after the export and ACL API jobs complete. A configured
     all-CIDR ACL such as `0.0.0.0/0` or `::/0` must be compared with the
@@ -2562,7 +2562,7 @@ keeping common service state in the first details tab.
     The NFS export modal must include an "NFS access permission" area for Root
     Squash, All Squash, anonymous UID/GID, POSIX owner UID/GID, directory mode,
     and recursive apply. The NFS ACL modal must show export options by export
-    name only; after selection, it shows the intenal backing path and
+    name only; after selection, it shows the internal backing path and
     client-visible mount root as read-only context. NFS ACL option groups must
     use compact boxed sections with normal-sized labels so Root Squash, All
     Squash, sync, secure port, and anonymous UID/GID mapping are visually
@@ -2571,7 +2571,7 @@ keeping common service state in the first details tab.
     expose an export through all configured Storage Service endpoints or a
     selected subset of endpoint IPs. The create/update API stores the selected
     endpoint intent as `endpointMode=ALL|SELECTED` in the export configuration
-    and retuns `endpointmode` in list/detail responses so the UI can show
+    and returns `endpointmode` in list/detail responses so the UI can show
     endpoint-to-export mapping after refresh. `SELECTED` requires one or more
     selected endpoint IPs and persists them as `listenIps`; `ALL` removes
     export-level `listenIps` and means the export is exposed through every
@@ -2581,18 +2581,18 @@ keeping common service state in the first details tab.
     The create dialog must default to `SELECTED` with no endpoint preselected
     so the operator makes an explicit endpoint decision. The UI confirmation
     path and backend API must both reject `SELECTED` without at least one IP.
-    The backend must persist and retun this endpoint intent from a valid
+    The backend must persist and return this endpoint intent from a valid
     `mediumtext` configuration payload. If the payload is invalid, the response
     must expose `configvalid=false`; it may recover `endpointMode` and complete
     IPv4 values from the raw payload for display, but it must not silently
     coerce the export to `ALL`.
-    Because the Linux kenel NFS server does not provide a first-class
+    Because the Linux kernel NFS server does not provide a first-class
     per-export/per-listen-IP visibility model in the current SystemVM design,
     Storage Service managed NFS must move to NFS-Ganesha for endpoint-aware
     serving. Endpoint binding is no longer only metadata. The SystemVM desired
     state renderer must generate endpoint-specific Ganesha configuration where
     each endpoint is `listen IP + TCP port` and each endpoint contains only the
-    exports bound to that endpoint. Kenel `exportfs` may remain available for
+    exports bound to that endpoint. Kernel `exportfs` may remain available for
     platform compatibility, but Storage Service NFS must not render active
     exports into `/etc/exports.d`.
     Endpoint selection lists must be built from the merged endpoint model:
@@ -2604,10 +2604,10 @@ keeping common service state in the first details tab.
     The NFS export table and connection guidance must show all selected
     endpoint IPs for each export. Generic connection examples must remain
     export-name based, for example `<endpoint-ip>:/<export-name>`, instead of
-    exposing the intenal backing path.
+    exposing the internal backing path.
     NFS-Ganesha rendering rules are:
     - the client-visible pseudo path is always `/<export-name>`;
-    - the intenal operator-facing alias remains `/export/<export-name>`;
+    - the internal operator-facing alias remains `/export/<export-name>`;
     - the real data path remains under
       `/srv/ablestack-storage/volumes/<volume-uuid>/export/<export-name>`;
     - the SystemVM must not export `/export/<export-name>` to clients;
@@ -2617,7 +2617,7 @@ keeping common service state in the first details tab.
       reloads or restarts the affected endpoint service, and opens the
       configured TCP port in the SystemVM firewall;
     - legacy Storage Service `/etc/exports.d/ablestack-*.exports` files must be
-      emptied or removed during apply so stale kenel exports cannot leak
+      emptied or removed during apply so stale kernel exports cannot leak
       `/export/*` paths.
     - NFS apply success is not the same as desired-state persistence. The
       management server must treat the protocol action as successful only when
@@ -2722,7 +2722,7 @@ keeping common service state in the first details tab.
     the primary service IP when secondary IPs have been added through protocol
     activation.
   - `SMB shares` table: share name, client-visible UNC root, internal
-    display path, resolved SystemVM backing path, service IP/port, browseable
+    display path, resolved SystemVM backing path, service IP/port, browsable
     flag, guest access flag, read-only flag,
     quota/capacity, backing volume, runtime state, and actions.
     Share row actions should include share edit, share disable/delete when
@@ -2829,7 +2829,7 @@ keeping common service state in the first details tab.
     may require ACL disable plus desired-state reapply.
 - `listStorageServiceSessions` should accept `instanceid`, `protocol`,
   `resourceid`, `client`, and `state` filters for UI tab use.
-- `disconnectStorageServiceSession` should be asynchronous and retun a runtime
+- `disconnectStorageServiceSession` should be asynchronous and return a runtime
   response or job result containing protocol, target session, command output,
   and whether termination was complete or best effort.
 - `listStorageServiceProtocolSummary` should be added if the UI cannot build
@@ -2954,7 +2954,7 @@ Implementation note:
 - Add upgrade and template compatibility checks.
 - Evaluate dedicated Storage Service System VM template profile.
 
-### Phase 7: Existing Volumes, Resize, And NVMe-oF Kenel Preparation
+### Phase 7: Existing Volumes, Resize, And NVMe-oF Kernel Preparation
 
 Confirmed next implementation scope:
 
@@ -2972,7 +2972,7 @@ Confirmed next implementation scope:
 - Add XFS project quota support for multi-share-on-one-volume capacity
   enforcement.
 - Add `prepareStorageServiceNvmeOfVm` for `KERNEL_NVMET` validation.
-- Keep SPDK as a planned engine state that retuns prerequisite information and
+- Keep SPDK as a planned engine state that returns prerequisite information and
   `PreparationRequired` until VM Runtime Capability support is available.
 - Add UI workflows for:
   - selecting existing ABLESTACK volumes
@@ -3024,14 +3024,14 @@ Recommended implementation order:
 ### NVMe-oF Reconcile And Namespace Backing Rules
 
 - NVMe-oF `KERNEL_NVMET` desired-state apply must be idempotent. The SystemVM
-  must reconcile the requested state with `/sys/kenel/config/nvmet` instead of
+  must reconcile the requested state with `/sys/kernel/config/nvmet` instead of
   rewriting every configfs attribute on every request.
 - A configured NVMe-oF port must write `addr_trtype`, `addr_adrfam`,
   `addr_traddr`, and `addr_trsvcid` only before subsystem links are active. If
   the port already has linked subsystems, Host ACL or namespace updates must not
   rewrite those active port attributes.
 - Host ACL creation must be independent from port and namespace creation:
-  create or reuse `/sys/kenel/config/nvmet/hosts/<hostNqn>`, then create the
+  create or reuse `/sys/kernel/config/nvmet/hosts/<hostNqn>`, then create the
   `allowed_hosts/<hostNqn>` symlink if it does not already exist. Existing
   symlinks are treated as success; unexpected non-symlink paths are an error.
 - Namespace updates must not rewrite `device_path` while the namespace is
@@ -3045,7 +3045,7 @@ Recommended implementation order:
   compatibility path, NVMe-oF must not expose the mounted block device directly.
   It should create a managed namespace image below the mounted data disk, for
   example `/export/.ablestack-storage/nvmeof/<namespace-uuid>.img`, attach it
-  to a loop device, and set the kenel namespace `device_path` to that loop
+  to a loop device, and set the kernel namespace `device_path` to that loop
   device.
 - The SystemVM must refuse to place NVMe-oF namespace backing files on the root
   filesystem when the intended ABLESTACK data volume cannot be resolved.
@@ -3091,7 +3091,7 @@ Recommended implementation order:
   exports during full desired-state reapply.
 - NFS export rows support create, edit, resize, and delete from the NFS tab
   table action column. Edit reuses the create dialog with the selected export
-  values prefilled, including client-visible export name, intenal backing
+  values prefilled, including client-visible export name, internal backing
   path, selected endpoints, capacity limit, and POSIX/root-squash options.
 - NFS export creation supports three backing-volume modes: use the current
   SharedFS backing volume, attach an existing detached ABLESTACK data volume,
@@ -3113,13 +3113,13 @@ Recommended implementation order:
   ABLESTACK volume identity and any attached export names; row actions that
   require a file-share row stay disabled when a volume currently has no export.
 - The NFS export create/edit dialog exposes a single operator-facing path:
-  `intenal backing path`. The separate `directory inside backing volume` field
+  `internal backing path`. The separate `directory inside backing volume` field
   is removed because it conflicts with the Storage Service path model.
 - NFS export names must follow Linux directory naming rules: letters, numbers,
   `.`, `_`, and `-` only; no slash, no whitespace, no empty value, and no `.`
-  or `..`. The default intenal backing path is generated from the export name
+  or `..`. The default internal backing path is generated from the export name
   as `/export/<export-name>`.
-- NFS intenal backing paths must stay exactly one level below `/export`.
+- NFS internal backing paths must stay exactly one level below `/export`.
   `/export`, `/export/`, paths outside `/export`, and nested paths such as
   `/export/<name>/<child>` are rejected by both UI validation and the API.
 - Existing/current backing-volume import separates the private volume mount
@@ -3169,8 +3169,8 @@ Recommended implementation order:
   fixed header/footer, scrollable body inside the browser viewport, required
   markers, tooltip labels, and no horizontal row-only layout.
 - The UI remains based on Vue Ant Design and follows the established Storage
-  Service table patten: fixed important columns, compact row action buttons
-  with icons, intenal table scrolling, ellipsis/tooltip handling for long
+  Service table pattern: fixed important columns, compact row action buttons
+  with icons, internal table scrolling, ellipsis/tooltip handling for long
   values, and explicit dark-mode colors for waning and delete states.
 
 ## Open Decisions
@@ -3216,7 +3216,7 @@ The refined design is:
   operation that can only update one ACL row.
 - Storage Service file-share mounts must be boot-safe. The physical backing
   volume mount and the client-visible export alias are separate concepts. A
-  backing volume is mounted only at its intenal backing path, while a
+  backing volume is mounted only at its internal backing path, while a
   client-visible NFS root such as `/nfs02` is a bind mount alias to that backing
   path and is the only path rendered into `/etc/exports.d`.
 - `ablestack-storagectl volume attach inspect` must persist explicit backing
@@ -3686,7 +3686,6 @@ UI runtime mode source of truth:
   service listen IP because the single Ganesha runtime binds `0.0.0.0:2049` and
   shares one export namespace.
 
-
 ### NFS Dual Mode listen-IP synchronization correction (2026-06-11)
 
 Dual Mode uses one VM-wide Ganesha listener (`0.0.0.0:2049`) and exposes every
@@ -3741,7 +3740,6 @@ This keeps the user-visible model aligned with verified runtime behavior and pre
 - Artifact SHA256: c49fd8df80077da5f17c0c21019018c0c0060840afc7cbe7df66588507b1c57e.
 - The deployed model treats NFSv3+v4 dual mode as service-wide TCP 2049 exposure across all service IPs. NFSv4-only exports are grouped by listener port, and every service IP exposes the exports assigned to that listener group.
 - Export-specific endpoint selection by individual destination IP is intentionally not represented because the current Ganesha runtime binding does not enforce that isolation reliably.
-
 
 ### NFS listener persistence correction (2026-06-11)
 
@@ -4244,7 +4242,7 @@ API namespace used by the NFS extension. The preferred model is:
   - backing path
   - cross-protocol source protocol/path reference when reused from NFS
   - capacity limit
-  - browseable, read-only, guest-access flags
+  - browsable, read-only, guest-access flags
   - create-directory behavior
   - status and last apply error
 - `storage_service_smb_principal`
