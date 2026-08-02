@@ -8373,7 +8373,7 @@ export default {
 
     :deep(.ant-table-body) {
       scrollbar-width: thin;
-      scrollbar-color: rgba(127, 127, 127, 0.45) transparent;
+      scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
     }
 
     :deep(.ant-table-body::-webkit-scrollbar) {
@@ -8382,12 +8382,12 @@ export default {
     }
 
     :deep(.ant-table-body::-webkit-scrollbar-track) {
-      background: transparent;
+      background: var(--ui-scroll-track);
     }
 
     :deep(.ant-table-body::-webkit-scrollbar-thumb) {
-      border-radius: 999px;
-      background: rgba(127, 127, 127, 0.45);
+      border-radius: 4px;
+      background: var(--ui-scroll-thumb);
     }
   }
   .storage-table-actions {
@@ -8470,7 +8470,7 @@ export default {
     overflow-y: auto;
     padding: 0 8px 20px 0;
     scrollbar-width: thin;
-    scrollbar-color: rgba(127, 127, 127, 0.45) transparent;
+    scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
   }
   .storage-modal-body :deep(.ant-form),
   .storage-modal-body :deep(.ant-form-item),
@@ -8492,11 +8492,11 @@ export default {
     height: 6px;
   }
   .storage-modal-body::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--ui-scroll-track);
   }
   .storage-modal-body::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: rgba(127, 127, 127, 0.45);
+    border-radius: 4px;
+    background: var(--ui-scroll-thumb);
   }
   .storage-action-form--vertical {
     display: flex;
@@ -8756,11 +8756,11 @@ export default {
       }
 
       :deep(.ant-table-body) {
-        scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+        scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
       }
 
       :deep(.ant-table-body::-webkit-scrollbar-thumb) {
-        background: rgba(255, 255, 255, 0.24);
+        background: var(--ui-scroll-thumb);
       }
 
       :deep(.ant-table-cell-fix-left),

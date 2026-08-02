@@ -1095,64 +1095,6 @@
     font-weight: bold;
   }
 
-  .row-action-button--dataview {
-    background: @dropdown-bgColor;
-    color: @dark-text-color-4;
-  }
-
-  .row-action-button--dataview .action-button-title {
-    color: @dark-text-color-4;
-    border-bottom: 1px solid @dark-border-color;
-  }
-
-  .row-action-button--dataview .action-button-item--dataview.ant-btn-text {
-    color: @dark-text-color-3;
-  }
-
-  .row-action-button--dataview .action-button-item--dataview.ant-btn-dashed,
-  .quickview-context-menu .action-button-item--dataview.ant-btn-dashed,
-  .autogen-action-dropdown__content .action-button-item--dataview.ant-btn-dashed {
-    color: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.1);
-    background: rgba(0, 0, 0, 0.45);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      inset 0 -2px 4px rgba(0, 0, 0, 0.45);
-  }
-
-  .row-action-button--dataview .action-button-item--dataview.ant-btn-dashed:disabled,
-  .quickview-context-menu .action-button-item--dataview.ant-btn-dashed:disabled,
-  .autogen-action-dropdown__content .action-button-item--dataview.ant-btn-dashed:disabled {
-    border-color: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.18);
-    background: rgba(0, 0, 0, 0.55);
-  }
-
-  .row-action-button--dataview .action-button-item--dataview:not(.ant-btn-disabled):hover,
-  .row-action-button--dataview .action-button-item--dataview:not(.ant-btn-disabled):focus {
-    background: @dropdown-hover-bgColor;
-    color: #69c0ff;
-  }
-
-  .quickview-context-menu,
-  .autogen-action-dropdown__content {
-    background: @dropdown-bgColor !important;
-    border-color: @dark-border-color !important;
-    box-shadow: 0 8px 24px @box-shadow-1 !important;
-    color: @dark-text-color-4 !important;
-  }
-
-  .quickview-context-menu .action-button-title,
-  .autogen-action-dropdown__content .action-button-title {
-    border-bottom: 1px solid @dark-border-color;
-    color: @dark-text-color-4;
-  }
-
-  .quickview-context-menu .action-button-item--dataview:not(.ant-btn-disabled):hover,
-  .autogen-action-dropdown__content .action-button-item--dataview:not(.ant-btn-disabled):hover {
-    background: @dropdown-hover-bgColor;
-    color: #69c0ff;
-  }
-
   .ant-modal,
   .ant-drawer,
   .ant-popover,
@@ -1219,21 +1161,24 @@
   }
 
   .auto-alert-banner-container {
-    background-color: rgba(51, 42, 33, 0.5);
-    background: rgba(0, 0, 0, 0.50)
+    color: var(--ui-error-text);
+    background: var(--ui-bg-page);
   }
 
   .auto-alert-banner-container .banner-field {
-      background: rgba(0, 0, 0, 0.85);
+    color: var(--ui-error-text);
+    background: var(--ui-error-bg);
+    border-color: var(--ui-error-border);
   }
 
   .banner-main,
   .field-key {
-    color: #cfc9c9;
+    color: var(--ui-error-text);
   }
 
   .banner-label {
-    color: #cfc9c9;
-    background-color: rgba(150, 96, 96, 0.5);
+    color: var(--ui-error-text);
+    background: var(--ui-error-bg);
+    border-color: var(--ui-error-border);
   }
 }
