@@ -19,6 +19,7 @@ package org.apache.cloudstack.storage.sharedfs.query.dao;
 
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import javax.inject.Inject;
@@ -116,8 +117,14 @@ public class SharedFSJoinDaoImpl extends GenericDaoBase<SharedFSJoinVO, Long> im
         response.setAccountName(sharedFS.getAccountName());
 
         response.setDomainId(sharedFS.getDomainUuid());
-        response.setDomainName(sharedFS.getDomainName());
-        response.setDomainName(sharedFS.getDomainPath());
+        String domainName = sharedFS.getDomainName();
+        String domainPath = sharedFS.getDomainPath();
+        if ("/".equals(domainName)) {
+            domainName = "ROOT";
+            domainPath = domainPath == null ? "/" : domainPath;
+        }
+        response.setDomainName(domainName);
+        response.setDomainPath(domainPath);
 
         response.setProjectId(sharedFS.getProjectUuid());
         response.setProjectName(sharedFS.getProjectName());
@@ -180,6 +187,9 @@ public class SharedFSJoinDaoImpl extends GenericDaoBase<SharedFSJoinVO, Long> im
 
     @Override
     public List<SharedFSJoinVO> searchByIds(Long... sharedFSIds) {
+        if (sharedFSIds == null || sharedFSIds.length == 0) {
+            return Collections.emptyList();
+        }
         SearchCriteria<SharedFSJoinVO> sc = fsIdInSearch.create();
         sc.setParameters("idIN", sharedFSIds);
         return search(sc, null, null, false);

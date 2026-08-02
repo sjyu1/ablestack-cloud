@@ -49,6 +49,7 @@ import com.cloud.exception.ResourceAllocationException;
 import com.cloud.exception.ResourceUnavailableException;
 import com.cloud.exception.VirtualMachineMigrationException;
 import com.cloud.network.Network;
+import com.cloud.network.NetworkModel;
 import com.cloud.network.dao.NetworkDao;
 import com.cloud.network.dao.NetworkVO;
 import com.cloud.org.Grouping;
@@ -90,12 +91,24 @@ import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.cloudstack.framework.config.Configurable;
 import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
+import org.apache.cloudstack.storage.dataservice.StorageAccessRuleVO;
+import org.apache.cloudstack.storage.dataservice.StorageFileShareVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
+import org.apache.cloudstack.storage.dataservice.StorageServiceInstanceVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceProtocolVO;
+import org.apache.cloudstack.storage.dataservice.dao.StorageAccessRuleDao;
+import org.apache.cloudstack.storage.dataservice.dao.StorageFileShareDao;
+import org.apache.cloudstack.storage.dataservice.dao.StorageServiceInstanceDao;
+import org.apache.cloudstack.storage.dataservice.dao.StorageServiceProtocolDao;
+import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
+import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.managed.context.ManagedContextRunnable;
 import org.apache.cloudstack.storage.sharedfs.dao.SharedFSDao;
 import org.apache.cloudstack.storage.sharedfs.SharedFS.Event;
 import org.apache.cloudstack.storage.sharedfs.SharedFS.State;
 import org.apache.cloudstack.storage.sharedfs.query.dao.SharedFSJoinDao;
 import org.apache.cloudstack.storage.sharedfs.query.vo.SharedFSJoinVO;
+import org.apache.commons.lang3.StringUtils;
 
 import com.cloud.event.ActionEvent;
 import com.cloud.event.EventTypes;
@@ -107,6 +120,7 @@ import com.cloud.vm.NicVO;
 import com.cloud.vm.dao.NicDao;
 
 public class SharedFSServiceImpl extends ManagerBase implements SharedFSService, Configurable, PluggableService {
+    private static final String SHAREDFS_COMPAT_PROVIDER = "SHAREDFS_COMPATIBILITY";
 
     @Inject
     private AccountManager accountMgr;
@@ -136,10 +150,28 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     VolumeDao volumeDao;
 
     @Inject
+    PrimaryDataStoreDao storagePoolDao;
+
+    @Inject
     NetworkDao networkDao;
 
     @Inject
+    NetworkModel networkModel;
+
+    @Inject
     NicDao nicDao;
+
+    @Inject
+    StorageServiceInstanceDao storageServiceInstanceDao;
+
+    @Inject
+    StorageServiceProtocolDao storageServiceProtocolDao;
+
+    @Inject
+    StorageFileShareDao storageFileShareDao;
+
+    @Inject
+    StorageAccessRuleDao storageAccessRuleDao;
 
     protected List<SharedFSProvider> sharedFSProviders;
 
@@ -252,6 +284,23 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
     }
 
+    private void validateInitialBackingStorage(Long diskOfferingId, Long storageId, DataCenter zone) {
+        if (storageId == null) {
+            throw new InvalidParameterValueException("Primary storage is required for the initial Shared FileSystem backing volume");
+        }
+        final DiskOfferingVO diskOffering = diskOfferingDao.findById(diskOfferingId);
+        final StoragePoolVO storagePool = storagePoolDao.findById(storageId);
+        if (storagePool == null) {
+            throw new InvalidParameterValueException("Unable to find primary storage with id " + storageId);
+        }
+        if (storagePool.getDataCenterId() != zone.getId()) {
+            throw new InvalidParameterValueException("Selected primary storage does not belong to zone " + zone.getUuid());
+        }
+        if (!volumeApiService.doesTargetStorageSupportDiskOffering(storagePool, diskOffering.getTags())) {
+            throw new InvalidParameterValueException("Selected primary storage does not satisfy the disk offering storage tags");
+        }
+    }
+
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_SHAREDFS_CREATE, eventDescription = "Allocating Shared FileSystem", create = true)
     public SharedFS allocSharedFS(CreateSharedFSCmd cmd) {
@@ -267,6 +316,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         Long minIops = cmd.getMinIops();
         Long maxIops = cmd.getMaxIops();
         validateDiskOffering(diskOfferingId, size, minIops, maxIops, zone);
+        validateInitialBackingStorage(diskOfferingId, cmd.getStorageId(), zone);
 
         SharedFSProvider provider = getSharedFSProvider(cmd.getSharedFSProviderName());
         SharedFSLifeCycle lifeCycle = provider.getSharedFSLifeCycle();
@@ -275,6 +325,10 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         NetworkVO networkVO = networkDao.findById(cmd.getNetworkId());
         if (networkVO == null) {
             throw new InvalidParameterValueException("Unable to find a network with Network ID " + cmd.getNetworkId());
+        }
+        if (!networkModel.areServicesSupportedInNetwork(networkVO.getId(), Network.Service.UserData)) {
+            throw new InvalidParameterValueException(String.format("Network %s does not support UserData service. Shared FileSystem Storage VM initialization requires a network offering with UserData or ConfigDrive support.",
+                    networkVO.getUuid()));
         }
         if (networkVO.getGuestType() == Network.GuestType.Shared) {
             if ((networkVO.getAclType() != ControlledEntity.ACLType.Account) ||
@@ -314,7 +368,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         SharedFSLifeCycle lifeCycle = provider.getSharedFSLifeCycle();
         Pair<Long, Long> result = null;
         try {
-            result = lifeCycle.deploySharedFS(sharedFS, cmd.getNetworkId(), diskOfferingId, size, minIops, maxIops);
+            result = lifeCycle.deploySharedFS(sharedFS, cmd.getNetworkId(), diskOfferingId, cmd.getStorageId(), size, minIops, maxIops);
         } catch (Exception ex) {
             stateTransitTo(sharedFS, Event.OperationFailed);
             throw ex;
@@ -323,6 +377,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         sharedFS.setVmId(result.second());
         sharedFSDao.update(sharedFS.getId(), sharedFS);
         stateTransitTo(sharedFS, Event.OperationSucceeded);
+        syncSharedFSToStorageService(sharedFSDao.findById(sharedFS.getId()));
         return sharedFS;
     }
 
@@ -339,6 +394,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
         stateTransitTo(sharedFS, Event.OperationSucceeded);
         sharedFS = sharedFSDao.findById(sharedFS.getId());
+        syncSharedFSToStorageService(sharedFS);
         return sharedFS;
     }
 
@@ -377,6 +433,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
             throw e;
         }
         stateTransitTo(sharedFS, Event.OperationSucceeded);
+        syncSharedFSToStorageService(sharedFSDao.findById(sharedFS.getId()));
         return sharedFS;
     }
 
@@ -548,6 +605,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
 
         sharedFSDao.update(sharedFS.getId(), sharedFS);
+        syncSharedFSToStorageService(sharedFS);
         return sharedFS;
     }
 
@@ -570,6 +628,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         DataCenter zone = validateAndGetZone(sharedFS.getDataCenterId());
         validateDiskOffering(diskOfferingId, newSize, newMinIops, newMaxIops, zone);
         volumeApiService.changeDiskOfferingForVolumeInternal(sharedFS.getVolumeId(), diskOfferingId, newSize, newMinIops, newMaxIops, true, false);
+        syncSharedFSToStorageService(sharedFS);
         return sharedFS;
     }
 
@@ -594,6 +653,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         if (lifeCycle.changeSharedFSServiceOffering(sharedFS, cmd.getServiceOfferingId())) {
             sharedFS.setServiceOfferingId(cmd.getServiceOfferingId());
             sharedFSDao.update(sharedFS.getId(), sharedFS);
+            syncSharedFSToStorageService(sharedFS);
             return sharedFS;
         } else {
             return null;
@@ -621,6 +681,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
 
         stateTransitTo(sharedFS, Event.DestroyRequested);
+        syncSharedFSToStorageService(sharedFSDao.findById(sharedFSId));
         if (expunge || sharedFS.getState().equals(State.Error)) {
             deleteSharedFS(sharedFSId);
         }
@@ -638,6 +699,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
         stateTransitTo(sharedFS, Event.RecoveryRequested);
         sharedFS = sharedFSDao.findById(sharedFSId);
+        syncSharedFSToStorageService(sharedFS);
         return sharedFS;
     }
 
@@ -656,8 +718,151 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         SharedFSLifeCycle lifeCycle = provider.getSharedFSLifeCycle();
         stateTransitTo(sharedFS, Event.ExpungeOperation);
         lifeCycle.deleteSharedFS(sharedFS);
+        deleteStorageServiceCompatibility(sharedFS);
         stateTransitTo(sharedFS, Event.OperationSucceeded);
         sharedFSDao.remove(sharedFS.getId());
+    }
+
+    protected void syncSharedFSToStorageService(SharedFS sharedFS) {
+        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value()) {
+            return;
+        }
+        if (sharedFS.getVmId() == null || sharedFS.getVolumeId() == null) {
+            logger.debug("Skipping Storage Service compatibility sync for SharedFS [{}] without VM or volume binding", sharedFS);
+            return;
+        }
+
+        try {
+            StorageServiceInstanceVO instance = storageServiceInstanceDao.findByVmId(sharedFS.getVmId());
+            if (instance == null) {
+                instance = new StorageServiceInstanceVO(sharedFS.getName(), sharedFS.getDescription(), sharedFS.getDomainId(),
+                        sharedFS.getAccountId(), sharedFS.getDataCenterId(), sharedFS.getServiceOfferingId(), SHAREDFS_COMPAT_PROVIDER);
+                instance.setVmId(sharedFS.getVmId());
+                instance.setState(toStorageServiceState(sharedFS.getState()));
+                instance = storageServiceInstanceDao.persist(instance);
+            } else {
+                instance.setName(sharedFS.getName());
+                instance.setDescription(sharedFS.getDescription());
+                instance.setServiceOfferingId(sharedFS.getServiceOfferingId());
+                instance.setProvider(SHAREDFS_COMPAT_PROVIDER);
+                instance.setState(toStorageServiceState(sharedFS.getState()));
+                storageServiceInstanceDao.update(instance.getId(), instance);
+            }
+
+            StorageServiceProtocolVO protocol = null;
+            for (StorageServiceProtocolVO candidate : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+                if (candidate.getPort() == null || candidate.getPort() == 2049) {
+                    protocol = candidate;
+                    break;
+                }
+                if (protocol == null) {
+                    protocol = candidate;
+                }
+            }
+            if (protocol == null) {
+                protocol = new StorageServiceProtocolVO(instance.getId(), StorageServiceInstance.Protocol.NFS, isSharedFSReady(sharedFS.getState()), null, 2049);
+                protocol.setState(toStorageResourceState(sharedFS.getState()));
+                storageServiceProtocolDao.persist(protocol);
+            } else {
+                protocol.setEnabled(isSharedFSReady(sharedFS.getState()));
+                protocol.setPort(protocol.getPort() == null ? 2049 : protocol.getPort());
+                protocol.setState(toStorageResourceState(sharedFS.getState()));
+                storageServiceProtocolDao.update(protocol.getId(), protocol);
+            }
+
+            removeLegacySharedFSRootExport(instance);
+        } catch (RuntimeException e) {
+            logger.warn("Unable to sync SharedFS [{}] to Storage Service compatibility model. Existing SharedFS API behavior is preserved.",
+                    sharedFS, e);
+        }
+    }
+
+    protected void removeLegacySharedFSRootExport(StorageServiceInstanceVO instance) {
+        for (StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+            if (SharedFS.SharedFSPath.equals(StringUtils.removeEnd(share.getPath(), "/"))) {
+                for (StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
+                    storageAccessRuleDao.remove(rule.getId());
+                }
+                storageFileShareDao.remove(share.getId());
+            }
+        }
+    }
+
+    protected void deleteStorageServiceCompatibility(SharedFS sharedFS) {
+        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value() || sharedFS.getVmId() == null) {
+            return;
+        }
+        try {
+            StorageServiceInstanceVO instance = storageServiceInstanceDao.findByVmId(sharedFS.getVmId());
+            if (instance == null) {
+                return;
+            }
+            for (StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+                for (StorageAccessRuleVO rule : storageAccessRuleDao.listByResource(StorageServiceInstance.AccessResourceType.FILE_SHARE, share.getId())) {
+                    storageAccessRuleDao.remove(rule.getId());
+                }
+                storageFileShareDao.remove(share.getId());
+            }
+            for (StorageServiceProtocolVO protocol : storageServiceProtocolDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
+                storageServiceProtocolDao.remove(protocol.getId());
+            }
+            storageServiceInstanceDao.remove(instance.getId());
+        } catch (RuntimeException e) {
+            logger.warn("Unable to remove Storage Service compatibility model for SharedFS [{}]", sharedFS, e);
+        }
+    }
+
+    protected StorageServiceInstance.State toStorageServiceState(State sharedFSState) {
+        if (State.Ready.equals(sharedFSState)) {
+            return StorageServiceInstance.State.Running;
+        }
+        if (State.Stopped.equals(sharedFSState)) {
+            return StorageServiceInstance.State.Stopped;
+        }
+        if (State.Destroyed.equals(sharedFSState) || State.Expunged.equals(sharedFSState)) {
+            return StorageServiceInstance.State.Destroyed;
+        }
+        if (State.Starting.equals(sharedFSState)) {
+            return StorageServiceInstance.State.Starting;
+        }
+        if (State.Stopping.equals(sharedFSState)) {
+            return StorageServiceInstance.State.Stopping;
+        }
+        if (State.Error.equals(sharedFSState)) {
+            return StorageServiceInstance.State.Error;
+        }
+        return StorageServiceInstance.State.Allocated;
+    }
+
+    protected StorageServiceInstance.ResourceState toStorageResourceState(State sharedFSState) {
+        if (State.Ready.equals(sharedFSState)) {
+            return StorageServiceInstance.ResourceState.Ready;
+        }
+        if (State.Destroyed.equals(sharedFSState) || State.Expunged.equals(sharedFSState)) {
+            return StorageServiceInstance.ResourceState.Destroyed;
+        }
+        if (State.Error.equals(sharedFSState)) {
+            return StorageServiceInstance.ResourceState.Error;
+        }
+        if (State.Starting.equals(sharedFSState) || State.Stopping.equals(sharedFSState)) {
+            return StorageServiceInstance.ResourceState.Updating;
+        }
+        if (State.Stopped.equals(sharedFSState)) {
+            return StorageServiceInstance.ResourceState.Disabled;
+        }
+        return StorageServiceInstance.ResourceState.Allocated;
+    }
+
+    protected boolean isSharedFSReady(State sharedFSState) {
+        return State.Ready.equals(sharedFSState);
+    }
+
+    protected Long getSharedFSVolumeSize(SharedFS sharedFS) {
+        if (sharedFS.getVolumeId() == null) {
+            return null;
+        }
+        VolumeVO volume = volumeDao.findById(sharedFS.getVolumeId());
+        return volume == null ? null : volume.getSize();
     }
 
     @Override
