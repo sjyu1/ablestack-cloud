@@ -40,11 +40,11 @@ on:
       pack:
         description: Package variant
         required: false
-        default: oss
+        default: noredist
         type: choice
         options:
-          - oss
           - noredist
+          - oss
       simulator:
         description: Include simulator packaging
         required: false
@@ -53,11 +53,6 @@ on:
         options:
           - default
           - simulator
-      templates:
-        description: Optional template list (for example kvm,xen,vmware)
-        required: false
-        default: ''
-        type: string
       node_version:
         description: Node.js version injected into the Rocky build container
         required: false
@@ -105,6 +100,7 @@ jobs:
       timestamp_value: ${{ steps.derive.outputs.timestamp_value }}
       source_artifact_name: ${{ steps.derive.outputs.source_artifact_name }}
       rpm_artifact_name: ${{ steps.derive.outputs.rpm_artifact_name }}
+      systemvm_artifact_name: ${{ steps.derive.outputs.systemvm_artifact_name }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -147,6 +143,7 @@ jobs:
             echo "timestamp_value=$timestamp_value"
             echo "source_artifact_name=source-release-${{ inputs.release_id }}"
             echo "rpm_artifact_name=rocky97-rpm-${{ inputs.release_id }}"
+            echo "systemvm_artifact_name=systemvm-kvm-${{ inputs.release_id }}"
           } >> "$GITHUB_OUTPUT"
 
   prepare-source-release:
@@ -270,15 +267,28 @@ jobs:
       use_timestamp: true
       timestamp_value: ${{ needs.metadata.outputs.timestamp_value }}
       build_srpm: true
-      templates: ${{ inputs.templates }}
+      templates: kvm
       node_version: ${{ inputs.node_version }}
       artifact_name: ${{ needs.metadata.outputs.rpm_artifact_name }}
+
+  build-systemvm-kvm:
+    needs:
+      - metadata
+      - prepare-source-release
+      - validate-build
+    uses: ./.github/workflows/systemvm-kvm.yml
+    with:
+      ref: ${{ needs.prepare-source-release.outputs.source_commit_sha }}
+      version: ${{ needs.metadata.outputs.package_version }}
+      build_number: ${{ github.run_number }}
+      artifact_name: ${{ needs.metadata.outputs.systemvm_artifact_name }}
 
   publish-release:
     needs:
       - metadata
       - prepare-source-release
       - build-rpm
+      - build-systemvm-kvm
     runs-on: ubuntu-24.04
     steps:
       - name: Download source release artifacts
@@ -293,15 +303,44 @@ jobs:
           name: ${{ needs.metadata.outputs.rpm_artifact_name }}
           path: download/rpm
 
+      - name: Download KVM System VM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.metadata.outputs.systemvm_artifact_name }}
+          path: download/systemvm
+
       - name: Assemble GitHub Release assets
         run: |
           mkdir -p release-assets
           find download/source -type f -exec cp {} release-assets/ \;
           find download/rpm -type f -exec cp {} release-assets/ \;
+          find download/systemvm -type f \
+            \( -name '*.qcow2.bz2' -o -name 'SYSTEMVM-*' \) \
+            -exec cp {} release-assets/ \;
           (
             cd release-assets
-            sha256sum * > SHA256SUMS
+            rm -f SHA256SUMS
+            checksum_file=$(mktemp)
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > "$checksum_file"
+            mv "$checksum_file" SHA256SUMS
           )
+
+      - name: Summarize release contents
+        run: |
+          systemvm_image=$(find release-assets -maxdepth 1 -type f -name '*.qcow2.bz2' -printf '%f\n')
+          {
+            echo "## ABLESTACK Release"
+            echo
+            echo "- Release: \`${{ inputs.release_id }}\`"
+            echo "- Source commit: \`${{ needs.prepare-source-release.outputs.source_commit_sha }}\`"
+            echo "- Package mode: \`${{ inputs.pack }}\`"
+            echo "- System VM hypervisor: \`KVM\`"
+            echo "- System VM architecture: \`x86_64\`"
+            echo "- System VM format: \`qcow2.bz2\`"
+            echo "- System VM image: \`$systemvm_image\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

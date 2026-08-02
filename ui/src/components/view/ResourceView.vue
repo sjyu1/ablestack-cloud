@@ -16,7 +16,7 @@
 // under the License.
 
 <template>
-  <resource-layout>
+  <resource-layout :wide="wideLayout">
     <template #left>
       <slot name="info-card">
         <info-card
@@ -37,7 +37,8 @@
             :is="tabs[0].component"
             :resource="resource"
             :loading="loading"
-            :tab="tabs[0].name" />
+            :tab="tabs[0].name"
+            @wide-layout-change="onWideLayoutChange" />
         </keep-alive>
         <a-tabs
           v-else
@@ -58,14 +59,16 @@
                   :resourceType="tab.resourceType"
                   :loading="loading"
                   :tab="activeTab"
-                  @change-resource="$emit('change-resource', $event)" />
+                  @change-resource="$emit('change-resource', $event)"
+                  @wide-layout-change="onWideLayoutChange" />
                 <component
                   v-else
                   :is="tab.component"
                   :resource="resource"
                   :loading="loading"
                   :tab="activeTab"
-                  @change-resource="$emit('change-resource', $event)" />
+                  @change-resource="$emit('change-resource', $event)"
+                  @wide-layout-change="onWideLayoutChange" />
               </keep-alive>
             </a-tab-pane>
           </template>
@@ -122,7 +125,8 @@ export default {
     return {
       activeTab: '',
       networkService: null,
-      projectAccount: null
+      projectAccount: null,
+      wideLayout: false
     }
   },
   watch: {
@@ -131,6 +135,7 @@ export default {
       handler (newItem, oldItem) {
         if (newItem.id === oldItem.id) return
 
+        this.wideLayout = false
         this.fetchData()
       }
     },
@@ -165,6 +170,7 @@ export default {
     },
     onTabChange (key) {
       this.activeTab = key
+      this.wideLayout = false
       const query = Object.assign({}, this.$route.query)
       query.tab = key
       this.$route.query.tab = key
@@ -178,6 +184,9 @@ export default {
         }).join('&')
       )
       this.$emit('onTabChange', key)
+    },
+    onWideLayoutChange (enabled) {
+      this.wideLayout = !!enabled
     },
     tabName (tab) {
       if (typeof tab.name === 'function') {

@@ -30,7 +30,7 @@
     "build": "vue-cli-service build",
     "postbuild": "./postbuild.sh",
     "lint": "vue-cli-service lint",
-    "i18n:report": "vue-cli-service i18n:report --src './src/**/*.?(js|vue)' --locales './src/locales/**/*.json'",
+    "i18n:report": "vue-cli-service test:unit --runTestsByPath tests/unit/views/storage/SharedFSLocale.spec.js --runInBand",
     "test:unit": "vue-cli-service test:unit"
   },
   "dependencies": {

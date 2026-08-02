@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -163,6 +164,7 @@ import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.net.MacAddress;
 import com.cloud.utils.script.Script;
 import com.cloud.vm.NicVO;
+import com.cloud.vm.dao.NicSecondaryIpVO;
 import com.cloud.vm.UserVmManager;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine;
@@ -172,6 +174,7 @@ import com.cloud.vm.VmNetworkStats;
 import com.cloud.vm.VmStats;
 import com.cloud.vm.VmStatsVO;
 import com.cloud.vm.dao.NicDao;
+import com.cloud.vm.dao.NicSecondaryIpDao;
 import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VMInstanceDao;
 import com.cloud.vm.dao.VmStatsDao;
@@ -361,6 +364,8 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
     private NicDao _nicDao;
     @Inject
     private NetworkDao _networkDao;
+    @Inject
+    private NicSecondaryIpDao _nicSecondaryIpDao;
     @Inject
     private VlanDao _vlanDao;
     @Inject
@@ -1438,6 +1443,43 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
         }
     }
 
+    protected void reconcileObservedNicAddresses(final NicVO nic, final List<String> observedAddresses) {
+        final List<String> observed = observedAddresses == null ? Collections.emptyList() : observedAddresses.stream()
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+        if (observed.isEmpty()) {
+            return;
+        }
+
+        final String currentPrimary = nic.getIPv4Address();
+        if (StringUtils.isNotBlank(currentPrimary)) {
+            if (!observed.contains(currentPrimary)) {
+                logger.warn("Observed IPv4 addresses [{}] for NIC [{}] do not contain its persisted primary IPv4 [{}]; preserving the DB identity",
+                        observed, nic.getUuid(), currentPrimary);
+            }
+            return;
+        }
+
+        final Set<String> persistedAliases = _nicSecondaryIpDao.listByNicId(nic.getId()).stream()
+                .map(NicSecondaryIpVO::getIp4Address)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toSet());
+        final List<String> primaryCandidates = observed.stream()
+                .filter(address -> !persistedAliases.contains(address))
+                .collect(Collectors.toList());
+        if (primaryCandidates.size() != 1) {
+            logger.warn("Cannot infer one primary IPv4 for NIC [{}] from observed addresses [{}] after excluding aliases [{}]; skipping DB update",
+                    nic.getUuid(), observed, persistedAliases);
+            return;
+        }
+        if (!_nicDao.updatePrimaryIpAddress(nic.getId(), primaryCandidates.get(0), currentPrimary)) {
+            logger.warn("NIC [{}] changed while populating its initially empty primary IPv4; skipping stale observation [{}]",
+                    nic.getUuid(), primaryCandidates.get(0));
+        }
+    }
+
     class VmStatsCollector extends AbstractStatsCollector {
         @Override
         protected void runInContext() {
@@ -1495,11 +1537,10 @@ public class StatsCollector extends ManagerBase implements ComponentMethodInterc
                                             continue;
                                         }
                                         String guestIpAddress = normalizedAgentNicMap.get(macAddress);
-                                        if (StringUtils.equals(nicVO.getIPv4Address(), guestIpAddress)) {
+                                        if (StringUtils.isBlank(guestIpAddress)) {
                                             continue;
                                         }
-                                        nicVO.setIPv4Address(guestIpAddress);
-                                        _nicDao.update(nicVO.getId(), nicVO);
+                                        reconcileObservedNicAddresses(nicVO, Collections.singletonList(guestIpAddress));
                                     }
                                 }
                             }

@@ -58,6 +58,22 @@ echo "BUILD_SRPM=$BUILD_SRPM"
 echo "USE_TIMESTAMP=$USE_TIMESTAMP"
 echo "LOCAL_FAST=$LOCAL_FAST"
 
+configure_rocky_vault_repositories() {
+    local repo
+
+    for repo in /etc/yum.repos.d/rocky*.repo; do
+        [ -f "$repo" ] || continue
+        sed -E -i \
+            -e 's|^mirrorlist=|#mirrorlist=|' \
+            -e 's|^#?baseurl=https?://dl\.rockylinux\.org/\$contentdir|baseurl=https://dl.rockylinux.org/vault/rocky|' \
+            "$repo"
+    done
+}
+
+# Rocky 9.7 is archived, so both the container image and its package
+# repositories must use the Rocky vault.
+configure_rocky_vault_repositories
+
 DNF=(dnf --releasever=9.7 -y)
 
 "${DNF[@]}" install dnf-plugins-core
@@ -106,6 +122,7 @@ if [ ! -x "/opt/node-v${NODE_VERSION}-linux-x64/bin/node" ]; then
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
         | tar -xJf - -C /opt
 fi
+NODE_BIN_DIR="/opt/node-v${NODE_VERSION}-linux-x64/bin"
 
 JAVA17_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
 if [ -d /usr/lib/jvm/java-17-openjdk ]; then
@@ -113,8 +130,9 @@ if [ -d /usr/lib/jvm/java-17-openjdk ]; then
 fi
 
 export JAVA_HOME="$JAVA17_HOME"
-export PATH="/opt/node-v${NODE_VERSION}-linux-x64/bin:$JAVA_HOME/bin:$PATH"
+export PATH="$NODE_BIN_DIR:$JAVA_HOME/bin:$PATH"
 export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }-Dcom.sun.xml.bind.v2.bytecode.ClassTailor.noOptimize=true --add-opens=java.base/java.lang=ALL-UNNAMED"
+export RPM_NODE_BIN_DIR="$NODE_BIN_DIR"
 
 git config --global --add safe.directory "$ROOT_DIR"
 

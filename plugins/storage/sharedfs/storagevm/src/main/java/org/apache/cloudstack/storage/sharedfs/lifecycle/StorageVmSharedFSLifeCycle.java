@@ -70,12 +70,13 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 
-import static org.apache.cloudstack.storage.sharedfs.SharedFS.SharedFSPath;
 import static org.apache.cloudstack.storage.sharedfs.SharedFS.SharedFSVmNamePrefix;
 import static org.apache.cloudstack.storage.sharedfs.provider.StorageVmSharedFSProvider.SHAREDFSVM_MIN_CPU_COUNT;
 import static org.apache.cloudstack.storage.sharedfs.provider.StorageVmSharedFSProvider.SHAREDFSVM_MIN_RAM_SIZE;
 
 public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
+    private static final String STORAGE_VM_CONFIG_RESOURCE = "conf/fsvm-init.yml";
+
     protected Logger logger = LogManager.getLogger(getClass());
 
     @Inject
@@ -118,22 +119,18 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
     protected LaunchPermissionDao launchPermissionDao;
 
     private String readResourceFile(String resource) {
+        String normalizedResource = resource != null && resource.startsWith("/") ? resource.substring(1) : resource;
         try {
-            return FileUtil.readResourceFile(resource);
+            return FileUtil.readResourceFile(normalizedResource);
+        } catch (NullPointerException e) {
+            throw new CloudRuntimeException(String.format("Unable to read the user data resource file [%s]: resource was not found on classpath", normalizedResource), e);
         } catch (IOException e) {
-            throw new CloudRuntimeException("Unable to read the user data resource file due to exception " + e.getMessage());
+            throw new CloudRuntimeException(String.format("Unable to read the user data resource file [%s] due to exception %s", normalizedResource, e.getMessage()), e);
         }
     }
 
-    private String getStorageVmConfig(final String fileSystem, final String hypervisorType, final String exportPath) {
-        String fsVmConfig = readResourceFile("/conf/fsvm-init.yml");
-        final String filesystem = "{{ fsvm.filesystem }}";
-        final String hypervisor = "{{ fsvm.hypervisor }}";
-        final String exportpath = "{{ fsvm.exportpath }}";
-        fsVmConfig = fsVmConfig.replace(filesystem, fileSystem);
-        fsVmConfig = fsVmConfig.replace(hypervisor, hypervisorType);
-        fsVmConfig = fsVmConfig.replace(exportpath, exportPath);
-        return fsVmConfig;
+    private String getStorageVmConfig() {
+        return readResourceFile(STORAGE_VM_CONFIG_RESOURCE);
     }
 
     private String getStorageVmPrefix(String fileShareName) {
@@ -191,7 +188,7 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
             }
 
             UserVm vm = null;
-            String fsVmConfig = getStorageVmConfig(fileSystem.toString().toLowerCase(), hypervisor.toString().toLowerCase(), SharedFSPath);
+            String fsVmConfig = getStorageVmConfig();
             String base64UserData = Base64.encodeBase64String(fsVmConfig.getBytes(com.cloud.utils.StringUtils.getPreferredCharset()));
             CallContext vmContext = CallContext.register(CallContext.current(), ApiCommandResourceType.VirtualMachine);
             try {
@@ -222,6 +219,15 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
     @Override
     public void checkPrerequisites(DataCenter zone, Long serviceOfferingId) {
         ServiceOffering serviceOffering = serviceOfferingDao.findById(serviceOfferingId);
+        if (serviceOffering == null) {
+            throw new InvalidParameterValueException("Unable to find service offering with id " + serviceOfferingId);
+        }
+        if (serviceOffering.getCpu() == null) {
+            throw new InvalidParameterValueException("Service offering must have a fixed CPU count for SharedFS VM. Custom CPU offerings are not supported.");
+        }
+        if (serviceOffering.getRamSize() == null) {
+            throw new InvalidParameterValueException("Service offering must have a fixed RAM size for SharedFS VM. Custom RAM offerings are not supported.");
+        }
         if (serviceOffering.getCpu() < SHAREDFSVM_MIN_CPU_COUNT.valueIn(zone.getId())) {
             throw new InvalidParameterValueException("Service offering's number of cpu should be greater than or equal to " + SHAREDFSVM_MIN_CPU_COUNT.key());
         }
@@ -234,7 +240,7 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
     }
 
     @Override
-    public Pair<Long, Long> deploySharedFS(SharedFS sharedFS, Long networkId, Long diskOfferingId, Long size, Long minIops, Long maxIops) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException, OperationTimedoutException {
+    public Pair<Long, Long> deploySharedFS(SharedFS sharedFS, Long networkId, Long diskOfferingId, Long storageId, Long size, Long minIops, Long maxIops) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException, OperationTimedoutException {
         Account owner = accountMgr.getActiveAccountById(sharedFS.getAccountId());
         UserVm vm = deploySharedFSVM(sharedFS.getDataCenterId(), owner, List.of(networkId), sharedFS.getName(), sharedFS.getServiceOfferingId(), diskOfferingId, sharedFS.getFsType(), size, minIops, maxIops);
 
@@ -249,7 +255,19 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
                 dataVol = vol;
             }
         }
+        if (dataVol == null) {
+            throw new CloudRuntimeException("SharedFS VM was deployed without an initial data volume");
+        }
+        if (storageId != null && dataVol.getPoolId() != null && !storageId.equals(dataVol.getPoolId())) {
+            expungeVm(vm.getId());
+            throw new CloudRuntimeException(String.format("Initial SharedFS backing volume was allocated on storage pool %s instead of selected storage pool %s",
+                    dataVol.getPoolId(), storageId));
+        }
         return new Pair<>(dataVol.getId(), vm.getId());
+    }
+
+    public Pair<Long, Long> deploySharedFS(SharedFS sharedFS, Long networkId, Long diskOfferingId, Long size, Long minIops, Long maxIops) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException, OperationTimedoutException {
+        return deploySharedFS(sharedFS, networkId, diskOfferingId, null, size, minIops, maxIops);
     }
 
     @Override
@@ -260,7 +278,7 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
 
     @Override
     public boolean stopSharedFS(SharedFS sharedFS, Boolean forced) {
-        userVmManager.stopVirtualMachine(sharedFS.getVmId(), false);
+        userVmManager.stopVirtualMachine(sharedFS.getVmId(), Boolean.TRUE.equals(forced));
         return true;
     }
 
