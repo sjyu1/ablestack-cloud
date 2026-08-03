@@ -253,8 +253,8 @@ class LibvirtAblestackNetBackupHelper {
             }
 
             try {
-                final int timeoutSeconds = getEffectiveTimeoutSeconds(command);
-                waitForBackup(dummyVmName, timeoutSeconds);
+                final long effectiveTimeoutMillis = command.getWait() > 0 ? TimeUnit.SECONDS.toMillis(command.getWait()) : resource.getCmdsTimeout();
+                waitForBackup(dummyVmName, effectiveTimeoutMillis);
             } catch (IOException e) {
                 cancelBackupJob(dummyVmName);
                 throw e;
