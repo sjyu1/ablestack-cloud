@@ -104,16 +104,18 @@ class LibvirtAblestackNetBackupHelper {
             String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
             LOGGER.debug("Executing NetBackup script command=[{}]", String.join(" ", scriptCommand));
             commands.add(scriptCommand);
-            final int timeoutSeconds = getEffectiveTimeoutSeconds(command);
+            final int commandWaitSeconds = command.getWait();
+            final long resourceTimeoutMillis = resource.getCmdsTimeout();
+            final long effectiveTimeoutMillis = commandWaitSeconds > 0 ? TimeUnit.SECONDS.toMillis(commandWaitSeconds) : resourceTimeoutMillis;
             LOGGER.info(
-                    "Executing running VM NetBackup backup for vm=[{}], commandWait=[{}], " +
-                    "resourceCmdsTimeout=[{}], effectiveTimeoutSeconds=[{}]",
+                    "Executing running VM NetBackup backup for vm=[{}], commandWaitSeconds=[{}], "
+                            + "resourceCmdsTimeoutMillis=[{}], effectiveTimeoutMillis=[{}]",
                     command.getVmName(),
-                    command.getWait(),
-                    resource.getCmdsTimeout(),
-                    timeoutSeconds
+                    commandWaitSeconds,
+                    resourceTimeoutMillis,
+                    effectiveTimeoutMillis
             );
-            return Script.executePipedCommands(commands, timeoutSeconds);
+            return Script.executePipedCommands(commands, effectiveTimeoutMillis);
         } finally {
             cleanupParentCheckpointWorkspace(parentCheckpointWorkspace);
         }
@@ -498,17 +500,9 @@ class LibvirtAblestackNetBackupHelper {
         return checkpointXml;
     }
 
-    private int getEffectiveTimeoutSeconds(AblestackNetBackupTakeBackupCommand command) {
-        return command.getWait() > 0 ? command.getWait() : resource.getCmdsTimeout();
-    }
-
-    private void waitForBackup(String vmName, int timeoutSeconds) throws IOException {
-        if (timeoutSeconds <= 0) {
-            throw new IOException("Invalid backup timeout for dummy VM " + vmName + ": " + timeoutSeconds + " seconds");
-        }
-        final long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
-
-        while (System.nanoTime() < deadlineNanos) {
+    private void waitForBackup(String vmName, long timeoutMillis) throws IOException {
+        long remainingMillis = timeoutMillis;
+        while (remainingMillis > 0) {
             String result = checkBackupJob(vmName);
             if (result != null && result.contains("Completed") && result.contains("Backup")) {
                 return;
@@ -516,22 +510,19 @@ class LibvirtAblestackNetBackupHelper {
             if (result != null && result.contains("Failed")) {
                 throw new IOException("Virsh backup job failed for dummy VM " + vmName);
             }
-            long remainingNanos = deadlineNanos - System.nanoTime();
-            if (remainingNanos <= 0) {
-                break;
-            }
             long sleepMillis = Math.min(
                     BACKUP_JOB_POLL_INTERVAL_MS,
-                    TimeUnit.NANOSECONDS.toMillis(remainingNanos)
+                    remainingMillis
             );
             try {
-                Thread.sleep(Math.max(1L, sleepMillis));
+                Thread.sleep(sleepMillis);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new IOException("Interrupted while waiting for backup job of dummy VM " + vmName, e);
+                throw new IOException(e);
             }
+            remainingMillis -= sleepMillis;
         }
-        throw new IOException("Timed out waiting for backup job of dummy VM " + vmName + " after " + timeoutSeconds + " seconds");
+        throw new IOException("Timed out waiting for backup job of dummy VM " + vmName + " after " + timeoutMillis + " milliseconds");
     }
 
     private void cancelBackupJob(String vmName) {
