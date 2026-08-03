@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
@@ -103,8 +104,16 @@ class LibvirtAblestackNetBackupHelper {
             String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
             LOGGER.debug("Executing NetBackup script command=[{}]", String.join(" ", scriptCommand));
             commands.add(scriptCommand);
-            final int timeout = command.getWait() > 0 ? command.getWait() * 1000 : resource.getCmdsTimeout();
-            return Script.executePipedCommands(commands, timeout);
+            final int timeoutSeconds = getEffectiveTimeoutSeconds(command);
+            LOGGER.info(
+                    "Executing running VM NetBackup backup for vm=[{}], commandWait=[{}], " +
+                    "resourceCmdsTimeout=[{}], effectiveTimeoutSeconds=[{}]",
+                    command.getVmName(),
+                    command.getWait(),
+                    resource.getCmdsTimeout(),
+                    timeoutSeconds
+            );
+            return Script.executePipedCommands(commands, timeoutSeconds);
         } finally {
             cleanupParentCheckpointWorkspace(parentCheckpointWorkspace);
         }
@@ -242,7 +251,8 @@ class LibvirtAblestackNetBackupHelper {
             }
 
             try {
-                waitForBackup(dummyVmName);
+                final int timeoutSeconds = getEffectiveTimeoutSeconds(command);
+                waitForBackup(dummyVmName, timeoutSeconds);
             } catch (IOException e) {
                 cancelBackupJob(dummyVmName);
                 throw e;
@@ -488,9 +498,17 @@ class LibvirtAblestackNetBackupHelper {
         return checkpointXml;
     }
 
-    private void waitForBackup(String vmName) throws IOException {
-        int timeout = resource.getCmdsTimeout();
-        while (timeout > 0) {
+    private int getEffectiveTimeoutSeconds(AblestackNetBackupTakeBackupCommand command) {
+        return command.getWait() > 0 ? command.getWait() : resource.getCmdsTimeout();
+    }
+
+    private void waitForBackup(String vmName, int timeoutSeconds) throws IOException {
+        if (timeoutSeconds <= 0) {
+            throw new IOException("Invalid backup timeout for dummy VM " + vmName + ": " + timeoutSeconds + " seconds");
+        }
+        final long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+
+        while (System.nanoTime() < deadlineNanos) {
             String result = checkBackupJob(vmName);
             if (result != null && result.contains("Completed") && result.contains("Backup")) {
                 return;
@@ -498,15 +516,22 @@ class LibvirtAblestackNetBackupHelper {
             if (result != null && result.contains("Failed")) {
                 throw new IOException("Virsh backup job failed for dummy VM " + vmName);
             }
-            timeout -= BACKUP_JOB_POLL_INTERVAL_MS;
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0) {
+                break;
+            }
+            long sleepMillis = Math.min(
+                    BACKUP_JOB_POLL_INTERVAL_MS,
+                    TimeUnit.NANOSECONDS.toMillis(remainingNanos)
+            );
             try {
-                Thread.sleep(BACKUP_JOB_POLL_INTERVAL_MS);
+                Thread.sleep(Math.max(1L, sleepMillis));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new IOException(e);
+                throw new IOException("Interrupted while waiting for backup job of dummy VM " + vmName, e);
             }
         }
-        throw new IOException("Timed out waiting for backup job of dummy VM " + vmName);
+        throw new IOException("Timed out waiting for backup job of dummy VM " + vmName + " after " + timeoutSeconds + " seconds");
     }
 
     private void cancelBackupJob(String vmName) {
