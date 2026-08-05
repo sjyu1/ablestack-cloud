@@ -119,17 +119,19 @@ export default {
 <style lang="less" scoped>
 .user-layout {
   height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  position: relative;
 
   &-container {
     padding: 3rem 0;
     width: 100%;
 
-    @media (min-height:600px) {
+    @media (min-height: 600px) {
       padding: 0;
       position: relative;
       top: 50%;
       transform: translateY(-50%);
-      margin-top: -50px;
     }
   }
 
