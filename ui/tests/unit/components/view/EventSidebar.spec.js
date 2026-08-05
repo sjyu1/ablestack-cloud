@@ -20,10 +20,10 @@ import { createI18n } from 'vue-i18n'
 import { createStore } from 'vuex'
 
 import EventSidebar from '@/components/view/EventSidebar.vue'
-import { getAPI } from '@/api'
+import { api } from '@/api'
 
 jest.mock('@/api', () => ({
-  getAPI: jest.fn()
+  api: jest.fn()
 }))
 
 const factory = (props = {}) => {
@@ -82,7 +82,7 @@ describe('Components > View > EventSidebar.vue', () => {
   })
 
   it('loads existing alert data when the alert tab is selected', async () => {
-    getAPI.mockResolvedValue({
+    api.mockResolvedValue({
       listalertsresponse: {
         alert: [{ id: 'alert-1', name: 'Test alert' }]
       }
@@ -92,7 +92,7 @@ describe('Components > View > EventSidebar.vue', () => {
     wrapper.vm.selectTab('alerts')
     await flushPromises()
 
-    expect(getAPI).toHaveBeenCalledWith('listAlerts', {
+    expect(api).toHaveBeenCalledWith('listAlerts', {
       page: 1,
       pagesize: 20,
       listall: true

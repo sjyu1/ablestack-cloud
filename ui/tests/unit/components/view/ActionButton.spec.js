@@ -150,6 +150,37 @@ describe('Components > View > ActionButton.vue', () => {
   })
 
   describe('Method', () => {
+    describe('openConsole()', () => {
+      it('uses an external console URL without requesting a console endpoint', () => {
+        const externalUrl = 'https://console.example.test/session'
+        const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {})
+        const wrapper = factory({
+          props: {
+            resource: {
+              id: 'test-resource-id',
+              details: {
+                'External:console_url': externalUrl
+              }
+            }
+          }
+        })
+
+        wrapper.vm.openConsole(false)
+
+        expect(openSpy).toHaveBeenCalledWith(externalUrl, '_blank')
+        expect(mockAxios).not.toHaveBeenCalled()
+        openSpy.mockRestore()
+      })
+
+      it('falls back to the route name when route metadata has no name', () => {
+        const routeName = ActionButton.computed.routeName.call({
+          $route: { meta: {}, name: 'host' }
+        })
+
+        expect(routeName).toBe('host')
+      })
+    })
+
     describe('handleShowBadge()', () => {
       it('API should be called and return not empty', async (done) => {
         const postData = new URLSearchParams()
