@@ -2296,7 +2296,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Override
     public boolean installBackupAgent(final Long zoneId) {
-        Map<String, String> failResult = new HashMap<>();
         final AblestackCommvaultClient client = getClient(zoneId);
         List<HostVO> Hosts = hostDao.findByDataCenterId(zoneId);
         for (final HostVO host : Hosts) {
@@ -2310,8 +2309,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 // 설치가 진행중인 호스트가 있는지 확인
                 if (!waitForInstallActiveJobToFinish(client, host)) {
                     publishHostAgentInstallFailureEventIfNeeded(host);
-                    failResult.put(host.getPrivateIpAddress(), "active-install-job-timeout");
-                    continue;
+                    return false;
                 }
                 String checkHost = client.getClientId(host.getName());
                 // 호스트가 클라이언트에 등록되지 않은 경우
@@ -2322,9 +2320,11 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                         if (!"Completed".equalsIgnoreCase(jobStatus)) {
                             LOG.error("installing agent on the Commvault Backup Provider failed jogId : " + jobId + " , jobStatus : " + jobStatus);
                             publishHostAgentInstallFailureEventIfNeeded(host);
-                            failResult.put(host.getPrivateIpAddress(), jobId);
+                            return false;
                         }
                     } else {
+                        LOG.error("installing agent on the Commvault Backup Provider failed to create install job on host [{}]", host.getPrivateIpAddress());
+                        publishHostAgentInstallFailureEventIfNeeded(host);
                         return false;
                     }
                 } else {
@@ -2338,9 +2338,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     }
                 }
             }
-        }
-        if (!failResult.isEmpty()) {
-            return false;
         }
         return true;
     }
