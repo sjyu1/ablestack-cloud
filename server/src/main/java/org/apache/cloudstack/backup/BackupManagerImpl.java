@@ -2961,6 +2961,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     @Override
     public boolean start() {
         initializeBackupProviderMap();
+        startConfiguredCommvaultBackupAgentInstallTask();
 
         currentTimestamp = new Date();
         for (final BackupScheduleVO backupSchedule : backupScheduleDao.listAll()) {
@@ -2980,6 +2981,65 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         backupTimer = new Timer("BackupPollTask");
         backupTimer.schedule(backupPollTask, BackupSyncPollingInterval.value() * 1000L, BackupSyncPollingInterval.value() * 1000L);
         return true;
+    }
+
+    private void startConfiguredCommvaultBackupAgentInstallTask() {
+        Thread installTask = new Thread(new ManagedContextRunnable() {
+            @Override
+            protected void runInContext() {
+                installConfiguredCommvaultBackupAgents();
+            }
+        }, "CommvaultBackupAgentInstallTask");
+        installTask.setDaemon(true);
+        installTask.start();
+    }
+
+    private void installConfiguredCommvaultBackupAgents() {
+        if (!BackupFrameworkEnabled.value()) {
+            logger.debug("Skipping Commvault backup agent auto-install because backup framework is disabled globally.");
+            return;
+        }
+        for (final DataCenter dataCenter : dataCenterDao.listAllZones()) {
+            if (dataCenter == null || isDisabled(dataCenter.getId())) {
+                logger.debug("Skipping Commvault backup agent auto-install because backup framework is disabled in zone [{}].",
+                        dataCenter == null ? "NULL Zone!" : dataCenter);
+                continue;
+            }
+            installConfiguredCommvaultBackupAgent(dataCenter.getId());
+        }
+    }
+
+    private void installConfiguredCommvaultBackupAgent(final Long zoneId) {
+        final String providersConfig = BackupProviderPlugin.valueIn(zoneId);
+        if (StringUtils.isBlank(providersConfig) || Arrays.stream(providersConfig.split(","))
+                .map(String::trim)
+                .noneMatch(BackupProviderNameUtils::isCommvaultFamily)) {
+            return;
+        }
+
+        final GlobalLock installLock = GlobalLock.getInternLock("commvault.backup.agent.install." + zoneId);
+        try {
+            if (!installLock.lock(5)) {
+                logger.debug("Skipping Commvault backup agent auto-install in zone [{}] because another management server is running it.", zoneId);
+                return;
+            }
+            try {
+                BackupProvider provider = getBackupProvider(BackupProviderNameUtils.ABLESTACK_COMMVAULT);
+                logger.info("Checking Commvault backup agent installation in zone [{}] during management server startup.", zoneId);
+                if (!provider.checkBackupAgent(zoneId)) {
+                    logger.info("Commvault backup agent is not ready in zone [{}]. Starting automatic installation.", zoneId);
+                    if (!provider.installBackupAgent(zoneId)) {
+                        logger.warn("Commvault backup agent automatic installation did not complete successfully in zone [{}].", zoneId);
+                    }
+                }
+            } finally {
+                installLock.unlock();
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to run Commvault backup agent automatic installation in zone [{}]: {}", zoneId, e.getMessage(), e);
+        } finally {
+            installLock.releaseRef();
+        }
     }
 
     private VMInstanceVO findVmById(final Long vmId) {

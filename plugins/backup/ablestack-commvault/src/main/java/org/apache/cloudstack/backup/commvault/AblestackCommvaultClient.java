@@ -1151,11 +1151,21 @@ public class AblestackCommvaultClient {
     // POST https://<commserveIp>/commandcenter/api/jobDetails
     // 작업의 상세정보를 조회하는 API로 작업이 완료된 경우 최종 작업 상태를 반환
     public String getJobStatus(String jobId) {
+        return getJobStatus(jobId, 0);
+    }
+
+    public String getJobStatus(String jobId, long timeoutMillis) {
         String jobStatus = "Running";
         String errorStatus = "Failed";
         HttpURLConnection connection = null;
         Set<String> runningStates = Set.of("Not Started", "Running", "Pending", "Waiting", "Queued", "Suspended", "Not started");
+        long deadline = timeoutMillis > 0 ? System.currentTimeMillis() + timeoutMillis : Long.MAX_VALUE;
         while (runningStates.contains(jobStatus)) {
+            if (System.currentTimeMillis() >= deadline) {
+                LOG.warn("Timed out waiting for Commvault job [{}] to complete. lastStatus=[{}], timeoutMillis=[{}]",
+                        jobId, jobStatus, timeoutMillis);
+                return "TimedOut";
+            }
             String postUrl = apiURI.toString() + "/jobDetails";
             try {
                 URL url = new URL(postUrl);
@@ -1196,6 +1206,7 @@ public class AblestackCommvaultClient {
                     try {
                         Thread.sleep(30000);
                     } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                         LOG.error("getJobDetails result sleep interrupted error");
                         break;
                     }

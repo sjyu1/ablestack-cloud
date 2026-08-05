@@ -51,6 +51,7 @@ import com.cloud.utils.component.AdapterBase;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.event.ActionEventUtils;
 import com.cloud.event.EventTypes;
+import com.cloud.event.dao.EventDao;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine;
 import com.cloud.vm.dao.VMInstanceDao;
@@ -105,6 +106,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 
 import static org.apache.cloudstack.backup.BackupManager.BackupChainSize;
@@ -119,6 +121,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String BACKUP_TYPE_INCREMENTAL = "INCREMENTAL";
     private static final String BACKUP_ENGINE_QCOW2 = "QCOW2";
     private static final String BACKUP_ENGINE_RBD_DIFF = "RBD_DIFF";
+    private static final long COMMVAULT_INSTALL_JOB_POLL_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30);
+    private static final long COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS = TimeUnit.HOURS.toMillis(12);
     private static final String DETAIL_CHECKPOINT_NAME = "commvault.checkpoint.name";
     private static final String DETAIL_CHECKPOINT_PATH = "commvault.checkpoint.path";
     private static final String DETAIL_CHECKPOINT_XML = "commvault.checkpoint.xml";
@@ -225,6 +229,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Inject
     private DiskOfferingDao diskOfferingDao;
+
+    @Inject
+    private EventDao eventDao;
 
 
     private Long getClusterIdFromRootVolume(VirtualMachine vm) {
@@ -2299,27 +2306,22 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 String commCellId = String.valueOf(jsonObject.get("commCellId"));
                 String commServeHostName = String.valueOf(jsonObject.get("commCellName"));
                 Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
-                boolean installJob = true;
                 LOG.info("checking for install agent on the Commvault Backup Provider in host " + host.getPrivateIpAddress());
                 // 설치가 진행중인 호스트가 있는지 확인
-                while (installJob) {
-                    installJob = client.getInstallActiveJob(host.getName());
-                    try {
-                        Thread.sleep(30000);
-                    } catch (InterruptedException e) {
-                        LOG.error("checkBackupAgent get install active job result sleep interrupted error");
-                    }
+                if (!waitForInstallActiveJobToFinish(client, host)) {
+                    publishHostAgentInstallFailureEventIfNeeded(host);
+                    failResult.put(host.getPrivateIpAddress(), "active-install-job-timeout");
+                    continue;
                 }
                 String checkHost = client.getClientId(host.getName());
                 // 호스트가 클라이언트에 등록되지 않은 경우
                 if (checkHost == null) {
                     String jobId = client.installAgent(host.getPrivateIpAddress(), commCellId, commServeHostName, credentials.first(), credentials.second());
                     if (jobId != null) {
-                        String jobStatus = client.getJobStatus(jobId);
-                        if (!jobStatus.equalsIgnoreCase("Completed")) {
+                        String jobStatus = client.getJobStatus(jobId, COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS);
+                        if (!"Completed".equalsIgnoreCase(jobStatus)) {
                             LOG.error("installing agent on the Commvault Backup Provider failed jogId : " + jobId + " , jobStatus : " + jobStatus);
-                            ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_HOST_AGENT_INSTALL,
-                                "Failed install the commvault client agent on the host : " + host.getPrivateIpAddress(), User.UID_SYSTEM, ApiCommandResourceType.Host.toString());
+                            publishHostAgentInstallFailureEventIfNeeded(host);
                             failResult.put(host.getPrivateIpAddress(), jobId);
                         }
                     } else {
@@ -2341,6 +2343,39 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             return false;
         }
         return true;
+    }
+
+    private boolean waitForInstallActiveJobToFinish(AblestackCommvaultClient client, HostVO host) {
+        final long deadline = System.currentTimeMillis() + COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS;
+        while (client.getInstallActiveJob(host.getName())) {
+            if (System.currentTimeMillis() >= deadline) {
+                LOG.warn("Timed out waiting for existing Commvault client agent install job to finish. host=[{}], timeoutMillis=[{}]",
+                        host.getPrivateIpAddress(), COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS);
+                return false;
+            }
+            try {
+                Thread.sleep(COMMVAULT_INSTALL_JOB_POLL_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOG.error("Interrupted while waiting for Commvault client agent install job to finish. host=[{}]",
+                        host.getPrivateIpAddress(), e);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void publishHostAgentInstallFailureEventIfNeeded(HostVO host) {
+        if (hasHostAgentInstallFailureEvent(host.getId())) {
+            LOG.debug("Skipping duplicate Commvault client agent install failure event for host [{}]", host.getPrivateIpAddress());
+            return;
+        }
+        ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_HOST_AGENT_INSTALL,
+                "Failed install the commvault client agent on the host : " + host.getPrivateIpAddress(), host.getId(), ApiCommandResourceType.Host.toString());
+    }
+
+    private boolean hasHostAgentInstallFailureEvent(long hostId) {
+        return eventDao.existsByTypeAndResource(EventTypes.EVENT_HOST_AGENT_INSTALL, hostId, ApiCommandResourceType.Host.toString());
     }
 
     @Override
