@@ -86,12 +86,26 @@
   gap: 10px;
 }
 
-.resource-action-menu__item-content .anticon,
-.resource-action-menu__item-content svg {
+.resource-action-menu__item-icon {
+  display: inline-flex;
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
   color: var(--ui-text-secondary);
+  line-height: 1;
+}
+
+.resource-action-menu__item-icon .anticon,
+.resource-action-menu__item-icon svg {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  line-height: 1;
+  vertical-align: middle;
 }
 
 .resource-action-menu__item-label {

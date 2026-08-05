@@ -126,6 +126,27 @@ describe('Components > View > ActionButton.vue', () => {
 
       expect(received).toContain(expected)
     })
+
+    it('wraps data view icons in a fixed alignment slot', () => {
+      const wrapper = factory({
+        props: {
+          actions: [{
+            label: 'label.action',
+            api: 'test-api-case-2',
+            icon: ['fas', 'camera-retro'],
+            dataView: true
+          }],
+          dataView: true,
+          resource: {
+            id: 'test-resource-id'
+          }
+        }
+      })
+
+      const iconSlot = wrapper.find('.resource-action-menu__item-icon')
+      expect(iconSlot.exists()).toBe(true)
+      expect(iconSlot.attributes('aria-hidden')).toBe('true')
+    })
   })
 
   describe('Method', () => {
