@@ -15,44 +15,61 @@
 // specific language governing permissions and limitations
 // under the License.
 
-.stats-tab-container {
+html,
+body,
+#app {
   min-height: 100%;
-  padding: 0 0 16px;
   color: var(--ui-text-secondary);
-  background: var(--ui-bg-surface);
+  background: var(--ui-bg-page);
 }
 
-.stats-empty-state {
-  padding-top: 12px;
-  background: var(--ui-bg-surface);
+body {
+  accent-color: var(--ui-focus);
 }
 
-.stats-empty-alert {
-  color: var(--ui-warning-text);
-  background: var(--ui-warning-bg);
-  border: 1px solid var(--ui-warning-border);
-  border-radius: 4px;
+body,
+button,
+input,
+select,
+textarea {
+  color: var(--ui-text-secondary);
 }
 
-.stats-empty-alert :deep(.ant-alert-message) {
-  color: var(--ui-warning-text);
+a {
+  color: var(--ui-link);
 }
 
-.ant-tag {
-  padding: 0 7px 0 0;
+::selection {
+  color: #ffffff;
+  background: var(--ui-focus);
 }
-.ant-select {
-  margin-left: 10px;
+
+:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
 }
-.info-icon {
-  margin: 0 10px 0 5px;
+
+html.dark-mode,
+body.dark-mode {
+  color-scheme: dark;
 }
-.chart-row {
-  margin-bottom: 5%;
+
+html:not(.dark-mode),
+body:not(.dark-mode) {
+  color-scheme: light;
 }
-.chart-row-inner {
-  margin-top: 3%;
+
+body.dark-mode {
+  color: var(--ui-text-secondary);
+  background: var(--ui-bg-page);
 }
-.chart-type-select {
-  min-width: 130px;
+
+.user-layout-login .item-icon,
+.user-layout-login .copyright,
+.user-layout-login .line {
+  color: var(--ui-text-muted);
+}
+
+.user-layout-login .or {
+  color: var(--ui-text-secondary);
 }

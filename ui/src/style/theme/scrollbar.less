@@ -15,44 +15,35 @@
 // specific language governing permissions and limitations
 // under the License.
 
-.stats-tab-container {
-  min-height: 100%;
-  padding: 0 0 16px;
-  color: var(--ui-text-secondary);
-  background: var(--ui-bg-surface);
+html {
+  scrollbar-gutter: stable;
 }
 
-.stats-empty-state {
-  padding-top: 12px;
-  background: var(--ui-bg-surface);
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
 }
 
-.stats-empty-alert {
-  color: var(--ui-warning-text);
-  background: var(--ui-warning-bg);
-  border: 1px solid var(--ui-warning-border);
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: var(--ui-scroll-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid transparent;
   border-radius: 4px;
+  background: var(--ui-scroll-thumb);
+  background-clip: padding-box;
 }
 
-.stats-empty-alert :deep(.ant-alert-message) {
-  color: var(--ui-warning-text);
-}
-
-.ant-tag {
-  padding: 0 7px 0 0;
-}
-.ant-select {
-  margin-left: 10px;
-}
-.info-icon {
-  margin: 0 10px 0 5px;
-}
-.chart-row {
-  margin-bottom: 5%;
-}
-.chart-row-inner {
-  margin-top: 3%;
-}
-.chart-type-select {
-  min-width: 130px;
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-scroll-thumb-hover);
+  background-clip: padding-box;
 }
