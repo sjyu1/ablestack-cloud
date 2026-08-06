@@ -1772,12 +1772,13 @@ public class AblestackCommvaultClient {
             JsonNode jobs = root.get("jobs");
             if (jobs != null && jobs.isArray()) {
                 for (JsonNode item : jobs) {
-                    JsonNode entity = item.get("jobSummary");
+                    JsonNode entity = item.path("jobSummary");
                     if (!entity.isMissingNode()) {
                         JsonNode generalInfo = item.path("jobDetail").path("generalInfo");
                         JsonNode subclient = entity.path("subclient");
-                        if (isCommvaultSoftwareJob(entity, generalInfo) &&
-                                (isCommvaultDownloadSoftwareJob(entity, generalInfo) || matchesInstallJobHost(entity, subclient, hostName))) {
+                        if (isInstallClientJobForHost(entity, subclient, hostName) ||
+                                (isCommvaultSoftwareJob(entity, generalInfo) &&
+                                        (isCommvaultDownloadSoftwareJob(entity, generalInfo) || matchesInstallJobHost(entity, subclient, hostName))) {
                             return true;
                         }
                     }
@@ -1788,6 +1789,11 @@ public class AblestackCommvaultClient {
             checkResponseTimeOut(e);
         }
         return false;
+    }
+
+    private boolean isInstallClientJobForHost(JsonNode entity, JsonNode subclient, String hostName) {
+        return StringUtils.equals("Install Client", entity.path("jobType").asText(null)) &&
+                StringUtils.equals(hostName, subclient.path("clientName").asText(null));
     }
 
     private boolean isCommvaultSoftwareJob(JsonNode entity, JsonNode generalInfo) {

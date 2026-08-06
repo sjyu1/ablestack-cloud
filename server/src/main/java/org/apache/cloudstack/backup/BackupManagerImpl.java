@@ -3021,7 +3021,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             @Override
             protected void runInContext() {
                 for (int attempt = 1; attempt <= COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS; attempt++) {
-                    if (attempt > 1 && !waitBeforeNextCommvaultBackupAgentInstallAttempt(attempt)) {
+                    if (attempt > 1 && !waitBeforeNextCommvaultBackupAgentInstallAttempt()) {
                         return;
                     }
                     logger.info("Running Commvault backup agent auto-install attempt [{}/{}].",
@@ -3031,8 +3031,6 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                                 attempt, COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
                         return;
                     }
-                    logger.info("Commvault backup agent auto-install attempt [{}/{}] did not complete. It will be retried if attempts remain.",
-                            attempt, COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
                 }
                 logger.warn("Commvault backup agent auto-install did not complete after [{}] attempts.",
                         COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
@@ -3042,10 +3040,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         installTask.start();
     }
 
-    private boolean waitBeforeNextCommvaultBackupAgentInstallAttempt(final int attempt) {
+    private boolean waitBeforeNextCommvaultBackupAgentInstallAttempt() {
         try {
-            logger.info("Waiting [{}] ms before Commvault backup agent auto-install attempt [{}].",
-                    COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_INTERVAL_MS, attempt);
             Thread.sleep(COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_INTERVAL_MS);
             return true;
         } catch (InterruptedException e) {

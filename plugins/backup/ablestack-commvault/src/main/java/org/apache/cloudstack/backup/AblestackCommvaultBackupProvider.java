@@ -2267,37 +2267,26 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     @Override
     public boolean checkBackupAgent(final Long zoneId) {
-        Map<String, String> checkResult = new HashMap<>();
         final AblestackCommvaultClient client = getClient(zoneId);
-        LOG.info("Requesting Commvault version information for backup agent readiness check. zone=[{}]", zoneId);
         String csVersionInfo = client.getCvtVersion();
-        LOG.info("Received Commvault version information for backup agent readiness check. zone=[{}], version=[{}]", zoneId, csVersionInfo);
         boolean version = versionCheck(csVersionInfo);
         if (version) {
             List<HostVO> Hosts = hostDao.findByDataCenterId(zoneId);
-            LOG.info("Found [{}] hosts in zone [{}] while checking Commvault backup agent readiness.",
-                    Hosts == null ? 0 : Hosts.size(), zoneId);
             if (CollectionUtils.isEmpty(Hosts)) {
-                LOG.info("No hosts found in zone [{}] for Commvault backup agent readiness check.", zoneId);
+                LOG.warn("No hosts found in zone [{}] for Commvault backup agent readiness check.", zoneId);
                 return false;
             }
             int targetHostCount = 0;
             for (final HostVO host : Hosts) {
-                LOG.info("Evaluating host for Commvault backup agent readiness. zone=[{}], host=[{}], privateIp=[{}], status=[{}], hypervisor=[{}], type=[{}]",
-                        zoneId, host.getName(), host.getPrivateIpAddress(), host.getStatus(), host.getHypervisorType(), host.getType());
                 if (host.getStatus() == Status.Up && host.getHypervisorType() == Hypervisor.HypervisorType.KVM) {
                     targetHostCount++;
-                    LOG.info("Checking Commvault client registration for host [{}] using host name [{}].", host.getPrivateIpAddress(), host.getName());
                     String checkHost = client.getClientId(host.getName());
                     if (checkHost == null) {
                         LOG.info("Commvault client is not registered for host [{}] using host name [{}].", host.getPrivateIpAddress(), host.getName());
                         return false;
                     } else {
-                        LOG.info("Found Commvault client [{}] for host [{}]. Checking install job and readiness.", checkHost, host.getPrivateIpAddress());
                         boolean installJob = client.getInstallActiveJob(host.getPrivateIpAddress());
                         boolean checkInstall = client.getClientProps(checkHost);
-                        LOG.info("Commvault backup agent readiness result for host [{}]. clientId=[{}], installJobActive=[{}], ready=[{}]",
-                                host.getPrivateIpAddress(), checkHost, installJob, checkInstall);
                         if (installJob || !checkInstall) {
                             if (!checkInstall) {
                                 LOG.error("The host is registered with the client, but the readiness status is not normal and you must manually check the client status. host=[{}], clientId=[{}]",
@@ -2306,9 +2295,6 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                             return false;
                         }
                     }
-                } else {
-                    LOG.info("Skipping host for Commvault backup agent readiness because it is not an Up KVM host. zone=[{}], host=[{}], status=[{}], hypervisor=[{}]",
-                            zoneId, host.getName(), host.getStatus(), host.getHypervisorType());
                 }
             }
             if (targetHostCount == 0) {
@@ -2326,31 +2312,22 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     public boolean installBackupAgent(final Long zoneId) {
         final AblestackCommvaultClient client = getClient(zoneId);
         List<HostVO> Hosts = hostDao.findByDataCenterId(zoneId);
-        LOG.info("Starting Commvault backup agent automatic installation check. zone=[{}], hostCount=[{}]",
-                zoneId, Hosts == null ? 0 : Hosts.size());
         if (CollectionUtils.isEmpty(Hosts)) {
-            LOG.info("No hosts found in zone [{}] for Commvault backup agent automatic installation.", zoneId);
+            LOG.warn("No hosts found in zone [{}] for Commvault backup agent automatic installation.", zoneId);
             return false;
         }
         int targetHostCount = 0;
         for (final HostVO host : Hosts) {
-            LOG.info("Evaluating host for Commvault backup agent automatic installation. zone=[{}], host=[{}], privateIp=[{}], status=[{}], hypervisor=[{}], type=[{}]",
-                    zoneId, host.getName(), host.getPrivateIpAddress(), host.getStatus(), host.getHypervisorType(), host.getType());
             if (host.getStatus() == Status.Up && host.getHypervisorType() == Hypervisor.HypervisorType.KVM) {
                 targetHostCount++;
-                LOG.info("Requesting Commvault commcell information before installing backup agent on host [{}].", host.getPrivateIpAddress());
                 String commCell = client.getCommcell();
-                LOG.info("Received Commvault commcell information before installing backup agent on host [{}]. commCell=[{}]",
-                        host.getPrivateIpAddress(), commCell);
                 JSONObject jsonObject = new JSONObject(commCell);
                 String commCellId = String.valueOf(jsonObject.get("commCellId"));
                 String commServeHostName = String.valueOf(jsonObject.get("commCellName"));
                 Ternary<String, String, String> credentials = getKVMHyperisorCredentials(host);
-                LOG.info("Checking for install agent on the Commvault Backup Provider in host [{}]. clientLookupName=[{}], installClientName=[{}]",
-                        host.getPrivateIpAddress(), host.getName(), host.getPrivateIpAddress());
                 // 설치가 진행중인 호스트가 있는지 확인
                 if (!waitForInstallActiveJobToFinish(client, host)) {
-                    publishHostAgentInstallFailureEventIfNeeded(host);
+                    publishBackupAgentInstallFailureEventIfNeeded(host);
                     return false;
                 }
                 String checkHost = client.getClientId(host.getName());
@@ -2366,7 +2343,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                             String failureReason = client.getLastJobFailureReason();
                             LOG.error("installing agent on the Commvault Backup Provider failed jogId : {} , jobStatus : {}, reason=[{}]",
                                     jobId, jobStatus, failureReason);
-                            publishHostAgentInstallFailureEventIfNeeded(host);
+                            publishBackupAgentInstallFailureEventIfNeeded(host);
                             if (isPermanentCommvaultInstallFailure(failureReason)) {
                                 throw new CloudRuntimeException(String.format("%s host=[%s], jobId=[%s], reason=[%s]",
                                         COMMVAULT_PERMANENT_INSTALL_FAILURE_MESSAGE, host.getPrivateIpAddress(), jobId, failureReason));
@@ -2376,7 +2353,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                         LOG.info("Completed Commvault backup agent install job [{}] for host [{}].", jobId, host.getPrivateIpAddress());
                     } else {
                         LOG.error("installing agent on the Commvault Backup Provider failed to create install job on host [{}]", host.getPrivateIpAddress());
-                        publishHostAgentInstallFailureEventIfNeeded(host);
+                        publishBackupAgentInstallFailureEventIfNeeded(host);
                         return false;
                     }
                 } else {
@@ -2389,24 +2366,25 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                                 host.getPrivateIpAddress(), checkHost, readinessDetails);
                         return false;
                     }
-                    LOG.info("Commvault backup agent is ready for host [{}]. clientId=[{}]", host.getPrivateIpAddress(), checkHost);
                 }
-            } else {
-                LOG.info("Skipping host for Commvault backup agent automatic installation because it is not an Up KVM host. zone=[{}], host=[{}], status=[{}], hypervisor=[{}]",
-                        zoneId, host.getName(), host.getStatus(), host.getHypervisorType());
             }
         }
         if (targetHostCount == 0) {
             LOG.warn("No Up KVM hosts found in zone [{}] for Commvault backup agent automatic installation. The installation will be retried.", zoneId);
             return false;
         }
-        LOG.info("Completed Commvault backup agent automatic installation check in zone [{}].", zoneId);
         return true;
     }
 
     private boolean waitForInstallActiveJobToFinish(AblestackCommvaultClient client, HostVO host) {
         final long deadline = System.currentTimeMillis() + COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS;
+        boolean loggedWaiting = false;
         while (hasInstallActiveJob(client, host)) {
+            if (!loggedWaiting) {
+                LOG.info("Waiting for existing Commvault backup agent install job to finish before creating a new install job. host=[{}], timeoutMillis=[{}]",
+                        host.getPrivateIpAddress(), COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS);
+                loggedWaiting = true;
+            }
             if (System.currentTimeMillis() >= deadline) {
                 LOG.warn("Timed out waiting for existing Commvault client agent install job to finish. host=[{}], timeoutMillis=[{}]",
                         host.getPrivateIpAddress(), COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS);
@@ -2437,17 +2415,16 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 (normalizedReason.contains("required media version") || normalizedReason.contains("missing"));
     }
 
-    private void publishHostAgentInstallFailureEventIfNeeded(HostVO host) {
-        if (hasHostAgentInstallFailureEvent(host.getId())) {
-            LOG.debug("Skipping duplicate Commvault client agent install failure event for host [{}]", host.getPrivateIpAddress());
+    private void publishBackupAgentInstallFailureEventIfNeeded(HostVO host) {
+        if (hasBackupAgentInstallFailureEvent(host.getId())) {
             return;
         }
-        ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_HOST_AGENT_INSTALL,
-                "Failed install the commvault client agent on the host : " + host.getPrivateIpAddress(), host.getId(), ApiCommandResourceType.Host.toString());
+        ActionEventUtils.onActionEvent(User.UID_SYSTEM, Account.ACCOUNT_ID_SYSTEM, Domain.ROOT_DOMAIN, EventTypes.EVENT_BACKUP_AGENT_INSTALL,
+                "Failed to install the Commvault backup agent on host: " + host.getPrivateIpAddress(), host.getId(), ApiCommandResourceType.Host.toString());
     }
 
-    private boolean hasHostAgentInstallFailureEvent(long hostId) {
-        return eventDao.existsByTypeAndResource(EventTypes.EVENT_HOST_AGENT_INSTALL, hostId, ApiCommandResourceType.Host.toString());
+    private boolean hasBackupAgentInstallFailureEvent(long hostId) {
+        return eventDao.existsByTypeAndResource(EventTypes.EVENT_BACKUP_AGENT_INSTALL, hostId, ApiCommandResourceType.Host.toString());
     }
 
     @Override

@@ -4414,6 +4414,7 @@
   "sg.remove": "SG 제거",
   "sg.update": "SG 편집",
   "host.agent.install": "호스트 에이전트 설치",
+  "backup.agent.install": "백업 에이전트 설치",
   "host.reconnect": "호스트 재연결",
   "host.declare.degraded": "호스트 DEGRADED 선언",
   "host.cancel.degraded": "호스트 DEGRADED 취소",
