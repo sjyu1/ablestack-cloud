@@ -152,7 +152,9 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
         return (String.format("%s-%s", prefix, suffix));
     }
 
-    private UserVm deploySharedFSVM(Long zoneId, Account owner, List<Long> networkIds, String name, Long serviceOfferingId, Long diskOfferingId, SharedFS.FileSystemType fileSystem, Long size, Long minIops, Long maxIops) throws OperationTimedoutException, ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException {
+    private UserVm deploySharedFSVM(Long zoneId, Account owner, List<Long> networkIds, String name, Long serviceOfferingId, Long diskOfferingId,
+            SharedFS.FileSystemType fileSystem, Long size, Long minIops, Long maxIops, SharedFS.NetworkMode networkMode, String requestedIp) throws OperationTimedoutException,
+            ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException {
         ServiceOffering serviceOffering = serviceOfferingDao.findById(serviceOfferingId);
         DataCenter zone = dataCenterDao.findById(zoneId);
 
@@ -164,7 +166,7 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
         }
 
         String hostName = getStorageVmName(name);
-        Network.IpAddresses addrs = new Network.IpAddresses(null, null);
+        Network.IpAddresses addrs = new Network.IpAddresses(networkMode == SharedFS.NetworkMode.STATIC ? requestedIp : null, null);
         Map<String, String> customParameterMap = new HashMap<String, String>();
         if (minIops != null) {
             customParameterMap.put("minIopsDo", minIops.toString());
@@ -186,8 +188,11 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
             }
 
             UserVm vm = null;
-            String fsVmConfig = getStorageVmConfig();
-            String base64UserData = Base64.encodeBase64String(fsVmConfig.getBytes(com.cloud.utils.StringUtils.getPreferredCharset()));
+            String base64UserData = null;
+            if (networkMode == SharedFS.NetworkMode.DHCP) {
+                String fsVmConfig = getStorageVmConfig();
+                base64UserData = Base64.encodeBase64String(fsVmConfig.getBytes(com.cloud.utils.StringUtils.getPreferredCharset()));
+            }
             CallContext vmContext = CallContext.register(CallContext.current(), ApiCommandResourceType.VirtualMachine);
             try {
                 vm = userVmService.createAdvancedVirtualMachine(zone, serviceOffering, template, networkIds, owner, hostName, hostName,
@@ -240,7 +245,8 @@ public class StorageVmSharedFSLifeCycle implements SharedFSLifeCycle {
     @Override
     public Pair<Long, Long> deploySharedFS(SharedFS sharedFS, Long networkId, Long diskOfferingId, Long storageId, Long size, Long minIops, Long maxIops) throws ResourceUnavailableException, InsufficientCapacityException, ResourceAllocationException, OperationTimedoutException {
         Account owner = accountMgr.getActiveAccountById(sharedFS.getAccountId());
-        UserVm vm = deploySharedFSVM(sharedFS.getDataCenterId(), owner, List.of(networkId), sharedFS.getName(), sharedFS.getServiceOfferingId(), diskOfferingId, sharedFS.getFsType(), size, minIops, maxIops);
+        UserVm vm = deploySharedFSVM(sharedFS.getDataCenterId(), owner, List.of(networkId), sharedFS.getName(), sharedFS.getServiceOfferingId(), diskOfferingId,
+                sharedFS.getFsType(), size, minIops, maxIops, sharedFS.getNetworkMode(), sharedFS.getIpAddress());
 
         List<VolumeVO> volumes = volumeDao.findByInstance(vm.getId());
         VolumeVO dataVol = null;

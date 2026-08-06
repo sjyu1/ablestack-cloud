@@ -19,6 +19,13 @@
 -- Schema upgrade from ablestack-cerato to ablestack-diplo
 --;
 
+CALL `cloud`.`ADD_COL`('shared_filesystem', 'network_mode', 'varchar(16) NOT NULL DEFAULT ''DHCP'' COMMENT ''SharedFS VM network addressing mode''');
+CALL `cloud`.`ADD_COL`('shared_filesystem', 'ip_address', 'varchar(45) DEFAULT NULL COMMENT ''Requested static IPv4 address''');
+CALL `cloud`.`ADD_COL`('shared_filesystem', 'cidr', 'varchar(45) DEFAULT NULL COMMENT ''Requested static IPv4 CIDR''');
+CALL `cloud`.`ADD_COL`('shared_filesystem', 'gateway', 'varchar(45) DEFAULT NULL COMMENT ''Requested static IPv4 gateway''');
+CALL `cloud`.`ADD_COL`('shared_filesystem', 'dns1', 'varchar(45) DEFAULT NULL COMMENT ''Requested primary DNS server''');
+CALL `cloud`.`ADD_COL`('shared_filesystem', 'dns2', 'varchar(45) DEFAULT NULL COMMENT ''Requested secondary DNS server''');
+
 -- BEGIN TABLE vbmc_port
 CREATE TABLE IF NOT EXISTS `vbmc_port` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
