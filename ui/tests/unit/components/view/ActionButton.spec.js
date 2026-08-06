@@ -126,9 +126,61 @@ describe('Components > View > ActionButton.vue', () => {
 
       expect(received).toContain(expected)
     })
+
+    it('wraps data view icons in a fixed alignment slot', () => {
+      const wrapper = factory({
+        props: {
+          actions: [{
+            label: 'label.action',
+            api: 'test-api-case-2',
+            icon: ['fas', 'camera-retro'],
+            dataView: true
+          }],
+          dataView: true,
+          resource: {
+            id: 'test-resource-id'
+          }
+        }
+      })
+
+      const iconSlot = wrapper.find('.resource-action-menu__item-icon')
+      expect(iconSlot.exists()).toBe(true)
+      expect(iconSlot.attributes('aria-hidden')).toBe('true')
+    })
   })
 
   describe('Method', () => {
+    describe('openConsole()', () => {
+      it('uses an external console URL without requesting a console endpoint', () => {
+        const externalUrl = 'https://console.example.test/session'
+        const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {})
+        const wrapper = factory({
+          props: {
+            resource: {
+              id: 'test-resource-id',
+              details: {
+                'External:console_url': externalUrl
+              }
+            }
+          }
+        })
+
+        wrapper.vm.openConsole(false)
+
+        expect(openSpy).toHaveBeenCalledWith(externalUrl, '_blank')
+        expect(mockAxios).not.toHaveBeenCalled()
+        openSpy.mockRestore()
+      })
+
+      it('falls back to the route name when route metadata has no name', () => {
+        const routeName = ActionButton.computed.routeName.call({
+          $route: { meta: {}, name: 'host' }
+        })
+
+        expect(routeName).toBe('host')
+      })
+    })
+
     describe('handleShowBadge()', () => {
       it('API should be called and return not empty', async (done) => {
         const postData = new URLSearchParams()

@@ -166,11 +166,14 @@ export default {
         this.onResourceChange(newItem)
       }
     },
-    '$route.meta.name' () {
+    routeName () {
       this.updateWallLinkUrl()
     }
   },
   computed: {
+    routeName () {
+      return this.$route?.meta?.name || this.$route?.name || ''
+    },
     dataViewMenuEntries () {
       const entries = []
       if (this.showConsoleButtons) {
@@ -187,7 +190,7 @@ export default {
         entries.push(this.createExternalLinkEntry('works', 'label.works.portal.url', 'LaptopOutlined', this.worksUrl))
       }
       if (this.wallLinkReady) {
-        entries.push(this.createExternalLinkEntry('wall', `label.wall.portal.${this.$route.meta.name}.url`, 'AreaChartOutlined', this.wallLinkUrl))
+        entries.push(this.createExternalLinkEntry('wall', `label.wall.portal.${this.routeName}.url`, 'AreaChartOutlined', this.wallLinkUrl))
       }
       if (this.showGenieButton) {
         entries.push(this.createExternalLinkEntry('genie', 'label.genie.portal.url', 'LaptopOutlined', this.genieUrl))
@@ -241,7 +244,7 @@ export default {
       }
       const requiredApis = ['listVirtualMachines', 'createConsoleEndpoint']
       const hasApis = requiredApis.every(apiName => apiName in this.$store.getters.apis)
-      return hasApis && ['vm', 'systemvm', 'router', 'ilbvm', 'vnfapp'].includes(this.$route.meta.name)
+      return hasApis && ['vm', 'systemvm', 'router', 'ilbvm', 'vnfapp'].includes(this.routeName)
     },
     consoleButtonDisabled () {
       if (!this.resource) {
@@ -251,7 +254,7 @@ export default {
     },
     showWorksButton () {
       return this.resource && this.resource.id && this.resource.worksvmip &&
-        this.$route.meta.name === 'desktopcluster' &&
+        this.routeName === 'desktopcluster' &&
         ('listDesktopClusters' in this.$store.getters.apis)
     },
     worksUrl () {
@@ -264,11 +267,11 @@ export default {
       if (this.selectedRowKeys && this.selectedRowKeys.length > 1) {
         return false
       }
-      return this.resource && this.resource.id && ['vm', 'host', 'cluster'].includes(this.$route.meta.name)
+      return this.resource && this.resource.id && ['vm', 'host', 'cluster'].includes(this.routeName)
     },
     showGenieButton () {
       return this.resource && this.resource.id &&
-        this.$route.meta.name === 'automationcontroller' &&
+        this.routeName === 'automationcontroller' &&
         ('listAutomationController' in this.$store.getters.apis)
     },
     genieUrl () {
@@ -278,7 +281,7 @@ export default {
       return `http://${this.resource.automationcontrollerpublicip}:80`
     },
     showOobmButton () {
-      return this.resource && this.resource.id && this.$route.meta.name === 'host'
+      return this.resource && this.resource.id && this.routeName === 'host'
     },
     oobmButtonDisabled () {
       if (!this.showOobmButton) {
@@ -296,7 +299,7 @@ export default {
       return `${protocol}://${address}:${port}`
     },
     showCubeButton () {
-      return this.resource && this.resource.id && this.$route.meta.name === 'host'
+      return this.resource && this.resource.id && this.routeName === 'host'
     },
     cubeUrl () {
       if (!this.showCubeButton) {
@@ -379,6 +382,18 @@ export default {
       if (!this.resource || !this.resource.id) {
         return
       }
+
+      const externalUrl = this.resource?.details?.['External:console_url']
+      if (externalUrl) {
+        if (copyUrlToClipboard) {
+          this.$copyText(externalUrl)
+          this.$message.success({ content: this.$t('label.copied.clipboard') })
+        } else {
+          window.open(externalUrl, '_blank')
+        }
+        return
+      }
+
       const params = { virtualmachineid: this.resource.id }
       api('createConsoleEndpoint', params).then(json => {
         const response = json?.createconsoleendpointresponse?.consoleendpoint
@@ -426,13 +441,13 @@ export default {
         }
 
         let finalUrl = ''
-        if (this.$route.meta.name === 'vm') {
+        if (this.routeName === 'vm') {
           const path = getValue('monitoring.wall.portal.vm.uri') || ''
           finalUrl = `${baseUrl}${path}&var-vm_uuid=${this.resource.id}`
-        } else if (this.$route.meta.name === 'host') {
+        } else if (this.routeName === 'host') {
           const path = getValue('monitoring.wall.portal.host.uri') || ''
           finalUrl = `${baseUrl}${path}&var-host=${this.resource.ipaddress}`
-        } else if (this.$route.meta.name === 'cluster') {
+        } else if (this.routeName === 'cluster') {
           const path = getValue('monitoring.wall.portal.cluster.uri') || ''
           finalUrl = `${baseUrl}${path}`
         }

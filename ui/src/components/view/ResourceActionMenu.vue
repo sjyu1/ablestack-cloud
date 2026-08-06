@@ -32,8 +32,10 @@
           @click="execute(entry)">
           <a-tooltip placement="right" :title="entry.disabled ? entry.tooltip : ''">
             <span class="resource-action-menu__item-content">
-              <render-icon v-if="typeof entry.icon === 'string'" :icon="entry.icon" />
-              <font-awesome-icon v-else-if="entry.icon" :icon="entry.icon" />
+              <span class="resource-action-menu__item-icon" aria-hidden="true">
+                <render-icon v-if="typeof entry.icon === 'string'" :icon="entry.icon" />
+                <font-awesome-icon v-else-if="entry.icon" :icon="entry.icon" />
+              </span>
               <span class="resource-action-menu__item-label">{{ $t(entry.label) }}</span>
               <a-badge
                 v-if="entry.badge"
