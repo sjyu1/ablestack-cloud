@@ -348,6 +348,26 @@ public class SharedFSServiceImplTest {
     }
 
     @Test
+    public void testSharedFSStorageServiceReconciliationEligibility() {
+        SharedFSVO ready = mock(SharedFSVO.class);
+        when(ready.getVmId()).thenReturn(s_vmId);
+        when(ready.getVolumeId()).thenReturn(s_volumeId);
+        when(ready.getState()).thenReturn(SharedFS.State.Ready);
+        Assert.assertTrue(sharedFSServiceImpl.shouldReconcileSharedFSToStorageService(ready));
+
+        SharedFSVO destroyed = mock(SharedFSVO.class);
+        when(destroyed.getVmId()).thenReturn(s_vmId);
+        when(destroyed.getVolumeId()).thenReturn(s_volumeId);
+        when(destroyed.getState()).thenReturn(SharedFS.State.Destroyed);
+        Assert.assertFalse(sharedFSServiceImpl.shouldReconcileSharedFSToStorageService(destroyed));
+
+        SharedFSVO unbound = mock(SharedFSVO.class);
+        when(unbound.getVmId()).thenReturn(s_vmId);
+        when(unbound.getVolumeId()).thenReturn(null);
+        Assert.assertFalse(sharedFSServiceImpl.shouldReconcileSharedFSToStorageService(unbound));
+    }
+
+    @Test
     public void testAllocSharedFSInvalidFsFormat() {
         CreateSharedFSCmd cmd = getMockCreateSharedFSCmd();
 

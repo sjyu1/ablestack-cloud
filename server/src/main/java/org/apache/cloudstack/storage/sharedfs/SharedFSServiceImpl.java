@@ -192,6 +192,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
             sharedFSProviderMap.put(provider.getName(), provider);
             provider.configure();
         }
+        reconcileSharedFSToStorageService();
         _executor.scheduleWithFixedDelay(new SharedFSGarbageCollector(), SharedFSCleanupInterval.value(), SharedFSCleanupInterval.value(), TimeUnit.SECONDS);
         return true;
     }
@@ -733,7 +734,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     }
 
     protected void syncSharedFSToStorageService(SharedFS sharedFS) {
-        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value()) {
+        if (sharedFS == null || !SharedFSFeatureEnabled.value()) {
             return;
         }
         if (sharedFS.getVmId() == null || sharedFS.getVolumeId() == null) {
@@ -786,6 +787,24 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
     }
 
+    protected void reconcileSharedFSToStorageService() {
+        if (!SharedFSFeatureEnabled.value()) {
+            return;
+        }
+        for (SharedFSVO sharedFS : sharedFSDao.listAll()) {
+            if (!shouldReconcileSharedFSToStorageService(sharedFS)) {
+                continue;
+            }
+            syncSharedFSToStorageService(sharedFS);
+        }
+    }
+
+    protected boolean shouldReconcileSharedFSToStorageService(SharedFS sharedFS) {
+        return sharedFS != null && sharedFS.getVmId() != null && sharedFS.getVolumeId() != null &&
+                !State.Destroyed.equals(sharedFS.getState()) && !State.Expunging.equals(sharedFS.getState()) &&
+                !State.Expunged.equals(sharedFS.getState());
+    }
+
     protected void removeLegacySharedFSRootExport(StorageServiceInstanceVO instance) {
         for (StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
             if (SharedFS.SharedFSPath.equals(StringUtils.removeEnd(share.getPath(), "/"))) {
@@ -798,7 +817,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     }
 
     protected void deleteStorageServiceCompatibility(SharedFS sharedFS) {
-        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value() || sharedFS.getVmId() == null) {
+        if (sharedFS == null || !SharedFSFeatureEnabled.value() || sharedFS.getVmId() == null) {
             return;
         }
         try {
