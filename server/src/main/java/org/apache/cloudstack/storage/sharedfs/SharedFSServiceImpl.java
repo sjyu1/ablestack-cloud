@@ -282,6 +282,15 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         if ((diskOffering.isCustomizedIops() == null || diskOffering.isCustomizedIops() == false) && (minIops != null || maxIops != null)) {
             throw new InvalidParameterValueException("Iops provided with a non-custom-iops disk offering");
         }
+        if ((minIops == null) != (maxIops == null)) {
+            throw new InvalidParameterValueException("Either 'miniops' and 'maxiops' must both be provided or neither must be provided.");
+        }
+        if (minIops != null && (minIops <= 0 || maxIops <= 0)) {
+            throw new InvalidParameterValueException("The 'miniops' and 'maxiops' parameters must be greater than zero.");
+        }
+        if (minIops != null && minIops > maxIops) {
+            throw new InvalidParameterValueException("The 'miniops' parameter must be less than or equal to the 'maxiops' parameter.");
+        }
     }
 
     private void validateInitialBackingStorage(Long diskOfferingId, Long storageId, DataCenter zone) {

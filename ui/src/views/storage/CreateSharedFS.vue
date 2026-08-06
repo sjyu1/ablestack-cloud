@@ -1279,6 +1279,8 @@ export default {
         useexistingvolume: false,
         storageid: '',
         existingvolumeid: '',
+        miniops: null,
+        maxiops: null,
         importmode: 'INSPECT_ONLY',
         resizeallowed: true
       })
@@ -1375,22 +1377,8 @@ export default {
             return Promise.resolve()
           }
         }],
-        miniops: [{
-          validator: async (rule, value) => {
-            if (value && (isNaN(value) || value <= 0)) {
-              return Promise.reject(this.$t('message.error.number'))
-            }
-            return Promise.resolve()
-          }
-        }],
-        maxiops: [{
-          validator: async (rule, value) => {
-            if (value && (isNaN(value) || value <= 0)) {
-              return Promise.reject(this.$t('message.error.number'))
-            }
-            return Promise.resolve()
-          }
-        }]
+        miniops: [{ validator: this.validateCustomizedIops }],
+        maxiops: [{ validator: this.validateCustomizedIops }]
       })
     },
     filterOption (input, option) {
@@ -1718,7 +1706,59 @@ export default {
       const diskoffering = this.diskofferings.filter(x => x.id === id)
       this.customDiskOffering = diskoffering[0]?.iscustomized || false
       this.isCustomizedDiskIOps = diskoffering[0]?.iscustomizediops || false
+      if (!this.isCustomizedDiskIOps) {
+        this.form.miniops = null
+        this.form.maxiops = null
+      }
       this.reconcileSelectedStoragePool()
+    },
+    hasFormValue (value) {
+      return value !== undefined && value !== null && value !== ''
+    },
+    validateCustomizedIops () {
+      if (!this.isCustomizedDiskIOps) {
+        return Promise.resolve()
+      }
+      const hasMin = this.hasFormValue(this.form.miniops)
+      const hasMax = this.hasFormValue(this.form.maxiops)
+      if (hasMin !== hasMax) {
+        return Promise.reject(this.$t('label.required'))
+      }
+      if (!hasMin) {
+        return Promise.resolve()
+      }
+      const minIops = Number(this.form.miniops)
+      const maxIops = Number(this.form.maxiops)
+      if (!Number.isInteger(minIops) || !Number.isInteger(maxIops) || minIops <= 0 || maxIops <= 0 || minIops > maxIops) {
+        return Promise.reject(this.$t('message.error.number'))
+      }
+      return Promise.resolve()
+    },
+    buildCreateSharedFsRequest (values) {
+      const data = {
+        name: values.name,
+        description: values.description,
+        zoneid: values.zoneid,
+        serviceofferingid: values.serviceofferingid,
+        diskofferingid: values.diskofferingid,
+        networkid: values.networkid,
+        size: this.createSharedFsSize(values),
+        filesystem: values.filesystem,
+        domainid: this.owner.domainid
+      }
+      if (this.isCustomizedDiskIOps && this.hasFormValue(values.miniops) && this.hasFormValue(values.maxiops)) {
+        data.miniops = Number(values.miniops)
+        data.maxiops = Number(values.maxiops)
+      }
+      if (this.owner.projectid) {
+        data.projectid = this.owner.projectid
+      } else {
+        data.account = this.owner.account
+      }
+      if (values.storageid) {
+        data.storageid = values.storageid
+      }
+      return this.cleanParams(data)
     },
     handleSubmit (e) {
       if (e && e.preventDefault) {
@@ -1730,27 +1770,7 @@ export default {
         const formRaw = toRaw(this.form)
         const values = this.handleRemoveFields(formRaw)
 
-        var data = {
-          name: values.name,
-          description: values.description,
-          zoneid: values.zoneid,
-          serviceofferingid: values.serviceofferingid,
-          diskofferingid: values.diskofferingid,
-          networkid: values.networkid,
-          size: this.createSharedFsSize(values),
-          filesystem: values.filesystem,
-          miniops: values.miniops,
-          maxiops: values.maxiops,
-          domainid: this.owner.domainid
-        }
-        if (this.owner.projectid) {
-          data.projectid = this.owner.projectid
-        } else {
-          data.account = this.owner.account
-        }
-        if (values.storageid) {
-          data.storageid = values.storageid
-        }
+        const data = this.buildCreateSharedFsRequest(values)
         const missingApis = this.missingStorageServiceSetupApis()
         if (missingApis.length > 0) {
           this.$notification.error({
