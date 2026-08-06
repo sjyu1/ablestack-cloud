@@ -83,6 +83,14 @@ CREATE TABLE IF NOT EXISTS `cloud`.`import_vm_task_event`(
 -- Storage Service is governed by the SharedFS feature gate in Europa.
 DELETE FROM `cloud`.`configuration` WHERE `name` = 'storage.service.feature.enabled';
 
+-- Persist the desired SharedFS L2 static network configuration for fresh and upgraded Europa environments.
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.shared_filesystem', 'network_mode', 'varchar(16) NOT NULL DEFAULT ''DHCP'' COMMENT "SharedFS VM network addressing mode"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.shared_filesystem', 'ip_address', 'varchar(45) DEFAULT NULL COMMENT "Requested static IPv4 address"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.shared_filesystem', 'cidr', 'varchar(45) DEFAULT NULL COMMENT "Requested static IPv4 CIDR"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.shared_filesystem', 'gateway', 'varchar(45) DEFAULT NULL COMMENT "Requested static IPv4 gateway"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.shared_filesystem', 'dns1', 'varchar(45) DEFAULT NULL COMMENT "Requested primary DNS server"');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.shared_filesystem', 'dns2', 'varchar(45) DEFAULT NULL COMMENT "Requested secondary DNS server"');
+
 CREATE TABLE IF NOT EXISTS `cloud`.`import_vm_task_credential`(
     `id` bigint unsigned NOT NULL auto_increment COMMENT 'id',
     `uuid` varchar(40) NOT NULL COMMENT 'UUID',

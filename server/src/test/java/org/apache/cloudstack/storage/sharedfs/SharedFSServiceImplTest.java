@@ -43,6 +43,7 @@ import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.storage.sharedfs.dao.SharedFSDao;
 import org.apache.cloudstack.storage.sharedfs.query.dao.SharedFSJoinDao;
 import org.apache.cloudstack.storage.sharedfs.query.vo.SharedFSJoinVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceGuestCommandDispatcher;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -137,6 +138,9 @@ public class SharedFSServiceImplTest {
     @Mock
     private SharedFSLifeCycle lifeCycle;
 
+    @Mock
+    private StorageServiceGuestCommandDispatcher guestCommandDispatcher;
+
     @Spy
     @InjectMocks
     private SharedFSServiceImpl sharedFSServiceImpl;
@@ -204,6 +208,7 @@ public class SharedFSServiceImplTest {
         when(cmd.getServiceOfferingId()).thenReturn(s_serviceOfferingId);
         when(cmd.getNetworkId()).thenReturn(s_networkId);
         when(cmd.getFsFormat()).thenReturn(s_fsFormat);
+        when(cmd.getNetworkMode()).thenReturn(SharedFS.NetworkMode.DHCP);
         return cmd;
     }
 
@@ -409,8 +414,48 @@ public class SharedFSServiceImplTest {
         when(networkModel.areServicesSupportedInNetwork(s_networkId, Network.Service.UserData)).thenReturn(false);
 
         InvalidParameterValueException exception = Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
-        Assert.assertEquals("Network network-without-userdata does not support UserData service. Shared FileSystem Storage VM initialization requires a network offering with UserData or ConfigDrive support.",
+        Assert.assertEquals("Network network-without-userdata does not support UserData or ConfigDrive. Select STATIC network mode and provide ipcidr for this L2 SharedFS network.",
                 exception.getMessage());
+    }
+
+    @Test
+    public void testStaticNetworkAllowsOptionalGatewayAndDns() {
+        CreateSharedFSCmd cmd = getMockCreateSharedFSCmd();
+        when(cmd.getNetworkMode()).thenReturn(SharedFS.NetworkMode.STATIC);
+        when(cmd.getIpCidr()).thenReturn("10.10.1.201/24");
+        when(cmd.getGateway()).thenReturn(null);
+        when(cmd.getDns1()).thenReturn(null);
+        when(cmd.getDns2()).thenReturn(null);
+
+        NetworkVO network = mock(NetworkVO.class);
+        when(network.getId()).thenReturn(s_networkId);
+        when(network.getGuestType()).thenReturn(Network.GuestType.L2);
+
+        SharedFSServiceImpl.StaticNetworkConfiguration configuration = sharedFSServiceImpl.validateStaticNetworkConfiguration(cmd, network);
+        Assert.assertEquals("10.10.1.201", configuration.ipAddress);
+        Assert.assertEquals("10.10.1.0/24", configuration.networkCidr);
+    }
+
+    @Test
+    public void testStaticNetworkNormalizesHostPrefixToNetworkCidr() {
+        SharedFSServiceImpl.StaticNetworkConfiguration configuration = sharedFSServiceImpl.parseStaticIpCidr("10.10.15.211/16");
+
+        Assert.assertEquals("10.10.15.211", configuration.ipAddress);
+        Assert.assertEquals("10.10.0.0/16", configuration.networkCidr);
+    }
+
+    @Test
+    public void testStaticNetworkAcceptsHostPrefix() {
+        SharedFSServiceImpl.StaticNetworkConfiguration configuration = sharedFSServiceImpl.parseStaticIpCidr("10.10.1.211/32");
+
+        Assert.assertEquals("10.10.1.211", configuration.ipAddress);
+        Assert.assertEquals("10.10.1.211/32", configuration.networkCidr);
+    }
+
+    @Test
+    public void testStaticNetworkRejectsInvalidIpPrefix() {
+        Assert.assertThrows(InvalidParameterValueException.class,
+                () -> sharedFSServiceImpl.parseStaticIpCidr("10.10.1.211/33"));
     }
 
     @Test
