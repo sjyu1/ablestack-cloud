@@ -1778,7 +1778,7 @@ public class AblestackCommvaultClient {
                         JsonNode subclient = entity.path("subclient");
                         if (isInstallClientJobForHost(entity, subclient, hostName) ||
                                 (isCommvaultSoftwareJob(entity, generalInfo) &&
-                                        (isCommvaultDownloadSoftwareJob(entity, generalInfo) || matchesInstallJobHost(entity, subclient, hostName))) {
+                                        (isCommvaultDownloadSoftwareJob(entity, generalInfo) || matchesInstallJobHost(entity, subclient, hostName)))) {
                             return true;
                         }
                     }
