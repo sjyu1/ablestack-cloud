@@ -144,11 +144,13 @@ import com.cloud.storage.ScopeType;
 import com.cloud.storage.Storage;
 import com.cloud.storage.Volume;
 import com.cloud.storage.VolumeApiService;
+import com.cloud.storage.VolumeDetailVO;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.GuestOSDao;
 import com.cloud.storage.dao.VMTemplateDao;
 import com.cloud.storage.dao.VolumeDao;
+import com.cloud.storage.dao.VolumeDetailsDao;
 import com.cloud.template.VirtualMachineTemplate;
 import com.cloud.user.Account;
 import com.cloud.user.AccountManager;
@@ -218,6 +220,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     @Inject
     private VolumeDao volumeDao;
     @Inject
+    private VolumeDetailsDao volumeDetailsDao;
+    @Inject
     private DataCenterDao dataCenterDao;
     @Inject
     private BackgroundPollManager backgroundPollManager;
@@ -269,6 +273,9 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private Date currentTimestamp;
     private static final int POST_RESTORE_MAINTENANCE_MAX_RETRIES = 5;
     private static final long POST_RESTORE_MAINTENANCE_RETRY_INTERVAL_MS = 60_000L;
+    private static final String FAST_CLONE_FLATTEN_STATUS = "clone.fast.flatten.status";
+    private static final String FAST_CLONE_FLATTEN_PENDING = "pending";
+    private static final String FAST_CLONE_FLATTEN_RUNNING = "running";
 
     private static Map<String, BackupProvider> backupProvidersMap = new HashMap<>();
     private static final String ABLESTACK_NETBACKUP_PROVIDER_NAME = "ablestack-netbackup";
@@ -1008,6 +1015,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         boolean isScheduledBackup = backupScheduleId != null;
         logger.info("Starting VM backup request [vmId: {}, vmUuid: {}, vmName: {}, provider: {}, offeringId: {}, scheduleId: {}, scheduled: {}]",
                 vm.getId(), vm.getUuid(), vm.getInstanceName(), offering.getProvider(), offering.getId(), backupScheduleId, isScheduledBackup);
+        checkNoActiveFastCloneFlattenForBackup(vmId);
         Account owner = accountManager.getAccount(vm.getAccountId());
 
         Long backupSize = 0L;
@@ -1081,7 +1089,27 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         return backupSize;
     }
 
-        @Override
+    protected void checkNoActiveFastCloneFlattenForBackup(final Long vmId) {
+        final List<VolumeVO> volumes = volumeDao.findByInstance(vmId);
+        if (CollectionUtils.isEmpty(volumes)) {
+            return;
+        }
+
+        for (VolumeVO volume : volumes) {
+            final VolumeDetailVO fastCloneFlattenStatus = volumeDetailsDao.findDetail(volume.getId(), FAST_CLONE_FLATTEN_STATUS);
+            if (fastCloneFlattenStatus == null || StringUtils.isBlank(fastCloneFlattenStatus.getValue())) {
+                continue;
+            }
+            if (FAST_CLONE_FLATTEN_PENDING.equalsIgnoreCase(fastCloneFlattenStatus.getValue()) ||
+                    FAST_CLONE_FLATTEN_RUNNING.equalsIgnoreCase(fastCloneFlattenStatus.getValue())) {
+                throw new CloudRuntimeException(String.format(
+                        "Unable to create VM backup while SharedMountPoint clone flatten is %s for volume [%s]. Please retry after flatten completes.",
+                        fastCloneFlattenStatus.getValue(), volume.getUuid()));
+            }
+        }
+    }
+
+    @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_BACKUP_CREATE, eventDescription = "creating VM backup for NetBackup", async = true)
     public boolean createNetBackup(final CreateNetBackupCmd cmd) throws ResourceAllocationException {
         final Long vmId = cmd.getVmId();
@@ -1117,6 +1145,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
             throw new CloudRuntimeException("Failed to get NetBackup provider for existing offering assignment");
         }
 
+        checkNoActiveFastCloneFlattenForBackup(vm.getId());
         final VMInstanceVO assignedVm = transactionAssignVMToBackupOffering(vm, netBackupOffering, backupProvider);
         if (assignedVm == null) {
             throw new CloudRuntimeException(String.format("Failed to assign existing NetBackup offering [%s] to VM [%s].",
