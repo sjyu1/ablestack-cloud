@@ -2278,12 +2278,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     Hosts == null ? 0 : Hosts.size(), zoneId);
             if (CollectionUtils.isEmpty(Hosts)) {
                 LOG.info("No hosts found in zone [{}] for Commvault backup agent readiness check.", zoneId);
-                return true;
+                return false;
             }
+            int targetHostCount = 0;
             for (final HostVO host : Hosts) {
                 LOG.info("Evaluating host for Commvault backup agent readiness. zone=[{}], host=[{}], privateIp=[{}], status=[{}], hypervisor=[{}], type=[{}]",
                         zoneId, host.getName(), host.getPrivateIpAddress(), host.getStatus(), host.getHypervisorType(), host.getType());
                 if (host.getStatus() == Status.Up && host.getHypervisorType() == Hypervisor.HypervisorType.KVM) {
+                    targetHostCount++;
                     LOG.info("Checking Commvault client registration for host [{}] using host name [{}].", host.getPrivateIpAddress(), host.getName());
                     String checkHost = client.getClientId(host.getName());
                     if (checkHost == null) {
@@ -2308,6 +2310,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                             zoneId, host.getName(), host.getStatus(), host.getHypervisorType());
                 }
             }
+            if (targetHostCount == 0) {
+                LOG.warn("No Up KVM hosts found in zone [{}] for Commvault backup agent readiness check. The check will be retried.", zoneId);
+                return false;
+            }
             LOG.info("Commvault backup agent readiness check passed for zone [{}].", zoneId);
             return true;
         }
@@ -2323,12 +2329,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 zoneId, Hosts == null ? 0 : Hosts.size());
         if (CollectionUtils.isEmpty(Hosts)) {
             LOG.info("No hosts found in zone [{}] for Commvault backup agent automatic installation.", zoneId);
-            return true;
+            return false;
         }
+        int targetHostCount = 0;
         for (final HostVO host : Hosts) {
             LOG.info("Evaluating host for Commvault backup agent automatic installation. zone=[{}], host=[{}], privateIp=[{}], status=[{}], hypervisor=[{}], type=[{}]",
                     zoneId, host.getName(), host.getPrivateIpAddress(), host.getStatus(), host.getHypervisorType(), host.getType());
             if (host.getStatus() == Status.Up && host.getHypervisorType() == Hypervisor.HypervisorType.KVM) {
+                targetHostCount++;
                 LOG.info("Requesting Commvault commcell information before installing backup agent on host [{}].", host.getPrivateIpAddress());
                 String commCell = client.getCommcell();
                 LOG.info("Received Commvault commcell information before installing backup agent on host [{}]. commCell=[{}]",
@@ -2380,6 +2388,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 LOG.info("Skipping host for Commvault backup agent automatic installation because it is not an Up KVM host. zone=[{}], host=[{}], status=[{}], hypervisor=[{}]",
                         zoneId, host.getName(), host.getStatus(), host.getHypervisorType());
             }
+        }
+        if (targetHostCount == 0) {
+            LOG.warn("No Up KVM hosts found in zone [{}] for Commvault backup agent automatic installation. The installation will be retried.", zoneId);
+            return false;
         }
         LOG.info("Completed Commvault backup agent automatic installation check in zone [{}].", zoneId);
         return true;

@@ -33,6 +33,7 @@ import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -273,6 +274,8 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
     private Date currentTimestamp;
     private static final int POST_RESTORE_MAINTENANCE_MAX_RETRIES = 5;
     private static final long POST_RESTORE_MAINTENANCE_RETRY_INTERVAL_MS = 60_000L;
+    private static final int COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS = 10;
+    private static final long COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30);
     private static final String FAST_CLONE_FLATTEN_STATUS = "clone.fast.flatten.status";
     private static final String FAST_CLONE_FLATTEN_PENDING = "pending";
     private static final String FAST_CLONE_FLATTEN_RUNNING = "running";
@@ -3016,41 +3019,71 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         Thread installTask = new Thread(new ManagedContextRunnable() {
             @Override
             protected void runInContext() {
-                installConfiguredCommvaultBackupAgents();
+                for (int attempt = 1; attempt <= COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS; attempt++) {
+                    if (attempt > 1 && !waitBeforeNextCommvaultBackupAgentInstallAttempt(attempt)) {
+                        return;
+                    }
+                    logger.info("Running Commvault backup agent auto-install attempt [{}/{}].",
+                            attempt, COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
+                    if (installConfiguredCommvaultBackupAgents()) {
+                        logger.info("Commvault backup agent auto-install completed on attempt [{}/{}].",
+                                attempt, COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
+                        return;
+                    }
+                    logger.info("Commvault backup agent auto-install attempt [{}/{}] did not complete. It will be retried if attempts remain.",
+                            attempt, COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
+                }
+                logger.warn("Commvault backup agent auto-install did not complete after [{}] attempts.",
+                        COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
             }
         }, "CommvaultBackupAgentInstallTask");
         installTask.setDaemon(true);
         installTask.start();
     }
 
-    private void installConfiguredCommvaultBackupAgents() {
+    private boolean waitBeforeNextCommvaultBackupAgentInstallAttempt(final int attempt) {
+        try {
+            logger.info("Waiting [{}] ms before Commvault backup agent auto-install attempt [{}].",
+                    COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_INTERVAL_MS, attempt);
+            Thread.sleep(COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_INTERVAL_MS);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting to retry Commvault backup agent auto-install.", e);
+            return false;
+        }
+    }
+
+    private boolean installConfiguredCommvaultBackupAgents() {
         if (!BackupFrameworkEnabled.value()) {
             logger.debug("Skipping Commvault backup agent auto-install because backup framework is disabled globally.");
-            return;
+            return true;
         }
+        boolean completed = true;
         for (final DataCenter dataCenter : dataCenterDao.listAllZones()) {
             if (dataCenter == null || isDisabled(dataCenter.getId())) {
                 logger.debug("Skipping Commvault backup agent auto-install because backup framework is disabled in zone [{}].",
                         dataCenter == null ? "NULL Zone!" : dataCenter);
                 continue;
             }
-            installConfiguredCommvaultBackupAgent(dataCenter.getId());
+            completed &= installConfiguredCommvaultBackupAgent(dataCenter.getId());
         }
+        return completed;
     }
 
-    private void installConfiguredCommvaultBackupAgent(final Long zoneId) {
+    private boolean installConfiguredCommvaultBackupAgent(final Long zoneId) {
         final String providersConfig = BackupProviderPlugin.valueIn(zoneId);
         if (StringUtils.isBlank(providersConfig) || Arrays.stream(providersConfig.split(","))
                 .map(String::trim)
                 .noneMatch(BackupProviderNameUtils::isCommvaultFamily)) {
-            return;
+            return true;
         }
 
         final GlobalLock installLock = GlobalLock.getInternLock("commvault.backup.agent.install." + zoneId);
         try {
             if (!installLock.lock(5)) {
                 logger.debug("Skipping Commvault backup agent auto-install in zone [{}] because another management server is running it.", zoneId);
-                return;
+                return true;
             }
             try {
                 BackupProvider provider = getBackupProvider(BackupProviderNameUtils.ABLESTACK_COMMVAULT);
@@ -3059,13 +3092,16 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     logger.info("Commvault backup agent is not ready in zone [{}]. Starting automatic installation.", zoneId);
                     if (!provider.installBackupAgent(zoneId)) {
                         logger.warn("Commvault backup agent automatic installation did not complete successfully in zone [{}].", zoneId);
+                        return false;
                     }
                 }
+                return true;
             } finally {
                 installLock.unlock();
             }
         } catch (Exception e) {
             logger.warn("Failed to run Commvault backup agent automatic installation in zone [{}]: {}", zoneId, e.getMessage(), e);
+            return false;
         } finally {
             installLock.releaseRef();
         }
