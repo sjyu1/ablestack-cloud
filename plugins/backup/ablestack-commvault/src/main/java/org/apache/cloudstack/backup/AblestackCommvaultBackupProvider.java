@@ -142,6 +142,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String DETAIL_FAILURE_PHASE = "commvault.failure.phase";
     private static final String DETAIL_FAILURE_REASON = "commvault.failure.reason";
     private static final String ERROR_REASON_METADATA_FINALIZE = "metadata-finalize";
+    private static final String COMMVAULT_PERMANENT_INSTALL_FAILURE_MESSAGE = "Commvault backup agent automatic installation cannot continue because required install media is missing in the Commvault Software Cache.";
     private static final int BASE_MAJOR = 11;
     private static final int BASE_FR = 32;
     private static final int BASE_MT = 89;
@@ -2362,8 +2363,14 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                         LOG.info("Created Commvault backup agent install job [{}] for host [{}]. Waiting for completion.", jobId, host.getPrivateIpAddress());
                         String jobStatus = client.getJobStatus(jobId, COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS);
                         if (!"Completed".equalsIgnoreCase(jobStatus)) {
-                            LOG.error("installing agent on the Commvault Backup Provider failed jogId : " + jobId + " , jobStatus : " + jobStatus);
+                            String failureReason = client.getLastJobFailureReason();
+                            LOG.error("installing agent on the Commvault Backup Provider failed jogId : {} , jobStatus : {}, reason=[{}]",
+                                    jobId, jobStatus, failureReason);
                             publishHostAgentInstallFailureEventIfNeeded(host);
+                            if (isPermanentCommvaultInstallFailure(failureReason)) {
+                                throw new CloudRuntimeException(String.format("%s host=[%s], jobId=[%s], reason=[%s]",
+                                        COMMVAULT_PERMANENT_INSTALL_FAILURE_MESSAGE, host.getPrivateIpAddress(), jobId, failureReason));
+                            }
                             return false;
                         }
                         LOG.info("Completed Commvault backup agent install job [{}] for host [{}].", jobId, host.getPrivateIpAddress());
@@ -2399,7 +2406,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     private boolean waitForInstallActiveJobToFinish(AblestackCommvaultClient client, HostVO host) {
         final long deadline = System.currentTimeMillis() + COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS;
-        while (client.getInstallActiveJob(host.getName())) {
+        while (hasInstallActiveJob(client, host)) {
             if (System.currentTimeMillis() >= deadline) {
                 LOG.warn("Timed out waiting for existing Commvault client agent install job to finish. host=[{}], timeoutMillis=[{}]",
                         host.getPrivateIpAddress(), COMMVAULT_INSTALL_JOB_WAIT_TIMEOUT_MS);
@@ -2415,6 +2422,19 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
         }
         return true;
+    }
+
+    private boolean hasInstallActiveJob(AblestackCommvaultClient client, HostVO host) {
+        return client.getInstallActiveJob(host.getName()) || client.getInstallActiveJob(host.getPrivateIpAddress());
+    }
+
+    private boolean isPermanentCommvaultInstallFailure(String failureReason) {
+        if (StringUtils.isBlank(failureReason)) {
+            return false;
+        }
+        String normalizedReason = failureReason.toLowerCase(Locale.ROOT);
+        return normalizedReason.contains("software cache") &&
+                (normalizedReason.contains("required media version") || normalizedReason.contains("missing"));
     }
 
     private void publishHostAgentInstallFailureEventIfNeeded(HostVO host) {

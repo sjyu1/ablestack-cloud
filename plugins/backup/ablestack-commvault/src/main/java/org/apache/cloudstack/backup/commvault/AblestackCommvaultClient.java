@@ -78,6 +78,7 @@ public class AblestackCommvaultClient {
     private String cvtServerUsername;
     private String cvtServerPassword;
     private final int cvtServerPort = 22;
+    private String lastJobFailureReason;
 
     public AblestackCommvaultClient(final String url, final String username, final String password, final boolean validateCertificate, final int timeout) throws URISyntaxException, NoSuchAlgorithmException, KeyManagementException {
 
@@ -1158,6 +1159,7 @@ public class AblestackCommvaultClient {
         String jobStatus = "Running";
         String errorStatus = "Failed";
         HttpURLConnection connection = null;
+        lastJobFailureReason = null;
         Set<String> runningStates = Set.of("Not Started", "Running", "Pending", "Waiting", "Queued", "Suspended", "Not started");
         long deadline = timeoutMillis > 0 ? System.currentTimeMillis() + timeoutMillis : Long.MAX_VALUE;
         while (runningStates.contains(jobStatus)) {
@@ -1201,6 +1203,7 @@ public class AblestackCommvaultClient {
                     jobStatus = jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("progressInfo").getString("state");
                     if (jobStatus.equals(errorStatus)) {
                         String errorMessage = jsonObject.getJSONObject("job").getJSONObject("jobDetail").getJSONObject("progressInfo").getString("reasonForJobDelay");
+                        lastJobFailureReason = errorMessage;
                         LOG.error("commvault job failed reason : " + errorMessage);
                     }
                     try {
@@ -1223,6 +1226,10 @@ public class AblestackCommvaultClient {
             }
         }
         return jobStatus;
+    }
+
+    public String getLastJobFailureReason() {
+        return lastJobFailureReason;
     }
 
     // POST https://<commserveIp>/commandcenter/api/jobDetails
@@ -1759,6 +1766,9 @@ public class AblestackCommvaultClient {
     // GET https://<commserveIP>/commandcenter/api/Job?jobCategory=Active
     // 실행중인 Job 조회 API로, 호스트의 에이전트 설치 작업이 실행중인 경우 true 반환
     public boolean getInstallActiveJob(String hostName) {
+        if (StringUtils.isBlank(hostName)) {
+            return false;
+        }
         try {
             final HttpResponse response = get("/Job?jobCategory=Active");
             checkResponseOK(response);
@@ -1770,16 +1780,11 @@ public class AblestackCommvaultClient {
                 for (JsonNode item : jobs) {
                     JsonNode entity = item.get("jobSummary");
                     if (!entity.isMissingNode()) {
-                        JsonNode jobType = entity.path("jobType");
+                        JsonNode generalInfo = item.path("jobDetail").path("generalInfo");
                         JsonNode subclient = entity.path("subclient");
-                        String type = "Install Client";
-                        if (!jobType.isMissingNode() && type.equals(jobType.asText())) {
-                            if (!subclient.isMissingNode()) {
-                                JsonNode clientName = subclient.path("clientName");
-                                if (!clientName.isMissingNode() && hostName.equals(clientName.asText())) {
-                                    return true;
-                                }
-                            }
+                        if (isCommvaultSoftwareJob(entity, generalInfo) &&
+                                (isCommvaultDownloadSoftwareJob(entity, generalInfo) || matchesInstallJobHost(entity, subclient, hostName))) {
+                            return true;
                         }
                     }
                 }
@@ -1789,6 +1794,33 @@ public class AblestackCommvaultClient {
             checkResponseTimeOut(e);
         }
         return false;
+    }
+
+    private boolean isCommvaultSoftwareJob(JsonNode entity, JsonNode generalInfo) {
+        return containsSoftwareJobText(entity.path("jobType").asText(null)) ||
+                containsSoftwareJobText(entity.path("localizedOperationName").asText(null)) ||
+                containsSoftwareJobText(generalInfo.path("operationType").asText(null));
+    }
+
+    private boolean isCommvaultDownloadSoftwareJob(JsonNode entity, JsonNode generalInfo) {
+        return containsDownloadSoftwareJobText(entity.path("jobType").asText(null)) ||
+                containsDownloadSoftwareJobText(entity.path("localizedOperationName").asText(null)) ||
+                containsDownloadSoftwareJobText(generalInfo.path("operationType").asText(null));
+    }
+
+    private boolean containsSoftwareJobText(String value) {
+        return StringUtils.containsIgnoreCase(value, "Install") || containsDownloadSoftwareJobText(value);
+    }
+
+    private boolean containsDownloadSoftwareJobText(String value) {
+        return StringUtils.containsIgnoreCase(value, "Download Software");
+    }
+
+    private boolean matchesInstallJobHost(JsonNode entity, JsonNode subclient, String hostName) {
+        return StringUtils.equalsIgnoreCase(hostName, subclient.path("clientName").asText(null)) ||
+                StringUtils.equalsIgnoreCase(hostName, entity.path("clientName").asText(null)) ||
+                StringUtils.equalsIgnoreCase(hostName, entity.path("server").asText(null)) ||
+                StringUtils.equalsIgnoreCase(hostName, entity.path("client").asText(null));
     }
 
     public static String extractJobIdsFromJsonString(String jsonString) {

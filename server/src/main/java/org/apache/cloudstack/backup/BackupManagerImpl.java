@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -3026,7 +3027,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                     logger.info("Running Commvault backup agent auto-install attempt [{}/{}].",
                             attempt, COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
                     if (installConfiguredCommvaultBackupAgents()) {
-                        logger.info("Commvault backup agent auto-install completed on attempt [{}/{}].",
+                        logger.info("Commvault backup agent auto-install finished on attempt [{}/{}].",
                                 attempt, COMMVAULT_BACKUP_AGENT_INSTALL_RETRY_ATTEMPTS);
                         return;
                     }
@@ -3100,11 +3101,27 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
                 installLock.unlock();
             }
         } catch (Exception e) {
+            if (isPermanentCommvaultBackupAgentInstallFailure(e)) {
+                logger.error("Stopping Commvault backup agent auto-install retries in zone [{}] due to a permanent configuration failure: {}",
+                        zoneId, e.getMessage());
+                return true;
+            }
             logger.warn("Failed to run Commvault backup agent automatic installation in zone [{}]: {}", zoneId, e.getMessage(), e);
             return false;
         } finally {
             installLock.releaseRef();
         }
+    }
+
+    private boolean isPermanentCommvaultBackupAgentInstallFailure(final Exception e) {
+        String message = e == null ? null : e.getMessage();
+        if (StringUtils.isBlank(message)) {
+            return false;
+        }
+        String normalizedMessage = message.toLowerCase(Locale.ROOT);
+        return normalizedMessage.contains("commvault backup agent automatic installation cannot continue") ||
+                (normalizedMessage.contains("software cache") &&
+                        (normalizedMessage.contains("required install media") || normalizedMessage.contains("required media version") || normalizedMessage.contains("missing")));
     }
 
     private VMInstanceVO findVmById(final Long vmId) {
