@@ -187,7 +187,7 @@ public class NicDaoImpl extends GenericDaoBase<NicVO, Long> implements NicDao {
         builder.set(update, "secondaryIp", secondaryIp);
         final SearchCriteria<NicVO> criteria = createSearchCriteria();
         criteria.addAnd("id", Op.EQ, nicId);
-        criteria.addAnd("iPv4Address", expectedPrimaryIp == null ? Op.NULL : Op.EQ, expectedPrimaryIp);
+        addExpectedPrimaryIpCondition(criteria, expectedPrimaryIp);
         return update(update, criteria) == 1;
     }
 
@@ -198,8 +198,16 @@ public class NicDaoImpl extends GenericDaoBase<NicVO, Long> implements NicDao {
         builder.set(update, "iPv4Address", primaryIp);
         final SearchCriteria<NicVO> criteria = createSearchCriteria();
         criteria.addAnd("id", Op.EQ, nicId);
-        criteria.addAnd("iPv4Address", expectedPrimaryIp == null ? Op.NULL : Op.EQ, expectedPrimaryIp);
+        addExpectedPrimaryIpCondition(criteria, expectedPrimaryIp);
         return update(update, criteria) == 1;
+    }
+
+    protected void addExpectedPrimaryIpCondition(final SearchCriteria<NicVO> criteria, final String expectedPrimaryIp) {
+        if (expectedPrimaryIp == null) {
+            criteria.addAnd("iPv4Address", Op.NULL);
+        } else {
+            criteria.addAnd("iPv4Address", Op.EQ, expectedPrimaryIp);
+        }
     }
 
     private NicVO findByNetworkIdAndTypeInternal(long networkId, VirtualMachine.Type vmType, boolean includingRemoved) {

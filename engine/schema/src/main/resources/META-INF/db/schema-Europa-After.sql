@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS `cloud`.`import_vm_task_event`(
     INDEX `i_import_vm_task_event__task_id_created`(`task_id`, `created`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Storage Service is governed by the SharedFS feature gate in Europa.
+DELETE FROM `cloud`.`configuration` WHERE `name` = 'storage.service.feature.enabled';
+
 CREATE TABLE IF NOT EXISTS `cloud`.`import_vm_task_credential`(
     `id` bigint unsigned NOT NULL auto_increment COMMENT 'id',
     `uuid` varchar(40) NOT NULL COMMENT 'UUID',

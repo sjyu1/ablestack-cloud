@@ -218,6 +218,9 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     @Override
     public List<Class<?>> getCommands() {
         final List<Class<?>> commands = new ArrayList<>();
+        if (!SharedFS.SharedFSFeatureEnabled.value()) {
+            return commands;
+        }
         commands.add(CreateStorageServiceInstanceCmd.class);
         commands.add(ListStorageServiceInstancesCmd.class);
         commands.add(EnableStorageServiceProtocolCmd.class);
@@ -342,7 +345,8 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         final String protocolMode = resolveProtocolModeForEnable(protocol, modeProtocol, cmd.getProtocolMode());
         validateProtocolModeEndpointPolicy(protocol, modeProtocol, protocolMode, cmd.getListenIp(), port);
         validateBlockProtocolListenerConflict(instance, protocol, cmd.getListenIp(), port, protocolVO);
-        final NicVO listenNic = resolveProtocolListenAddress(instance, cmd.getListenIp());
+        NicVO listenNic = resolveProtocolListenAddress(instance, cmd.getListenIp());
+        listenNic = reconcileProtocolListenNicIdentity(instance, listenNic);
         final String protocolConfigJson = buildProtocolConfigJson(protocol, null, protocolMode, port, cmd.getListenIp());
         final boolean dualModeServiceIpRegistration = protocol == StorageServiceInstance.Protocol.NFS
                 && modeProtocol != null && "V3V4_DUAL".equals(protocolMode);
@@ -5210,6 +5214,30 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
         return true;
     }
 
+    protected NicVO reconcileProtocolListenNicIdentity(final StorageServiceInstanceVO instance, final NicVO targetNic) {
+        if (targetNic == null || StringUtils.isNotBlank(targetNic.getIPv4Address())) {
+            return targetNic;
+        }
+        final String runtimePrimaryIp = observeRuntimePrimaryIp(instance);
+        if (StringUtils.isBlank(runtimePrimaryIp)) {
+            throw new CloudRuntimeException("Unable to determine the primary IPv4 address of the Storage Service System VM NIC before registering a listen IP");
+        }
+        if (!nicDao.updatePrimaryIpAddress(targetNic.getId(), runtimePrimaryIp, null)) {
+            final NicVO concurrentNic = nicDao.findById(targetNic.getId());
+            if (concurrentNic != null && StringUtils.equals(runtimePrimaryIp, concurrentNic.getIPv4Address())) {
+                return concurrentNic;
+            }
+            throw new CloudRuntimeException("Storage Service NIC changed while synchronizing its runtime primary IPv4 address");
+        }
+        final NicVO reconciledNic = nicDao.findById(targetNic.getId());
+        if (reconciledNic == null || !StringUtils.equals(runtimePrimaryIp, reconciledNic.getIPv4Address())) {
+            throw new CloudRuntimeException("Storage Service NIC primary IPv4 synchronization did not persist the observed runtime address");
+        }
+        logger.info("Synchronized Storage Service NIC [{}] primary IPv4 address [{}] from the running System VM before registering a listen IP",
+                reconciledNic.getUuid(), runtimePrimaryIp);
+        return reconciledNic;
+    }
+
     protected void ensureGuestProtocolListenAddress(final StorageServiceInstanceVO instance, final String listenIp, final NicVO targetNic, final Integer port) {
         if (targetNic == null || StringUtils.isBlank(listenIp) || "0.0.0.0".equals(listenIp) || "::".equals(listenIp) || instance.getVmId() == null) {
             return;
@@ -6382,7 +6410,6 @@ public class StorageServiceManagerImpl extends ManagerBase implements StorageSer
     @Override
     public ConfigKey<?>[] getConfigKeys() {
         return new ConfigKey<?>[] {
-                StorageServiceInstance.StorageServiceFeatureEnabled,
                 StorageServiceInstance.StorageServiceCommandTimeout
         };
     }
