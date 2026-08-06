@@ -1776,9 +1776,10 @@ public class AblestackCommvaultClient {
                     if (!entity.isMissingNode()) {
                         JsonNode generalInfo = item.path("jobDetail").path("generalInfo");
                         JsonNode subclient = entity.path("subclient");
-                        if (isInstallClientJobForHost(entity, subclient, hostName) ||
-                                (isCommvaultSoftwareJob(entity, generalInfo) &&
-                                        (isCommvaultDownloadSoftwareJob(entity, generalInfo) || matchesInstallJobHost(entity, subclient, hostName)))) {
+                        boolean installClientJobForHost = isInstallClientJobForHost(entity, subclient, hostName);
+                        boolean softwareJobForHost = isCommvaultSoftwareJob(entity, generalInfo) &&
+                                (isCommvaultDownloadSoftwareJob(entity, generalInfo) || matchesInstallJobHost(entity, subclient, hostName));
+                        if (installClientJobForHost || softwareJobForHost) {
                             return true;
                         }
                     }
