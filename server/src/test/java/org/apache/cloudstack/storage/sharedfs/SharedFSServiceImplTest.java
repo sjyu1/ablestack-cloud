@@ -318,6 +318,36 @@ public class SharedFSServiceImplTest {
     }
 
     @Test
+    public void testAllocSharedFSInvalidCustomizedIops() {
+        CreateSharedFSCmd cmd = getMockCreateSharedFSCmd();
+
+        DataCenterVO zone = mock(DataCenterVO.class);
+        when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
+        when(zone.getAllocationState()).thenReturn(Grouping.AllocationState.Enabled);
+
+        DiskOfferingVO diskOfferingVO = mock(DiskOfferingVO.class);
+        when(diskOfferingDao.findById(s_diskOfferingId)).thenReturn(diskOfferingVO);
+        when(diskOfferingVO.isCustomized()).thenReturn(true);
+        when(diskOfferingVO.isCustomizedIops()).thenReturn(true);
+
+        when(cmd.getMinIops()).thenReturn(s_minIops);
+        when(cmd.getMaxIops()).thenReturn(null);
+        Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
+
+        when(cmd.getMinIops()).thenReturn(null);
+        when(cmd.getMaxIops()).thenReturn(s_maxIops);
+        Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
+
+        when(cmd.getMinIops()).thenReturn(0L);
+        when(cmd.getMaxIops()).thenReturn(s_maxIops);
+        Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
+
+        when(cmd.getMinIops()).thenReturn(s_maxIops);
+        when(cmd.getMaxIops()).thenReturn(s_minIops);
+        Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
+    }
+
+    @Test
     public void testAllocSharedFSInvalidFsFormat() {
         CreateSharedFSCmd cmd = getMockCreateSharedFSCmd();
 
