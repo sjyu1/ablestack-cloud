@@ -201,3 +201,5 @@ CREATE TABLE IF NOT EXISTS `cloud`.`storage_identity_domain` (
   KEY `idx_storage_identity_domain__instance_id` (`instance_id`),
   KEY `idx_storage_identity_domain__domain_name` (`domain_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DELETE FROM `cloud`.`configuration` WHERE `name` = 'storage.service.feature.enabled';

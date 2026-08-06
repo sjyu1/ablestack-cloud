@@ -23,20 +23,15 @@ import org.apache.cloudstack.acl.ControlledEntity;
 import org.apache.cloudstack.api.Identity;
 import org.apache.cloudstack.api.InternalIdentity;
 import org.apache.cloudstack.framework.config.ConfigKey;
+import org.apache.cloudstack.storage.sharedfs.SharedFS;
 
 public interface StorageServiceInstance extends ControlledEntity, Identity, InternalIdentity {
-    ConfigKey<Boolean> StorageServiceFeatureEnabled = new ConfigKey<Boolean>("Advanced", Boolean.class,
-            "storage.service.feature.enabled",
-            "false",
-            "Indicates whether the System VM based Storage Service feature is enabled or not. Management server restart needed on change.",
-            false);
-
     ConfigKey<Integer> StorageServiceCommandTimeout = new ConfigKey<Integer>("Advanced", Integer.class,
             "storage.service.command.timeout",
             "300",
             "Timeout in seconds for a Storage Service host-agent/QGA command.",
             true,
-            StorageServiceFeatureEnabled.key());
+            SharedFS.SharedFSFeatureEnabled.key());
 
     String StorageServiceVmType = "storageservicevm";
     String StorageServiceProviderName = "STORAGESERVICEVM";

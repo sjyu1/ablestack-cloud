@@ -192,6 +192,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
             sharedFSProviderMap.put(provider.getName(), provider);
             provider.configure();
         }
+        reconcileSharedFSToStorageService();
         _executor.scheduleWithFixedDelay(new SharedFSGarbageCollector(), SharedFSCleanupInterval.value(), SharedFSCleanupInterval.value(), TimeUnit.SECONDS);
         return true;
     }
@@ -281,6 +282,15 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
         if ((diskOffering.isCustomizedIops() == null || diskOffering.isCustomizedIops() == false) && (minIops != null || maxIops != null)) {
             throw new InvalidParameterValueException("Iops provided with a non-custom-iops disk offering");
+        }
+        if ((minIops == null) != (maxIops == null)) {
+            throw new InvalidParameterValueException("Either 'miniops' and 'maxiops' must both be provided or neither must be provided.");
+        }
+        if (minIops != null && (minIops <= 0 || maxIops <= 0)) {
+            throw new InvalidParameterValueException("The 'miniops' and 'maxiops' parameters must be greater than zero.");
+        }
+        if (minIops != null && minIops > maxIops) {
+            throw new InvalidParameterValueException("The 'miniops' parameter must be less than or equal to the 'maxiops' parameter.");
         }
     }
 
@@ -724,7 +734,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     }
 
     protected void syncSharedFSToStorageService(SharedFS sharedFS) {
-        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value()) {
+        if (sharedFS == null || !SharedFSFeatureEnabled.value()) {
             return;
         }
         if (sharedFS.getVmId() == null || sharedFS.getVolumeId() == null) {
@@ -777,6 +787,24 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
     }
 
+    protected void reconcileSharedFSToStorageService() {
+        if (!SharedFSFeatureEnabled.value()) {
+            return;
+        }
+        for (SharedFSVO sharedFS : sharedFSDao.listAll()) {
+            if (!shouldReconcileSharedFSToStorageService(sharedFS)) {
+                continue;
+            }
+            syncSharedFSToStorageService(sharedFS);
+        }
+    }
+
+    protected boolean shouldReconcileSharedFSToStorageService(SharedFS sharedFS) {
+        return sharedFS != null && sharedFS.getVmId() != null && sharedFS.getVolumeId() != null &&
+                !State.Destroyed.equals(sharedFS.getState()) && !State.Expunging.equals(sharedFS.getState()) &&
+                !State.Expunged.equals(sharedFS.getState());
+    }
+
     protected void removeLegacySharedFSRootExport(StorageServiceInstanceVO instance) {
         for (StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
             if (SharedFS.SharedFSPath.equals(StringUtils.removeEnd(share.getPath(), "/"))) {
@@ -789,7 +817,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     }
 
     protected void deleteStorageServiceCompatibility(SharedFS sharedFS) {
-        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value() || sharedFS.getVmId() == null) {
+        if (sharedFS == null || !SharedFSFeatureEnabled.value() || sharedFS.getVmId() == null) {
             return;
         }
         try {
