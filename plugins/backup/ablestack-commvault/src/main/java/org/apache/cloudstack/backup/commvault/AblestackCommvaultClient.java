@@ -1542,15 +1542,12 @@ public class AblestackCommvaultClient {
         try {
             final HttpResponse response = get("/commcell/properties");
             checkResponseOK(response);
-            LOG.info("Reading Commvault commcell response body.");
             String jsonString = EntityUtils.toString(response.getEntity(), "UTF-8");
-            LOG.info("Read Commvault commcell response body. length=[{}]", jsonString == null ? 0 : jsonString.length());
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(jsonString);
             JsonNode commCellInfo = root.path("commCellInfo");
             JsonNode commCell = commCellInfo.path("commCellEntity");
             if (!commCell.isMissingNode()) {
-                LOG.info("Parsed Commvault commcell response. commCell=[{}]", commCell);
                 return commCell.toString();
             }
             LOG.warn("Commvault commcell response did not contain commCellInfo.commCellEntity.");
@@ -1567,14 +1564,11 @@ public class AblestackCommvaultClient {
         try {
             final HttpResponse response = get("/commserv");
             checkResponseOK(response);
-            LOG.info("Reading Commvault version response body.");
             String jsonString = EntityUtils.toString(response.getEntity(), "UTF-8");
-            LOG.info("Read Commvault version response body. length=[{}]", jsonString == null ? 0 : jsonString.length());
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(jsonString);
             JsonNode csVersionInfo = root.path("csVersionInfo");
             if (!csVersionInfo.isMissingNode()) {
-                LOG.info("Parsed Commvault version response. csVersionInfo=[{}]", csVersionInfo);
                 return csVersionInfo.toString();
             }
             LOG.warn("Commvault version response did not contain csVersionInfo.");
