@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 <template>
   <div class="p-2 rack-diagram-root" :class="{ 'is-dark': isDarkMode }">
     <div class="toolbar-container" :class="{ 'toolbar-detail': !showRackList }">
@@ -4544,7 +4561,7 @@ onBeforeUnmount(() => {
   min-height: 600px;
   padding: 20px;
   scrollbar-width: thin;
-  scrollbar-color: #888 #eef0f4;
+  scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
   background: radial-gradient(circle, #f0f2f5 0%, #e6e9ed 100%);
 }
 
@@ -5205,8 +5222,8 @@ onBeforeUnmount(() => {
 }
 
 .rack-side-pane {
-  --device-scrollbar-thumb: rgba(100, 116, 139, 0.28);
-  --device-scrollbar-thumb-hover: rgba(100, 116, 139, 0.48);
+  --device-scrollbar-thumb: var(--ui-scroll-thumb);
+  --device-scrollbar-thumb-hover: var(--ui-scroll-thumb-hover);
   width: 100%;
   position: -webkit-sticky;
   position: sticky;
@@ -6720,7 +6737,7 @@ onBeforeUnmount(() => {
 }
 
 .rack-diagram-root.is-dark .rack-canvas {
-  scrollbar-color: #6b7280 #1b2129;
+  scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
   background: radial-gradient(circle, #232a33 0%, #1b2129 100%);
 }
 
@@ -6946,8 +6963,8 @@ onBeforeUnmount(() => {
 }
 
 .rack-diagram-root.is-dark .rack-side-pane {
-  --device-scrollbar-thumb: rgba(203, 213, 225, 0.20);
-  --device-scrollbar-thumb-hover: rgba(203, 213, 225, 0.38);
+  --device-scrollbar-thumb: var(--ui-scroll-thumb);
+  --device-scrollbar-thumb-hover: var(--ui-scroll-thumb-hover);
 }
 
 .rack-diagram-root.is-dark .device-summary-header,
