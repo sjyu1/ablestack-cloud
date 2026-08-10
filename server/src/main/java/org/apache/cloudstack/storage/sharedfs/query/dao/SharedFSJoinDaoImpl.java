@@ -24,6 +24,7 @@ import java.util.List;
 
 import javax.inject.Inject;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.cloudstack.api.ResponseObject;
 import org.apache.cloudstack.api.response.SharedFSResponse;
 import org.apache.cloudstack.api.response.NicResponse;
@@ -85,6 +86,15 @@ public class SharedFSJoinDaoImpl extends GenericDaoBase<SharedFSJoinVO, Long> im
         response.setState(sharedFS.getState().toString());
         response.setProvider(sharedFS.getProvider());
         response.setFilesystem(sharedFS.getFsType().toString());
+        response.setNetworkMode(sharedFS.getNetworkMode().toString());
+        response.setIpAddress(sharedFS.getIpAddress());
+        if (StringUtils.isNotBlank(sharedFS.getIpAddress()) && StringUtils.contains(sharedFS.getCidr(), "/")) {
+            response.setIpCidr(sharedFS.getIpAddress() + sharedFS.getCidr().substring(sharedFS.getCidr().indexOf('/')));
+        }
+        response.setCidr(sharedFS.getCidr());
+        response.setGateway(sharedFS.getGateway());
+        response.setDns1(sharedFS.getDns1());
+        response.setDns2(sharedFS.getDns2());
         response.setPath(SharedFS.getSharedFSPath());
         response.setObjectName(SharedFS.class.getSimpleName().toLowerCase());
         response.setZoneId(sharedFS.getZoneUuid());

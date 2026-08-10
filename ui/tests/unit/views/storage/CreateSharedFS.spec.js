@@ -19,6 +19,7 @@ import CreateSharedFS from '@/views/storage/CreateSharedFS'
 
 const baseContext = customizedIops => ({
   isCustomizedDiskIOps: customizedIops,
+  isStaticNetwork: false,
   owner: { domainid: 'domain-1', account: 'admin' },
   createSharedFsSize: () => undefined,
   hasFormValue: CreateSharedFS.methods.hasFormValue,
@@ -60,5 +61,49 @@ describe('CreateSharedFS request normalization', () => {
 
     expect(request.miniops).toBe(1000)
     expect(request.maxiops).toBe(2000)
+  })
+})
+
+describe('CreateSharedFS L2 network mode', () => {
+  it('detects an L2 network from the listNetworks type field', () => {
+    expect(CreateSharedFS.computed.isSelectedNetworkL2.call({
+      selectedNetwork: { type: 'L2' }
+    })).toBe(true)
+  })
+
+  it('detects UserData support from the network service list', () => {
+    expect(CreateSharedFS.computed.selectedNetworkSupportsUserData.call({
+      selectedNetwork: { service: [{ name: 'Connectivity' }, { name: 'UserData' }] }
+    })).toBe(true)
+    expect(CreateSharedFS.computed.selectedNetworkSupportsUserData.call({
+      selectedNetwork: { service: [{ name: 'Connectivity' }] }
+    })).toBe(false)
+  })
+
+  it('sends one ipcidr value and optional network values for static mode', () => {
+    const context = { ...baseContext(false), isStaticNetwork: true }
+    const request = CreateSharedFS.methods.buildCreateSharedFsRequest.call(context, {
+      ...values,
+      ipcidr: '10.10.1.211/24',
+      gateway: '10.10.1.1',
+      dns1: '10.10.1.10',
+      dns2: '8.8.8.8'
+    })
+
+    expect(request.ipcidr).toBe('10.10.1.211/24')
+    expect(request.ipaddress).toBeUndefined()
+    expect(request.cidr).toBeUndefined()
+    expect(request.gateway).toBe('10.10.1.1')
+    expect(request.dns1).toBe('10.10.1.10')
+    expect(request.dns2).toBe('8.8.8.8')
+  })
+
+  it('validates IPv4/prefix notation', async () => {
+    const validate = CreateSharedFS.methods.validateStaticIpCidr
+    const context = { isStaticNetwork: true, $t: key => key }
+
+    await expect(validate.call(context, null, '10.10.1.211/24')).resolves.toBeUndefined()
+    await expect(validate.call(context, null, '10.10.1.999/24')).rejects.toBe('message.sharedfs.static.ip.cidr.invalid')
+    await expect(validate.call(context, null, '10.10.1.211/33')).rejects.toBe('message.sharedfs.static.ip.cidr.invalid')
   })
 })
