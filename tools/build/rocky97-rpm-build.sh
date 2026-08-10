@@ -200,7 +200,21 @@ if [ "$LOCAL_FAST" == "true" ]; then
 fi
 
 cd "$ROOT_DIR/packaging"
-./package.sh "${build_args[@]}"
+package_status=0
+./package.sh "${build_args[@]}" || package_status=$?
+
+if [ "$package_status" -ne 0 ]; then
+    echo "RPM packaging failed once; cleaning incomplete Maven downloads and retrying"
+    find /root/.m2/repository -type f -name '*.part' -delete 2>/dev/null || true
+    sleep 5
+    package_status=0
+    ./package.sh "${build_args[@]}" || package_status=$?
+fi
+
+if [ "$package_status" -ne 0 ]; then
+    echo "RPM packaging failed after retry" >&2
+    exit "$package_status"
+fi
 
 cd "$ROOT_DIR"
 find dist/rpmbuild -type f \( -name '*.rpm' -o -name '*.src.rpm' \) | sort \

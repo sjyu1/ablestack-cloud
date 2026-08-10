@@ -70,6 +70,7 @@ import com.cloud.utils.db.SearchBuilder;
 import com.cloud.utils.db.SearchCriteria;
 import com.cloud.utils.fsm.NoTransitionException;
 import com.cloud.utils.fsm.StateMachine2;
+import com.cloud.utils.net.NetUtils;
 
 import org.apache.cloudstack.acl.ControlledEntity;
 import org.apache.cloudstack.api.ResponseObject;
@@ -95,6 +96,9 @@ import org.apache.cloudstack.storage.dataservice.StorageAccessRuleVO;
 import org.apache.cloudstack.storage.dataservice.StorageFileShareVO;
 import org.apache.cloudstack.storage.dataservice.StorageServiceInstance;
 import org.apache.cloudstack.storage.dataservice.StorageServiceInstanceVO;
+import org.apache.cloudstack.storage.dataservice.StorageServiceGuestCommand;
+import org.apache.cloudstack.storage.dataservice.StorageServiceGuestCommandDispatcher;
+import org.apache.cloudstack.storage.dataservice.StorageServiceGuestCommandResult;
 import org.apache.cloudstack.storage.dataservice.StorageServiceProtocolVO;
 import org.apache.cloudstack.storage.dataservice.dao.StorageAccessRuleDao;
 import org.apache.cloudstack.storage.dataservice.dao.StorageFileShareDao;
@@ -110,6 +114,8 @@ import org.apache.cloudstack.storage.sharedfs.query.dao.SharedFSJoinDao;
 import org.apache.cloudstack.storage.sharedfs.query.vo.SharedFSJoinVO;
 import org.apache.commons.lang3.StringUtils;
 
+import com.google.gson.JsonObject;
+
 import com.cloud.event.ActionEvent;
 import com.cloud.event.EventTypes;
 import com.cloud.user.Account;
@@ -121,6 +127,19 @@ import com.cloud.vm.dao.NicDao;
 
 public class SharedFSServiceImpl extends ManagerBase implements SharedFSService, Configurable, PluggableService {
     private static final String SHAREDFS_COMPAT_PROVIDER = "SHAREDFS_COMPATIBILITY";
+    private static final String CONFIGURE_SHAREDFS_STATIC_NETWORK = "configure-sharedfs-static-network";
+    private static final int STATIC_NETWORK_QGA_ATTEMPTS = 30;
+    private static final int STATIC_NETWORK_QGA_RETRY_MILLIS = 2000;
+
+    protected static class StaticNetworkConfiguration {
+        final String ipAddress;
+        final String networkCidr;
+
+        StaticNetworkConfiguration(String ipAddress, String networkCidr) {
+            this.ipAddress = ipAddress;
+            this.networkCidr = networkCidr;
+        }
+    }
 
     @Inject
     private AccountManager accountMgr;
@@ -173,6 +192,9 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     @Inject
     StorageAccessRuleDao storageAccessRuleDao;
 
+    @Inject
+    StorageServiceGuestCommandDispatcher guestCommandDispatcher;
+
     protected List<SharedFSProvider> sharedFSProviders;
 
     private Map<String, SharedFSProvider> sharedFSProviderMap = new HashMap<>();
@@ -192,6 +214,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
             sharedFSProviderMap.put(provider.getName(), provider);
             provider.configure();
         }
+        reconcileSharedFSToStorageService();
         _executor.scheduleWithFixedDelay(new SharedFSGarbageCollector(), SharedFSCleanupInterval.value(), SharedFSCleanupInterval.value(), TimeUnit.SECONDS);
         return true;
     }
@@ -282,6 +305,15 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         if ((diskOffering.isCustomizedIops() == null || diskOffering.isCustomizedIops() == false) && (minIops != null || maxIops != null)) {
             throw new InvalidParameterValueException("Iops provided with a non-custom-iops disk offering");
         }
+        if ((minIops == null) != (maxIops == null)) {
+            throw new InvalidParameterValueException("Either 'miniops' and 'maxiops' must both be provided or neither must be provided.");
+        }
+        if (minIops != null && (minIops <= 0 || maxIops <= 0)) {
+            throw new InvalidParameterValueException("The 'miniops' and 'maxiops' parameters must be greater than zero.");
+        }
+        if (minIops != null && minIops > maxIops) {
+            throw new InvalidParameterValueException("The 'miniops' parameter must be less than or equal to the 'maxiops' parameter.");
+        }
     }
 
     private void validateInitialBackingStorage(Long diskOfferingId, Long storageId, DataCenter zone) {
@@ -299,6 +331,109 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         if (!volumeApiService.doesStoragePoolSupportDiskOffering(storagePool, diskOffering)) {
             throw new InvalidParameterValueException("Selected primary storage does not satisfy the disk offering storage tags");
         }
+    }
+
+    protected StaticNetworkConfiguration validateStaticNetworkConfiguration(CreateSharedFSCmd cmd, NetworkVO network) {
+        if (cmd.getNetworkMode() == SharedFS.NetworkMode.DHCP) {
+            if (!networkModel.areServicesSupportedInNetwork(network.getId(), Network.Service.UserData)) {
+                throw new InvalidParameterValueException(String.format("Network %s does not support UserData or ConfigDrive. Select STATIC network mode and provide ipcidr for this L2 SharedFS network.",
+                        network.getUuid()));
+            }
+            return null;
+        }
+        if (network.getGuestType() != Network.GuestType.L2) {
+            throw new InvalidParameterValueException("Static SharedFS network configuration is supported only for L2 networks");
+        }
+        StaticNetworkConfiguration configuration = parseStaticIpCidr(cmd.getIpCidr());
+        if ((StringUtils.isNotBlank(cmd.getGateway()) && !NetUtils.isValidIp4(cmd.getGateway())) ||
+                (StringUtils.isNotBlank(cmd.getDns1()) && !NetUtils.isValidIp4(cmd.getDns1())) ||
+                (StringUtils.isNotBlank(cmd.getDns2()) && !NetUtils.isValidIp4(cmd.getDns2()))) {
+            throw new InvalidParameterValueException("Static SharedFS network configuration must contain valid IPv4 values");
+        }
+        final String[] cidrParts = configuration.networkCidr.split("/");
+        final int prefix = Integer.parseInt(cidrParts[1]);
+        if (StringUtils.isNotBlank(cmd.getGateway()) && !NetUtils.sameSubnetCIDR(cmd.getGateway(), cidrParts[0], prefix)) {
+            throw new InvalidParameterValueException("Static SharedFS IP address and gateway must belong to the selected CIDR");
+        }
+        final long address = NetUtils.ip2Long(configuration.ipAddress);
+        final long mask = prefix == 0 ? 0L : (0xffffffffL << (32 - prefix)) & 0xffffffffL;
+        final long networkAddress = NetUtils.ip2Long(cidrParts[0]);
+        final long broadcastAddress = networkAddress | (~mask & 0xffffffffL);
+        if (prefix <= 30 && (address == networkAddress || address == broadcastAddress)) {
+            throw new InvalidParameterValueException("Static SharedFS IP address cannot be the network or broadcast address");
+        }
+        NicVO existingNic = nicDao.findByIp4AddressAndNetworkId(configuration.ipAddress, network.getId());
+        if (existingNic != null) {
+            throw new InvalidParameterValueException("Static SharedFS IP address is already allocated on the selected network");
+        }
+        return configuration;
+    }
+
+    protected StaticNetworkConfiguration parseStaticIpCidr(String ipCidr) {
+        if (StringUtils.isBlank(ipCidr)) {
+            throw new InvalidParameterValueException("ipcidr is required for static SharedFS network configuration");
+        }
+        final String[] parts = ipCidr.trim().split("/", -1);
+        if (parts.length != 2 || !NetUtils.isValidIp4(parts[0])) {
+            throw new InvalidParameterValueException("ipcidr must use IPv4/prefix format, for example 10.10.1.211/24");
+        }
+        final int prefix;
+        try {
+            prefix = Integer.parseInt(parts[1]);
+        } catch (NumberFormatException e) {
+            throw new InvalidParameterValueException("ipcidr prefix must be a number between 0 and 32");
+        }
+        if (prefix < 0 || prefix > 32) {
+            throw new InvalidParameterValueException("ipcidr prefix must be a number between 0 and 32");
+        }
+        final long mask = prefix == 0 ? 0L : (0xffffffffL << (32 - prefix)) & 0xffffffffL;
+        final String networkCidr = String.format("%s/%d", NetUtils.long2Ip(NetUtils.ip2Long(parts[0]) & mask), prefix);
+        return new StaticNetworkConfiguration(parts[0], networkCidr);
+    }
+
+    protected void configureStaticNetwork(SharedFS sharedFS) {
+        if (sharedFS.getNetworkMode() != SharedFS.NetworkMode.STATIC) {
+            return;
+        }
+        if (sharedFS.getVmId() == null) {
+            throw new CloudRuntimeException("Unable to configure static SharedFS network before the Storage Service VM is deployed");
+        }
+        List<NicVO> nics = nicDao.listByVmId(sharedFS.getVmId());
+        if (nics.size() != 1) {
+            throw new CloudRuntimeException("Static SharedFS network configuration requires exactly one Storage Service VM NIC");
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("macAddress", nics.get(0).getMacAddress());
+        payload.addProperty("ipAddress", sharedFS.getIpAddress());
+        payload.addProperty("cidr", sharedFS.getCidr());
+        if (StringUtils.isNotBlank(sharedFS.getGateway())) {
+            payload.addProperty("gateway", sharedFS.getGateway());
+        }
+        if (StringUtils.isNotBlank(sharedFS.getDns1())) {
+            payload.addProperty("dns1", sharedFS.getDns1());
+        }
+        if (StringUtils.isNotBlank(sharedFS.getDns2())) {
+            payload.addProperty("dns2", sharedFS.getDns2());
+        }
+
+        String lastError = null;
+        for (int attempt = 1; attempt <= STATIC_NETWORK_QGA_ATTEMPTS; attempt++) {
+            StorageServiceGuestCommandResult result = guestCommandDispatcher.dispatch(new StorageServiceGuestCommand(
+                    sharedFS.getVmId(), CONFIGURE_SHAREDFS_STATIC_NETWORK, payload.toString(), 60, Set.of()));
+            if (result.isSuccess()) {
+                return;
+            }
+            lastError = result.getDetails();
+            if (attempt < STATIC_NETWORK_QGA_ATTEMPTS) {
+                try {
+                    Thread.sleep(STATIC_NETWORK_QGA_RETRY_MILLIS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new CloudRuntimeException("Interrupted while waiting for SharedFS QGA static network configuration", e);
+                }
+            }
+        }
+        throw new CloudRuntimeException("Failed to configure static SharedFS network through QGA: " + lastError);
     }
 
     @Override
@@ -326,10 +461,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         if (networkVO == null) {
             throw new InvalidParameterValueException("Unable to find a network with Network ID " + cmd.getNetworkId());
         }
-        if (!networkModel.areServicesSupportedInNetwork(networkVO.getId(), Network.Service.UserData)) {
-            throw new InvalidParameterValueException(String.format("Network %s does not support UserData service. Shared FileSystem Storage VM initialization requires a network offering with UserData or ConfigDrive support.",
-                    networkVO.getUuid()));
-        }
+        StaticNetworkConfiguration staticNetwork = validateStaticNetworkConfiguration(cmd, networkVO);
         if (networkVO.getGuestType() == Network.GuestType.Shared) {
             if ((networkVO.getAclType() != ControlledEntity.ACLType.Account) ||
                     (cmd.getDomainId() != null && (networkVO.getDomainId() != cmd.getDomainId())) ||
@@ -352,6 +484,14 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         SharedFSVO sharedFS = new SharedFSVO(cmd.getName(), cmd.getDescription(), owner.getDomainId(),
                 ownerId, cmd.getZoneId(), cmd.getSharedFSProviderName(), SharedFS.Protocol.NFS,
                 fsType, cmd.getServiceOfferingId());
+        sharedFS.setNetworkMode(cmd.getNetworkMode());
+        if (cmd.getNetworkMode() == SharedFS.NetworkMode.STATIC) {
+            sharedFS.setIpAddress(staticNetwork.ipAddress);
+            sharedFS.setCidr(staticNetwork.networkCidr);
+            sharedFS.setGateway(cmd.getGateway());
+            sharedFS.setDns1(cmd.getDns1());
+            sharedFS.setDns2(cmd.getDns2());
+        }
 
         return sharedFSDao.persist(sharedFS);
     }
@@ -366,16 +506,17 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         Long maxIops = cmd.getMaxIops();
         SharedFSProvider provider = getSharedFSProvider(cmd.getSharedFSProviderName());
         SharedFSLifeCycle lifeCycle = provider.getSharedFSLifeCycle();
-        Pair<Long, Long> result = null;
+        Pair<Long, Long> result;
         try {
             result = lifeCycle.deploySharedFS(sharedFS, cmd.getNetworkId(), diskOfferingId, cmd.getStorageId(), size, minIops, maxIops);
+            sharedFS.setVolumeId(result.first());
+            sharedFS.setVmId(result.second());
+            sharedFSDao.update(sharedFS.getId(), sharedFS);
+            configureStaticNetwork(sharedFSDao.findById(sharedFS.getId()));
         } catch (Exception ex) {
             stateTransitTo(sharedFS, Event.OperationFailed);
             throw ex;
         }
-        sharedFS.setVolumeId(result.first());
-        sharedFS.setVmId(result.second());
-        sharedFSDao.update(sharedFS.getId(), sharedFS);
         stateTransitTo(sharedFS, Event.OperationSucceeded);
         syncSharedFSToStorageService(sharedFSDao.findById(sharedFS.getId()));
         return sharedFS;
@@ -388,6 +529,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         try {
             stateTransitTo(sharedFS, Event.StartRequested);
             lifeCycle.startSharedFS(sharedFS);
+            configureStaticNetwork(sharedFS);
         } catch (Exception ex) {
             stateTransitTo(sharedFS, Event.OperationFailed);
             throw ex;
@@ -441,6 +583,9 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         SharedFSProvider provider = getSharedFSProvider(sharedFS.getFsProviderName());
         SharedFSLifeCycle lifeCycle = provider.getSharedFSLifeCycle();
         boolean result = lifeCycle.reDeploySharedFS(sharedFS);
+        if (result) {
+            configureStaticNetwork(sharedFSDao.findById(sharedFS.getId()));
+        }
         return (result ? sharedFS : null);
     }
 
@@ -724,7 +869,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     }
 
     protected void syncSharedFSToStorageService(SharedFS sharedFS) {
-        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value()) {
+        if (sharedFS == null || !SharedFSFeatureEnabled.value()) {
             return;
         }
         if (sharedFS.getVmId() == null || sharedFS.getVolumeId() == null) {
@@ -777,6 +922,24 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
         }
     }
 
+    protected void reconcileSharedFSToStorageService() {
+        if (!SharedFSFeatureEnabled.value()) {
+            return;
+        }
+        for (SharedFSVO sharedFS : sharedFSDao.listAll()) {
+            if (!shouldReconcileSharedFSToStorageService(sharedFS)) {
+                continue;
+            }
+            syncSharedFSToStorageService(sharedFS);
+        }
+    }
+
+    protected boolean shouldReconcileSharedFSToStorageService(SharedFS sharedFS) {
+        return sharedFS != null && sharedFS.getVmId() != null && sharedFS.getVolumeId() != null &&
+                !State.Destroyed.equals(sharedFS.getState()) && !State.Expunging.equals(sharedFS.getState()) &&
+                !State.Expunged.equals(sharedFS.getState());
+    }
+
     protected void removeLegacySharedFSRootExport(StorageServiceInstanceVO instance) {
         for (StorageFileShareVO share : storageFileShareDao.listByInstanceIdAndProtocol(instance.getId(), StorageServiceInstance.Protocol.NFS)) {
             if (SharedFS.SharedFSPath.equals(StringUtils.removeEnd(share.getPath(), "/"))) {
@@ -789,7 +952,7 @@ public class SharedFSServiceImpl extends ManagerBase implements SharedFSService,
     }
 
     protected void deleteStorageServiceCompatibility(SharedFS sharedFS) {
-        if (sharedFS == null || !StorageServiceInstance.StorageServiceFeatureEnabled.value() || sharedFS.getVmId() == null) {
+        if (sharedFS == null || !SharedFSFeatureEnabled.value() || sharedFS.getVmId() == null) {
             return;
         }
         try {

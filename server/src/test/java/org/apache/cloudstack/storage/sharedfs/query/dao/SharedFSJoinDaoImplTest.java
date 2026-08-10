@@ -147,6 +147,7 @@ public class SharedFSJoinDaoImplTest {
             Assert.assertEquals(ReflectionTestUtils.getField(response, "state"), state.toString());
             Assert.assertEquals(ReflectionTestUtils.getField(response, "virtualMachineState"), vmState.toString());
             Assert.assertEquals(ReflectionTestUtils.getField(response, "provisioningType"), provisioningType.toString());
+            Assert.assertEquals(SharedFS.NetworkMode.DHCP.toString(), ReflectionTestUtils.getField(response, "networkMode"));
             Assert.assertEquals("ROOT", ReflectionTestUtils.getField(response, "domainName"));
             Assert.assertEquals("/", ReflectionTestUtils.getField(response, "domainPath"));
         }

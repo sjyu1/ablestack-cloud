@@ -229,6 +229,54 @@
                 </a-select>
               </a-form-item>
             </a-col>
+            <a-col v-if="isSelectedNetworkL2" :span="24">
+              <section class="sharedfs-network-settings">
+                <a-row :gutter="[16, 0]">
+                  <a-col :span="24">
+                    <a-form-item ref="networkmode" name="networkmode" required>
+                      <template #label>
+                        <tooltip-label :title="$t('label.sharedfs.network.mode')" :tooltip="$t('message.sharedfs.network.mode')"/>
+                      </template>
+                      <a-radio-group v-model:value="form.networkmode" class="sharedfs-network-mode">
+                        <a-radio value="DHCP" :disabled="!selectedNetworkSupportsUserData">{{ $t('label.dhcp') }}</a-radio>
+                        <a-radio value="STATIC">{{ $t('label.static.ip') }}</a-radio>
+                      </a-radio-group>
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="!selectedNetworkSupportsUserData" :span="24">
+                    <a-alert
+                      class="sharedfs-network-alert"
+                      type="info"
+                      show-icon
+                      :message="$t('message.sharedfs.static.required.no.userdata')" />
+                  </a-col>
+                  <a-col v-if="isStaticNetwork" :span="24">
+                    <a-form-item ref="ipcidr" name="ipcidr" required>
+                      <template #label><tooltip-label :title="$t('label.sharedfs.ip.cidr')" :tooltip="$t('message.sharedfs.static.ip.cidr')"/></template>
+                      <a-input v-model:value="form.ipcidr" placeholder="10.10.1.211/24" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="isStaticNetwork" :xs="24" :md="12">
+                    <a-form-item ref="gateway" name="gateway">
+                      <template #label><tooltip-label :title="$t('label.gateway')" :tooltip="$t('message.sharedfs.static.gateway')"/></template>
+                      <a-input v-model:value="form.gateway" placeholder="10.10.1.1" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="isStaticNetwork" :xs="24" :md="12">
+                    <a-form-item ref="dns1" name="dns1">
+                      <template #label><tooltip-label :title="$t('label.dns1')" :tooltip="$t('message.sharedfs.static.dns')"/></template>
+                      <a-input v-model:value="form.dns1" placeholder="10.10.1.10" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="isStaticNetwork" :xs="24" :md="12">
+                    <a-form-item ref="dns2" name="dns2">
+                      <template #label><tooltip-label :title="$t('label.dns2')" :tooltip="$t('message.sharedfs.static.dns.optional')"/></template>
+                      <a-input v-model:value="form.dns2" placeholder="8.8.8.8" />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </section>
+            </a-col>
             <a-col :xs="24" :md="12">
               <a-form-item ref="filesystem" name="filesystem">
                 <template #label>
@@ -1074,6 +1122,20 @@ export default {
     selectedNetworkName () {
       return this.networks.find(network => network.id === this.form.networkid)?.name || '-'
     },
+    selectedNetwork () {
+      return this.networks.find(network => network.id === this.form.networkid)
+    },
+    isSelectedNetworkL2 () {
+      return String(this.selectedNetwork?.type || '').toUpperCase() === 'L2'
+    },
+    selectedNetworkSupportsUserData () {
+      const services = this.selectedNetwork?.service
+      const serviceList = Array.isArray(services) ? services : services ? [services] : []
+      return serviceList.some(service => String(service?.name || '').toLowerCase() === 'userdata')
+    },
+    isStaticNetwork () {
+      return this.isSelectedNetworkL2 && this.form.networkmode === 'STATIC'
+    },
     selectedExistingVolume () {
       return this.availableVolumes.find(volume => volume.id === this.form.existingvolumeid)
     },
@@ -1208,6 +1270,15 @@ export default {
     'form.nfsname' (name, previousName) {
       this.syncInitialNfsPath(previousName)
     },
+    'form.networkid' () {
+      Object.assign(this.form, {
+        networkmode: this.isSelectedNetworkL2 && !this.selectedNetworkSupportsUserData ? 'STATIC' : 'DHCP',
+        ipcidr: '',
+        gateway: '',
+        dns1: '',
+        dns2: ''
+      })
+    },
     'form.smbaddomain' (domainName, previousDomainName) {
       const previousDerived = this.deriveAdWorkgroup(previousDomainName)
       if (this.form?.smbidentitymode === 'AD' && (!this.form.smbadworkgroup || this.form.smbadworkgroup === previousDerived)) {
@@ -1219,6 +1290,11 @@ export default {
     initForm () {
       this.formRef = ref()
       this.form = reactive({
+        networkmode: 'DHCP',
+        ipcidr: '',
+        gateway: '',
+        dns1: '',
+        dns2: '',
         services: ['NFS'],
         nfsname: '',
         nfspath: '',
@@ -1279,6 +1355,8 @@ export default {
         useexistingvolume: false,
         storageid: '',
         existingvolumeid: '',
+        miniops: null,
+        maxiops: null,
         importmode: 'INSPECT_ONLY',
         resizeallowed: true
       })
@@ -1286,6 +1364,8 @@ export default {
         zoneid: [{ required: true, message: this.$t('message.error.zone') }],
         name: [{ required: true, message: this.$t('label.required') }],
         networkid: [{ required: true, message: this.$t('label.required') }],
+        networkmode: [{ required: true, message: this.$t('label.required') }],
+        ipcidr: [{ validator: this.validateStaticIpCidr }],
         serviceofferingid: [{ required: true, message: this.$t('label.required') }],
         diskofferingid: [{ required: true, message: this.$t('label.required') }],
         storageid: [{
@@ -1375,22 +1455,8 @@ export default {
             return Promise.resolve()
           }
         }],
-        miniops: [{
-          validator: async (rule, value) => {
-            if (value && (isNaN(value) || value <= 0)) {
-              return Promise.reject(this.$t('message.error.number'))
-            }
-            return Promise.resolve()
-          }
-        }],
-        maxiops: [{
-          validator: async (rule, value) => {
-            if (value && (isNaN(value) || value <= 0)) {
-              return Promise.reject(this.$t('message.error.number'))
-            }
-            return Promise.resolve()
-          }
-        }]
+        miniops: [{ validator: this.validateCustomizedIops }],
+        maxiops: [{ validator: this.validateCustomizedIops }]
       })
     },
     filterOption (input, option) {
@@ -1718,7 +1784,85 @@ export default {
       const diskoffering = this.diskofferings.filter(x => x.id === id)
       this.customDiskOffering = diskoffering[0]?.iscustomized || false
       this.isCustomizedDiskIOps = diskoffering[0]?.iscustomizediops || false
+      if (!this.isCustomizedDiskIOps) {
+        this.form.miniops = null
+        this.form.maxiops = null
+      }
       this.reconcileSelectedStoragePool()
+    },
+    hasFormValue (value) {
+      return value !== undefined && value !== null && value !== ''
+    },
+    validateCustomizedIops () {
+      if (!this.isCustomizedDiskIOps) {
+        return Promise.resolve()
+      }
+      const hasMin = this.hasFormValue(this.form.miniops)
+      const hasMax = this.hasFormValue(this.form.maxiops)
+      if (hasMin !== hasMax) {
+        return Promise.reject(this.$t('label.required'))
+      }
+      if (!hasMin) {
+        return Promise.resolve()
+      }
+      const minIops = Number(this.form.miniops)
+      const maxIops = Number(this.form.maxiops)
+      if (!Number.isInteger(minIops) || !Number.isInteger(maxIops) || minIops <= 0 || maxIops <= 0 || minIops > maxIops) {
+        return Promise.reject(this.$t('message.error.number'))
+      }
+      return Promise.resolve()
+    },
+    validateStaticIpCidr (rule, value) {
+      if (!this.isStaticNetwork) {
+        return Promise.resolve()
+      }
+      if (!value) {
+        return Promise.reject(this.$t('label.required'))
+      }
+      const parts = String(value).trim().split('/')
+      const octets = parts[0]?.split('.') || []
+      const prefix = Number(parts[1])
+      const validAddress = octets.length === 4 && octets.every(octet => /^\d+$/.test(octet) && Number(octet) >= 0 && Number(octet) <= 255)
+      const validPrefix = parts.length === 2 && /^\d+$/.test(parts[1]) && prefix >= 0 && prefix <= 32
+      if (!validAddress || !validPrefix) {
+        return Promise.reject(this.$t('message.sharedfs.static.ip.cidr.invalid'))
+      }
+      return Promise.resolve()
+    },
+    buildCreateSharedFsRequest (values) {
+      const data = {
+        name: values.name,
+        description: values.description,
+        zoneid: values.zoneid,
+        serviceofferingid: values.serviceofferingid,
+        diskofferingid: values.diskofferingid,
+        networkid: values.networkid,
+        size: this.createSharedFsSize(values),
+        filesystem: values.filesystem,
+        domainid: this.owner.domainid
+      }
+      if (this.isCustomizedDiskIOps && this.hasFormValue(values.miniops) && this.hasFormValue(values.maxiops)) {
+        data.miniops = Number(values.miniops)
+        data.maxiops = Number(values.maxiops)
+      }
+      if (this.owner.projectid) {
+        data.projectid = this.owner.projectid
+      } else {
+        data.account = this.owner.account
+      }
+      if (values.storageid) {
+        data.storageid = values.storageid
+      }
+      data.networkmode = this.isStaticNetwork ? 'STATIC' : 'DHCP'
+      if (this.isStaticNetwork) {
+        Object.assign(data, {
+          ipcidr: values.ipcidr,
+          gateway: values.gateway,
+          dns1: values.dns1
+        })
+        if (values.dns2) data.dns2 = values.dns2
+      }
+      return this.cleanParams(data)
     },
     handleSubmit (e) {
       if (e && e.preventDefault) {
@@ -1730,27 +1874,7 @@ export default {
         const formRaw = toRaw(this.form)
         const values = this.handleRemoveFields(formRaw)
 
-        var data = {
-          name: values.name,
-          description: values.description,
-          zoneid: values.zoneid,
-          serviceofferingid: values.serviceofferingid,
-          diskofferingid: values.diskofferingid,
-          networkid: values.networkid,
-          size: this.createSharedFsSize(values),
-          filesystem: values.filesystem,
-          miniops: values.miniops,
-          maxiops: values.maxiops,
-          domainid: this.owner.domainid
-        }
-        if (this.owner.projectid) {
-          data.projectid = this.owner.projectid
-        } else {
-          data.account = this.owner.account
-        }
-        if (values.storageid) {
-          data.storageid = values.storageid
-        }
+        const data = this.buildCreateSharedFsRequest(values)
         const missingApis = this.missingStorageServiceSetupApis()
         if (missingApis.length > 0) {
           this.$notification.error({
@@ -2580,6 +2704,78 @@ export default {
   :deep(.ant-radio-disabled + span) {
     color: rgba(127, 127, 127, 0.95);
   }
+}
+
+.sharedfs-network-settings {
+  margin-bottom: 16px;
+  padding: 14px 16px 2px;
+  color: inherit;
+  border: 1px solid rgba(127, 127, 127, 0.24);
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.045);
+
+  :deep(.ant-form-item) {
+    margin-bottom: 14px;
+  }
+}
+
+.sharedfs-network-alert {
+  margin-bottom: 16px;
+  color: inherit;
+  border-color: rgba(64, 158, 255, 0.34);
+  background: rgba(64, 158, 255, 0.1);
+
+  :deep(.ant-alert-message) {
+    color: inherit;
+    line-height: 1.55;
+  }
+}
+
+.sharedfs-network-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+
+  :deep(.ant-radio-wrapper),
+  :deep(.ant-radio-wrapper span),
+  :deep(.ant-radio + span) {
+    margin-right: 0;
+    color: rgba(0, 0, 0, 0.85);
+  }
+
+  :deep(.ant-radio-wrapper-disabled),
+  :deep(.ant-radio-wrapper-disabled span),
+  :deep(.ant-radio-disabled + span) {
+    color: rgba(0, 0, 0, 0.42);
+  }
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-settings) {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-mode .ant-radio-wrapper),
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-mode .ant-radio-wrapper span),
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-mode .ant-radio + span) {
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-mode .ant-radio-wrapper-disabled),
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-mode .ant-radio-wrapper-disabled span),
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-mode .ant-radio-disabled + span) {
+  color: rgba(255, 255, 255, 0.48) !important;
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-alert) {
+  color: rgba(220, 236, 252, 0.94);
+  border-color: rgba(64, 169, 255, 0.35);
+  background: rgba(24, 144, 255, 0.12);
+}
+
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-alert .ant-alert-message),
+:global(.dark-mode .sharedfs-create-dialog .sharedfs-network-alert .ant-alert-icon) {
+  color: rgba(220, 236, 252, 0.94) !important;
 }
 
 .smb-identity-radio,
