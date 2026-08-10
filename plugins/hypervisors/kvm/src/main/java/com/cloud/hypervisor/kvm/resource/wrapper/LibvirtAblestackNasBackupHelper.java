@@ -66,6 +66,8 @@ class LibvirtAblestackNasBackupHelper {
     private static final int BACKUP_JOB_POLL_INTERVAL_MS = 10000;
     private static final int UNMOUNT_TIMEOUT_SECONDS = 60;
     private static final DateTimeFormatter SCRIPT_LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss>");
+    private static final String IN_PROGRESS_MARKER = ".backup.inprogress";
+    private static final String COMPLETE_MARKER = ".backup.complete";
 
     enum BackupExecutionMode {
         RUNNING("backup-running"),
@@ -225,6 +227,7 @@ class LibvirtAblestackNasBackupHelper {
             mountPoint = mountRepository(command);
             dest = mountPoint.resolve(command.getBackupPath());
             Files.createDirectories(dest.resolve("checkpoints"));
+            markBackupInProgress(dest, command);
 
             conn = LibvirtConnection.getConnection();
             String dummyVmXml = buildDummyVmXml(dummyVmName, diskPaths, conn);
@@ -267,6 +270,7 @@ class LibvirtAblestackNasBackupHelper {
             Files.deleteIfExists(backupXml);
             Files.deleteIfExists(checkpointXml);
             runCommand(String.format("sync"));
+            markBackupComplete(dest, command);
             String output = listTopLevelFileSizes(dest);
             LOGGER.info("Completed stopped VM NAS backup for vm=[{}], dummyVm=[{}]", command.getVmName(), dummyVmName);
             return new Pair<>(0, output);
@@ -314,6 +318,23 @@ class LibvirtAblestackNasBackupHelper {
             }
         }
         return unmountRepository(command, mountPoint) && success;
+    }
+
+    private void markBackupInProgress(Path dest, AblestackNasTakeBackupCommand command) throws IOException {
+        Files.deleteIfExists(dest.resolve(COMPLETE_MARKER));
+        Files.writeString(dest.resolve(IN_PROGRESS_MARKER),
+                String.format("vm=%s%ncheckpoint=%s%n", command.getVmName(), command.getCheckpointName()),
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    private void markBackupComplete(Path dest, AblestackNasTakeBackupCommand command) throws IOException {
+        Path completeMarker = dest.resolve(COMPLETE_MARKER);
+        Path tmpMarker = dest.resolve(COMPLETE_MARKER + ".tmp");
+        Files.writeString(tmpMarker,
+                String.format("vm=%s%ncheckpoint=%s%n", command.getVmName(), command.getCheckpointName()),
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        Files.move(tmpMarker, completeMarker, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.deleteIfExists(dest.resolve(IN_PROGRESS_MARKER));
     }
 
     private boolean unmountRepository(AblestackNasTakeBackupCommand command, Path mountPoint) {

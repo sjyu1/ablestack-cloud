@@ -65,6 +65,8 @@ class LibvirtAblestackCommvaultBackupHelper {
     static final Integer EXIT_CLEANUP_FAILED = 20;
     private static final int BACKUP_JOB_POLL_INTERVAL_MS = 10000;
     private static final DateTimeFormatter SCRIPT_LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss>");
+    private static final String STAGING_IN_PROGRESS_MARKER = ".staging.inprogress";
+    private static final String STAGING_COMPLETE_MARKER = ".staging.complete";
 
     enum BackupExecutionMode {
         RUNNING("backup-running"),
@@ -183,6 +185,7 @@ class LibvirtAblestackCommvaultBackupHelper {
                 resource.validateLibvirtAndQemuVersionForIncrementalSnapshots();
             }
             Files.createDirectories(dest.resolve("checkpoints"));
+            markStagingInProgress(dest, command);
 
             conn = LibvirtConnection.getConnection();
             String dummyVmXml = buildDummyVmXml(dummyVmName, diskPaths);
@@ -221,6 +224,7 @@ class LibvirtAblestackCommvaultBackupHelper {
             Files.deleteIfExists(backupXml);
             Files.deleteIfExists(checkpointXml);
             Script.runSimpleBashScriptForExitValue("sync", resource.getCmdsTimeout(), false);
+            markStagingComplete(dest, command);
             LOGGER.info("Completed stopped VM Commvault backup for vm=[{}], dummyVm=[{}]", command.getVmName(), dummyVmName);
             return new Pair<>(0, "success");
         } catch (Exception e) {
@@ -233,6 +237,23 @@ class LibvirtAblestackCommvaultBackupHelper {
         } finally {
             cleanupDummyVm(dummyVmName);
         }
+    }
+
+    private void markStagingInProgress(Path dest, AblestackCommvaultTakeBackupCommand command) throws IOException {
+        Files.deleteIfExists(dest.resolve(STAGING_COMPLETE_MARKER));
+        Files.writeString(dest.resolve(STAGING_IN_PROGRESS_MARKER),
+                String.format("vm=%s%ncheckpoint=%s%n", command.getVmName(), command.getCheckpointName()),
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    private void markStagingComplete(Path dest, AblestackCommvaultTakeBackupCommand command) throws IOException {
+        Path completeMarker = dest.resolve(STAGING_COMPLETE_MARKER);
+        Path tmpMarker = dest.resolve(STAGING_COMPLETE_MARKER + ".tmp");
+        Files.writeString(tmpMarker,
+                String.format("vm=%s%ncheckpoint=%s%n", command.getVmName(), command.getCheckpointName()),
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        Files.move(tmpMarker, completeMarker, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.deleteIfExists(dest.resolve(STAGING_IN_PROGRESS_MARKER));
     }
 
     private boolean cleanupStoppedBackupPath(Path dest) {
