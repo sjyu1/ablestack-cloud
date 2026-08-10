@@ -86,7 +86,8 @@ public class SharedFSJoinDaoImpl extends GenericDaoBase<SharedFSJoinVO, Long> im
         response.setState(sharedFS.getState().toString());
         response.setProvider(sharedFS.getProvider());
         response.setFilesystem(sharedFS.getFsType().toString());
-        response.setNetworkMode(sharedFS.getNetworkMode().toString());
+        SharedFS.NetworkMode networkMode = sharedFS.getNetworkMode();
+        response.setNetworkMode((networkMode == null ? SharedFS.NetworkMode.DHCP : networkMode).toString());
         response.setIpAddress(sharedFS.getIpAddress());
         if (StringUtils.isNotBlank(sharedFS.getIpAddress()) && StringUtils.contains(sharedFS.getCidr(), "/")) {
             response.setIpCidr(sharedFS.getIpAddress() + sharedFS.getCidr().substring(sharedFS.getCidr().indexOf('/')));
