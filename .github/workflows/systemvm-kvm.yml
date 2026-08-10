@@ -36,6 +36,11 @@ on:
         description: GitHub Actions artifact name
         required: true
         type: string
+      release_display_version:
+        description: ABLESTACK display version recorded in the build manifest
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -53,6 +58,7 @@ jobs:
       SYSTEMVM_VERSION: ${{ inputs.version }}
       SYSTEMVM_BUILD_NUMBER: ${{ inputs.build_number }}
       SYSTEMVM_ARTIFACT_NAME: ${{ inputs.artifact_name }}
+      SYSTEMVM_RELEASE_DISPLAY_VERSION: ${{ inputs.release_display_version }}
       SYSTEMVM_ISO_CACHE: ${{ github.workspace }}/.cache/systemvm
 
     steps:
@@ -208,6 +214,7 @@ jobs:
           cat > "$stage_dir/SYSTEMVM-BUILD-MANIFEST.txt" <<EOF
           Source commit: $(git rev-parse HEAD)
           Version: $SYSTEMVM_VERSION
+          ABLESTACK display version: ${SYSTEMVM_RELEASE_DISPLAY_VERSION:-not-specified}
           Build number: $SYSTEMVM_BUILD_NUMBER
           Architecture: x86_64
           Hypervisor: KVM
@@ -226,6 +233,7 @@ jobs:
             echo "- Ref: \`$SYSTEMVM_REF\`"
             echo "- Source commit: \`$(git rev-parse HEAD)\`"
             echo "- Version: \`$SYSTEMVM_VERSION\`"
+            echo "- ABLESTACK display version: \`${SYSTEMVM_RELEASE_DISPLAY_VERSION:-not-specified}\`"
             echo "- Build number: \`$SYSTEMVM_BUILD_NUMBER\`"
             echo "- Hypervisor: \`KVM\`"
             echo "- Architecture: \`x86_64\`"

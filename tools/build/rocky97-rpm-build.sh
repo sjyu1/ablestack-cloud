@@ -32,6 +32,7 @@ TIMESTAMP_VALUE=${TIMESTAMP_VALUE:-}
 BUILD_SRPM=${BUILD_SRPM:-false}
 USE_TIMESTAMP=${USE_TIMESTAMP:-false}
 LOCAL_FAST=${LOCAL_FAST:-false}
+ABLESTACK_UI_BUILD_VERSION=${ABLESTACK_UI_BUILD_VERSION:-}
 
 if ! command -v dnf >/dev/null 2>&1; then
     echo "This helper must run inside a Rocky/RHEL-compatible environment with dnf."
@@ -57,6 +58,7 @@ echo "TIMESTAMP_VALUE=${TIMESTAMP_VALUE:-<generated>}"
 echo "BUILD_SRPM=$BUILD_SRPM"
 echo "USE_TIMESTAMP=$USE_TIMESTAMP"
 echo "LOCAL_FAST=$LOCAL_FAST"
+echo "ABLESTACK_UI_BUILD_VERSION=${ABLESTACK_UI_BUILD_VERSION:-<source-config>}"
 
 configure_rocky_vault_repositories() {
     local repo
@@ -157,6 +159,7 @@ mkdir -p "$ROOT_DIR/dist/rocky97-build"
     echo "build_srpm=$BUILD_SRPM"
     echo "use_timestamp=$USE_TIMESTAMP"
     echo "local_fast=$LOCAL_FAST"
+    echo "ui_build_version=${ABLESTACK_UI_BUILD_VERSION:-<source-config>}"
 } >"$ROOT_DIR/dist/rocky97-build/environment.txt"
 
 build_args=(
@@ -279,6 +282,41 @@ verify_management_schema_resources() {
 }
 
 verify_management_schema_resources
+
+verify_ui_build_version() {
+    local ui_rpm
+    local extract_dir
+    local packaged_version
+
+    if [ -z "$ABLESTACK_UI_BUILD_VERSION" ]; then
+        echo "Skipping UI build version verification because no release version was supplied"
+        return
+    fi
+
+    ui_rpm=$(find dist/rpmbuild/RPMS -type f -name 'cloudstack-ui-*.rpm' | sort | tail -1)
+    if [ -z "$ui_rpm" ]; then
+        echo "cloudstack-ui RPM was not generated" >&2
+        return 1
+    fi
+
+    extract_dir=$(mktemp -d /tmp/cloudstack-ui-rpm-XXXXXX)
+    (
+        cd "$extract_dir"
+        rpm2cpio "$ROOT_DIR/$ui_rpm" | cpio -idm --quiet
+    )
+    packaged_version=$(jq -r '.buildVersion // empty' \
+        "$extract_dir/etc/cloudstack/ui/config.json")
+    rm -rf "$extract_dir"
+
+    if [ "$packaged_version" != "$ABLESTACK_UI_BUILD_VERSION" ]; then
+        echo "Packaged UI buildVersion mismatch: expected $ABLESTACK_UI_BUILD_VERSION, got $packaged_version" >&2
+        return 1
+    fi
+
+    echo "Verified UI buildVersion in $ui_rpm: $packaged_version"
+}
+
+verify_ui_build_version
 
 find dist/rpmbuild -type f \( -name '*.rpm' -o -name '*.src.rpm' \) | sort \
     > dist/rocky97-build/artifacts.txt

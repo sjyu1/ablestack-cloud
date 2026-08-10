@@ -65,6 +65,11 @@ on:
         required: false
         default: ''
         type: string
+      ui_build_version:
+        description: Optional ABLESTACK display version embedded in the UI config
+        required: false
+        default: ''
+        type: string
       use_timestamp:
         description: Use a timestamped release suffix
         required: false
@@ -112,6 +117,10 @@ on:
         default: ''
         type: string
       package_version:
+        required: false
+        default: ''
+        type: string
+      ui_build_version:
         required: false
         default: ''
         type: string
@@ -170,6 +179,7 @@ jobs:
       BUILD_RELEASE: ${{ inputs.release || github.event.inputs.release || '' }}
       BUILD_BRAND: ${{ inputs.brand || github.event.inputs.brand || '' }}
       BUILD_PACKAGE_VERSION: ${{ inputs.package_version || github.event.inputs.package_version || '' }}
+      BUILD_UI_VERSION: ${{ inputs.ui_build_version || github.event.inputs.ui_build_version || '' }}
       BUILD_USE_TIMESTAMP: ${{ inputs.use_timestamp || github.event.inputs.use_timestamp || 'false' }}
       BUILD_TIMESTAMP_VALUE: ${{ inputs.timestamp_value || github.event.inputs.timestamp_value || '' }}
       BUILD_SRPM: ${{ inputs.build_srpm || github.event.inputs.build_srpm || 'false' }}
@@ -213,6 +223,7 @@ jobs:
             -e RELEASE="$BUILD_RELEASE" \
             -e BRAND="$BUILD_BRAND" \
             -e PACKAGE_VERSION="$BUILD_PACKAGE_VERSION" \
+            -e ABLESTACK_UI_BUILD_VERSION="$BUILD_UI_VERSION" \
             -e USE_TIMESTAMP="$BUILD_USE_TIMESTAMP" \
             -e TIMESTAMP_VALUE="$BUILD_TIMESTAMP_VALUE" \
             -e BUILD_SRPM="$BUILD_SRPM" \
