@@ -83,6 +83,7 @@ dnf --releasever=9.7 config-manager --set-enabled crb || true
     bash \
     bzip2 \
     ca-certificates \
+    cpio \
     findutils \
     gcc \
     genisoimage \
@@ -217,5 +218,67 @@ if [ "$package_status" -ne 0 ]; then
 fi
 
 cd "$ROOT_DIR"
+
+verify_management_schema_resources() {
+    local management_rpm
+    local extract_dir
+    local packaged_jar
+    local resource
+    local source_resource
+    local extracted_resource
+    local -a packaged_jars
+
+    management_rpm=$(find dist/rpmbuild/RPMS -type f -name 'cloudstack-management-*.rpm' | sort | tail -1)
+    if [ -z "$management_rpm" ]; then
+        echo "cloudstack-management RPM was not generated" >&2
+        return 1
+    fi
+
+    extract_dir=$(mktemp -d /tmp/cloudstack-management-rpm-XXXXXX)
+    (
+        cd "$extract_dir"
+        rpm2cpio "$ROOT_DIR/$management_rpm" | cpio -idm --quiet
+    )
+
+    mapfile -t packaged_jars < <(find "$extract_dir/usr/share/cloudstack-management/lib" -maxdepth 1 -type f -name 'cloudstack-*.jar' | sort)
+    if [ "${#packaged_jars[@]}" -ne 1 ]; then
+        echo "Expected exactly one packaged cloudstack application jar, found ${#packaged_jars[@]}" >&2
+        rm -rf "$extract_dir"
+        return 1
+    fi
+    packaged_jar=${packaged_jars[0]}
+
+    if find "$extract_dir/usr/share/cloudstack-management/lib" -maxdepth 1 -type f -name 'cloud-engine-schema-*.jar' | grep -q .; then
+        echo "Standalone cloud-engine-schema jar must not be packaged beside the application jar" >&2
+        rm -rf "$extract_dir"
+        return 1
+    fi
+
+    for resource in \
+        META-INF/db/schema-Europa-After.sql \
+        META-INF/db/views/cloud.shared_filesystem_view.sql; do
+        source_resource="$ROOT_DIR/engine/schema/src/main/resources/$resource"
+        extracted_resource=$(mktemp /tmp/cloudstack-schema-resource-XXXXXX)
+        if ! unzip -p "$packaged_jar" "$resource" >"$extracted_resource"; then
+            echo "Missing schema resource in packaged application jar: $resource" >&2
+            rm -f "$extracted_resource"
+            rm -rf "$extract_dir"
+            return 1
+        fi
+        if ! cmp -s "$source_resource" "$extracted_resource"; then
+            echo "Packaged schema resource differs from source: $resource" >&2
+            rm -f "$extracted_resource"
+            rm -rf "$extract_dir"
+            return 1
+        fi
+        rm -f "$extracted_resource"
+    done
+
+    rm -rf "$extract_dir"
+    echo "Verified management RPM schema resources: $management_rpm"
+}
+
+verify_management_schema_resources
+
 find dist/rpmbuild -type f \( -name '*.rpm' -o -name '*.src.rpm' \) | sort \
     > dist/rocky97-build/artifacts.txt
