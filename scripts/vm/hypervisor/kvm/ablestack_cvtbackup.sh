@@ -459,7 +459,7 @@ backup_running_vm() {
       Completed) break ;;
       Failed)
         log -ne "FAILED libvirt backup job vm=[$VM] checkpoint=[$CHECKPOINT_NAME]"
-        echo "Virsh backup job failed"; cleanup ;;
+        echo "Virsh backup job failed"; cleanup; exit 1 ;;
     esac
     wait_count=$((wait_count + 1))
     if (( wait_count % 12 == 0 )); then
