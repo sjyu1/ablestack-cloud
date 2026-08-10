@@ -253,6 +253,7 @@ public class SharedFSServiceImplTest {
 
         DataCenterVO zone = mock(DataCenterVO.class);
         when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
+        when(zone.getId()).thenReturn(s_zoneId);
         when(zone.getAllocationState()).thenReturn(Grouping.AllocationState.Enabled);
 
         DiskOfferingVO diskOfferingVO = mock(DiskOfferingVO.class);
@@ -378,13 +379,6 @@ public class SharedFSServiceImplTest {
         when(diskOfferingVO.isCustomized()).thenReturn(true);
         when(diskOfferingVO.isCustomizedIops()).thenReturn(true);
 
-        when(cmd.getNetworkId()).thenReturn(s_networkId);
-        NetworkVO networkVO = mock(NetworkVO.class);
-        when(networkVO.getId()).thenReturn(s_networkId);
-        when(networkVO.getGuestType()).thenReturn(Network.GuestType.Isolated);
-        when(networkDao.findById(s_networkId)).thenReturn(networkVO);
-        when(networkModel.areServicesSupportedInNetwork(s_networkId, Network.Service.UserData)).thenReturn(true);
-
         when(cmd.getFsFormat()).thenReturn("ext2");
         Assert.assertThrows(InvalidParameterValueException.class, () -> sharedFSServiceImpl.allocSharedFS(cmd));
     }
@@ -395,12 +389,18 @@ public class SharedFSServiceImplTest {
 
         DataCenterVO zone = mock(DataCenterVO.class);
         when(dataCenterDao.findById(s_zoneId)).thenReturn(zone);
+        when(zone.getId()).thenReturn(s_zoneId);
         when(zone.getAllocationState()).thenReturn(Grouping.AllocationState.Enabled);
 
         DiskOfferingVO diskOfferingVO = mock(DiskOfferingVO.class);
         when(diskOfferingDao.findById(s_diskOfferingId)).thenReturn(diskOfferingVO);
         when(diskOfferingVO.isCustomized()).thenReturn(true);
         when(diskOfferingVO.isCustomizedIops()).thenReturn(true);
+
+        StoragePoolVO storagePool = mock(StoragePoolVO.class);
+        when(storagePoolDao.findById(s_storageId)).thenReturn(storagePool);
+        when(storagePool.getDataCenterId()).thenReturn(s_zoneId);
+        when(volumeApiService.doesStoragePoolSupportDiskOffering(storagePool, diskOfferingVO)).thenReturn(true);
 
         NetworkVO networkVO = mock(NetworkVO.class);
         when(networkVO.getId()).thenReturn(s_networkId);
