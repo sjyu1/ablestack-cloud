@@ -115,9 +115,11 @@ for img in $(echo "$UUIDList" | tr ',' ' '); do
       continue
    fi
 
-   # Watcher가 존재할 때, 호스트 핑(ping) 네트워크 검증 수행 (유령 Watcher 방지)
-   if ! ping -c 1 -W 1 "$HostIP" >/dev/null 2>&1; then
-      logger -p user.warn -t MOLD-HA-AC "[Checking] 호스트:${HostIP} | ${img} 볼륨에 Watcher 존재하나 호스트 Ping 응답 없음 -> 유령(Stale) Watcher로 간주"
+   # Watcher가 존재할 때, 호스트의 Libvirt 통신 포트 상태를 검증 (유령 Watcher 방지)
+   # 소프트 셧다운 시 Ping(NIC)이 꺼지기까지 수십 초가 걸리지만, Libvirt 서비스는 즉시 종료됩니다.
+   # 즉각적인 DEAD 감지를 위해 CloudStack KVM 기본 포트인 TCP 16509 또는 TLS 16514 개방 여부를 확인합니다.
+   if ! (timeout 1 bash -c "</dev/tcp/$HostIP/16509" >/dev/null 2>&1 || timeout 1 bash -c "</dev/tcp/$HostIP/16514" >/dev/null 2>&1); then
+      logger -p user.warn -t MOLD-HA-AC "[Checking] 호스트:${HostIP} | ${img} 볼륨에 Watcher 존재하나 Libvirt 포트(16509/16514) 닫힘 -> 소프트 셧다운 또는 유령(Stale) Watcher로 간주"
       continue
    fi
 

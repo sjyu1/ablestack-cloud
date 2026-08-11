@@ -74,11 +74,13 @@ public class ActivityCheckTask extends BaseHATask {
         long remainingChecks = maxActivityChecks - counter.getActivityCheckCounter();
         long maxPossibleConsecutiveFailures = counter.getConsecutiveActivityCheckFailureCounter() + remainingChecks;
 
-        String message = String.format("[VM Activity Check] Executions : %s/%s | Consecutive Failures : %s/%s",
+        int ratioPercent = (int) (activityCheckFailureRatio * 100);
+        String message = String.format("[VM Activity Check] Executions: %d/%d | Consecutive Failures: %d (Threshold: %d, Failure Ratio: %d%%)",
                             counter.getActivityCheckCounter(),
                             maxActivityChecks,
                             counter.getConsecutiveActivityCheckFailureCounter(),
-                            requiredFailures);
+                            requiredFailures,
+                            ratioPercent);
         ActionEventUtils.onActionEvent(CallContext.current().getCallingUserId(), CallContext.current().getCallingAccountId(),
                                         Domain.ROOT_DOMAIN, EventTypes.EVENT_HA_STATE_TRANSITION, message, haConfig.getResourceId(), ApiCommandResourceType.Host.toString());
 
