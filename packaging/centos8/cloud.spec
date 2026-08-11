@@ -313,6 +313,7 @@ install -D packaging/centos8/cloud.limits ${RPM_BUILD_ROOT}%{_sysconfdir}/securi
 install -D packaging/centos8/filelimit.conf ${RPM_BUILD_ROOT}%{_sysconfdir}/systemd/system/%{name}-management.service.d
 install -D packaging/systemd/cloudstack-management.service ${RPM_BUILD_ROOT}%{_unitdir}/mold.service
 install -D packaging/systemd/cloudstack-management.default ${RPM_BUILD_ROOT}%{_sysconfdir}/default/%{name}-management
+install -D packaging/systemd/cloudstack-management-cleanup-jars ${RPM_BUILD_ROOT}%{_bindir}/cloudstack-management-cleanup-jars
 install -D server/target/conf/cloudstack-sudoers ${RPM_BUILD_ROOT}%{_sysconfdir}/sudoers.d/%{name}-management
 touch ${RPM_BUILD_ROOT}%{_localstatedir}/run/%{name}-management.pid
 #install -D server/target/conf/cloudstack-catalina.logrotate ${RPM_BUILD_ROOT}%{_sysconfdir}/logrotate.d/%{name}-catalina
@@ -507,6 +508,10 @@ if [ -f "/usr/share/cloudstack-common/scripts/installer/cloudstack-help-text" ];
 fi
 /usr/bin/systemctl daemon-reload
 /usr/bin/systemctl enable mold > /dev/null 2>&1 || true
+if ! %{_bindir}/cloudstack-management-cleanup-jars; then
+    echo "Failed to quarantine unmanaged CloudStack jars; refusing to start mold" >&2
+    exit 1
+fi
 if /usr/bin/systemctl is-active --quiet mold; then
     /usr/bin/systemctl restart mold || true
 else
@@ -660,6 +665,7 @@ pip3 install --upgrade /usr/share/cloudstack-marvin/Marvin-*.tar.gz
 %attr(0755,root,root) %{_bindir}/%{name}-setup-encryption
 %attr(0755,root,root) %{_bindir}/mold
 %attr(0755,root,root) %{_bindir}/mold-update-dbpassword
+%attr(0755,root,root) %{_bindir}/cloudstack-management-cleanup-jars
 %attr(0755,root,root) %{_bindir}/cmk
 %{_datadir}/%{name}-management/cks/conf/*.yml
 %{_datadir}/%{name}-management/setup/*.sql
