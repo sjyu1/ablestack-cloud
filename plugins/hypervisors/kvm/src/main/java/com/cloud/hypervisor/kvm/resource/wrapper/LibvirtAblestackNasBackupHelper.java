@@ -217,6 +217,7 @@ class LibvirtAblestackNasBackupHelper {
         Path dest = null;
         String dummyVmName = String.format("DUMMY-VM-%s", command.getCheckpointName().replace('.', '-'));
         Connect conn = null;
+        long startedAt = System.currentTimeMillis();
         try {
             LOGGER.info("Starting stopped VM NAS backup for vm=[{}], dummyVm=[{}], backupType=[{}]",
                     command.getVmName(), dummyVmName, command.getBackupType());
@@ -228,10 +229,16 @@ class LibvirtAblestackNasBackupHelper {
             dest = mountPoint.resolve(command.getBackupPath());
             Files.createDirectories(dest.resolve("checkpoints"));
             markBackupInProgress(dest, command);
+            logStoppedBackupTrace(command, dummyVmName, "T0_BEFORE_DUMMY_CREATE", startedAt,
+                    "source qcow2 state before dummy VM creation");
+            logSourceQcow2State(command, dummyVmName, "T0_BEFORE_DUMMY_CREATE", diskPaths, startedAt);
 
             conn = LibvirtConnection.getConnection();
             String dummyVmXml = buildDummyVmXml(dummyVmName, diskPaths, conn);
             resource.startVM(conn, dummyVmName, dummyVmXml, Domain.CreateFlags.PAUSED);
+            logStoppedBackupTrace(command, dummyVmName, "T1_AFTER_DUMMY_PAUSED_CREATE", startedAt,
+                    "dummy VM was created with PAUSED flag");
+            logDummyVmRuntimeState(command, dummyVmName, "T1_AFTER_DUMMY_PAUSED_CREATE", startedAt);
 
             if (isIncremental(command) && command.getParentCheckpointPath() != null && !command.getParentCheckpointPath().isEmpty()) {
                 redefineCheckpointIfNeeded(dummyVmName, mountPoint.resolve(command.getParentCheckpointPath()));
@@ -252,10 +259,16 @@ class LibvirtAblestackNasBackupHelper {
                 LOGGER.error(failureDetails);
                 return new Pair<>(backupBeginResult.first(), failureDetails);
             }
+            logStoppedBackupTrace(command, dummyVmName, "T2_AFTER_BACKUP_BEGIN", startedAt,
+                    "backup-begin accepted by libvirt");
+            logDummyVmRuntimeState(command, dummyVmName, "T2_AFTER_BACKUP_BEGIN", startedAt);
 
             try {
                 final long effectiveTimeoutMillis = command.getWait() > 0 ? TimeUnit.SECONDS.toMillis(command.getWait()) : resource.getCmdsTimeout();
-                waitForBackup(dummyVmName, effectiveTimeoutMillis);
+                waitForBackup(command, dummyVmName, effectiveTimeoutMillis, startedAt);
+                logStoppedBackupTrace(command, dummyVmName, "T3_AFTER_DOMJOB_COMPLETED", startedAt,
+                        "domjobinfo reported completed backup job");
+                logDummyVmRuntimeState(command, dummyVmName, "T3_AFTER_DOMJOB_COMPLETED", startedAt);
             } catch (IOException e) {
                 cancelBackupJob(dummyVmName);
                 throw e;
@@ -266,11 +279,18 @@ class LibvirtAblestackNasBackupHelper {
             }
 
             dumpCheckpointXml(dummyVmName, command.getCheckpointName(), dest);
+            logStoppedBackupTrace(command, dummyVmName, "CHECKPOINT_DUMPED", startedAt,
+                    "checkpoint XML was dumped before dummy cleanup");
+            logCheckpointState(command, dummyVmName, command.getCheckpointName(), startedAt);
 
             Files.deleteIfExists(backupXml);
             Files.deleteIfExists(checkpointXml);
             runCommand(String.format("sync"));
+            logStoppedBackupTrace(command, dummyVmName, "BACKUP_MARKER_CREATE_BEGIN", startedAt,
+                    "creating backup complete marker before finally cleanup");
             markBackupComplete(dest, command);
+            logStoppedBackupTrace(command, dummyVmName, "BACKUP_MARKER_CREATED", startedAt,
+                    "backup complete marker created");
             String output = listTopLevelFileSizes(dest);
             LOGGER.info("Completed stopped VM NAS backup for vm=[{}], dummyVm=[{}]", command.getVmName(), dummyVmName);
             return new Pair<>(0, output);
@@ -284,7 +304,12 @@ class LibvirtAblestackNasBackupHelper {
             mountPoint = null;
             return new Pair<>(1, e.getMessage());
         } finally {
+            logStoppedBackupTrace(command, dummyVmName, "DUMMY_DESTROY_BEGIN", startedAt,
+                    "starting dummy VM cleanup");
             cleanupDummyVm(dummyVmName);
+            logStoppedBackupTrace(command, dummyVmName, "T4_AFTER_DUMMY_DESTROY", startedAt,
+                    "dummy VM cleanup finished; collecting offline source qcow2 state");
+            logSourceQcow2State(command, dummyVmName, "T4_AFTER_DUMMY_DESTROY", diskPaths, startedAt);
             unmountRepository(command, mountPoint);
         }
     }
@@ -533,10 +558,12 @@ class LibvirtAblestackNasBackupHelper {
         return checkpointXml;
     }
 
-    private void waitForBackup(String vmName, long timeoutMillis) throws IOException {
+    private void waitForBackup(AblestackNasTakeBackupCommand command, String vmName, long timeoutMillis, long startedAt) throws IOException {
         long remainingMillis = timeoutMillis;
         while (remainingMillis > 0) {
             String result = checkBackupJob(vmName);
+            LOGGER.info("[STOPPED_BACKUP_TRACE] phase=[DOMJOBINFO_POLL] vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], output=[{}]",
+                    command.getVmName(), vmName, command.getBackupType(), command.getCheckpointName(), System.currentTimeMillis() - startedAt, result);
             if (result != null && result.contains("Completed") && result.contains("Backup")) {
                 return;
             }
@@ -584,6 +611,101 @@ class LibvirtAblestackNasBackupHelper {
         Script.runSimpleBashScriptForExitValue(String.format(
                 "virsh -c qemu:///system checkpoint-dumpxml --domain %s --checkpointname %s --no-domain > %s 2>/dev/null",
                 shellQuote(vmName), shellQuote(checkpointName), shellQuote(checkpointDest.toString())));
+    }
+
+    private void logStoppedBackupTrace(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, long startedAt, String message) {
+        LOGGER.info("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], message=[{}]",
+                phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                System.currentTimeMillis() - startedAt, message);
+    }
+
+    private void logDummyVmRuntimeState(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, long startedAt) {
+        logTraceCommandOutput(command, dummyVmName, phase, startedAt, "query-status", String.format(
+                "virsh -c qemu:///system qemu-monitor-command %s --pretty %s",
+                shellQuote(dummyVmName), shellQuote("{\"execute\":\"query-status\"}")));
+        logTraceCommandOutput(command, dummyVmName, phase, startedAt, "query-block", String.format(
+                "virsh -c qemu:///system qemu-monitor-command %s --pretty %s",
+                shellQuote(dummyVmName), shellQuote("{\"execute\":\"query-block\"}")));
+        logTraceCommandOutput(command, dummyVmName, phase, startedAt, "query-named-block-nodes", String.format(
+                "virsh -c qemu:///system qemu-monitor-command %s --pretty %s",
+                shellQuote(dummyVmName), shellQuote("{\"execute\":\"query-named-block-nodes\"}")));
+        logTraceCommandOutput(command, dummyVmName, phase, startedAt, "domjobinfo", String.format(
+                "virsh -c qemu:///system domjobinfo %s --completed --keep-completed",
+                shellQuote(dummyVmName)));
+    }
+
+    private void logCheckpointState(AblestackNasTakeBackupCommand command, String dummyVmName, String checkpointName, long startedAt) {
+        logTraceCommandOutput(command, dummyVmName, "CHECKPOINT_DUMPED", startedAt, "checkpoint-list", String.format(
+                "virsh -c qemu:///system checkpoint-list --domain %s --tree",
+                shellQuote(dummyVmName)));
+        logTraceCommandOutput(command, dummyVmName, "CHECKPOINT_DUMPED", startedAt, "checkpoint-info", String.format(
+                "virsh -c qemu:///system checkpoint-info --domain %s --checkpointname %s",
+                shellQuote(dummyVmName), shellQuote(checkpointName)));
+    }
+
+    private void logSourceQcow2State(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, List<String> diskPaths, long startedAt) {
+        for (int i = 0; i < diskPaths.size(); i++) {
+            String diskPath = diskPaths.get(i);
+            if (diskPath == null || diskPath.startsWith("rbd:")) {
+                continue;
+            }
+            logTraceDiskCommandOutput(command, dummyVmName, phase, startedAt, i, diskPath, "qemu-img-info", String.format(
+                    "if command -v jq >/dev/null 2>&1; then qemu-img info -U --output=json %s | jq -c '{filename, virtual_size: .\"virtual-size\", actual_size: .\"actual-size\", dirty_flag: .\"dirty-flag\", bitmaps: .\"format-specific\".data.bitmaps}'; else qemu-img info -U --output=json %s; fi",
+                    shellQuote(diskPath), shellQuote(diskPath)));
+            logTraceDiskCommandOutput(command, dummyVmName, phase, startedAt, i, diskPath, "qemu-img-check", String.format(
+                    "qemu-img check %s", shellQuote(diskPath)));
+        }
+    }
+
+    private void logTraceCommandOutput(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, long startedAt, String label, String traceCommand) {
+        Pair<Integer, String> result = runCommandWithOutput(traceCommand);
+        if (result.first() == 0) {
+            LOGGER.info("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], command=[{}], output=[{}]",
+                    phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt, label, result.second());
+            warnIfRuntimeBitmapLooksUnsafe(command, dummyVmName, phase, label, result.second());
+        } else {
+            LOGGER.warn("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], command=[{}], exitCode=[{}], output=[{}]",
+                    phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt, label, result.first(), sanitizeCommandOutput(result.second()));
+        }
+    }
+
+    private void logTraceDiskCommandOutput(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, long startedAt, int diskIndex, String diskPath, String label, String traceCommand) {
+        Pair<Integer, String> result = runCommandWithOutput(traceCommand);
+        if (result.first() == 0) {
+            LOGGER.info("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], diskIndex=[{}], sourceDisk=[{}], command=[{}], output=[{}]",
+                    phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt, diskIndex, diskPath, label, result.second());
+            warnIfOfflineBitmapLooksUnsafe(command, dummyVmName, phase, diskIndex, diskPath, label, result.second());
+        } else {
+            LOGGER.warn("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], diskIndex=[{}], sourceDisk=[{}], command=[{}], exitCode=[{}], output=[{}]",
+                    phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt, diskIndex, diskPath, label, result.first(), sanitizeCommandOutput(result.second()));
+        }
+    }
+
+    private void warnIfRuntimeBitmapLooksUnsafe(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, String label, String output) {
+        if (!"query-block".equals(label) && !"query-named-block-nodes".equals(label)) {
+            return;
+        }
+        if (output == null || output.isBlank()) {
+            return;
+        }
+        if (output.contains("\"busy\": true") || output.contains("\"inconsistent\": true") || output.contains("\"persistent\": false")) {
+            LOGGER.warn("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], command=[{}], bitmapWarning=[runtime bitmap may not be finalized], output=[{}]",
+                    phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(), label, output);
+        }
+    }
+
+    private void warnIfOfflineBitmapLooksUnsafe(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, int diskIndex, String diskPath, String label, String output) {
+        if (!"qemu-img-info".equals(label) || output == null || output.isBlank()) {
+            return;
+        }
+        if (output.contains("\"in-use\"") || output.contains("in-use")) {
+            LOGGER.warn("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], diskIndex=[{}], sourceDisk=[{}], bitmapWarning=[offline qcow2 bitmap still has in-use flag], output=[{}]",
+                    phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(), diskIndex, diskPath, output);
+        }
     }
 
     private String listTopLevelFileSizes(Path dest) throws IOException {
