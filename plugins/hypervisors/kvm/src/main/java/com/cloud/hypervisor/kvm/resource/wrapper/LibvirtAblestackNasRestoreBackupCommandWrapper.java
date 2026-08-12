@@ -349,7 +349,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             logFileRestoreQcow2State("BEFORE_SOURCE", backupPath, timeout);
             logFileRestoreQcow2State("BEFORE_DEST", volumePath, timeout);
             movedAsideTarget = moveExistingFileVolumeAside(volumePath);
-            convertFileVolumeWithQemuImg(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
+            restoreFileVolumeData(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
             logFileRestoreQcow2State("AFTER_SOURCE", backupPath, timeout);
             logFileRestoreQcow2State("AFTER_DEST", volumePath, timeout);
             if (!logFileRestoreCompare(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout)) {
@@ -516,6 +516,29 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             logger.error("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_RESTORE_FAILED], target=[{}], movedAside=[{}], error=[{}]",
                     volumePath, movedAsideTarget, e.getMessage());
         }
+    }
+
+    private void restoreFileVolumeData(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
+                                       QemuImg.PhysicalDiskFormat volumeFormat, int timeout) throws QemuImgException {
+        if (backupFormat == QemuImg.PhysicalDiskFormat.QCOW2 && volumeFormat == QemuImg.PhysicalDiskFormat.QCOW2) {
+            copyQcow2BackupFile(backupPath, volumePath, timeout);
+            return;
+        }
+        convertFileVolumeWithQemuImg(backupPath, volumePath, backupFormat, volumeFormat, timeout);
+    }
+
+    private void copyQcow2BackupFile(String backupPath, String volumePath, int timeout) throws QemuImgException {
+        String copyCommand = String.format("cp --sparse=always %s %s", quote(backupPath), quote(volumePath));
+        Pair<Integer, String> result = runCommandWithOutput(copyCommand, timeout * 1000);
+        String output = formatTraceOutput(result.second());
+        if (result.first() == 0) {
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[COPY], source=[{}], target=[{}], command=[cp-qcow2], output=[{}]",
+                    backupPath, volumePath, output);
+            return;
+        }
+        logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[COPY], source=[{}], target=[{}], command=[cp-qcow2], exitCode=[{}], output=[{}]",
+                backupPath, volumePath, result.first(), output);
+        throw new QemuImgException(String.format("cp qcow2 backup failed with exitCode [%s], output [%s]", result.first(), output));
     }
 
     private void convertFileVolumeWithQemuImg(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
