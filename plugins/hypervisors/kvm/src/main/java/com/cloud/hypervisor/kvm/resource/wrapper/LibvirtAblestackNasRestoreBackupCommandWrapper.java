@@ -47,6 +47,7 @@ import org.libvirt.LibvirtException;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -340,6 +341,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
     private boolean replaceFileVolumeWithBackup(String volumePath, String backupPath, int timeout) {
         QemuImgFile srcBackupFile = null;
         QemuImgFile destVolumeFile = null;
+        Path movedAsideTarget = null;
         try {
             QemuImg qemu = new QemuImg(timeout * 1000, false, false);
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
@@ -347,15 +349,20 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             logger.info("Restoring NAS backup file [{}] to file volume [{}] without target-is-zero optimization.", backupPath, volumePath);
             logFileRestoreQcow2State("BEFORE_SOURCE", backupPath, timeout);
             logFileRestoreQcow2State("BEFORE_DEST", volumePath, timeout);
+            movedAsideTarget = moveExistingFileVolumeAside(volumePath);
             qemu.convert(srcBackupFile, destVolumeFile);
             logFileRestoreQcow2State("AFTER_SOURCE", backupPath, timeout);
             logFileRestoreQcow2State("AFTER_DEST", volumePath, timeout);
-            logFileRestoreCompare(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
+            if (!logFileRestoreCompare(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout)) {
+                throw new QemuImgException(String.format("Restored file volume [%s] differs from NAS backup file [%s]", volumePath, backupPath));
+            }
+            deleteMovedAsideFileVolume(movedAsideTarget);
             return true;
-        } catch (QemuImgException | LibvirtException e) {
+        } catch (QemuImgException | LibvirtException | IOException e) {
             String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
             String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
             logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
+            restoreMovedAsideFileVolume(volumePath, movedAsideTarget);
             return false;
         }
     }
@@ -452,7 +459,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
                 "qemu-img check -U %s", quote(imagePath)), timeout);
     }
 
-    private void logFileRestoreCompare(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
+    private boolean logFileRestoreCompare(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
                                        QemuImg.PhysicalDiskFormat volumeFormat, int timeout) {
         String compareCommand = String.format("qemu-img compare -f %s -F %s %s %s",
                 backupFormat.toString().toLowerCase(Locale.ROOT), volumeFormat.toString().toLowerCase(Locale.ROOT),
@@ -462,9 +469,53 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         if (result.first() == 0) {
             logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[AFTER_COMPARE], source=[{}], target=[{}], command=[qemu-img-compare], output=[{}]",
                     backupPath, volumePath, output);
+            return true;
         } else {
             logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[AFTER_COMPARE], source=[{}], target=[{}], command=[qemu-img-compare], exitCode=[{}], output=[{}]",
                     backupPath, volumePath, result.first(), output);
+            return false;
+        }
+    }
+
+    private Path moveExistingFileVolumeAside(String volumePath) throws IOException {
+        Path targetPath = Paths.get(volumePath);
+        if (!Files.exists(targetPath)) {
+            return null;
+        }
+
+        Path movedAsidePath = targetPath.resolveSibling(targetPath.getFileName() + ".csrestore." + System.currentTimeMillis() + ".bak");
+        Files.move(targetPath, movedAsidePath);
+        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE], target=[{}], movedAside=[{}]",
+                volumePath, movedAsidePath);
+        return movedAsidePath;
+    }
+
+    private void deleteMovedAsideFileVolume(Path movedAsideTarget) {
+        if (movedAsideTarget == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(movedAsideTarget);
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_DELETED], movedAside=[{}]", movedAsideTarget);
+        } catch (IOException e) {
+            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_DELETE_FAILED], movedAside=[{}], error=[{}]",
+                    movedAsideTarget, e.getMessage());
+        }
+    }
+
+    private void restoreMovedAsideFileVolume(String volumePath, Path movedAsideTarget) {
+        if (movedAsideTarget == null || !Files.exists(movedAsideTarget)) {
+            return;
+        }
+        Path targetPath = Paths.get(volumePath);
+        try {
+            Files.deleteIfExists(targetPath);
+            Files.move(movedAsideTarget, targetPath);
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_RESTORED], target=[{}], movedAside=[{}]",
+                    volumePath, movedAsideTarget);
+        } catch (IOException e) {
+            logger.error("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_RESTORE_FAILED], target=[{}], movedAside=[{}], error=[{}]",
+                    volumePath, movedAsideTarget, e.getMessage());
         }
     }
 
