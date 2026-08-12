@@ -343,14 +343,13 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         QemuImgFile destVolumeFile = null;
         Path movedAsideTarget = null;
         try {
-            QemuImg qemu = new QemuImg(timeout * 1000, false, false);
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
             logger.info("Restoring NAS backup file [{}] to file volume [{}] without target-is-zero optimization.", backupPath, volumePath);
             logFileRestoreQcow2State("BEFORE_SOURCE", backupPath, timeout);
             logFileRestoreQcow2State("BEFORE_DEST", volumePath, timeout);
             movedAsideTarget = moveExistingFileVolumeAside(volumePath);
-            qemu.convert(srcBackupFile, destVolumeFile);
+            convertFileVolumeWithQemuImg(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
             logFileRestoreQcow2State("AFTER_SOURCE", backupPath, timeout);
             logFileRestoreQcow2State("AFTER_DEST", volumePath, timeout);
             if (!logFileRestoreCompare(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout)) {
@@ -358,7 +357,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             }
             deleteMovedAsideFileVolume(movedAsideTarget);
             return true;
-        } catch (QemuImgException | LibvirtException | IOException e) {
+        } catch (QemuImgException | IOException e) {
             String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
             String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
             logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
@@ -517,6 +516,23 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             logger.error("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_RESTORE_FAILED], target=[{}], movedAside=[{}], error=[{}]",
                     volumePath, movedAsideTarget, e.getMessage());
         }
+    }
+
+    private void convertFileVolumeWithQemuImg(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
+                                              QemuImg.PhysicalDiskFormat volumeFormat, int timeout) throws QemuImgException {
+        String convertCommand = String.format("qemu-img convert -p -f %s -O %s %s %s",
+                backupFormat.toString().toLowerCase(Locale.ROOT), volumeFormat.toString().toLowerCase(Locale.ROOT),
+                quote(backupPath), quote(volumePath));
+        Pair<Integer, String> result = runCommandWithOutput(convertCommand, timeout * 1000);
+        String output = formatTraceOutput(result.second());
+        if (result.first() == 0) {
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert], output=[{}]",
+                    backupPath, volumePath, output);
+            return;
+        }
+        logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert], exitCode=[{}], output=[{}]",
+                backupPath, volumePath, result.first(), output);
+        throw new QemuImgException(String.format("qemu-img convert failed with exitCode [%s], output [%s]", result.first(), output));
     }
 
     private void logFileRestoreCommand(String phase, String imagePath, String label, String traceCommand, int timeout) {
