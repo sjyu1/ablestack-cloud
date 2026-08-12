@@ -659,33 +659,38 @@ class LibvirtAblestackNasBackupHelper {
 
     private void logTraceCommandOutput(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, long startedAt, String label, String traceCommand) {
         Pair<Integer, String> result = runCommandWithOutput(traceCommand);
+        String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
             LOGGER.info("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], command=[{}], output=[{}]",
                     phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
-                    System.currentTimeMillis() - startedAt, label, result.second());
+                    System.currentTimeMillis() - startedAt, label, output);
             warnIfRuntimeBitmapLooksUnsafe(command, dummyVmName, phase, label, result.second());
         } else {
             LOGGER.warn("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], command=[{}], exitCode=[{}], output=[{}]",
                     phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
-                    System.currentTimeMillis() - startedAt, label, result.first(), sanitizeCommandOutput(result.second()));
+                    System.currentTimeMillis() - startedAt, label, result.first(), output);
         }
     }
 
     private void logTraceDiskCommandOutput(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, long startedAt, int diskIndex, String diskPath, String label, String traceCommand) {
         Pair<Integer, String> result = runCommandWithOutput(traceCommand);
+        String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
             LOGGER.info("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], diskIndex=[{}], sourceDisk=[{}], command=[{}], output=[{}]",
                     phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
-                    System.currentTimeMillis() - startedAt, diskIndex, diskPath, label, result.second());
+                    System.currentTimeMillis() - startedAt, diskIndex, diskPath, label, output);
             warnIfOfflineBitmapLooksUnsafe(command, dummyVmName, phase, diskIndex, diskPath, label, result.second());
         } else {
             LOGGER.warn("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMillis=[{}], diskIndex=[{}], sourceDisk=[{}], command=[{}], exitCode=[{}], output=[{}]",
                     phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
-                    System.currentTimeMillis() - startedAt, diskIndex, diskPath, label, result.first(), sanitizeCommandOutput(result.second()));
+                    System.currentTimeMillis() - startedAt, diskIndex, diskPath, label, result.first(), output);
         }
     }
 
     private void warnIfRuntimeBitmapLooksUnsafe(AblestackNasTakeBackupCommand command, String dummyVmName, String phase, String label, String output) {
+        if (!"T3_AFTER_DOMJOB_COMPLETED".equals(phase)) {
+            return;
+        }
         if (!"query-block".equals(label) && !"query-named-block-nodes".equals(label)) {
             return;
         }
@@ -706,6 +711,13 @@ class LibvirtAblestackNasBackupHelper {
             LOGGER.warn("[STOPPED_BACKUP_TRACE] phase=[{}], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], diskIndex=[{}], sourceDisk=[{}], bitmapWarning=[offline qcow2 bitmap still has in-use flag], output=[{}]",
                     phase, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(), diskIndex, diskPath, output);
         }
+    }
+
+    private String formatTraceOutput(String output) {
+        if (output == null || output.isBlank()) {
+            return "";
+        }
+        return output.replace("\r", "\\r").replace("\n", "\\n").trim();
     }
 
     private String listTopLevelFileSizes(Path dest) throws IOException {

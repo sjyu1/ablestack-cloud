@@ -335,9 +335,10 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         QemuImgFile srcBackupFile = null;
         QemuImgFile destVolumeFile = null;
         try {
-            QemuImg qemu = new QemuImg(timeout * 1000, true, false);
+            QemuImg qemu = new QemuImg(timeout * 1000, false, false);
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
+            logger.info("Restoring NAS backup file [{}] to file volume [{}] without target-is-zero optimization.", backupPath, volumePath);
             qemu.convert(srcBackupFile, destVolumeFile);
             return true;
         } catch (QemuImgException | LibvirtException e) {
