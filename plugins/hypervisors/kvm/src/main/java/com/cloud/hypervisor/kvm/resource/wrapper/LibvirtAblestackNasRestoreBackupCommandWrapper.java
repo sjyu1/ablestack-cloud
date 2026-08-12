@@ -85,6 +85,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         List<BackupVolumeChainState> volumeChainStates = command.getVolumeChainStates();
         BackupRestorePlan restorePlan = command.getRestorePlan();
 
+        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[ENTER], vm=[{}], backupPath=[{}], repoType=[{}], repoAddress=[{}], vmExists=[{}], restorePlan=[{}], volumePaths=[{}], restoreVolumePaths=[{}], backupFiles=[{}], backupFileChains=[{}]",
+                vmName, backupPath, backupRepoType, backupRepoAddress, vmExists, restorePlan, volumePaths, restoreVolumePaths, backupFiles, backupFileChains);
         String newVolumeId = null;
         try {
             validateChainStatePlan(volumeChainStates, restorePlan);
@@ -113,6 +115,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             return new BackupAnswer(command, false, errorMessage);
         }
 
+        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[DONE], vm=[{}], backupPath=[{}], vmExists=[{}], newVolumeId=[{}]",
+                vmName, backupPath, vmExists, newVolumeId);
         return new BackupAnswer(command, true, newVolumeId);
     }
 
@@ -296,6 +300,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         if (backupPaths == null || backupPaths.isEmpty()) {
             return false;
         }
+        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RESTORE_VOLUME_BEGIN], poolType=[{}], targetVolume=[{}], backupPaths=[{}], backupIndex=[{}], createTargetVolume=[{}]",
+                volumePool.getPoolType(), volumePath, backupPaths, backupIndex, createTargetVolume);
         if (volumePool.getPoolType() != Storage.StoragePoolType.RBD) {
             if (backupPaths.stream().anyMatch(path -> path.endsWith(".rbdiff"))) {
                 return restoreIncrementalRbdBackupChainToFileVolume(volumePath, backupPaths, timeout, backupRootPath, backupIndex);
@@ -339,7 +345,12 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
             logger.info("Restoring NAS backup file [{}] to file volume [{}] without target-is-zero optimization.", backupPath, volumePath);
+            logFileRestoreQcow2State("BEFORE_SOURCE", backupPath, timeout);
+            logFileRestoreQcow2State("BEFORE_DEST", volumePath, timeout);
             qemu.convert(srcBackupFile, destVolumeFile);
+            logFileRestoreQcow2State("AFTER_SOURCE", backupPath, timeout);
+            logFileRestoreQcow2State("AFTER_DEST", volumePath, timeout);
+            logFileRestoreCompare(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
             return true;
         } catch (QemuImgException | LibvirtException e) {
             String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
@@ -432,6 +443,67 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         }
 
         return true;
+    }
+
+    private void logFileRestoreQcow2State(String phase, String imagePath, int timeout) {
+        logFileRestoreCommand(phase, imagePath, "qemu-img-info", String.format(
+                "qemu-img info -U --output=json %s", quote(imagePath)), timeout);
+        logFileRestoreCommand(phase, imagePath, "qemu-img-check", String.format(
+                "qemu-img check -U %s", quote(imagePath)), timeout);
+    }
+
+    private void logFileRestoreCompare(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
+                                       QemuImg.PhysicalDiskFormat volumeFormat, int timeout) {
+        String compareCommand = String.format("qemu-img compare -f %s -F %s %s %s",
+                backupFormat.toString().toLowerCase(Locale.ROOT), volumeFormat.toString().toLowerCase(Locale.ROOT),
+                quote(backupPath), quote(volumePath));
+        Pair<Integer, String> result = runCommandWithOutput(compareCommand, timeout * 1000);
+        String output = formatTraceOutput(result.second());
+        if (result.first() == 0) {
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[AFTER_COMPARE], source=[{}], target=[{}], command=[qemu-img-compare], output=[{}]",
+                    backupPath, volumePath, output);
+        } else {
+            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[AFTER_COMPARE], source=[{}], target=[{}], command=[qemu-img-compare], exitCode=[{}], output=[{}]",
+                    backupPath, volumePath, result.first(), output);
+        }
+    }
+
+    private void logFileRestoreCommand(String phase, String imagePath, String label, String traceCommand, int timeout) {
+        Pair<Integer, String> result = runCommandWithOutput(traceCommand, timeout * 1000);
+        String output = formatTraceOutput(result.second());
+        if (result.first() == 0) {
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[{}], image=[{}], command=[{}], output=[{}]",
+                    phase, imagePath, label, output);
+        } else {
+            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[{}], image=[{}], command=[{}], exitCode=[{}], output=[{}]",
+                    phase, imagePath, label, result.first(), output);
+        }
+    }
+
+    private Pair<Integer, String> runCommandWithOutput(String command, int timeout) {
+        String wrappedCommand = String.format("set +e; %s 2>&1; rc=$?; echo __CMD_EXIT__=$rc", command);
+        String output = Script.runSimpleBashScriptWithFullResult(wrappedCommand, timeout);
+        if (output == null) {
+            return new Pair<>(-1, "");
+        }
+
+        List<String> lines = new ArrayList<>(Arrays.asList(output.split("\n")));
+        int exitCode = -1;
+        if (!lines.isEmpty()) {
+            String lastLine = lines.get(lines.size() - 1).trim();
+            if (lastLine.startsWith("__CMD_EXIT__=")) {
+                exitCode = Integer.parseInt(lastLine.substring("__CMD_EXIT__=".length()));
+                lines.remove(lines.size() - 1);
+            }
+        }
+        return new Pair<>(exitCode, String.join("\n", lines).trim());
+    }
+
+    private String formatTraceOutput(String output) {
+        if (output == null || output.isBlank()) {
+            return "";
+        }
+        return output.replace("\r", "\\r").replace("\n", "\\n").trim();
     }
 
     private boolean importRawBackupToRbd(KVMStoragePool volumeStoragePool, String volumePath, String backupPath, int timeout, boolean createTargetVolume) {
