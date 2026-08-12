@@ -2290,7 +2290,6 @@ const fetchRackData = () => {
     // DB에 저장된 데이터가 있고, 내용(content)이 존재하는 경우
     if (layouts && layouts.length > 0 && layouts[0].content) {
       parsedRacks.value = normalizeLoadedRackLayouts(JSON.parse(layouts[0].content))
-      message.success(t('rackDiagram.msg.rackLoaded'))
     } else {
       // 최초 배포/접속 시에는 임의 랙을 만들지 않는다.
       // 사용자가 명시적으로 "새 랙 추가"를 눌렀을 때만 생성일/위치가 있는 랙을 만든다.
