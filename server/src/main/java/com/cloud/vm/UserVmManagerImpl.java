@@ -9997,6 +9997,12 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                     cmd.setEntityUuid(cloneVM.getUuid());
                     cmd.setEntityId(cloneVM.getId());
 
+                    VolumeVO rootVolToUpdate = _volsDao.findById(rootVolume.getId());
+                    if (rootVolToUpdate != null) {
+                        rootVolToUpdate.setTemplateId(cloneVM.getTemplateId());
+                        _volsDao.update(rootVolume.getId(), rootVolToUpdate);
+                    }
+
                     VMInstanceVO vmInstance = _vmInstanceDao.findById(cloneVM.getId());
                     vmInstance.setGuestOSId(cmd.getTargetVM().getGuestOSId());
                     _vmInstanceDao.update(cloneVM.getId(), vmInstance);
@@ -10155,6 +10161,12 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 cmd.setEntityId(cloneVM.getId());
                 markFastCloneVmStatus(cloneVM.getId(), FAST_CLONE_FLATTEN_PENDING, operationId);
                 userVmDetailsDao.addDetail(cloneVM.getId(), FAST_CLONE_SOURCE_VM_ID, String.valueOf(curVm.getId()), false);
+
+                VolumeVO rootVolToUpdate = _volsDao.findById(rootVolume.getId());
+                if (rootVolToUpdate != null) {
+                    rootVolToUpdate.setTemplateId(cloneVM.getTemplateId());
+                    _volsDao.update(rootVolume.getId(), rootVolToUpdate);
+                }
 
                 VMInstanceVO vmInstance = _vmInstanceDao.findById(cloneVM.getId());
                 vmInstance.setGuestOSId(cmd.getTargetVM().getGuestOSId());
