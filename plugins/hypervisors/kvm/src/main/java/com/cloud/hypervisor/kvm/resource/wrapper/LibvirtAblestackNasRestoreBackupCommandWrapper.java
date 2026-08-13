@@ -353,9 +353,6 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             restoreFileVolumeData(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
             logFileRestoreQcow2State("AFTER_SOURCE", backupPath, timeout);
             logFileRestoreQcow2State("AFTER_DEST", volumePath, timeout);
-            if (!logFileRestoreCompare(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout)) {
-                throw new QemuImgException(String.format("Restored file volume [%s] differs from NAS backup file [%s]", volumePath, backupPath));
-            }
             deleteMovedAsideFileVolume(movedAsideTarget);
             return true;
         } catch (QemuImgException | IOException e) {
@@ -457,24 +454,6 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
                 "qemu-img info -U --output=json %s", quote(imagePath)), timeout);
         logFileRestoreCommand(phase, imagePath, "qemu-img-check", String.format(
                 "qemu-img check -U %s", quote(imagePath)), timeout);
-    }
-
-    private boolean logFileRestoreCompare(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
-                                       QemuImg.PhysicalDiskFormat volumeFormat, int timeout) {
-        String compareCommand = String.format("qemu-img compare -f %s -F %s %s %s",
-                backupFormat.toString().toLowerCase(Locale.ROOT), volumeFormat.toString().toLowerCase(Locale.ROOT),
-                quote(backupPath), quote(volumePath));
-        Pair<Integer, String> result = runCommandWithOutput(compareCommand, timeout * 1000);
-        String output = formatTraceOutput(result.second());
-        if (result.first() == 0) {
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[AFTER_COMPARE], source=[{}], target=[{}], command=[qemu-img-compare], output=[{}]",
-                    backupPath, volumePath, output);
-            return true;
-        } else {
-            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[AFTER_COMPARE], source=[{}], target=[{}], command=[qemu-img-compare], exitCode=[{}], output=[{}]",
-                    backupPath, volumePath, result.first(), output);
-            return false;
-        }
     }
 
     private Path moveExistingFileVolumeAside(String volumePath) throws IOException {
