@@ -66,6 +66,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
     private static final String ATTACH_QCOW2_DISK_COMMAND = " virsh attach-disk %s %s %s --driver qemu --subdriver qcow2 --cache none";
     private static final String ATTACH_RBD_DISK_XML_COMMAND = " virsh attach-device %s /dev/stdin <<EOF%sEOF";
     private static final String CURRRENT_DEVICE = "virsh domblklist --domain %s | tail -n 3 | head -n 1 | awk '{print $1}'";
+    private static final String QEMU_IMG_HAS_BACKING_COMMAND = "qemu-img info --output=json %s 2>/dev/null | grep -q '\"backing-filename\"'";
     @Override
     public Answer execute(AblestackNasRestoreBackupCommand command, LibvirtComputingResource serverResource) {
         String vmName = command.getVmName();
@@ -521,25 +522,33 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
     private void restoreFileVolumeData(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
                                        QemuImg.PhysicalDiskFormat volumeFormat, int timeout) throws QemuImgException {
         if (backupFormat == QemuImg.PhysicalDiskFormat.QCOW2 && volumeFormat == QemuImg.PhysicalDiskFormat.QCOW2) {
-            copyQcow2BackupFile(backupPath, volumePath, timeout);
+            if (hasBackingChain(backupPath)) {
+                convertFileVolumeWithQemuImg(backupPath, volumePath, backupFormat, volumeFormat, timeout);
+            } else {
+                rsyncQcow2BackupFile(backupPath, volumePath, timeout);
+            }
             diagnoseQcow2ConvertToTemporaryFile(backupPath, volumePath, timeout);
             return;
         }
         convertFileVolumeWithQemuImg(backupPath, volumePath, backupFormat, volumeFormat, timeout);
     }
 
-    private void copyQcow2BackupFile(String backupPath, String volumePath, int timeout) throws QemuImgException {
-        String copyCommand = String.format("cp --sparse=always %s %s", quote(backupPath), quote(volumePath));
-        Pair<Integer, String> result = runCommandWithOutput(copyCommand, timeout * 1000);
+    private boolean hasBackingChain(String qcow2Path) {
+        return runCommandWithOutput(String.format(QEMU_IMG_HAS_BACKING_COMMAND, quote(qcow2Path)), 0).first() == 0;
+    }
+
+    private void rsyncQcow2BackupFile(String backupPath, String volumePath, int timeout) throws QemuImgException {
+        String rsyncCommand = String.format("rsync -az %s %s", quote(backupPath), quote(volumePath));
+        Pair<Integer, String> result = runCommandWithOutput(rsyncCommand, timeout * 1000);
         String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[COPY], source=[{}], target=[{}], command=[cp-qcow2], output=[{}]",
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2], output=[{}]",
                     backupPath, volumePath, output);
             return;
         }
-        logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[COPY], source=[{}], target=[{}], command=[cp-qcow2], exitCode=[{}], output=[{}]",
+        logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2], exitCode=[{}], output=[{}]",
                 backupPath, volumePath, result.first(), output);
-        throw new QemuImgException(String.format("cp qcow2 backup failed with exitCode [%s], output [%s]", result.first(), output));
+        throw new QemuImgException(String.format("rsync qcow2 backup failed with exitCode [%s], output [%s]", result.first(), output));
     }
 
     private void diagnoseQcow2ConvertToTemporaryFile(String backupPath, String volumePath, int timeout) {
