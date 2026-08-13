@@ -527,7 +527,6 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             } else {
                 rsyncQcow2BackupFile(backupPath, volumePath, timeout);
             }
-            diagnoseQcow2ConvertToTemporaryFile(backupPath, volumePath, timeout);
             return;
         }
         convertFileVolumeWithQemuImg(backupPath, volumePath, backupFormat, volumeFormat, timeout);
@@ -549,44 +548,6 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2], exitCode=[{}], output=[{}]",
                 backupPath, volumePath, result.first(), output);
         throw new QemuImgException(String.format("rsync qcow2 backup failed with exitCode [%s], output [%s]", result.first(), output));
-    }
-
-    private void diagnoseQcow2ConvertToTemporaryFile(String backupPath, String volumePath, int timeout) {
-        Path diagnosticTarget = Paths.get(volumePath).resolveSibling(Paths.get(volumePath).getFileName() + ".convertdiag." + System.currentTimeMillis() + ".qcow2");
-        String diagnosticTargetPath = diagnosticTarget.toString();
-        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[DIAG_CONVERT_BEGIN], source=[{}], restoreTarget=[{}], diagnosticTarget=[{}]",
-                backupPath, volumePath, diagnosticTargetPath);
-        logFileLifecycleState("DIAG_BEFORE_SOURCE", backupPath, timeout);
-        logFileLifecycleState("DIAG_BEFORE_RESTORE_TARGET", volumePath, timeout);
-        try {
-            convertFileVolumeWithQemuImg(backupPath, diagnosticTargetPath, QemuImg.PhysicalDiskFormat.QCOW2, QemuImg.PhysicalDiskFormat.QCOW2, timeout);
-            logFileRestoreQcow2State("DIAG_AFTER_CONVERT_TARGET", diagnosticTargetPath, timeout);
-            logFileLifecycleState("DIAG_AFTER_CONVERT_TARGET", diagnosticTargetPath, timeout);
-            logFileRestoreCompare(backupPath, diagnosticTargetPath, QemuImg.PhysicalDiskFormat.QCOW2, QemuImg.PhysicalDiskFormat.QCOW2, timeout);
-        } catch (QemuImgException e) {
-            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[DIAG_CONVERT_FAILED], source=[{}], diagnosticTarget=[{}], error=[{}]",
-                    backupPath, diagnosticTargetPath, e.getMessage());
-        } finally {
-            deleteDiagnosticConvertFile(diagnosticTarget);
-        }
-    }
-
-    private void logFileLifecycleState(String phase, String imagePath, int timeout) {
-        logFileRestoreCommand(phase, imagePath, "readlink", String.format("readlink -f %s", quote(imagePath)), timeout);
-        logFileRestoreCommand(phase, imagePath, "stat", String.format(
-                "stat -c 'dev=%%D inode=%%i size=%%s blocks=%%b mtime=%%y ctime=%%z' %s", quote(imagePath)), timeout);
-        logFileRestoreCommand(phase, imagePath, "lsof", String.format("lsof -- %s", quote(imagePath)), timeout);
-        logFileRestoreCommand(phase, imagePath, "fuser", String.format("fuser -v %s", quote(imagePath)), timeout);
-    }
-
-    private void deleteDiagnosticConvertFile(Path diagnosticTarget) {
-        try {
-            Files.deleteIfExists(diagnosticTarget);
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[DIAG_CONVERT_DELETED], diagnosticTarget=[{}]", diagnosticTarget);
-        } catch (IOException e) {
-            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[DIAG_CONVERT_DELETE_FAILED], diagnosticTarget=[{}], error=[{}]",
-                    diagnosticTarget, e.getMessage());
-        }
     }
 
     private void convertFileVolumeWithQemuImg(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
