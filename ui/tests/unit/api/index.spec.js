@@ -15,35 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-html {
-  scrollbar-gutter: stable;
-}
+import { appendApiData } from '@/api'
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--ui-scroll-thumb) var(--ui-scroll-track);
-}
+describe('API form data serialization', () => {
+  it('omits absent values instead of serializing them as strings', () => {
+    const params = appendApiData(new URLSearchParams(), {
+      miniops: undefined,
+      maxiops: null,
+      size: 0,
+      enabled: false,
+      description: ''
+    })
 
-*::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-*::-webkit-scrollbar-track,
-*::-webkit-scrollbar-corner {
-  background: var(--ui-scroll-track);
-}
-
-*::-webkit-scrollbar-thumb {
-  min-width: 32px;
-  min-height: 32px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: var(--ui-scroll-thumb);
-  background-clip: padding-box;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--ui-scroll-thumb-hover);
-  background-clip: padding-box;
-}
+    expect(params.has('miniops')).toBe(false)
+    expect(params.has('maxiops')).toBe(false)
+    expect(params.get('size')).toBe('0')
+    expect(params.get('enabled')).toBe('false')
+    expect(params.get('description')).toBe('')
+  })
+})
