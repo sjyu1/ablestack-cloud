@@ -114,6 +114,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String MISSING_PARENT_QCOW2_BITMAP_ERROR = "Parent qcow2 bitmap";
     private static final String BACKUP_TRACE = "[ABLESTACK_NAS_BACKUP_TRACE]";
+    private static final long BACKUP_REPOSITORY_SPACE_BUFFER_BYTES = 10L * 1024L * 1024L * 1024L;
     private static final long STALE_BACKUP_THRESHOLD_MS = TimeUnit.DAYS.toMillis(1);
 
     ConfigKey<Integer> NASBackupRestoreMountTimeout = new ConfigKey<>("Advanced", Integer.class,
@@ -300,6 +301,7 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
         final List<String> backupFiles = buildBackupFileNames(vmVolumes, backupEngine, incrementalBackup);
         final String requestedBackupType = incrementalBackup ? BACKUP_TYPE_INCREMENTAL : BACKUP_TYPE_FULL;
 
+        validateBackupRepositoryCapacity(host, backupRepository, vmVolumes, vm.getInstanceName(), requestedBackupType, backupEngine);
         BackupVO backupVO = createBackupObject(vm, backupPath, requestedBackupType,
                 checkpointName, backupEngine, incrementalBackup ? parentBackup : null, volumePoolsAndPaths.second());
         AblestackNasTakeBackupCommand command = new AblestackNasTakeBackupCommand(vm.getInstanceName(), backupPath);
@@ -1331,6 +1333,62 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
             }
         }
         return new Pair<>(usedSize, totalSize);
+    }
+
+    private void validateBackupRepositoryCapacity(final Host host, final BackupRepository repository, final List<VolumeVO> vmVolumes,
+            final String vmName, final String backupType, final String backupEngine) {
+        final long requiredBytes = estimateRequiredRepositoryBytesForBackup(vmVolumes);
+        final long bufferBytes = Math.max(BACKUP_REPOSITORY_SPACE_BUFFER_BYTES, requiredBytes / 5L);
+        final long minimumAvailableBytes = requiredBytes + bufferBytes;
+        final BackupStorageStatsAnswer stats = getBackupRepositoryStats(host, repository);
+        final long totalBytes = stats.getTotalSize() != null ? stats.getTotalSize() : 0L;
+        final long usedBytes = stats.getUsedSize() != null ? stats.getUsedSize() : 0L;
+        final long availableBytes = Math.max(totalBytes - usedBytes, 0L);
+        LOG.info("{} phase=[REPOSITORY_SPACE_CHECK], vm=[{}], host=[{}], backupType=[{}], backupEngine=[{}], repositoryId=[{}], repositoryName=[{}], repositoryType=[{}], repositoryAddress=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], totalBytes=[{}], usedBytes=[{}], availableBytes=[{}]",
+                BACKUP_TRACE, vmName, host != null ? host.getName() : null, backupType, backupEngine,
+                repository != null ? repository.getId() : null, repository != null ? repository.getName() : null,
+                repository != null ? repository.getType() : null, repository != null ? repository.getAddress() : null,
+                requiredBytes, bufferBytes, minimumAvailableBytes, totalBytes, usedBytes, availableBytes);
+        if (availableBytes < minimumAvailableBytes) {
+            throw new CloudRuntimeException(String.format(
+                    "Insufficient NAS backup repository space for VM [%s]. Required at least [%d] bytes including buffer, but only [%d] bytes are available on repository [%s].",
+                    vmName, minimumAvailableBytes, availableBytes, repository != null ? repository.getName() : null));
+        }
+    }
+
+    private BackupStorageStatsAnswer getBackupRepositoryStats(final Host host, final BackupRepository repository) {
+        if (host == null || repository == null) {
+            throw new CloudRuntimeException("Host and backup repository are required to query NAS backup repository capacity");
+        }
+        final GetBackupStorageStatsCommand command = new GetBackupStorageStatsCommand(repository.getType(), repository.getAddress(), repository.getMountOptions());
+        try {
+            final BackupStorageStatsAnswer answer = (BackupStorageStatsAnswer) agentManager.send(host.getId(), command);
+            if (answer == null || !answer.getResult()) {
+                throw new CloudRuntimeException(String.format("Failed to query NAS backup repository [%s] capacity due to: %s",
+                        repository.getName(), answer != null ? answer.getDetails() : "no answer received"));
+            }
+            backupRepositoryDao.updateCapacity(repository, answer.getTotalSize(), answer.getUsedSize());
+            return answer;
+        } catch (AgentUnavailableException e) {
+            throw new CloudRuntimeException(String.format("Unable to contact host [%s] to query NAS backup repository [%s] capacity",
+                    host.getName(), repository.getName()), e);
+        } catch (OperationTimedoutException e) {
+            throw new CloudRuntimeException(String.format("Timed out querying NAS backup repository [%s] capacity on host [%s]",
+                    repository.getName(), host.getName()), e);
+        } catch (RuntimeException e) {
+            throw new CloudRuntimeException(String.format("Failed to query NAS backup repository [%s] capacity on host [%s] due to: %s",
+                    repository.getName(), host.getName(), e.getMessage()), e);
+        }
+    }
+
+    private long estimateRequiredRepositoryBytesForBackup(final List<VolumeVO> vmVolumes) {
+        if (CollectionUtils.isEmpty(vmVolumes)) {
+            return 0L;
+        }
+        return vmVolumes.stream()
+                .filter(volume -> Volume.State.Ready.equals(volume.getState()))
+                .mapToLong(VolumeVO::getSize)
+                .sum();
     }
 
     @Override
