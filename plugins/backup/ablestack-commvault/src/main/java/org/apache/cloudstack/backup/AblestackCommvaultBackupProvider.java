@@ -813,6 +813,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                     }
                 }
                 markBackupFailure(backupVO, "commvault-job", "Failed to complete Commvault backup job");
+                LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                        BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                        backupPath, System.currentTimeMillis() - backupStartTime, "Failed to complete Commvault backup job");
                 backupVO.setStatus(Backup.Status.Failed);
                 removeBackupWithDetails(backupVO.getId());
                 cleanupBackupPathsOnHost(vmHostVO, Collections.singletonList(backupPath));
@@ -838,6 +841,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
             return BackupExecutionResult.failure(details, backupVO);
         } catch (RuntimeException e) {
+            LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                    BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    backupPath, System.currentTimeMillis() - backupStartTime, e.getMessage());
             LOG.error("Unexpected failure while executing Commvault backup for VM {}. Cleaning up incomplete backup entry [{}].",
                     vm.getInstanceName(), backupVO.getUuid(), e);
             markBackupFailure(backupVO, "unexpected-runtime", e.getMessage());
@@ -856,6 +862,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
 
     private BackupExecutionResult failCompletedCommvaultBackupMetadata(BackupVO backupVO, String externalId, String details) {
         backupVO.setExternalId(externalId);
+        LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], backupType=[{}], backupPath=[{}], externalId=[{}], reason=[{}]",
+                BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), backupVO.getVmId(), backupVO.getType(), getBackupPathFromExternalId(backupVO), externalId, details);
         markBackupFailure(backupVO, "metadata-finalize", details);
         backupVO.setStatus(Backup.Status.Error);
         backupDao.update(backupVO.getId(), backupVO);

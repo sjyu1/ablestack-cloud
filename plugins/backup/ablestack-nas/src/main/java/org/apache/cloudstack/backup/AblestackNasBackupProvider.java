@@ -407,6 +407,8 @@ public class AblestackNasBackupProvider extends AdapterBase implements BackupPro
     }
 
     private BackupExecutionResult failCompletedNasBackupMetadata(BackupVO backupVO, String details) {
+        LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], backupType=[{}], backupPath=[{}], reason=[{}]",
+                BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), backupVO.getVmId(), backupVO.getType(), backupVO.getExternalId(), details);
         markBackupFailure(backupVO, "metadata-finalize", details);
         backupVO.setStatus(Backup.Status.Error);
         backupDao.update(backupVO.getId(), backupVO);
