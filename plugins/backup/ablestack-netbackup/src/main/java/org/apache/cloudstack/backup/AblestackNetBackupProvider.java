@@ -133,6 +133,7 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     private static final String DETAIL_FAILURE_REASON = "netbackup.failure.reason";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String MISSING_PARENT_QCOW2_BITMAP_ERROR = "Parent qcow2 bitmap";
+    private static final String BACKUP_TRACE = "[ABLESTACK_NETBACKUP_BACKUP_TRACE]";
     private static final long STALE_BACKUP_THRESHOLD_MS = 24L * 60L * 60L * 1000L;
     private static final long NETBACKUP_SYNC_DELETE_GRACE_MS = 10L * 60L * 1000L;
     private static final String NETBACKUP_OFFERING_NAME = "netbackup";
@@ -217,6 +218,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         if (!result.success && incrementalBackup && canRetryFailedIncrementalAsFull(result) && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             failedIncrementalBackup = result.backup;
             cleanupFailedBackupForFullRetry(host, failedIncrementalBackup);
+            LOG.warn("{} phase=[INCREMENTAL_FALLBACK_TO_FULL], vmId=[{}], vmName=[{}], failedBackupUuid=[{}], reason=[{}]",
+                    BACKUP_TRACE, vm.getId(), vm.getInstanceName(), failedIncrementalBackup != null ? failedIncrementalBackup.getUuid() : null, result.details);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
             result = executeBackup(vm, quiesceVM, host, vmVolumes, volumePoolsAndPaths, null, false,
                     null);
@@ -245,6 +248,8 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         if (!result.success && incrementalBackup && canRetryFailedIncrementalAsFull(result) && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             failedIncrementalBackup = result.backup;
             cleanupFailedBackupForFullRetry(host, failedIncrementalBackup);
+            LOG.warn("{} phase=[INCREMENTAL_FALLBACK_TO_FULL], vmId=[{}], vmName=[{}], failedBackupUuid=[{}], reason=[{}]",
+                    BACKUP_TRACE, vm.getId(), vm.getInstanceName(), failedIncrementalBackup != null ? failedIncrementalBackup.getUuid() : null, result.details);
             LOG.warn("Incremental NetBackup backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm.getInstanceName(), result.details);
             result = executeBackup(vm, null, host, vmVolumes, volumePoolsAndPaths, null, false,
                     policyName);
@@ -291,6 +296,10 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             command.setParentCheckpointXmlChain(getParentCheckpointXmlChain(latestBackup));
         }
 
+        final long backupStartTime = System.currentTimeMillis();
+        LOG.info("{} phase=[START], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], parentBackupUuid=[{}], hostId=[{}], hostName=[{}], backupPath=[{}], timeoutSeconds=[{}]",
+                BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                latestBackup != null ? latestBackup.getUuid() : null, vmHost.getId(), vmHost.getName(), backupPath, command.getWait());
         try {
             final BackupAnswer answer = (BackupAnswer) agentManager.send(vmHost.getId(), command);
             if (answer != null && answer.getResult()) {
@@ -309,6 +318,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
                 backupVO.setDetails(backupDetails);
                 backupVO.setBackedUpVolumes(createVolumeInfoFromVolumes(vmVolumes, backupFiles));
                 if (backupDao.update(backupVO.getId(), backupVO)) {
+                    LOG.info("{} phase=[DONE], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], size=[{}], elapsedMs=[{}]",
+                            BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                            backupPath, backupVO.getSize(), System.currentTimeMillis() - backupStartTime);
                     return BackupExecutionResult.success(backupVO);
                 }
                 LOG.error("NetBackup staging completed for VM [{}], but backup [{}] metadata update failed. Leaving it in Error state.",
@@ -320,6 +332,9 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             }
 
             final String details = answer != null ? answer.getDetails() : "No answer received";
+            LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                    BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    backupPath, System.currentTimeMillis() - backupStartTime, details);
             LOG.error("Failed to take NetBackup backup for VM {}: {}", vm.getInstanceName(), details);
             markBackupFailure(backupVO, "agent-answer", details);
             final boolean cleanupSuccessful = cleanupFailedBackupArtifacts(vmHost, backupVO);
@@ -327,11 +342,17 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
             backupDao.update(backupVO.getId(), backupVO);
             return BackupExecutionResult.failure(details, backupVO);
         } catch (final AgentUnavailableException e) {
+            LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                    BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    backupPath, System.currentTimeMillis() - backupStartTime, "Unable to contact backend control plane to initiate NetBackup backup");
             markBackupFailure(backupVO, "agent-send", "Unable to contact backend control plane to initiate NetBackup backup");
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.update(backupVO.getId(), backupVO);
             throw new CloudRuntimeException("Unable to contact backend control plane to initiate NetBackup backup", e);
         } catch (final OperationTimedoutException e) {
+            LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                    BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    backupPath, System.currentTimeMillis() - backupStartTime, "Operation to initiate NetBackup backup timed out");
             markBackupFailure(backupVO, "agent-send-timeout", "Operation to initiate NetBackup backup timed out");
             backupVO.setStatus(Backup.Status.Failed);
             backupDao.update(backupVO.getId(), backupVO);

@@ -133,6 +133,7 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
     private static final String DETAIL_RBD_DISK_PATHS = "commvault.rbd.disk.paths";
     private static final String MISSING_PARENT_RBD_SNAPSHOT_ERROR = "Parent RBD snapshot";
     private static final String MISSING_PARENT_QCOW2_BITMAP_ERROR = "Parent qcow2 bitmap";
+    private static final String BACKUP_TRACE = "[ABLESTACK_COMMVAULT_BACKUP_TRACE]";
     private static final String DETAIL_STAGE_HOST = "commvault.stage.host";
     private static final String DETAIL_CHAIN_SEALED = "commvault.chain.sealed";
     private static final String DETAIL_CHAIN_SEAL_REASON = "commvault.chain.seal.reason";
@@ -356,6 +357,8 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                 latestBackup, incrementalBackup, incrementalBackup && vmVolumes.size() > 1);
         if (!result.success && incrementalBackup && shouldRetryAsFullAfterIncrementalFailure(result, vmVolumes)) {
             cleanupFailedBackupForFullRetry(result.backup);
+            LOG.warn("{} phase=[INCREMENTAL_FALLBACK_TO_FULL], vmId=[{}], vmName=[{}], failedBackupUuid=[{}], reason=[{}]",
+                    BACKUP_TRACE, vm.getId(), vm.getInstanceName(), result.backup != null ? result.backup.getUuid() : null, result.details);
             LOG.warn("Incremental backup failed for VM [{}] due to [{}]. Retrying as full backup.", vm, result.details);
             String fallbackBackupPath = buildBackupPath(vm);
             result = executeBackup(vm, quiesceVM, vmHost, vmHostVO, client, planId, fallbackBackupPath, backupContentPath, vmVolumes, volumePoolsAndPaths,
@@ -690,6 +693,10 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             command.setParentCheckpointXmlChain(getParentCheckpointXmlChain(latestBackup));
         }
 
+        final long backupStartTime = System.currentTimeMillis();
+        LOG.info("{} phase=[START], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], parentBackupUuid=[{}], hostId=[{}], hostName=[{}], backupPath=[{}], timeoutSeconds=[{}]",
+                BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                latestBackup != null ? latestBackup.getUuid() : null, vmHost.getId(), vmHost.getName(), backupPath, command.getWait());
         LOG.info("Submitting Commvault backup staging command for VM [{}] on host [{}] with backup [{}], path [{}], state [{}], timeout [{}] seconds, volumes [{}]",
                 vm.getInstanceName(), vmHost.getName(), backupVO.getUuid(), backupPath, vm.getState(), command.getWait(), vmVolumes.size());
         try {
@@ -697,12 +704,18 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             try {
                 answer = (BackupAnswer) agentManager.send(vmHost.getId(), command);
             } catch (AgentUnavailableException e) {
+                LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                        BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                        backupPath, System.currentTimeMillis() - backupStartTime, "Unable to contact backend control plane to initiate backup");
                 LOG.error("Unable to contact backend control plane to initiate backup for VM {}", vm.getInstanceName());
                 markBackupFailure(backupVO, "agent-send", "Unable to contact backend control plane to initiate backup");
                 backupVO.setStatus(Backup.Status.Failed);
                 removeBackupWithDetails(backupVO.getId());
                 throw new CloudRuntimeException("Unable to contact backend control plane to initiate backup");
             } catch (OperationTimedoutException e) {
+                LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                        BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                        backupPath, System.currentTimeMillis() - backupStartTime, "Operation to initiate backup timed out");
                 LOG.error("Operation to initiate backup timed out for VM {}", vm.getInstanceName());
                 markBackupFailure(backupVO, "agent-send-timeout", "Operation to initiate backup timed out");
                 backupVO.setStatus(Backup.Status.Failed);
@@ -769,6 +782,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
                                         updateBackupAsCompleted(backupVO, externalId, jobDetails, backupDetails,
                                                 createVolumeInfoFromVolumes(vmVolumes, backupFiles));
                                         if (backupDao.update(backupVO.getId(), backupVO)) {
+                                            LOG.info("{} phase=[DONE], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], externalId=[{}], elapsedMs=[{}]",
+                                                    BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                                                    backupPath, externalId, System.currentTimeMillis() - backupStartTime);
                                             cleanupBackupPathsAfterSuccessfulBackup(vmHostVO, Collections.singletonList(backupPath), backupVO);
                                             return BackupExecutionResult.success(backupVO);
                                         }
@@ -804,6 +820,9 @@ public class AblestackCommvaultBackupProvider extends AdapterBase implements Bac
             }
 
             final String details = answer != null ? answer.getDetails() : "No answer received";
+            LOG.error("{} phase=[FAILED], backupId=[{}], backupUuid=[{}], vmId=[{}], vmName=[{}], backupType=[{}], backupEngine=[{}], backupPath=[{}], elapsedMs=[{}], reason=[{}]",
+                    BACKUP_TRACE, backupVO.getId(), backupVO.getUuid(), vm.getId(), vm.getInstanceName(), requestedBackupType, backupEngine,
+                    backupPath, System.currentTimeMillis() - backupStartTime, details);
             LOG.error("Failed to take backup for VM {}: {}", vm.getInstanceName(), details);
             markBackupFailure(backupVO, "agent-answer", details);
             if (retryAsFullOnFailure) {

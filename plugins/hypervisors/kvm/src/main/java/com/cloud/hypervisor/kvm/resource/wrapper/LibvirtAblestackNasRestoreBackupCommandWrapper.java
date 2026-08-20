@@ -347,12 +347,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
             destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
             logger.info("Restoring NAS backup file [{}] to file volume [{}] without target-is-zero optimization.", backupPath, volumePath);
-            logFileRestoreQcow2State("BEFORE_SOURCE", backupPath, timeout);
-            logFileRestoreQcow2State("BEFORE_DEST", volumePath, timeout);
             movedAsideTarget = moveExistingFileVolumeAside(volumePath);
             restoreFileVolumeData(backupPath, volumePath, srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
-            logFileRestoreQcow2State("AFTER_SOURCE", backupPath, timeout);
-            logFileRestoreQcow2State("AFTER_DEST", volumePath, timeout);
             deleteMovedAsideFileVolume(movedAsideTarget);
             return true;
         } catch (QemuImgException | IOException e) {
@@ -449,13 +445,6 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         return true;
     }
 
-    private void logFileRestoreQcow2State(String phase, String imagePath, int timeout) {
-        logFileRestoreCommand(phase, imagePath, "qemu-img-info", String.format(
-                "qemu-img info -U --output=json %s", quote(imagePath)), timeout);
-        logFileRestoreCommand(phase, imagePath, "qemu-img-check", String.format(
-                "qemu-img check -U %s", quote(imagePath)), timeout);
-    }
-
     private Path moveExistingFileVolumeAside(String volumePath) throws IOException {
         Path targetPath = Paths.get(volumePath);
         if (!Files.exists(targetPath)) {
@@ -520,8 +509,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         Pair<Integer, String> result = runCommandWithOutput(rsyncCommand, timeout * 1000);
         String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2], output=[{}]",
-                    backupPath, volumePath, output);
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2]",
+                    backupPath, volumePath);
             return;
         }
         logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2], exitCode=[{}], output=[{}]",
@@ -537,25 +526,13 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         Pair<Integer, String> result = runCommandWithOutput(convertCommand, timeout * 1000);
         String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert], output=[{}]",
-                    backupPath, volumePath, output);
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert]",
+                    backupPath, volumePath);
             return;
         }
         logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert], exitCode=[{}], output=[{}]",
                 backupPath, volumePath, result.first(), output);
         throw new QemuImgException(String.format("qemu-img convert failed with exitCode [%s], output [%s]", result.first(), output));
-    }
-
-    private void logFileRestoreCommand(String phase, String imagePath, String label, String traceCommand, int timeout) {
-        Pair<Integer, String> result = runCommandWithOutput(traceCommand, timeout * 1000);
-        String output = formatTraceOutput(result.second());
-        if (result.first() == 0) {
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[{}], image=[{}], command=[{}], output=[{}]",
-                    phase, imagePath, label, output);
-        } else {
-            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[{}], image=[{}], command=[{}], exitCode=[{}], output=[{}]",
-                    phase, imagePath, label, result.first(), output);
-        }
     }
 
     private Pair<Integer, String> runCommandWithOutput(String command, int timeout) {

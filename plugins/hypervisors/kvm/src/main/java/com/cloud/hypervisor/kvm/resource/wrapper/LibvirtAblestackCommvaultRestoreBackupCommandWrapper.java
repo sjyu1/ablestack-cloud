@@ -67,7 +67,9 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
     private static final String CURRRENT_DEVICE = "virsh domblklist --domain %s | tail -n 3 | head -n 1 | awk '{print $1}'";
     private static final String MKDIR_P = "mkdir -p %s";
     private static final String RSYNC_DIR_FROM_REMOTE = "rsync -az -e \"ssh -o StrictHostKeyChecking=no\" %s:%s/ %s/";
+    private static final String QEMU_IMG_HAS_BACKING_COMMAND = "qemu-img info --output=json %s 2>/dev/null | grep -q '\"backing-filename\"'";
     private static final String COMMAND_EXIT_MARKER = "__CS_COMMAND_EXIT__=";
+    private static final String RESTORE_TRACE = "[ABLESTACK_COMMVAULT_RESTORE_TRACE]";
 
     @Override
     public Answer execute(AblestackCommvaultRestoreBackupCommand command, LibvirtComputingResource serverResource) {
@@ -89,6 +91,8 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
         BackupRestorePlan restorePlan = command.getRestorePlan();
         KVMStoragePoolManager storagePoolMgr = serverResource.getStoragePoolMgr();
 
+        logger.info("{} phase=[ENTER], vm=[{}], backupPath=[{}], vmExists=[{}], restorePlan=[{}], restoreVolumePaths=[{}], backupFiles=[{}], backupFileChains=[{}]",
+                RESTORE_TRACE, vmName, backupPath, vmExists, restorePlan, restoreVolumePaths, backupFiles, backupFileChains);
         String newVolumeId = null;
         try {
             validateChainStatePlan(volumeChainStates, restorePlan);
@@ -123,6 +127,8 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
             return new BackupAnswer(command, false, errorMessage);
         }
 
+        logger.info("{} phase=[DONE], vm=[{}], backupPath=[{}], vmExists=[{}], newVolumeId=[{}]",
+                RESTORE_TRACE, vmName, backupPath, vmExists, newVolumeId);
         return new BackupAnswer(command, true, newVolumeId);
     }
 
@@ -273,6 +279,8 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
         if (backupPaths == null || backupPaths.isEmpty()) {
             return false;
         }
+        logger.info("{} phase=[RESTORE_VOLUME_BEGIN], poolType=[{}], targetVolume=[{}], backupPaths=[{}], backupIndex=[{}], createTargetVolume=[{}]",
+                RESTORE_TRACE, volumePool.getPoolType(), volumePath, backupPaths, backupIndex, createTargetVolume);
         if (volumePool.getPoolType() != Storage.StoragePoolType.RBD) {
             if (backupPaths.stream().anyMatch(path -> path.endsWith(".rbdiff"))) {
                 return restoreIncrementalRbdBackupChainToFileVolume(volumePath, backupPaths, timeout, backupRootPath, backupIndex);
@@ -320,18 +328,33 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
 
     private boolean replaceFileVolumeWithBackup(String volumePath, String backupPath, int timeout) {
         QemuImgFile srcBackupFile = null;
-        QemuImgFile destVolumeFile = null;
+        Path temporaryVolumePath = null;
         try {
-            QemuImg qemu = new QemuImg(timeout * 1000, true, false);
             srcBackupFile = new QemuImgFile(backupPath, getBackupFileFormat(backupPath));
-            destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
-            qemu.convert(srcBackupFile, destVolumeFile);
+            QemuImg.PhysicalDiskFormat targetFormat = getFileVolumeFormat(volumePath);
+            temporaryVolumePath = Files.createTempFile("cs-commvault-restore-volume-", "." + targetFormat.toString().toLowerCase(Locale.ROOT));
+            Files.deleteIfExists(temporaryVolumePath);
+            logger.info("{} phase=[TEMP_TARGET_CREATED], source=[{}], target=[{}], temporaryTarget=[{}], sourceFormat=[{}], targetFormat=[{}]",
+                    RESTORE_TRACE, srcBackupFile.getFileName(), volumePath, temporaryVolumePath, srcBackupFile.getFormat(), targetFormat);
+            restoreFileVolumeData(backupPath, temporaryVolumePath.toString(), srcBackupFile.getFormat(), targetFormat, timeout);
+            Files.copy(temporaryVolumePath, Paths.get(volumePath), StandardCopyOption.REPLACE_EXISTING);
+            logger.info("{} phase=[TEMP_TARGET_PROMOTED], target=[{}], temporaryTarget=[{}]",
+                    RESTORE_TRACE, volumePath, temporaryVolumePath);
             return true;
-        } catch (QemuImgException | LibvirtException e) {
+        } catch (QemuImgException | LibvirtException | IOException e) {
             String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
-            String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
-            logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
+            logger.error("{} phase=[FILE_RESTORE_FAILED], source=[{}], target=[{}], error=[{}]",
+                    RESTORE_TRACE, srcFilename, volumePath, e.getMessage());
             return false;
+        } finally {
+            if (temporaryVolumePath != null) {
+                try {
+                    Files.deleteIfExists(temporaryVolumePath);
+                } catch (IOException e) {
+                    logger.warn("{} phase=[TEMP_TARGET_DELETE_FAILED], temporaryTarget=[{}], error=[{}]",
+                            RESTORE_TRACE, temporaryVolumePath, e.getMessage());
+                }
+            }
         }
     }
 
@@ -381,6 +404,37 @@ public class LibvirtAblestackCommvaultRestoreBackupCommandWrapper extends Comman
                 }
             }
         }
+    }
+
+    private void restoreFileVolumeData(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
+                                       QemuImg.PhysicalDiskFormat volumeFormat, int timeout) throws QemuImgException, LibvirtException {
+        if (backupFormat == QemuImg.PhysicalDiskFormat.QCOW2 && volumeFormat == QemuImg.PhysicalDiskFormat.QCOW2 && !hasBackingChain(backupPath)) {
+            rsyncQcow2BackupFile(backupPath, volumePath, timeout);
+            return;
+        }
+        convertFileVolumeWithQemuImg(backupPath, volumePath, backupFormat, volumeFormat, timeout);
+    }
+
+    private boolean hasBackingChain(String qcow2Path) {
+        return Script.runSimpleBashScriptForExitValue(String.format(QEMU_IMG_HAS_BACKING_COMMAND, quote(qcow2Path)), 0, false) == 0;
+    }
+
+    private void rsyncQcow2BackupFile(String backupPath, String volumePath, int timeout) throws QemuImgException {
+        String rsyncCommand = String.format("rsync -az %s %s", quote(backupPath), quote(volumePath));
+        CommandExecutionResult result = executeBashCommandWithResult(rsyncCommand, timeout, "Rsync standalone QCOW2 backup to file volume");
+        if (result.exitCode != 0) {
+            throw new QemuImgException(String.format("rsync qcow2 backup failed with exitCode [%s], output [%s]", result.exitCode, result.output));
+        }
+        logger.info("{} phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2]",
+                RESTORE_TRACE, backupPath, volumePath);
+    }
+
+    private void convertFileVolumeWithQemuImg(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
+                                              QemuImg.PhysicalDiskFormat volumeFormat, int timeout) throws QemuImgException, LibvirtException {
+        QemuImg qemu = new QemuImg(timeout * 1000, true, false);
+        qemu.convert(new QemuImgFile(backupPath, backupFormat), new QemuImgFile(volumePath, volumeFormat));
+        logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert]",
+                RESTORE_TRACE, backupPath, volumePath);
     }
 
     private void rebaseBackupChainFile(Path child, Path parent, int timeout) throws IOException {
