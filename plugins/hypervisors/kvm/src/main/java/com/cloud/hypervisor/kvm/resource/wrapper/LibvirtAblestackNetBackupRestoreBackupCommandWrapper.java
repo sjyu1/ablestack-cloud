@@ -364,7 +364,8 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
 
     private void validatePrimaryStorageSpaceForFileRestorePlan(final List<String> volumePaths, final List<List<String>> backupPathsByVolume,
             final List<PrimaryDataStoreTO> restoreVolumePools) {
-        final Map<Path, Long> requiredBytesByDirectory = new HashMap<>();
+        final Map<Path, Long> persistentGrowthBytesByDirectory = new HashMap<>();
+        final Map<Path, Long> transientBytesByDirectory = new HashMap<>();
         for (int idx = 0; idx < volumePaths.size(); idx++) {
             final PrimaryDataStoreTO restoreVolumePool = restoreVolumePools.get(idx);
             if (restoreVolumePool.getPoolType() == Storage.StoragePoolType.RBD) {
@@ -374,13 +375,27 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
             final List<String> backupPaths = backupPathsByVolume.get(idx);
             validateResolvedChainPaths(backupPaths, volumePath);
             final Path targetDirectory = getTargetDirectory(volumePath);
-            final long requiredBytes = estimateRequiredBytesForVolumeRestore(volumePath, backupPaths);
-            requiredBytesByDirectory.merge(targetDirectory, requiredBytes, Long::sum);
+            try {
+                final long backupRequiredBytes = estimateRequiredBytesForFileRestore(getFirstExistingBackupPath(backupPaths));
+                final Path targetPath = Paths.get(volumePath);
+                if (Files.exists(targetPath)) {
+                    final long existingBytes = estimateRequiredBytesForFileRestore(volumePath);
+                    persistentGrowthBytesByDirectory.merge(targetDirectory, Math.max(backupRequiredBytes - existingBytes, 0L), Long::sum);
+                    transientBytesByDirectory.merge(targetDirectory, backupRequiredBytes, Long::max);
+                } else {
+                    persistentGrowthBytesByDirectory.merge(targetDirectory, backupRequiredBytes, Long::sum);
+                }
+            } catch (final QemuImgException | LibvirtException e) {
+                throw new CloudRuntimeException(String.format("Failed to estimate primary storage requirement for target [%s]: %s",
+                        volumePath, e.getMessage()), e);
+            }
         }
 
-        for (final Map.Entry<Path, Long> entry : requiredBytesByDirectory.entrySet()) {
+        for (final Map.Entry<Path, Long> entry : persistentGrowthBytesByDirectory.entrySet()) {
             final Path targetDirectory = entry.getKey();
-            final long requiredBytes = entry.getValue();
+            final long persistentGrowthBytes = entry.getValue();
+            final long transientBytes = transientBytesByDirectory.getOrDefault(targetDirectory, 0L);
+            final long requiredBytes = persistentGrowthBytes + transientBytes;
             final long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, requiredBytes / 5L);
             final long minimumAvailableBytes = requiredBytes + bufferBytes;
             final long availableBytes;
@@ -389,8 +404,30 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
             } catch (final IOException e) {
                 throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
             }
-            logger.info("{} phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
-                    RESTORE_TRACE, targetDirectory, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
+            logger.info("{} phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[{}], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
+                    RESTORE_TRACE, targetDirectory, persistentGrowthBytes, transientBytes, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
+            if (availableBytes < minimumAvailableBytes) {
+                throw new CloudRuntimeException(String.format(
+                        "Insufficient primary storage space for NetBackup restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",
+                        targetDirectory, minimumAvailableBytes, availableBytes));
+            }
+        }
+        for (final Map.Entry<Path, Long> entry : transientBytesByDirectory.entrySet()) {
+            final Path targetDirectory = entry.getKey();
+            if (persistentGrowthBytesByDirectory.containsKey(targetDirectory)) {
+                continue;
+            }
+            final long transientBytes = entry.getValue();
+            final long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, transientBytes / 5L);
+            final long minimumAvailableBytes = transientBytes + bufferBytes;
+            final long availableBytes;
+            try {
+                availableBytes = Files.getFileStore(targetDirectory).getUsableSpace();
+            } catch (final IOException e) {
+                throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
+            }
+            logger.info("{} phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[0], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
+                    RESTORE_TRACE, targetDirectory, transientBytes, transientBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
             if (availableBytes < minimumAvailableBytes) {
                 throw new CloudRuntimeException(String.format(
                         "Insufficient primary storage space for NetBackup restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",

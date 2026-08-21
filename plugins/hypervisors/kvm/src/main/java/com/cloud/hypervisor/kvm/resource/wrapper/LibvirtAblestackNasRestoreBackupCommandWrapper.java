@@ -402,7 +402,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
 
     private void validatePrimaryStorageSpaceForFileRestorePlan(List<String> volumePaths, List<List<String>> backupPathsByVolume,
                                                                List<PrimaryDataStoreTO> restoreVolumePools) {
-        Map<Path, Long> requiredBytesByDirectory = new HashMap<>();
+        Map<Path, Long> persistentGrowthBytesByDirectory = new HashMap<>();
+        Map<Path, Long> transientBytesByDirectory = new HashMap<>();
         for (int idx = 0; idx < volumePaths.size(); idx++) {
             PrimaryDataStoreTO restoreVolumePool = restoreVolumePools.get(idx);
             if (restoreVolumePool.getPoolType() == Storage.StoragePoolType.RBD) {
@@ -412,13 +413,27 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             List<String> backupPaths = backupPathsByVolume.get(idx);
             validateResolvedChainPaths(backupPaths, volumePath);
             Path targetDirectory = getTargetDirectory(volumePath);
-            long requiredBytes = estimateRequiredBytesForVolumeRestore(volumePath, backupPaths);
-            requiredBytesByDirectory.merge(targetDirectory, requiredBytes, Long::sum);
+            try {
+                long backupRequiredBytes = estimateRequiredBytesForFileRestore(getFirstExistingBackupPath(backupPaths));
+                Path targetPath = Paths.get(volumePath);
+                if (Files.exists(targetPath)) {
+                    long existingBytes = estimateRequiredBytesForFileRestore(volumePath);
+                    persistentGrowthBytesByDirectory.merge(targetDirectory, Math.max(backupRequiredBytes - existingBytes, 0L), Long::sum);
+                    transientBytesByDirectory.merge(targetDirectory, backupRequiredBytes, Long::max);
+                } else {
+                    persistentGrowthBytesByDirectory.merge(targetDirectory, backupRequiredBytes, Long::sum);
+                }
+            } catch (QemuImgException | LibvirtException e) {
+                throw new CloudRuntimeException(String.format("Failed to estimate primary storage requirement for target [%s]: %s",
+                        volumePath, e.getMessage()), e);
+            }
         }
 
-        for (Map.Entry<Path, Long> entry : requiredBytesByDirectory.entrySet()) {
+        for (Map.Entry<Path, Long> entry : persistentGrowthBytesByDirectory.entrySet()) {
             Path targetDirectory = entry.getKey();
-            long requiredBytes = entry.getValue();
+            long persistentGrowthBytes = entry.getValue();
+            long transientBytes = transientBytesByDirectory.getOrDefault(targetDirectory, 0L);
+            long requiredBytes = persistentGrowthBytes + transientBytes;
             long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, requiredBytes / 5L);
             long minimumAvailableBytes = requiredBytes + bufferBytes;
             long availableBytes;
@@ -427,8 +442,30 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             } catch (IOException e) {
                 throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
             }
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
-                    targetDirectory, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[{}], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
+                    targetDirectory, persistentGrowthBytes, transientBytes, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
+            if (availableBytes < minimumAvailableBytes) {
+                throw new CloudRuntimeException(String.format(
+                        "Insufficient primary storage space for NAS restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",
+                        targetDirectory, minimumAvailableBytes, availableBytes));
+            }
+        }
+        for (Map.Entry<Path, Long> entry : transientBytesByDirectory.entrySet()) {
+            Path targetDirectory = entry.getKey();
+            if (persistentGrowthBytesByDirectory.containsKey(targetDirectory)) {
+                continue;
+            }
+            long transientBytes = entry.getValue();
+            long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, transientBytes / 5L);
+            long minimumAvailableBytes = transientBytes + bufferBytes;
+            long availableBytes;
+            try {
+                availableBytes = Files.getFileStore(targetDirectory).getUsableSpace();
+            } catch (IOException e) {
+                throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
+            }
+            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[0], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
+                    targetDirectory, transientBytes, transientBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
             if (availableBytes < minimumAvailableBytes) {
                 throw new CloudRuntimeException(String.format(
                         "Insufficient primary storage space for NAS restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",
