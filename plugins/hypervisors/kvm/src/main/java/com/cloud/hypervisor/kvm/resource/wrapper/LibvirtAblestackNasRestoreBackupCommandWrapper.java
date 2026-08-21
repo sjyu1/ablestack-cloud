@@ -375,7 +375,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
                     volumePath, temporaryVolumePath);
             deleteMovedAsideFileVolume(movedAsideTarget);
             return true;
-        } catch (QemuImgException | IOException e) {
+        } catch (QemuImgException | LibvirtException | IOException e) {
             String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : null;
             String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : null;
             logger.error("Failed to convert backup {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
