@@ -61,6 +61,7 @@ import java.util.Objects;
 
 @ResourceWrapper(handles = AblestackNasRestoreBackupCommand.class)
 public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapper<AblestackNasRestoreBackupCommand, Answer, LibvirtComputingResource> {
+    private static final String RESTORE_TRACE = "[ABLESTACK_NAS_RESTORE_TRACE]";
     private static final String BACKUP_TEMP_FILE_PREFIX = "csbackup";
     private static final String MOUNT_COMMAND = "sudo mount -t %s %s %s";
     private static final String UMOUNT_COMMAND = "sudo umount %s";
@@ -90,8 +91,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         List<BackupVolumeChainState> volumeChainStates = command.getVolumeChainStates();
         BackupRestorePlan restorePlan = command.getRestorePlan();
 
-        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[ENTER], vm=[{}], backupPath=[{}], repoType=[{}], repoAddress=[{}], vmExists=[{}], restorePlan=[{}], volumePaths=[{}], restoreVolumePaths=[{}], backupFiles=[{}], backupFileChains=[{}]",
-                vmName, backupPath, backupRepoType, backupRepoAddress, vmExists, restorePlan, volumePaths, restoreVolumePaths, backupFiles, backupFileChains);
+        logger.info("{} phase=[ENTER], vm=[{}], backupPath=[{}], repoType=[{}], repoAddress=[{}], vmExists=[{}], restorePlan=[{}], volumePaths=[{}], restoreVolumePaths=[{}], backupFiles=[{}], backupFileChains=[{}]",
+                RESTORE_TRACE, vmName, backupPath, backupRepoType, backupRepoAddress, vmExists, restorePlan, volumePaths, restoreVolumePaths, backupFiles, backupFileChains);
         String newVolumeId = null;
         try {
             validateChainStatePlan(volumeChainStates, restorePlan);
@@ -120,8 +121,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             return new BackupAnswer(command, false, errorMessage);
         }
 
-        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[DONE], vm=[{}], backupPath=[{}], vmExists=[{}], newVolumeId=[{}]",
-                vmName, backupPath, vmExists, newVolumeId);
+        logger.info("{} phase=[DONE], vm=[{}], backupPath=[{}], vmExists=[{}], newVolumeId=[{}]",
+                RESTORE_TRACE, vmName, backupPath, vmExists, newVolumeId);
         return new BackupAnswer(command, true, newVolumeId);
     }
 
@@ -316,8 +317,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         if (backupPaths == null || backupPaths.isEmpty()) {
             return false;
         }
-        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RESTORE_VOLUME_BEGIN], poolType=[{}], targetVolume=[{}], backupPaths=[{}], backupIndex=[{}], createTargetVolume=[{}]",
-                volumePool.getPoolType(), volumePath, backupPaths, backupIndex, createTargetVolume);
+        logger.info("{} phase=[RESTORE_VOLUME_BEGIN], poolType=[{}], targetVolume=[{}], backupPaths=[{}], backupIndex=[{}], createTargetVolume=[{}]",
+                RESTORE_TRACE, volumePool.getPoolType(), volumePath, backupPaths, backupIndex, createTargetVolume);
         if (volumePool.getPoolType() != Storage.StoragePoolType.RBD) {
             if (backupPaths.stream().anyMatch(path -> path.endsWith(".rbdiff"))) {
                 return restoreIncrementalRbdBackupChainToFileVolume(volumePath, backupPaths, timeout, backupRootPath, backupIndex);
@@ -367,12 +368,12 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             movedAsideTarget = moveExistingFileVolumeAside(volumePath);
             temporaryVolumePath = createTemporaryVolumePath(volumePath, "cs-nas-restore-volume-", targetFormat);
             Files.deleteIfExists(temporaryVolumePath);
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TEMP_TARGET_CREATED], source=[{}], target=[{}], temporaryTarget=[{}], sourceFormat=[{}], targetFormat=[{}]",
-                    backupPath, volumePath, temporaryVolumePath, srcBackupFile.getFormat(), targetFormat);
+            logger.info("{} phase=[TEMP_TARGET_CREATED], source=[{}], target=[{}], temporaryTarget=[{}], sourceFormat=[{}], targetFormat=[{}]",
+                    RESTORE_TRACE, backupPath, volumePath, temporaryVolumePath, srcBackupFile.getFormat(), targetFormat);
             restoreFileVolumeData(backupPath, temporaryVolumePath.toString(), srcBackupFile.getFormat(), destVolumeFile.getFormat(), timeout);
             Files.move(temporaryVolumePath, Paths.get(volumePath), StandardCopyOption.REPLACE_EXISTING);
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TEMP_TARGET_PROMOTED], target=[{}], temporaryTarget=[{}]",
-                    volumePath, temporaryVolumePath);
+            logger.info("{} phase=[TEMP_TARGET_PROMOTED], target=[{}], temporaryTarget=[{}]",
+                    RESTORE_TRACE, volumePath, temporaryVolumePath);
             deleteMovedAsideFileVolume(movedAsideTarget);
             return true;
         } catch (QemuImgException | LibvirtException | IOException e) {
@@ -386,8 +387,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
                 try {
                     Files.deleteIfExists(temporaryVolumePath);
                 } catch (IOException e) {
-                    logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TEMP_TARGET_DELETE_FAILED], temporaryTarget=[{}], error=[{}]",
-                            temporaryVolumePath, e.getMessage());
+                    logger.warn("{} phase=[TEMP_TARGET_DELETE_FAILED], temporaryTarget=[{}], error=[{}]",
+                            RESTORE_TRACE, temporaryVolumePath, e.getMessage());
                 }
             }
         }
@@ -442,8 +443,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             } catch (IOException e) {
                 throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
             }
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[{}], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
-                    targetDirectory, persistentGrowthBytes, transientBytes, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
+            logger.info("{} phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[{}], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
+                    RESTORE_TRACE, targetDirectory, persistentGrowthBytes, transientBytes, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
             if (availableBytes < minimumAvailableBytes) {
                 throw new CloudRuntimeException(String.format(
                         "Insufficient primary storage space for NAS restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",
@@ -464,8 +465,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             } catch (IOException e) {
                 throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
             }
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[0], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
-                    targetDirectory, transientBytes, transientBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
+            logger.info("{} phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[0], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
+                    RESTORE_TRACE, targetDirectory, transientBytes, transientBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
             if (availableBytes < minimumAvailableBytes) {
                 throw new CloudRuntimeException(String.format(
                         "Insufficient primary storage space for NAS restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",
@@ -480,8 +481,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, requiredBytes / 5L);
         long minimumAvailableBytes = requiredBytes + bufferBytes;
         long availableBytes = Files.getFileStore(targetDirectory).getUsableSpace();
-        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[PRIMARY_SPACE_CHECK], source=[{}], target=[{}], targetDirectory=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}]",
-                backupPath, volumePath, targetDirectory, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes);
+        logger.info("{} phase=[PRIMARY_SPACE_CHECK], source=[{}], target=[{}], targetDirectory=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}]",
+                RESTORE_TRACE, backupPath, volumePath, targetDirectory, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes);
         if (availableBytes < minimumAvailableBytes) {
             throw new CloudRuntimeException(String.format(
                     "Insufficient primary storage space for NAS restore target [%s]. Required at least [%d] bytes including buffer, but only [%d] bytes are available under [%s].",
@@ -618,8 +619,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
 
         Path movedAsidePath = targetPath.resolveSibling(targetPath.getFileName() + ".csrestore." + System.currentTimeMillis() + ".bak");
         Files.move(targetPath, movedAsidePath);
-        logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE], target=[{}], movedAside=[{}]",
-                volumePath, movedAsidePath);
+        logger.info("{} phase=[TARGET_MOVED_ASIDE], target=[{}], movedAside=[{}]",
+                RESTORE_TRACE, volumePath, movedAsidePath);
         return movedAsidePath;
     }
 
@@ -629,10 +630,10 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         }
         try {
             Files.deleteIfExists(movedAsideTarget);
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_DELETED], movedAside=[{}]", movedAsideTarget);
+            logger.info("{} phase=[TARGET_MOVED_ASIDE_DELETED], movedAside=[{}]", RESTORE_TRACE, movedAsideTarget);
         } catch (IOException e) {
-            logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_DELETE_FAILED], movedAside=[{}], error=[{}]",
-                    movedAsideTarget, e.getMessage());
+            logger.warn("{} phase=[TARGET_MOVED_ASIDE_DELETE_FAILED], movedAside=[{}], error=[{}]",
+                    RESTORE_TRACE, movedAsideTarget, e.getMessage());
         }
     }
 
@@ -644,11 +645,11 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         try {
             Files.deleteIfExists(targetPath);
             Files.move(movedAsideTarget, targetPath);
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_RESTORED], target=[{}], movedAside=[{}]",
-                    volumePath, movedAsideTarget);
+            logger.info("{} phase=[TARGET_MOVED_ASIDE_RESTORED], target=[{}], movedAside=[{}]",
+                    RESTORE_TRACE, volumePath, movedAsideTarget);
         } catch (IOException e) {
-            logger.error("[ABLESTACK_NAS_RESTORE_TRACE] phase=[TARGET_MOVED_ASIDE_RESTORE_FAILED], target=[{}], movedAside=[{}], error=[{}]",
-                    volumePath, movedAsideTarget, e.getMessage());
+            logger.error("{} phase=[TARGET_MOVED_ASIDE_RESTORE_FAILED], target=[{}], movedAside=[{}], error=[{}]",
+                    RESTORE_TRACE, volumePath, movedAsideTarget, e.getMessage());
         }
     }
 
@@ -674,12 +675,12 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         Pair<Integer, String> result = runCommandWithOutput(rsyncCommand, timeout * 1000);
         String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2]",
-                    backupPath, volumePath);
+            logger.info("{} phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2]",
+                    RESTORE_TRACE, backupPath, volumePath);
             return;
         }
-        logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2], exitCode=[{}], output=[{}]",
-                backupPath, volumePath, result.first(), output);
+        logger.warn("{} phase=[RSYNC], source=[{}], target=[{}], command=[rsync-qcow2], exitCode=[{}], output=[{}]",
+                RESTORE_TRACE, backupPath, volumePath, result.first(), output);
         throw new QemuImgException(String.format("rsync qcow2 backup failed with exitCode [%s], output [%s]", result.first(), output));
     }
 
@@ -691,12 +692,12 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         Pair<Integer, String> result = runCommandWithOutput(convertCommand, timeout * 1000);
         String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
-            logger.info("[ABLESTACK_NAS_RESTORE_TRACE] phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert]",
-                    backupPath, volumePath);
+            logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert]",
+                    RESTORE_TRACE, backupPath, volumePath);
             return;
         }
-        logger.warn("[ABLESTACK_NAS_RESTORE_TRACE] phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert], exitCode=[{}], output=[{}]",
-                backupPath, volumePath, result.first(), output);
+        logger.warn("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert], exitCode=[{}], output=[{}]",
+                RESTORE_TRACE, backupPath, volumePath, result.first(), output);
         throw new QemuImgException(String.format("qemu-img convert failed with exitCode [%s], output [%s]", result.first(), output));
     }
 
