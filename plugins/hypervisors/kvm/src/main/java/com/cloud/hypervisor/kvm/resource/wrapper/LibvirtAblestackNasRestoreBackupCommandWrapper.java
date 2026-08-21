@@ -437,7 +437,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         }
     }
 
-    private void validatePrimaryStorageSpaceForFileRestore(String backupPath, String volumePath) throws IOException, QemuImgException {
+    private void validatePrimaryStorageSpaceForFileRestore(String backupPath, String volumePath) throws IOException, QemuImgException, LibvirtException {
         Path targetDirectory = getTargetDirectory(volumePath);
         long requiredBytes = estimateRequiredBytesForFileRestore(backupPath);
         long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, requiredBytes / 5L);
@@ -464,13 +464,13 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
                 return estimateRequiredBytesForFileRestore(volumePath);
             }
             return estimateRequiredBytesForFileRestore(getFirstExistingBackupPath(backupPaths));
-        } catch (QemuImgException e) {
+        } catch (QemuImgException | LibvirtException e) {
             throw new CloudRuntimeException(String.format("Failed to estimate primary storage requirement for target [%s]: %s",
                     volumePath, e.getMessage()), e);
         }
     }
 
-    private long estimateRequiredBytesForFileRestore(String backupPath) throws QemuImgException {
+    private long estimateRequiredBytesForFileRestore(String backupPath) throws QemuImgException, LibvirtException {
         try {
             QemuImg qemu = new QemuImg(0);
             Map<String, String> info = qemu.info(new QemuImgFile(backupPath, getBackupFileFormat(backupPath)));
