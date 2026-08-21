@@ -468,13 +468,13 @@ def render_policy_template(template_path: Path, replacements: dict[str, str]) ->
 
         key = match.group(1)
         if key in replacements:
-            rendered.append(f'{key}="{replacements[key]}"' if key in {"VM_INCLUDE", "VM_EXCLUDE", "MOLD_URL", "ADMIN_APIKEY", "BACKUP_STAGING_ROOT"} else f"{key}={replacements[key]}")
+            rendered.append(f'{key}="{replacements[key]}"' if key in {"VM_INCLUDE", "VM_EXCLUDE", "MOLD_URL", "ADMIN_APIKEY"} else f"{key}={replacements[key]}")
             seen.add(key)
         else:
             rendered.append(line)
 
     for key, value in replacements.items():
-        if key not in seen and key not in {"VM_INCLUDE", "VM_EXCLUDE", "MOLD_URL", "ADMIN_APIKEY", "BACKUP_STAGING_ROOT"}:
+        if key not in seen and key not in {"VM_INCLUDE", "VM_EXCLUDE", "MOLD_URL", "ADMIN_APIKEY"}:
             rendered.append(f"{key}={value}")
         elif key not in seen:
             rendered.append(f'{key}="{value}"')
@@ -489,7 +489,6 @@ def write_config_file(path: Path, args: argparse.Namespace) -> None:
         "VM_EXCLUDE": args.vm_exclude,
         "MOLD_URL": args.mold_url,
         "ADMIN_APIKEY": args.admin_apikey,
-        "BACKUP_STAGING_ROOT": str(BACKUP_STAGING_ROOT),
     })
     path.write_text(content, encoding="utf-8")
     path.chmod(0o600)
