@@ -1091,25 +1091,6 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
         }
     }
 
-    private Host resolveBackupCleanupHost(final Backup backup) {
-        loadBackupDetailsIfNeeded(backup);
-        final String sourceHostName = getBackupDetail(backup, DETAIL_POLICY_NAME);
-        if (StringUtils.isNotBlank(sourceHostName)) {
-            Host host = hostDao.findByName(sourceHostName);
-            if (host == null) {
-                host = hostDao.findByIp(sourceHostName);
-            }
-            if (host != null) {
-                return host;
-            }
-        }
-        final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
-        if (vm != null) {
-            return getVMHypervisorHostForBackup(vm);
-        }
-        return null;
-    }
-
     @Override
     public Pair<Boolean, String> restoreBackupToVM(final VirtualMachine vm, final Backup backup, final String hostIp, final String dataStoreUuid) {
         return restoreVirtualMachine(vm, backup, hostIp);
@@ -2170,6 +2151,17 @@ public class AblestackNetBackupProvider extends AdapterBase implements BackupPro
     }
 
     private Host resolveBackupCleanupHost(final Backup backup) {
+        loadBackupDetailsIfNeeded(backup);
+        final String sourceHostName = getBackupDetail(backup, DETAIL_POLICY_NAME);
+        if (StringUtils.isNotBlank(sourceHostName)) {
+            Host host = hostDao.findByName(sourceHostName);
+            if (host == null) {
+                host = hostDao.findByIp(sourceHostName);
+            }
+            if (host != null && Status.Up.equals(host.getStatus()) && Hypervisor.HypervisorType.KVM.equals(host.getHypervisorType())) {
+                return host;
+            }
+        }
         final VMInstanceVO vm = vmInstanceDao.findByIdIncludingRemoved(backup.getVmId());
         if (vm != null) {
             final Long hostId = vm.getHostId() != null ? vm.getHostId() : vm.getLastHostId();
