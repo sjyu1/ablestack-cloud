@@ -1448,6 +1448,7 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         final String name = cmd.getName();
         final Long zoneId = cmd.getZoneId();
         final Long backupOfferingId = cmd.getBackupOfferingId();
+        final String backupOfferingName = cmd.getBackupOfferingName();
         final Account caller = CallContext.current().getCallingAccount();
         final String keyword = cmd.getKeyword();
         List<Long> permittedAccounts = new ArrayList<Long>();
@@ -1476,6 +1477,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         sb.and("name", sb.entity().getName(), SearchCriteria.Op.EQ);
         sb.and("zoneId", sb.entity().getZoneId(), SearchCriteria.Op.EQ);
         sb.and("backupOfferingId", sb.entity().getBackupOfferingId(), SearchCriteria.Op.EQ);
+
+        if (StringUtils.isNotBlank(backupOfferingName)) {
+            SearchBuilder<BackupOfferingVO> backupOfferingSearch = backupOfferingDao.createSearchBuilder();
+            sb.join("backupOfferingSearch", backupOfferingSearch, sb.entity().getBackupOfferingId(), backupOfferingSearch.entity().getId(), JoinBuilder.JoinType.INNER);
+            sb.and("backupOfferingSearch", "backupOfferingName", backupOfferingSearch.entity().getName(), SearchCriteria.Op.LIKE);
+        }
 
         if (keyword != null) {
             sb.and().op("keywordName", sb.entity().getName(), SearchCriteria.Op.LIKE);
@@ -1506,6 +1513,10 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
 
         if (backupOfferingId != null) {
             sc.setParameters("backupOfferingId", backupOfferingId);
+        }
+
+        if (StringUtils.isNotBlank(backupOfferingName)) {
+            sc.setParameters("backupOfferingName", "%" + backupOfferingName + "%");
         }
 
         if (keyword != null) {
