@@ -323,7 +323,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             if (backupPaths.stream().anyMatch(path -> path.endsWith(".rbdiff"))) {
                 return restoreIncrementalRbdBackupChainToFileVolume(volumePath, backupPaths, timeout, backupRootPath, backupIndex);
             }
-            return replaceFileVolumeWithBackup(volumePath, getFirstExistingBackupPath(backupPaths), timeout);
+            return replaceFileVolumeWithBackup(volumePath, getRestorableFileBackupPath(backupPaths), timeout);
         }
 
         return replaceRbdVolumeWithBackup(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, createTargetVolume);
@@ -345,13 +345,14 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         }
     }
 
-    private String getFirstExistingBackupPath(List<String> backupPaths) {
-        for (String backupPath : backupPaths) {
+    private String getRestorableFileBackupPath(List<String> backupPaths) {
+        for (int index = backupPaths.size() - 1; index >= 0; index--) {
+            String backupPath = backupPaths.get(index);
             if (StringUtils.isNotBlank(backupPath) && Files.exists(Paths.get(backupPath))) {
                 return backupPath;
             }
         }
-        return backupPaths.get(0);
+        return backupPaths.get(backupPaths.size() - 1);
     }
 
     private boolean replaceFileVolumeWithBackup(String volumePath, String backupPath, int timeout) {
@@ -415,7 +416,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             validateResolvedChainPaths(backupPaths, volumePath);
             Path targetDirectory = getTargetDirectory(volumePath);
             try {
-                long backupRequiredBytes = estimateRequiredBytesForFileRestore(getFirstExistingBackupPath(backupPaths));
+                long backupRequiredBytes = estimateRequiredBytesForFileRestore(getRestorableFileBackupPath(backupPaths));
                 Path targetPath = Paths.get(volumePath);
                 if (Files.exists(targetPath)) {
                     long existingBytes = estimateRequiredBytesForFileRestore(volumePath);
@@ -501,7 +502,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             if (Files.exists(Paths.get(volumePath))) {
                 return estimateRequiredBytesForFileRestore(volumePath);
             }
-            return estimateRequiredBytesForFileRestore(getFirstExistingBackupPath(backupPaths));
+            return estimateRequiredBytesForFileRestore(getRestorableFileBackupPath(backupPaths));
         } catch (QemuImgException | LibvirtException e) {
             throw new CloudRuntimeException(String.format("Failed to estimate primary storage requirement for target [%s]: %s",
                     volumePath, e.getMessage()), e);
@@ -572,7 +573,7 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             return restoreIncrementalRbdBackupChain(storagePoolMgr, volumePool, volumePath, backupPaths, timeout, createTargetVolume);
         }
 
-        String backupPath = getFirstExistingBackupPath(backupPaths);
+        String backupPath = getRestorableFileBackupPath(backupPaths);
         KVMStoragePool volumeStoragePool = storagePoolMgr.getStoragePool(volumePool.getPoolType(), volumePool.getUuid());
         String normalizedVolumePath = normalizeRbdVolumePath(volumePath, volumeStoragePool);
         if (getBackupFileFormat(backupPath) == QemuImg.PhysicalDiskFormat.RAW) {
