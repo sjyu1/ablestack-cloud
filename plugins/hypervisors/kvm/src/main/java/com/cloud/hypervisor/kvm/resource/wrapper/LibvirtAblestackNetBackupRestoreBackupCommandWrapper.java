@@ -30,7 +30,6 @@ import com.cloud.storage.Storage;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.script.Script;
 import com.cloud.vm.VirtualMachine;
-import com.google.gson.JsonObject;
 import org.apache.cloudstack.backup.AblestackBackupFrameworkUtils;
 import org.apache.cloudstack.backup.AblestackNetBackupRestoreBackupCommand;
 import org.apache.cloudstack.backup.BackupAnswer;
@@ -585,9 +584,9 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
 
     private void convertQcow2ChainWithImageOpts(final List<String> backupPaths, final String volumePath,
             final QemuImg.PhysicalDiskFormat volumeFormat, final int timeout) throws QemuImgException {
-        final JsonObject imageOptions = buildQcow2ImageOptions(backupPaths);
+        final String imageOptions = buildQcow2ImageOptions(backupPaths);
         final String command = String.format("qemu-img convert -p --image-opts -O %s %s %s",
-                volumeFormat.toString().toLowerCase(Locale.ROOT), quote("json:" + imageOptions), quote(volumePath));
+                volumeFormat.toString().toLowerCase(Locale.ROOT), quote(imageOptions), quote(volumePath));
         final CommandExecutionResult result = executeBashCommandWithResult(command, timeout, "Convert QCOW2 restore chain with image-opts");
         if (result.exitCode == 0) {
             logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-image-opts]",
@@ -599,9 +598,11 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
         throw new QemuImgException(String.format("qemu-img convert image-opts failed with exitCode [%s], output [%s]", result.exitCode, result.output));
     }
 
-    private JsonObject buildQcow2ImageOptions(final List<String> backupPaths) {
-        JsonObject previous = null;
-        for (final String backupPath : backupPaths) {
+    private String buildQcow2ImageOptions(final List<String> backupPaths) {
+        final StringBuilder imageOptions = new StringBuilder();
+        int chainDepth = 0;
+        for (int index = backupPaths.size() - 1; index >= 0; index--) {
+            final String backupPath = backupPaths.get(index);
             if (StringUtils.isBlank(backupPath)) {
                 continue;
             }
@@ -609,24 +610,29 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
             if (!Files.exists(source)) {
                 throw new CloudRuntimeException(String.format("Missing QCOW2 backup chain file [%s] for restore", backupPath));
             }
-            final JsonObject file = new JsonObject();
-            file.addProperty("driver", "file");
-            file.addProperty("filename", backupPath);
-            file.addProperty("read-only", true);
-
-            final JsonObject image = new JsonObject();
-            image.addProperty("driver", "qcow2");
-            image.addProperty("read-only", true);
-            image.add("file", file);
-            if (previous != null) {
-                image.add("backing", previous);
-            }
-            previous = image;
+            final String prefix = StringUtils.repeat("backing.", chainDepth);
+            appendQcow2ImageOption(imageOptions, prefix + "driver", "qcow2");
+            appendQcow2ImageOption(imageOptions, prefix + "read-only", "on");
+            appendQcow2ImageOption(imageOptions, prefix + "file.driver", "file");
+            appendQcow2ImageOption(imageOptions, prefix + "file.filename", backupPath);
+            appendQcow2ImageOption(imageOptions, prefix + "file.read-only", "on");
+            chainDepth++;
         }
-        if (previous == null) {
+        if (chainDepth == 0) {
             throw new CloudRuntimeException("No QCOW2 backup chain files were prepared for restore");
         }
-        return previous;
+        return imageOptions.toString();
+    }
+
+    private void appendQcow2ImageOption(final StringBuilder imageOptions, final String key, final String value) {
+        if (imageOptions.length() > 0) {
+            imageOptions.append(",");
+        }
+        imageOptions.append(key).append("=").append(escapeQcow2ImageOptionValue(value));
+    }
+
+    private String escapeQcow2ImageOptionValue(final String value) {
+        return value.replace("\\", "\\\\").replace(",", "\\,");
     }
 
     private boolean convertTemporaryRbdToFileVolume(final String volumePath, final int timeout, final RbdImageSpec sourceImage, final String tempImage) {
