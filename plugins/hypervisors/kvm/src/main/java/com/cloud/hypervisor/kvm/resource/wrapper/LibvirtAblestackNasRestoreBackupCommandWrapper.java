@@ -31,6 +31,7 @@ import com.cloud.utils.Pair;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.script.Script;
 import com.cloud.vm.VirtualMachine;
+import com.google.gson.JsonObject;
 import org.apache.cloudstack.backup.AblestackBackupFrameworkUtils;
 import org.apache.cloudstack.backup.BackupAnswer;
 import org.apache.cloudstack.backup.AblestackNasRestoreBackupCommand;
@@ -41,12 +42,10 @@ import org.apache.cloudstack.storage.to.PrimaryDataStoreTO;
 import org.apache.cloudstack.utils.qemu.QemuImg;
 import org.apache.cloudstack.utils.qemu.QemuImgException;
 import org.apache.cloudstack.utils.qemu.QemuImgFile;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.libvirt.LibvirtException;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -365,55 +364,88 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             return replaceFileVolumeWithBackup(volumePath, getRestorableFileBackupPath(backupPaths), timeout);
         }
 
-        Path tempDir = null;
+        return replaceFileVolumeWithQcow2Chain(volumePath, backupPaths, timeout);
+    }
+
+    private boolean replaceFileVolumeWithQcow2Chain(String volumePath, List<String> backupPaths, int timeout) {
+        Path temporaryVolumePath = null;
+        Path movedAsideTarget = null;
         try {
-            tempDir = Files.createTempDirectory("cs-nas-qcow2-chain-");
-            Path latestChainFile = null;
-            Path previousChainFile = null;
-            for (int index = 0; index < backupPaths.size(); index++) {
-                String backupPath = backupPaths.get(index);
-                if (StringUtils.isBlank(backupPath)) {
-                    continue;
-                }
-                Path source = Paths.get(backupPath);
-                if (!Files.exists(source)) {
-                    throw new CloudRuntimeException(String.format("Missing QCOW2 backup chain file [%s] for restore", backupPath));
-                }
-                Path copiedChainFile = tempDir.resolve(String.format("%03d-%s", index, source.getFileName()));
-                Files.copy(source, copiedChainFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-                if (previousChainFile != null) {
-                    rebaseBackupChainFile(copiedChainFile, previousChainFile, timeout);
-                }
-                previousChainFile = copiedChainFile;
-                latestChainFile = copiedChainFile;
-            }
-            if (latestChainFile == null) {
-                throw new CloudRuntimeException(String.format("No QCOW2 backup chain files were prepared for restore to volume [%s]", volumePath));
-            }
-            logger.info("{} phase=[QCOW2_CHAIN_PREPARED], target=[{}], temporaryChainTop=[{}], chainFiles=[{}]",
-                    RESTORE_TRACE, volumePath, latestChainFile, backupPaths);
-            return replaceFileVolumeWithBackup(volumePath, latestChainFile.toString(), timeout);
-        } catch (IOException e) {
-            logger.error("{} phase=[QCOW2_CHAIN_PREPARE_FAILED], target=[{}], chainFiles=[{}], error=[{}]",
-                    RESTORE_TRACE, volumePath, backupPaths, e.getMessage(), e);
+            QemuImg.PhysicalDiskFormat targetFormat = getFileVolumeFormat(volumePath);
+            validatePrimaryStorageSpaceForFileRestore(getRestorableFileBackupPath(backupPaths), volumePath);
+            movedAsideTarget = moveExistingFileVolumeAside(volumePath);
+            temporaryVolumePath = createTemporaryVolumePath(volumePath, "cs-nas-restore-volume-", targetFormat);
+            Files.deleteIfExists(temporaryVolumePath);
+            logger.info("{} phase=[TEMP_TARGET_CREATED], source=[{}], target=[{}], temporaryTarget=[{}], sourceFormat=[qcow2-chain], targetFormat=[{}]",
+                    RESTORE_TRACE, backupPaths, volumePath, temporaryVolumePath, targetFormat);
+            convertQcow2ChainWithImageOpts(backupPaths, temporaryVolumePath.toString(), targetFormat, timeout);
+            Files.move(temporaryVolumePath, Paths.get(volumePath), StandardCopyOption.REPLACE_EXISTING);
+            logger.info("{} phase=[TEMP_TARGET_PROMOTED], target=[{}], temporaryTarget=[{}]",
+                    RESTORE_TRACE, volumePath, temporaryVolumePath);
+            deleteMovedAsideFileVolume(movedAsideTarget);
+            return true;
+        } catch (QemuImgException | LibvirtException | IOException e) {
+            logger.error("{} phase=[FILE_RESTORE_FAILED], source=[{}], target=[{}], error=[{}]",
+                    RESTORE_TRACE, backupPaths, volumePath, e.getMessage());
+            restoreMovedAsideFileVolume(volumePath, movedAsideTarget);
             return false;
         } finally {
-            if (tempDir != null) {
+            if (temporaryVolumePath != null) {
                 try {
-                    FileUtils.deleteDirectory(new File(tempDir.toString()));
+                    Files.deleteIfExists(temporaryVolumePath);
                 } catch (IOException e) {
-                    logger.warn("Failed to delete temporary QCOW2 restore chain directory {}", tempDir, e);
+                    logger.warn("{} phase=[TEMP_TARGET_DELETE_FAILED], temporaryTarget=[{}], error=[{}]",
+                            RESTORE_TRACE, temporaryVolumePath, e.getMessage());
                 }
             }
         }
     }
 
-    private void rebaseBackupChainFile(Path child, Path parent, int timeout) throws IOException {
-        String command = String.format("qemu-img rebase -u -F qcow2 -b %s %s", quote(parent.toString()), quote(child.toString()));
-        Pair<Integer, String> result = runCommandWithOutput(command, timeout * 1000);
-        if (result.first() != 0) {
-            throw new IOException(String.format("qemu-img rebase failed for %s with parent %s: %s", child, parent, formatTraceOutput(result.second())));
+    private void convertQcow2ChainWithImageOpts(List<String> backupPaths, String volumePath, QemuImg.PhysicalDiskFormat volumeFormat,
+                                                int timeout) throws QemuImgException {
+        JsonObject imageOptions = buildQcow2ImageOptions(backupPaths);
+        String convertCommand = String.format("qemu-img convert -p --image-opts -O %s %s %s",
+                volumeFormat.toString().toLowerCase(Locale.ROOT), quote("json:" + imageOptions), quote(volumePath));
+        Pair<Integer, String> result = runCommandWithOutput(convertCommand, timeout * 1000);
+        String output = formatTraceOutput(result.second());
+        if (result.first() == 0) {
+            logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-image-opts]",
+                    RESTORE_TRACE, backupPaths, volumePath);
+            return;
         }
+        logger.warn("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-image-opts], exitCode=[{}], output=[{}]",
+                RESTORE_TRACE, backupPaths, volumePath, result.first(), output);
+        throw new QemuImgException(String.format("qemu-img convert image-opts failed with exitCode [%s], output [%s]", result.first(), output));
+    }
+
+    private JsonObject buildQcow2ImageOptions(List<String> backupPaths) {
+        JsonObject previous = null;
+        for (String backupPath : backupPaths) {
+            if (StringUtils.isBlank(backupPath)) {
+                continue;
+            }
+            Path source = Paths.get(backupPath);
+            if (!Files.exists(source)) {
+                throw new CloudRuntimeException(String.format("Missing QCOW2 backup chain file [%s] for restore", backupPath));
+            }
+            JsonObject file = new JsonObject();
+            file.addProperty("driver", "file");
+            file.addProperty("filename", backupPath);
+            file.addProperty("read-only", true);
+
+            JsonObject image = new JsonObject();
+            image.addProperty("driver", "qcow2");
+            image.addProperty("read-only", true);
+            image.add("file", file);
+            if (previous != null) {
+                image.add("backing", previous);
+            }
+            previous = image;
+        }
+        if (previous == null) {
+            throw new CloudRuntimeException("No QCOW2 backup chain files were prepared for restore");
+        }
+        return previous;
     }
 
     private boolean replaceFileVolumeWithBackup(String volumePath, String backupPath, int timeout) {
@@ -466,7 +498,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
     private void validatePrimaryStorageSpaceForFileRestorePlan(List<String> volumePaths, List<List<String>> backupPathsByVolume,
                                                                List<PrimaryDataStoreTO> restoreVolumePools) {
         Map<Path, Long> persistentGrowthBytesByDirectory = new HashMap<>();
-        Map<Path, Long> transientBytesByDirectory = new HashMap<>();
+        Map<Path, Long> peakRestoreBytesByDirectory = new HashMap<>();
+        Map<Path, Integer> volumeCountByDirectory = new HashMap<>();
         for (int idx = 0; idx < volumePaths.size(); idx++) {
             PrimaryDataStoreTO restoreVolumePool = restoreVolumePools.get(idx);
             if (restoreVolumePool.getPoolType() == Storage.StoragePoolType.RBD) {
@@ -479,10 +512,12 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             try {
                 long backupRequiredBytes = estimateRequiredBytesForFileRestore(getRestorableFileBackupPath(backupPaths));
                 Path targetPath = Paths.get(volumePath);
+                long persistentGrowthBeforeVolume = persistentGrowthBytesByDirectory.getOrDefault(targetDirectory, 0L);
+                peakRestoreBytesByDirectory.merge(targetDirectory, persistentGrowthBeforeVolume + backupRequiredBytes, Math::max);
+                volumeCountByDirectory.merge(targetDirectory, 1, Integer::sum);
                 if (Files.exists(targetPath)) {
                     long existingBytes = estimateRequiredBytesForFileRestore(volumePath);
                     persistentGrowthBytesByDirectory.merge(targetDirectory, Math.max(backupRequiredBytes - existingBytes, 0L), Long::sum);
-                    transientBytesByDirectory.merge(targetDirectory, backupRequiredBytes, Long::max);
                 } else {
                     persistentGrowthBytesByDirectory.merge(targetDirectory, backupRequiredBytes, Long::sum);
                 }
@@ -495,8 +530,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
         for (Map.Entry<Path, Long> entry : persistentGrowthBytesByDirectory.entrySet()) {
             Path targetDirectory = entry.getKey();
             long persistentGrowthBytes = entry.getValue();
-            long transientBytes = transientBytesByDirectory.getOrDefault(targetDirectory, 0L);
-            long requiredBytes = persistentGrowthBytes + transientBytes;
+            long peakRestoreBytes = peakRestoreBytesByDirectory.getOrDefault(targetDirectory, 0L);
+            long requiredBytes = Math.max(persistentGrowthBytes, peakRestoreBytes);
             long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, requiredBytes / 5L);
             long minimumAvailableBytes = requiredBytes + bufferBytes;
             long availableBytes;
@@ -506,29 +541,8 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
                 throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
             }
             logger.info("{} phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[{}], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
-                    RESTORE_TRACE, targetDirectory, persistentGrowthBytes, transientBytes, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
-            if (availableBytes < minimumAvailableBytes) {
-                throw new CloudRuntimeException(String.format(
-                        "Insufficient primary storage space for NAS restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",
-                        targetDirectory, minimumAvailableBytes, availableBytes));
-            }
-        }
-        for (Map.Entry<Path, Long> entry : transientBytesByDirectory.entrySet()) {
-            Path targetDirectory = entry.getKey();
-            if (persistentGrowthBytesByDirectory.containsKey(targetDirectory)) {
-                continue;
-            }
-            long transientBytes = entry.getValue();
-            long bufferBytes = Math.max(RESTORE_PRIMARY_SPACE_BUFFER_BYTES, transientBytes / 5L);
-            long minimumAvailableBytes = transientBytes + bufferBytes;
-            long availableBytes;
-            try {
-                availableBytes = Files.getFileStore(targetDirectory).getUsableSpace();
-            } catch (IOException e) {
-                throw new CloudRuntimeException(String.format("Failed to query primary storage space under [%s]: %s", targetDirectory, e.getMessage()), e);
-            }
-            logger.info("{} phase=[PRIMARY_SPACE_PLAN_CHECK], targetDirectory=[{}], persistentGrowthBytes=[0], transientBytes=[{}], requiredBytes=[{}], bufferBytes=[{}], minimumAvailableBytes=[{}], availableBytes=[{}], volumeCount=[{}]",
-                    RESTORE_TRACE, targetDirectory, transientBytes, transientBytes, bufferBytes, minimumAvailableBytes, availableBytes, volumePaths.size());
+                    RESTORE_TRACE, targetDirectory, persistentGrowthBytes, peakRestoreBytes, requiredBytes, bufferBytes, minimumAvailableBytes, availableBytes,
+                    volumeCountByDirectory.getOrDefault(targetDirectory, 0));
             if (availableBytes < minimumAvailableBytes) {
                 throw new CloudRuntimeException(String.format(
                         "Insufficient primary storage space for NAS restore under [%s]. Required at least [%d] bytes including buffer for the restore plan, but only [%d] bytes are available.",
