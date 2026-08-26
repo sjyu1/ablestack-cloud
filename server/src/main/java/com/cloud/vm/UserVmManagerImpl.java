@@ -115,6 +115,7 @@ import org.apache.cloudstack.api.command.user.vmgroup.CreateVMGroupCmd;
 import org.apache.cloudstack.api.command.user.vmgroup.DeleteVMGroupCmd;
 import org.apache.cloudstack.api.command.user.volume.ChangeOfferingForVolumeCmd;
 import org.apache.cloudstack.api.command.user.volume.ResizeVolumeCmd;
+import org.apache.cloudstack.backup.Backup;
 import org.apache.cloudstack.backup.BackupManager;
 import org.apache.cloudstack.backup.BackupProvider;
 import org.apache.cloudstack.backup.BackupScheduleVO;
@@ -435,6 +436,7 @@ import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VMInstanceDao;
 import com.cloud.vm.dao.VbmcDao;
 import com.cloud.vm.dao.VMInstanceDetailsDao;
+import com.cloud.vm.dao.VmGuestNetworkStateDao;
 import com.cloud.vm.dao.VmStatsDao;
 import com.cloud.vm.snapshot.VMSnapshot;
 import com.cloud.vm.snapshot.VMSnapshotDetailsVO;
@@ -660,6 +662,8 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     private AnnotationDao annotationDao;
     @Inject
     private VmStatsDao vmStatsDao;
+    @Inject
+    private VmGuestNetworkStateDao vmGuestNetworkStateDao;
     @Inject
     private DataCenterDao dataCenterDao;
     @Inject
@@ -2783,6 +2787,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
                 }
 
                 _vmDao.remove(vm.getId());
+                vmGuestNetworkStateDao.removeByVmId(vm.getId());
             }
 
             return true;
@@ -10877,6 +10882,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         if (curVm == null) {
             throw new CloudRuntimeException("the VM doesn't exist or not registered in management server!");
         }
+        checkNoActiveBackupForClone(curVm.getId());
         UserVmVO vmStatus = _vmDao.findById(cmd.getId());
         if (vmStatus.getHypervisorType() != HypervisorType.KVM && vmStatus.getHypervisorType() != HypervisorType.Simulator) {
             throw new CloudRuntimeException("The clone operation is only supported on KVM and Simulator!");
@@ -10950,10 +10956,23 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         _resourceLimitMgr.checkResourceLimit(activeOwner, ResourceType.primary_storage, totalSize);
     }
 
+    protected void checkNoActiveBackupForClone(long vmId) {
+        List<Backup> backups = backupDao.listByVmId(null, vmId);
+        if (CollectionUtils.isEmpty(backups)) {
+            return;
+        }
+        for (Backup backup : backups) {
+            if (Backup.Status.BackingUp.equals(backup.getStatus())) {
+                throw new CloudRuntimeException(String.format("Unable to clone VM while backup is currently in progress for VM [%s]. Please retry after backup completes.", vmId));
+            }
+        }
+    }
+
     @Override
     @ActionEvent(eventType = EventTypes.EVENT_VM_CLONE, eventDescription = "VM CLONE", async = true)
     public Optional<UserVm> cloneVirtualMachine(CloneVMCmd cmd) throws ResourceAllocationException, ResourceUnavailableException, InsufficientCapacityException {
         UserVmVO curVm = _vmDao.findById(cmd.getId());
+        checkNoActiveBackupForClone(curVm.getId());
         Account curVmAccount = _accountDao.findById(curVm.getAccountId());
         long zoneId = cmd.getTargetVM().getDataCenterId();
         String clone_type = cmd.getType();

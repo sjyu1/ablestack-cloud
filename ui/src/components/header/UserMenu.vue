@@ -22,7 +22,9 @@
     </span>
     <external-link class="action"/>
     <translation-menu class="action"/>
-    <header-notice class="action"/>
+    <header-notice
+      class="action"
+      @open-activity-panel="$emit('open-activity-panel')" />
     <label class="user-menu-server-info action" v-if="$config.multipleServer">
       <database-outlined />
       {{ server.name || server.apiBase || 'Local-Server' }}
@@ -54,6 +56,13 @@
             <ClockCircleOutlined class="user-menu-item-icon" />
             <span class="user-menu-item-name" style="margin-right: 5px">{{ $t('label.use.local.timezone') }}</span>
             <a-switch :checked="$store.getters.usebrowsertimezone" />
+          </a-menu-item>
+          <a-menu-item
+            v-if="canOpenDisplaySettings"
+            class="user-menu-item"
+            key="display-settings">
+            <SettingOutlined class="user-menu-item-icon" />
+            <span class="user-menu-item-name">{{ $t('label.theme.page.style.setting') }}</span>
           </a-menu-item>
           <a-menu-item class="user-menu-item" key="document">
             <QuestionCircleOutlined class="user-menu-item-icon" />
@@ -90,6 +99,7 @@ import eventBus from '@/config/eventBus'
 import { SERVER_MANAGER } from '@/store/mutation-types'
 import { sourceToken } from '@/utils/request'
 import { applyCustomGuiTheme } from '@/utils/guiTheme'
+import { isAdmin } from '@/role'
 
 export default {
   name: 'UserMenu',
@@ -143,6 +153,9 @@ export default {
     }
   },
   computed: {
+    canOpenDisplaySettings () {
+      return isAdmin() && (process.env.NODE_ENV === 'development' || this.$config.allowSettingTheme)
+    },
     server () {
       return this.$localStorage.get(SERVER_MANAGER) || this.$config.servers[0]
     }
@@ -187,6 +200,9 @@ export default {
           break
         case 'timezone':
           this.toggleUseBrowserTimezone()
+          break
+        case 'display-settings':
+          this.$emit('open-display-settings')
           break
         case 'document':
           window.open(this.$config.docBase, '_blank')

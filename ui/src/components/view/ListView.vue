@@ -340,25 +340,32 @@
         v-if="column.key === 'ipaddress'"
         href="javascript:;"
       >
-        <router-link
-          v-if="['/publicip', '/privategw'].includes($route.path)"
-          :to="{ path: $route.path + '/' + record.id }"
-        >{{ ipAddress(text, record) }}</router-link>
-        <span v-else>
-          <copy-label v-if="ipAddress(text, record)" :label="ipAddress(text, record)" />
-        </span>
-        <span v-if="record.issourcenat">
-          &nbsp;
-          <a-tag>source-nat</a-tag>
-        </span>
-        <span v-if="record.isstaticnat">
-          &nbsp;
-          <a-tag>static-nat</a-tag>
-        </span>
-        <span v-if="record.issystem">
-          &nbsp;
-          <a-tag>system</a-tag>
-        </span>
+        <guest-network-summary
+          v-if="$route.path.startsWith('/vm') && record.guestnetwork"
+          :cloudAddress="ipAddress(text, record)"
+          :cloudNics="record.nic || []"
+          :summary="record.guestnetwork" />
+        <template v-else>
+          <router-link
+            v-if="['/publicip', '/privategw'].includes($route.path)"
+            :to="{ path: $route.path + '/' + record.id }"
+          >{{ ipAddress(text, record) }}</router-link>
+          <span v-else>
+            <copy-label v-if="ipAddress(text, record)" :label="ipAddress(text, record)" />
+          </span>
+          <span v-if="record.issourcenat">
+            &nbsp;
+            <a-tag>source-nat</a-tag>
+          </span>
+          <span v-if="record.isstaticnat">
+            &nbsp;
+            <a-tag>static-nat</a-tag>
+          </span>
+          <span v-if="record.issystem">
+            &nbsp;
+            <a-tag>system</a-tag>
+          </span>
+        </template>
       </template>
       <template
         v-if="column.key === 'ip6address'"
@@ -1153,33 +1160,26 @@
     </template>
     </a-table>
   </div>
-  <div
+  <ResourceContextMenu
     v-if="showContextQuickView"
-    ref="contextQuickViewMenu"
-    class="quickview-context-menu"
-    :style="{ top: contextQuickViewPosition.y + 'px', left: contextQuickViewPosition.x + 'px' }"
-    @click.stop
-    @contextmenu.stop.prevent>
-    <ActionButton
-      :actions="contextMenuActions"
-      :resource="contextQuickViewRecord"
-      :dataView="true"
-      :selectedRowKeys="selectedRowKeys"
-      :selectedItems="selectedItems"
-      :show-resource-title="true"
-      :titleOverride="contextMenuTitle"
-      size="default"
-      @exec-action="handleContextAction" />
-  </div>
+    :actions="contextMenuActions"
+    :resource="contextQuickViewRecord"
+    :position="contextQuickViewPosition"
+    :selectedRowKeys="selectedRowKeys"
+    :selectedItems="selectedItems"
+    :titleOverride="contextMenuTitle"
+    @close="closeContextQuickView"
+    @exec-action="handleContextAction" />
 </template>
 
 <script>
 import { getAPI, postAPI } from '@/api'
 import OsLogo from '@/components/widgets/OsLogo'
 import Status from '@/components/widgets/Status'
-import ActionButton from '@/components/view/ActionButton'
+import ResourceContextMenu from '@/components/view/ResourceContextMenu'
 import ResourceIcon from '@/components/view/ResourceIcon'
 import CopyLabel from '@/components/widgets/CopyLabel'
+import GuestNetworkSummary from '@/components/view/GuestNetworkSummary'
 import ResourceLabel from '@/components/widgets/ResourceLabel'
 import TooltipButton from '@/components/widgets/TooltipButton'
 import { createPathBasedOnVmType } from '@/utils/plugins'
@@ -1194,8 +1194,9 @@ export default {
   components: {
     OsLogo,
     Status,
-    ActionButton,
+    ResourceContextMenu,
     CopyLabel,
+    GuestNetworkSummary,
     TooltipButton,
     ResourceIcon,
     ResourceLabel,
@@ -1294,8 +1295,7 @@ export default {
       contextQuickViewPosition: {
         x: 0,
         y: 0
-      },
-      contextMenuListenerRegistered: false
+      }
     }
   },
   watch: {
@@ -1323,9 +1323,6 @@ export default {
   },
   created () {
     this.getUsageTypes()
-  },
-  beforeUnmount () {
-    this.removeContextMenuListeners()
   },
   computed: {
     hasSelected () {
@@ -1449,52 +1446,10 @@ export default {
         return
       }
       this.contextQuickViewVisible = true
-      this.$nextTick(() => {
-        this.adjustContextMenuPosition()
-      })
-      this.addContextMenuListeners()
-    },
-    addContextMenuListeners () {
-      if (this.contextMenuListenerRegistered) {
-        return
-      }
-      document.addEventListener('click', this.closeContextQuickView)
-      this.contextMenuListenerRegistered = true
-    },
-    removeContextMenuListeners () {
-      if (!this.contextMenuListenerRegistered) {
-        return
-      }
-      document.removeEventListener('click', this.closeContextQuickView)
-      this.contextMenuListenerRegistered = false
     },
     closeContextQuickView () {
       this.contextQuickViewVisible = false
       this.contextQuickViewRecord = null
-      this.removeContextMenuListeners()
-    },
-    adjustContextMenuPosition () {
-      const padding = 8
-      const menu = this.$refs.contextQuickViewMenu
-      if (!menu) {
-        return
-      }
-      const rect = menu.getBoundingClientRect()
-      let x = this.contextQuickViewPosition.x
-      let y = this.contextQuickViewPosition.y
-      const maxX = window.innerWidth - rect.width - padding
-      const maxY = window.innerHeight - rect.height - padding
-      if (x > maxX) {
-        x = Math.max(padding, maxX)
-      }
-      if (y > maxY) {
-        y = Math.max(padding, maxY)
-      }
-      x = Math.max(padding, x)
-      y = Math.max(padding, y)
-      if (x !== this.contextQuickViewPosition.x || y !== this.contextQuickViewPosition.y) {
-        this.contextQuickViewPosition = { x, y }
-      }
     },
     handleContextAction (action) {
       this.closeContextQuickView()
@@ -2160,13 +2115,4 @@ export default {
     }
   }
 
-  .quickview-context-menu {
-    position: fixed;
-    z-index: 2000;
-    background-color: #fff;
-    border: 1px solid #d9d9d9;
-    border-radius: 4px;
-    padding: 10px;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-  }
 </style>

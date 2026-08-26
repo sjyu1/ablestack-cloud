@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
@@ -64,6 +65,9 @@ class LibvirtAblestackCommvaultBackupHelper {
     static final Integer EXIT_CLEANUP_FAILED = 20;
     private static final int BACKUP_JOB_POLL_INTERVAL_MS = 10000;
     private static final DateTimeFormatter SCRIPT_LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss>");
+    private static final String STAGING_IN_PROGRESS_MARKER = ".staging.inprogress";
+    private static final String STAGING_COMPLETE_MARKER = ".staging.complete";
+    private static final String BACKUP_TRACE = "[ABLESTACK_COMMVAULT_BACKUP_TRACE]";
 
     enum BackupExecutionMode {
         RUNNING("backup-running"),
@@ -101,8 +105,18 @@ class LibvirtAblestackCommvaultBackupHelper {
         String[] scriptCommand = buildBackupScriptCommand(command, diskPaths, executionMode);
         LOGGER.debug("Executing Commvault backup script command=[{}]", String.join(" ", scriptCommand));
         commands.add(scriptCommand);
-        final int timeout = command.getWait() > 0 ? command.getWait() * 1000 : resource.getCmdsTimeout();
-        return Script.executePipedCommands(commands, timeout);
+        final int commandWaitSeconds = command.getWait();
+        final long resourceTimeoutMillis = resource.getCmdsTimeout();
+        final long effectiveTimeoutMillis = commandWaitSeconds > 0 ? TimeUnit.SECONDS.toMillis(commandWaitSeconds) : resourceTimeoutMillis;
+        LOGGER.info(
+                "Executing running VM Commvault backup for vm=[{}], commandWaitSeconds=[{}], "
+                        + "resourceCmdsTimeoutMillis=[{}], effectiveTimeoutMillis=[{}]",
+                command.getVmName(),
+                commandWaitSeconds,
+                resourceTimeoutMillis,
+                effectiveTimeoutMillis
+        );
+        return Script.executePipedCommands(commands, effectiveTimeoutMillis);
     }
 
     List<String> resolveDiskPaths(List<PrimaryDataStoreTO> volumePools, List<String> volumePaths) {
@@ -164,18 +178,22 @@ class LibvirtAblestackCommvaultBackupHelper {
         String dummyVmName = String.format("DUMMY-VM-%s", command.getCheckpointName().replace('.', '-'));
         Path dest = Path.of(command.getBackupPath());
         Connect conn = null;
+        long startedAt = System.currentTimeMillis();
         try {
-            LOGGER.info("Starting stopped VM Commvault backup for vm=[{}], dummyVm=[{}], backupType=[{}]",
-                    command.getVmName(), dummyVmName, command.getBackupType());
+            LOGGER.info("{} phase=[STOPPED_BACKUP_START], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}]",
+                    BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName());
             validateStoppedBackupDiskPaths(diskPaths);
             if (isIncremental(command)) {
                 resource.validateLibvirtAndQemuVersionForIncrementalSnapshots();
             }
             Files.createDirectories(dest.resolve("checkpoints"));
+            markStagingInProgress(dest, command);
 
             conn = LibvirtConnection.getConnection();
             String dummyVmXml = buildDummyVmXml(dummyVmName, diskPaths);
             resource.startVM(conn, dummyVmName, dummyVmXml, Domain.CreateFlags.PAUSED);
+            LOGGER.info("{} phase=[DUMMY_CREATED], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}]",
+                    BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName());
 
             ensureParentCheckpointMaterialized(command);
             if (isIncremental(command) && command.getParentCheckpointPath() != null && !command.getParentCheckpointPath().isEmpty()) {
@@ -194,33 +212,68 @@ class LibvirtAblestackCommvaultBackupHelper {
                 String failureDetails = formatScriptStyleLog(String.format(
                         "Failed to start stopped VM Commvault backup for dummy domain [%s]: %s",
                         dummyVmName, sanitizeCommandOutput(backupBeginResult.second())));
+                LOGGER.error("{} phase=[BACKUP_BEGIN_FAILED], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], reason=[{}]",
+                        BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(), failureDetails);
                 LOGGER.error(failureDetails);
                 return new Pair<>(backupBeginResult.first(), failureDetails);
             }
+            LOGGER.info("{} phase=[BACKUP_JOB_STARTED], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMs=[{}]",
+                    BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt);
 
             try {
-                waitForBackup(dummyVmName);
+                final long effectiveTimeoutMillis = command.getWait() > 0 ? TimeUnit.SECONDS.toMillis(command.getWait()) : resource.getCmdsTimeout();
+                waitForBackup(dummyVmName, effectiveTimeoutMillis);
+                LOGGER.info("{} phase=[BACKUP_JOB_COMPLETED], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMs=[{}]",
+                        BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                        System.currentTimeMillis() - startedAt);
             } catch (IOException e) {
                 cancelBackupJob(dummyVmName);
                 throw e;
             }
 
             dumpCheckpointXml(dummyVmName, command.getCheckpointName(), dest);
+            LOGGER.info("{} phase=[CHECKPOINT_DUMPED], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}]",
+                    BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName());
             Files.deleteIfExists(backupXml);
             Files.deleteIfExists(checkpointXml);
             Script.runSimpleBashScriptForExitValue("sync", resource.getCmdsTimeout(), false);
-            LOGGER.info("Completed stopped VM Commvault backup for vm=[{}], dummyVm=[{}]", command.getVmName(), dummyVmName);
+            markStagingComplete(dest, command);
+            LOGGER.info("{} phase=[STOPPED_BACKUP_DONE], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMs=[{}]",
+                    BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt);
             return new Pair<>(0, "success");
         } catch (Exception e) {
-            LOGGER.error("Stopped VM Commvault backup failed for vm=[{}], dummyVm=[{}] due to: {}",
-                    command.getVmName(), dummyVmName, e.getMessage(), e);
+            LOGGER.error("{} phase=[STOPPED_BACKUP_FAILED], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMs=[{}], reason=[{}]",
+                    BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt, e.getMessage(), e);
             if (!cleanupStoppedBackupPath(dest)) {
                 return new Pair<>(EXIT_CLEANUP_FAILED, String.format("Backup cleanup failed after stopped VM Commvault backup failure: %s", e.getMessage()));
             }
             return new Pair<>(1, e.getMessage());
         } finally {
             cleanupDummyVm(dummyVmName);
+            LOGGER.info("{} phase=[DUMMY_CLEANED], vm=[{}], dummyVm=[{}], backupType=[{}], checkpoint=[{}], elapsedMs=[{}]",
+                    BACKUP_TRACE, command.getVmName(), dummyVmName, command.getBackupType(), command.getCheckpointName(),
+                    System.currentTimeMillis() - startedAt);
         }
+    }
+
+    private void markStagingInProgress(Path dest, AblestackCommvaultTakeBackupCommand command) throws IOException {
+        Files.deleteIfExists(dest.resolve(STAGING_COMPLETE_MARKER));
+        Files.writeString(dest.resolve(STAGING_IN_PROGRESS_MARKER),
+                String.format("vm=%s%ncheckpoint=%s%n", command.getVmName(), command.getCheckpointName()),
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    private void markStagingComplete(Path dest, AblestackCommvaultTakeBackupCommand command) throws IOException {
+        Path completeMarker = dest.resolve(STAGING_COMPLETE_MARKER);
+        Path tmpMarker = dest.resolve(STAGING_COMPLETE_MARKER + ".tmp");
+        Files.writeString(tmpMarker,
+                String.format("vm=%s%ncheckpoint=%s%n", command.getVmName(), command.getCheckpointName()),
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        Files.move(tmpMarker, completeMarker, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.deleteIfExists(dest.resolve(STAGING_IN_PROGRESS_MARKER));
     }
 
     private boolean cleanupStoppedBackupPath(Path dest) {
@@ -442,9 +495,9 @@ class LibvirtAblestackCommvaultBackupHelper {
         return checkpointXml;
     }
 
-    private void waitForBackup(String vmName) throws IOException {
-        int timeout = resource.getCmdsTimeout();
-        while (timeout > 0) {
+    private void waitForBackup(String vmName, long timeoutMillis) throws IOException {
+        long remainingMillis = timeoutMillis;
+        while (remainingMillis > 0) {
             String result = checkBackupJob(vmName);
             if (result != null && result.contains("Completed") && result.contains("Backup")) {
                 return;
@@ -452,15 +505,17 @@ class LibvirtAblestackCommvaultBackupHelper {
             if (result != null && result.contains("Failed")) {
                 throw new IOException("Virsh backup job failed for dummy VM " + vmName);
             }
-            timeout -= BACKUP_JOB_POLL_INTERVAL_MS;
+            long sleepMillis = Math.min(BACKUP_JOB_POLL_INTERVAL_MS, remainingMillis);
             try {
-                Thread.sleep(BACKUP_JOB_POLL_INTERVAL_MS);
+                Thread.sleep(sleepMillis);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
             }
+            remainingMillis -= sleepMillis;
         }
-        throw new IOException("Timed out waiting for backup job of dummy VM " + vmName);
+        throw new IOException("Timed out waiting for backup job of dummy VM " + vmName + " after "+ timeoutMillis + " milliseconds"
+        );
     }
 
     private void cancelBackupJob(String vmName) {

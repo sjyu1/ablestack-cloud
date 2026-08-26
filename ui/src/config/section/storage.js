@@ -506,7 +506,7 @@ export default {
       columns: ['name', 'status', 'size', 'virtualsize', 'virtualmachinename', 'backupofferingname', 'intervaltype', 'type', 'created', 'account', 'domain', 'zone'],
       details: ['name', 'description', 'virtualmachinename', 'id', 'intervaltype', 'type', 'externalid', 'size', 'virtualsize', 'volumes', 'backupofferingname', 'zone', 'account', 'domain', 'created'],
       searchFilters: () => {
-        var filters = ['name', 'zoneid', 'domainid', 'account', 'backupofferingid']
+        var filters = ['name', 'zoneid', 'domainid', 'account', 'backupofferingname']
         return filters
       },
       tabs: [
@@ -776,16 +776,6 @@ export default {
           popup: true,
           args: ['cleanup'],
           show: (record) => { return ['Stopped', 'Ready', 'Detached'].includes(record.state) }
-        },
-        {
-          api: 'changeSharedFileSystemDiskOffering',
-          icon: 'swap-outlined',
-          docHelp: 'adminguide/storage.html#lifecycle-operations',
-          label: 'label.change.disk.offering',
-          dataView: true,
-          popup: true,
-          component: shallowRef(defineAsyncComponent(() => import('@/views/storage/ChangeSharedFSDiskOffering.vue'))),
-          show: (record) => { return ['Stopped', 'Ready'].includes(record.state) }
         },
         {
           api: 'changeSharedFileSystemServiceOffering',

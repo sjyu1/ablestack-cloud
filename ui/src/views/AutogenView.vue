@@ -1553,7 +1553,7 @@ export default {
       if (['listVirtualMachinesMetrics'].includes(this.apiName) && this.dataView) {
         delete params.details
         delete params.isvnf
-        params.details = 'group,nics,secgrp,tmpl,servoff,diskoff,iso,volume,affgrp,backoff'
+        params.details = 'group,nics,secgrp,tmpl,servoff,diskoff,iso,volume,affgrp,backoff,guestnetwork'
       }
 
       if (this.$route.path.startsWith('/cniconfiguration')) {
@@ -2758,15 +2758,19 @@ export default {
 }
 
 .autogen-action-dropdown__content {
-  background: #fff;
-  border-radius: 8px;
-  border: 1px solid #d9d9d9;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  padding: 12px;
+  width: 272px;
+  max-height: ~"min(70vh, 640px)";
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--ui-shadow);
 }
 
 .autogen-action-dropdown__content :deep(.row-action-button--dataview) {
-  width: max-content;
+  width: 100%;
   min-width: 0;
 }
 

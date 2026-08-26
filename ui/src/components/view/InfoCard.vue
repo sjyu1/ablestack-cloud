@@ -299,6 +299,18 @@
                 <copy-label :label="ipaddress" />
               </span>
             </span>
+            <a-tooltip
+              v-if="ipaddressSource"
+              :title="ipaddressSource === 'QGA'
+                ? $t('message.representative.ip.qga')
+                : $t('message.representative.ip.cloud.fallback')">
+              <a-tag
+                class="representative-ip-source"
+                :color="ipaddressSource === 'QGA' ? 'blue' : 'default'">
+                {{ ipaddressSource === 'QGA' ? 'QGA' : $t('label.cloud') }}
+                · {{ $t('label.primary.ip') }}
+              </a-tag>
+            </a-tooltip>
           </div>
         </div>
         <div class="resource-detail-item" v-if="('cpunumber' in resource && 'cpuspeed' in resource) || resource.cputotal">
@@ -1122,21 +1134,13 @@
         </div>
       </div>
     </a-card>
-    <div
+    <ResourceContextMenu
       v-if="showContextQuickView"
-      ref="contextQuickViewMenu"
-      class="quickview-context-menu"
-      :style="{ top: contextQuickViewPosition.y + 'px', left: contextQuickViewPosition.x + 'px' }"
-      @click.stop
-      @contextmenu.stop.prevent>
-      <ActionButton
-        :actions="contextMenuActions"
-        :resource="resource"
-        :dataView="true"
-        :show-resource-title="true"
-        size="default"
-        @exec-action="handleContextAction" />
-    </div>
+      :actions="contextMenuActions"
+      :resource="resource"
+      :position="contextQuickViewPosition"
+      @close="closeContextQuickView"
+      @exec-action="handleContextAction" />
   </a-spin>
 </template>
 
@@ -1156,6 +1160,7 @@ import ResourceLabel from '@/components/widgets/ResourceLabel'
 import ImageDeployInstanceButton from '@/components/view/ImageDeployInstanceButton'
 import { FileTextOutlined } from '@ant-design/icons-vue'
 import ActionButton from '@/components/view/ActionButton'
+import ResourceContextMenu from '@/components/view/ResourceContextMenu'
 
 export default {
   name: 'InfoCard',
@@ -1170,7 +1175,8 @@ export default {
     ResourceLabel,
     ImageDeployInstanceButton,
     FileTextOutlined,
-    ActionButton
+    ActionButton,
+    ResourceContextMenu
   },
   props: {
     resource: {
@@ -1205,6 +1211,7 @@ export default {
   data () {
     return {
       ipaddress: '',
+      ipaddressSource: '',
       drclusterip: '',
       resourceType: '',
       inputVisible: false,
@@ -1232,8 +1239,7 @@ export default {
       contextQuickViewPosition: {
         x: 0,
         y: 0
-      },
-      contextMenuListenerRegistered: false
+      }
     }
   },
   watch: {
@@ -1265,9 +1271,6 @@ export default {
       this.showUploadModal(showModal)
     })
     this.updateResourceAdditionalData()
-  },
-  beforeUnmount () {
-    this.removeContextMenuListeners()
   },
   computed: {
     tagsSupportingResourceTypes () {
@@ -1528,10 +1531,20 @@ export default {
       }
     },
     setData () {
-      if (this.resource.nic && this.resource.nic.length > 0) {
-        this.ipaddress = this.resource.nic.filter(e => e.linkstate !== false && e.ipaddress).map(e => e.ipaddress).join(', ')
+      const summary = this.resource.guestnetwork || {}
+      if (summary.representativeaddress) {
+        this.ipaddress = summary.representativeaddress
+        this.ipaddressSource = 'QGA'
+      } else if (this.resource.nic && this.resource.nic.length > 0) {
+        const activeNics = this.resource.nic.filter(e => e.linkstate !== false)
+        const defaultNic = activeNics.find(e => e.isdefault) || activeNics[0]
+        this.ipaddress = defaultNic
+          ? (defaultNic.ipaddress || defaultNic.ip6address || '')
+          : ''
+        this.ipaddressSource = this.ipaddress ? 'CLOUD' : ''
       } else {
         this.ipaddress = this.resource.ipaddress
+        this.ipaddressSource = ''
       }
     },
     toSize (kb) {
@@ -1666,52 +1679,10 @@ export default {
         y: event.clientY
       }
       this.contextQuickViewVisible = true
-      this.$nextTick(() => {
-        this.adjustContextMenuPosition()
-      })
-      this.addContextMenuListeners()
-    },
-    addContextMenuListeners () {
-      if (this.contextMenuListenerRegistered) {
-        return
-      }
-      document.addEventListener('click', this.closeContextQuickView)
-      this.contextMenuListenerRegistered = true
-    },
-    removeContextMenuListeners () {
-      if (!this.contextMenuListenerRegistered) {
-        return
-      }
-      document.removeEventListener('click', this.closeContextQuickView)
-      this.contextMenuListenerRegistered = false
     },
     closeContextQuickView () {
       this.contextQuickViewVisible = false
       this.contextQuickViewPosition = { x: 0, y: 0 }
-      this.removeContextMenuListeners()
-    },
-    adjustContextMenuPosition () {
-      const padding = 8
-      const menu = this.$refs.contextQuickViewMenu
-      if (!menu) {
-        return
-      }
-      const rect = menu.getBoundingClientRect()
-      let x = this.contextQuickViewPosition.x
-      let y = this.contextQuickViewPosition.y
-      const maxX = window.innerWidth - rect.width - padding
-      const maxY = window.innerHeight - rect.height - padding
-      if (x > maxX) {
-        x = Math.max(padding, maxX)
-      }
-      if (y > maxY) {
-        y = Math.max(padding, maxY)
-      }
-      x = Math.max(padding, x)
-      y = Math.max(padding, y)
-      if (x !== this.contextQuickViewPosition.x || y !== this.contextQuickViewPosition.y) {
-        this.contextQuickViewPosition = { x, y }
-      }
     },
     handleContextAction (action) {
       this.closeContextQuickView()
@@ -1847,6 +1818,10 @@ export default {
   width: 100%;
 }
 
+.representative-ip-source {
+  margin-left: 8px;
+}
+
 .clone-fast-flatten-status-row {
   display: flex;
   align-items: center;
@@ -1948,13 +1923,4 @@ export default {
   border: 1px solid rgba(177, 177, 177, 0.788);
 }
 
-.quickview-context-menu {
-  position: fixed;
-  z-index: 2000;
-  background-color: #fff;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  padding: 10px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-}
 </style>
