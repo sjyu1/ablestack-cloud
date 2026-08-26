@@ -363,95 +363,10 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
             return replaceFileVolumeWithBackup(volumePath, getRestorableFileBackupPath(backupPaths), timeout);
         }
 
-        return replaceFileVolumeWithQcow2Chain(volumePath, backupPaths, timeout);
-    }
-
-    private boolean replaceFileVolumeWithQcow2Chain(String volumePath, List<String> backupPaths, int timeout) {
-        Path temporaryVolumePath = null;
-        Path movedAsideTarget = null;
-        try {
-            QemuImg.PhysicalDiskFormat targetFormat = getFileVolumeFormat(volumePath);
-            validatePrimaryStorageSpaceForFileRestore(getRestorableFileBackupPath(backupPaths), volumePath);
-            movedAsideTarget = moveExistingFileVolumeAside(volumePath);
-            temporaryVolumePath = createTemporaryVolumePath(volumePath, "cs-nas-restore-volume-", targetFormat);
-            Files.deleteIfExists(temporaryVolumePath);
-            logger.info("{} phase=[TEMP_TARGET_CREATED], source=[{}], target=[{}], temporaryTarget=[{}], sourceFormat=[qcow2-chain], targetFormat=[{}]",
-                    RESTORE_TRACE, backupPaths, volumePath, temporaryVolumePath, targetFormat);
-            convertQcow2ChainWithImageOpts(backupPaths, temporaryVolumePath.toString(), targetFormat, timeout);
-            Files.move(temporaryVolumePath, Paths.get(volumePath), StandardCopyOption.REPLACE_EXISTING);
-            logger.info("{} phase=[TEMP_TARGET_PROMOTED], target=[{}], temporaryTarget=[{}]",
-                    RESTORE_TRACE, volumePath, temporaryVolumePath);
-            deleteMovedAsideFileVolume(movedAsideTarget);
-            return true;
-        } catch (QemuImgException | LibvirtException | IOException e) {
-            logger.error("{} phase=[FILE_RESTORE_FAILED], source=[{}], target=[{}], error=[{}]",
-                    RESTORE_TRACE, backupPaths, volumePath, e.getMessage());
-            restoreMovedAsideFileVolume(volumePath, movedAsideTarget);
-            return false;
-        } finally {
-            if (temporaryVolumePath != null) {
-                try {
-                    Files.deleteIfExists(temporaryVolumePath);
-                } catch (IOException e) {
-                    logger.warn("{} phase=[TEMP_TARGET_DELETE_FAILED], temporaryTarget=[{}], error=[{}]",
-                            RESTORE_TRACE, temporaryVolumePath, e.getMessage());
-                }
-            }
-        }
-    }
-
-    private void convertQcow2ChainWithImageOpts(List<String> backupPaths, String volumePath, QemuImg.PhysicalDiskFormat volumeFormat,
-                                                int timeout) throws QemuImgException {
-        String imageOptions = buildQcow2ImageOptions(backupPaths);
-        String convertCommand = String.format("qemu-img convert -p --image-opts -O %s %s %s",
-                volumeFormat.toString().toLowerCase(Locale.ROOT), quote(imageOptions), quote(volumePath));
-        Pair<Integer, String> result = runCommandWithOutput(convertCommand, timeout * 1000);
-        String output = formatTraceOutput(result.second());
-        if (result.first() == 0) {
-            logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-image-opts]",
-                    RESTORE_TRACE, backupPaths, volumePath);
-            return;
-        }
-        logger.warn("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-image-opts], exitCode=[{}], output=[{}]",
-                RESTORE_TRACE, backupPaths, volumePath, result.first(), output);
-        throw new QemuImgException(String.format("qemu-img convert image-opts failed with exitCode [%s], output [%s]", result.first(), output));
-    }
-
-    private String buildQcow2ImageOptions(List<String> backupPaths) {
-        StringBuilder imageOptions = new StringBuilder();
-        int chainDepth = 0;
-        for (int index = backupPaths.size() - 1; index >= 0; index--) {
-            String backupPath = backupPaths.get(index);
-            if (StringUtils.isBlank(backupPath)) {
-                continue;
-            }
-            Path source = Paths.get(backupPath);
-            if (!Files.exists(source)) {
-                throw new CloudRuntimeException(String.format("Missing QCOW2 backup chain file [%s] for restore", backupPath));
-            }
-            String prefix = StringUtils.repeat("backing.", chainDepth);
-            appendQcow2ImageOption(imageOptions, prefix + "driver", "qcow2");
-            appendQcow2ImageOption(imageOptions, prefix + "read-only", "on");
-            appendQcow2ImageOption(imageOptions, prefix + "file.driver", "file");
-            appendQcow2ImageOption(imageOptions, prefix + "file.filename", backupPath);
-            appendQcow2ImageOption(imageOptions, prefix + "file.read-only", "on");
-            chainDepth++;
-        }
-        if (chainDepth == 0) {
-            throw new CloudRuntimeException("No QCOW2 backup chain files were prepared for restore");
-        }
-        return imageOptions.toString();
-    }
-
-    private void appendQcow2ImageOption(StringBuilder imageOptions, String key, String value) {
-        if (imageOptions.length() > 0) {
-            imageOptions.append(",");
-        }
-        imageOptions.append(key).append("=").append(escapeQcow2ImageOptionValue(value));
-    }
-
-    private String escapeQcow2ImageOptionValue(String value) {
-        return value.replace("\\", "\\\\").replace(",", "\\,");
+        String leafBackupPath = getRestorableFileBackupPath(backupPaths);
+        logger.info("{} phase=[QCOW2_CHAIN_LEAF_SELECTED], target=[{}], leaf=[{}], chainFiles=[{}]",
+                RESTORE_TRACE, volumePath, leafBackupPath, backupPaths);
+        return replaceFileVolumeWithBackup(volumePath, leafBackupPath, timeout);
     }
 
     private boolean replaceFileVolumeWithBackup(String volumePath, String backupPath, int timeout) {
