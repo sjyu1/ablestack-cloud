@@ -4152,18 +4152,21 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
                     DiskDef.DiskBus diskBusType, DiskDef.DiskBus diskBusTypeData, Map<String, String> details) {
         boolean skipForceDiskController = MapUtils.getBoolean(details, VmDetailConstants.KVM_SKIP_FORCE_DISK_CONTROLLER,
                 false);
+        final DiskDef.DiskFmtType diskFmtType = physicalDisk != null && physicalDisk.getFormat() == PhysicalDiskFormat.RAW
+                ? DiskDef.DiskFmtType.RAW
+                : DiskDef.DiskFmtType.QCOW2;
         if (skipForceDiskController) {
             disk.defFileBasedDisk(physicalDisk.getPath(), devId, Volume.Type.DATADISK.equals(volume.getType()) ?
-                    diskBusTypeData : diskBusType, DiskDef.DiskFmtType.QCOW2);
+                    diskBusTypeData : diskBusType, diskFmtType);
             return;
         }
         if (volume.getType() == Volume.Type.DATADISK && !(isWindowsTemplate && isUefiEnabled)) {
-            disk.defFileBasedDisk(physicalDisk.getPath(), devId, diskBusTypeData, DiskDef.DiskFmtType.QCOW2);
+            disk.defFileBasedDisk(physicalDisk.getPath(), devId, diskBusTypeData, diskFmtType);
         } else {
             if (isSecureBoot) {
-                disk.defFileBasedDisk(physicalDisk.getPath(), devId, DiskDef.DiskFmtType.QCOW2, isWindowsTemplate);
+                disk.defFileBasedDisk(physicalDisk.getPath(), devId, diskFmtType, isWindowsTemplate);
             } else {
-                disk.defFileBasedDisk(physicalDisk.getPath(), devId, diskBusType, DiskDef.DiskFmtType.QCOW2);
+                disk.defFileBasedDisk(physicalDisk.getPath(), devId, diskBusType, diskFmtType);
             }
         }
     }
@@ -4358,7 +4361,7 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
                     final String glusterVolume = pool.getSourceDir().replace("/", "");
                     disk.defNetworkBasedDisk(glusterVolume + path.replace(mountpoint, ""), pool.getSourceHost(), pool.getSourcePort(), null,
                             null, devId, diskBusType, DiskProtocol.GLUSTER, DiskDef.DiskFmtType.QCOW2);
-                } else if (pool.getType() == StoragePoolType.CLVM || physicalDisk.getFormat() == PhysicalDiskFormat.RAW) {
+                } else if (pool.getType() == StoragePoolType.CLVM || useBLOCKDiskType(physicalDisk)) {
                     if (volume.getType() == Volume.Type.DATADISK && !(isWindowsTemplate && isUefiEnabled)) {
                         disk.defBlockBasedDisk(physicalDisk.getPath(), devId, diskBusTypeData);
                     }
