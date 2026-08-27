@@ -683,17 +683,17 @@ public class LibvirtAblestackNasRestoreBackupCommandWrapper extends CommandWrapp
 
     private void convertFileVolumeWithQemuImg(String backupPath, String volumePath, QemuImg.PhysicalDiskFormat backupFormat,
                                               QemuImg.PhysicalDiskFormat volumeFormat, int timeout) throws QemuImgException {
-        String convertCommand = String.format("qemu-img convert -p -f %s -O %s %s %s",
+        String convertCommand = String.format("qemu-img convert -p -S 0 -f %s -O %s %s %s",
                 backupFormat.toString().toLowerCase(Locale.ROOT), volumeFormat.toString().toLowerCase(Locale.ROOT),
                 quote(backupPath), quote(volumePath));
         Pair<Integer, String> result = runCommandWithOutput(convertCommand, timeout * 1000);
         String output = formatTraceOutput(result.second());
         if (result.first() == 0) {
-            logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert]",
+            logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-nosparse]",
                     RESTORE_TRACE, backupPath, volumePath);
             return;
         }
-        logger.warn("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert], exitCode=[{}], output=[{}]",
+        logger.warn("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-nosparse], exitCode=[{}], output=[{}]",
                 RESTORE_TRACE, backupPath, volumePath, result.first(), output);
         throw new QemuImgException(String.format("qemu-img convert failed with exitCode [%s], output [%s]", result.first(), output));
     }

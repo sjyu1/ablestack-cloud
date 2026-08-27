@@ -531,9 +531,16 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
 
     private void convertFileVolumeWithQemuImg(final String backupPath, final String volumePath, final QemuImg.PhysicalDiskFormat backupFormat,
             final QemuImg.PhysicalDiskFormat volumeFormat, final int timeout) throws QemuImgException, LibvirtException {
-        final QemuImg qemu = new QemuImg(timeout * 1000, true, false);
-        qemu.convert(new QemuImgFile(backupPath, backupFormat), new QemuImgFile(volumePath, volumeFormat));
-        logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert]",
+        final String convertCommand = String.format("qemu-img convert -p -S 0 -f %s -O %s %s %s",
+                backupFormat.toString().toLowerCase(Locale.ROOT), volumeFormat.toString().toLowerCase(Locale.ROOT),
+                quote(backupPath), quote(volumePath));
+        final CommandExecutionResult result = executeBashCommandWithResult(convertCommand, timeout, "Convert backup to file volume without sparse detection");
+        if (result.exitCode != 0) {
+            logger.warn("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-nosparse], exitCode=[{}], output=[{}]",
+                    RESTORE_TRACE, backupPath, volumePath, result.exitCode, result.output);
+            throw new QemuImgException(String.format("qemu-img convert failed with exitCode [%s], output [%s]", result.exitCode, result.output));
+        }
+        logger.info("{} phase=[CONVERT], source=[{}], target=[{}], command=[qemu-img-convert-nosparse]",
                 RESTORE_TRACE, backupPath, volumePath);
     }
 
@@ -555,12 +562,19 @@ public class LibvirtAblestackNetBackupRestoreBackupCommandWrapper extends Comman
         QemuImgFile srcBackupFile = null;
         QemuImgFile destVolumeFile = null;
         try {
-            final QemuImg qemu = new QemuImg(timeout * 1000, true, false);
             srcBackupFile = new QemuImgFile(sourceImage.buildQemuUri(tempImage), QemuImg.PhysicalDiskFormat.RAW);
             destVolumeFile = new QemuImgFile(volumePath, getFileVolumeFormat(volumePath));
-            qemu.convert(srcBackupFile, destVolumeFile);
+            final String convertCommand = String.format("qemu-img convert -p -S 0 -f %s -O %s %s %s",
+                    srcBackupFile.getFormat().toString().toLowerCase(Locale.ROOT), destVolumeFile.getFormat().toString().toLowerCase(Locale.ROOT),
+                    quote(srcBackupFile.getFileName()), quote(destVolumeFile.getFileName()));
+            final CommandExecutionResult result = executeBashCommandWithResult(convertCommand, timeout, "Convert temporary RBD backup to file volume without sparse detection");
+            if (result.exitCode != 0) {
+                logger.warn("{} phase=[CONVERT_TEMP_RBD_TO_FILE], source=[{}], target=[{}], command=[qemu-img-convert-nosparse], exitCode=[{}], output=[{}]",
+                        RESTORE_TRACE, srcBackupFile.getFileName(), destVolumeFile.getFileName(), result.exitCode, result.output);
+                return false;
+            }
             return true;
-        } catch (final QemuImgException | LibvirtException e) {
+        } catch (final RuntimeException e) {
             final String srcFilename = srcBackupFile != null ? srcBackupFile.getFileName() : tempImage;
             final String destFilename = destVolumeFile != null ? destVolumeFile.getFileName() : volumePath;
             logger.error("Failed to convert temporary RBD {} to volume {}, the error was: {}", srcFilename, destFilename, e.getMessage());
