@@ -38,6 +38,7 @@ import com.cloud.api.ApiResponseHelper;
 import com.cloud.api.query.vo.VolumeJoinVO;
 import com.cloud.offering.ServiceOffering;
 import com.cloud.storage.Storage;
+import com.cloud.storage.Storage.StoragePoolType;
 import com.cloud.storage.VMTemplateStorageResourceAssoc.Status;
 import com.cloud.storage.Volume;
 import com.cloud.storage.VolumeDetailVO;
@@ -169,7 +170,7 @@ public class VolumeJoinDaoImpl extends GenericDaoBaseWithTagInformation<VolumeJo
             volResponse.setCreated(volume.getCreatedOnStore());
 
             if (view == ResponseView.Full) {
-                Hypervisor.HypervisorType hypervisorTypeFromFormat = ApiDBUtils.getHypervisorTypeFromFormat(volume.getDataCenterId(), volume.getFormat());
+                Hypervisor.HypervisorType hypervisorTypeFromFormat = getVolumeHypervisorType(volume);
                 volResponse.setHypervisor(hypervisorTypeFromFormat.getHypervisorDisplayName());
             }
             if (volume.getDownloadState() != Status.DOWNLOADED) {
@@ -236,7 +237,7 @@ public class VolumeJoinDaoImpl extends GenericDaoBaseWithTagInformation<VolumeJo
                 if (volume.getHypervisorType() != null) {
                     volResponse.setHypervisor(volume.getHypervisorType().getHypervisorDisplayName());
                 } else {
-                    Hypervisor.HypervisorType hypervisorTypeFromFormat = ApiDBUtils.getHypervisorTypeFromFormat(volume.getDataCenterId(), volume.getFormat());
+                    Hypervisor.HypervisorType hypervisorTypeFromFormat = getVolumeHypervisorType(volume);
                     volResponse.setHypervisor(hypervisorTypeFromFormat.getHypervisorDisplayName());
                 }
             }
@@ -387,6 +388,24 @@ public class VolumeJoinDaoImpl extends GenericDaoBaseWithTagInformation<VolumeJo
             }
         }
         return uvList;
+    }
+
+    private Hypervisor.HypervisorType getVolumeHypervisorType(VolumeJoinVO volume) {
+        StoragePoolVO poolVO = null;
+        if (volume.getPoolId() > 0) {
+            poolVO = primaryDataStoreDao.findById(volume.getPoolId());
+        }
+
+        if (volume.getFormat() == Storage.ImageFormat.RAW && poolVO != null) {
+            StoragePoolType poolType = poolVO.getPoolType();
+            if (poolType == StoragePoolType.NetworkFilesystem
+                    || poolType == StoragePoolType.Filesystem
+                    || poolType == StoragePoolType.SharedMountPoint) {
+                return Hypervisor.HypervisorType.KVM;
+            }
+        }
+
+        return ApiDBUtils.getHypervisorTypeFromFormat(volume.getDataCenterId(), volume.getFormat());
     }
 
 }
