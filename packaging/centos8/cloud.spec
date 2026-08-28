@@ -213,6 +213,7 @@ mvn -T 2C -Psystemvm,developer -DskipTests $FLAGS clean package
 cd ui
 env -u NODE_OPTIONS %{_node_bindir}/npm ci --no-audit --no-fund
 env -u NODE_OPTIONS %{_node_bindir}/npm run build
+%{_node_bindir}/node build.js || true
 cd ..
 
 %install
