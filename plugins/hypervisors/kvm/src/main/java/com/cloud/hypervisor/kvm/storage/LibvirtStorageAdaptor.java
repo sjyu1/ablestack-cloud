@@ -26,7 +26,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -805,7 +804,7 @@ public class LibvirtStorageAdaptor implements StorageAdaptor {
                 } else if (volumeUuid.endsWith("raw") || volumeUuid.endsWith(("RAW"))) {
                     disk.setFormat(PhysicalDiskFormat.RAW);
                 } else {
-                    disk.setFormat(resolveFileFormat(disk.getPath(), pool.getDefaultFormat()));
+                    disk.setFormat(pool.getDefaultFormat());
                 }
             } else if (voldef.getFormat() == LibvirtStorageVolumeDef.VolumeFormat.QCOW2) {
                 disk.setFormat(PhysicalDiskFormat.QCOW2);
@@ -817,25 +816,6 @@ public class LibvirtStorageAdaptor implements StorageAdaptor {
             logger.debug("Failed to get physical disk:", e);
             throw new CloudRuntimeException(e.toString());
         }
-    }
-
-    private PhysicalDiskFormat resolveFileFormat(String path, PhysicalDiskFormat fallbackFormat) {
-        if (StringUtils.isBlank(path)) {
-            return fallbackFormat;
-        }
-
-        try {
-            QemuImg qemu = new QemuImg(0);
-            Map<String, String> info = qemu.info(new QemuImgFile(path));
-            String fileFormat = info.get(QemuImg.FILE_FORMAT);
-            if (StringUtils.isNotBlank(fileFormat)) {
-                return PhysicalDiskFormat.valueOf(fileFormat.trim().toUpperCase(Locale.ROOT));
-            }
-        } catch (QemuImgException | LibvirtException e) {
-            logger.debug("Failed to detect volume format for path [{}], falling back to [{}].", path, fallbackFormat, e);
-        }
-
-        return fallbackFormat;
     }
 
     /**

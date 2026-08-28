@@ -20,17 +20,12 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import org.apache.cloudstack.utils.reflectiontostringbuilderutils.ReflectionToStringBuilderUtils;
-import org.apache.cloudstack.utils.qemu.QemuImg;
-import org.apache.cloudstack.utils.qemu.QemuImgException;
-import org.apache.cloudstack.utils.qemu.QemuImgFile;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joda.time.Duration;
-import org.libvirt.LibvirtException;
 import org.libvirt.StoragePool;
 
 import org.apache.cloudstack.utils.qemu.QemuImg.PhysicalDiskFormat;
@@ -183,7 +178,7 @@ public class LibvirtStoragePool implements KVMStoragePool {
             throw new CloudRuntimeException("Can't find volume:" + volumeUuid);
         }
         disk = new KVMPhysicalDisk(f.getPath(), volumeUuid, this);
-        disk.setFormat(resolveFileFormat(f.getPath(), PhysicalDiskFormat.QCOW2));
+        disk.setFormat(PhysicalDiskFormat.QCOW2);
         disk.setSize(f.length());
         disk.setVirtualSize(f.length());
         logger.debug("find volume bypass libvirt disk " + disk.toString());
@@ -561,24 +556,5 @@ public class LibvirtStoragePool implements KVMStoragePool {
 
     public void setType(StoragePoolType type) {
         this.type = type;
-    }
-
-    private PhysicalDiskFormat resolveFileFormat(String path, PhysicalDiskFormat fallbackFormat) {
-        if (path == null || path.isBlank()) {
-            return fallbackFormat;
-        }
-
-        try {
-            QemuImg qemu = new QemuImg(0);
-            Map<String, String> info = qemu.info(new QemuImgFile(path));
-            String fileFormat = info.get(QemuImg.FILE_FORMAT);
-            if (fileFormat != null && !fileFormat.isBlank()) {
-                return PhysicalDiskFormat.valueOf(fileFormat.trim().toUpperCase(Locale.ROOT));
-            }
-        } catch (QemuImgException | LibvirtException e) {
-            logger.debug("Failed to detect volume format for path [{}], falling back to [{}].", path, fallbackFormat, e);
-        }
-
-        return fallbackFormat;
     }
 }
