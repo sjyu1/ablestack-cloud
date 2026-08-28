@@ -4828,13 +4828,7 @@ public class LibvirtComputingResource extends ServerResourceBase implements Serv
                 } else if (attachingDisk.getFormat() == PhysicalDiskFormat.QCOW2) {
                     diskdef.defFileBasedDisk(attachingDisk.getPath(), devId, busT, DiskDef.DiskFmtType.QCOW2);
                 } else if (attachingDisk.getFormat() == PhysicalDiskFormat.RAW) {
-                    if (attachingPool.getType() == StoragePoolType.NetworkFilesystem
-                            || attachingPool.getType() == StoragePoolType.Filesystem
-                            || attachingPool.getType() == StoragePoolType.SharedMountPoint) {
-                        diskdef.defFileBasedDisk(attachingDisk.getPath(), devId, busT, DiskDef.DiskFmtType.RAW);
-                    } else {
-                        diskdef.defBlockBasedDisk(attachingDisk.getPath(), devId, busT);
-                    }
+                    diskdef.defBlockBasedDisk(attachingDisk.getPath(), devId, busT);
                     if (attachingPool.getType() == StoragePoolType.Linstor) {
                         diskdef.setDiscard(DiscardType.UNMAP);
                     }
