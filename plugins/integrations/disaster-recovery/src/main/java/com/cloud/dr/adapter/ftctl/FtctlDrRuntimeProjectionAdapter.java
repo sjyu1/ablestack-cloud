@@ -330,7 +330,7 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
         }
         JsonObject runtimeStatus = parseObject(status.getStatusJson());
         if (projectionRun != null && isNotFoundStatus(status, runtimeStatus)) {
-            if (deferRuntimeNotFound(plan, status, runtimeStatus)) {
+            if (deferRuntimeNotFound(plan, projectionRun, status, runtimeStatus)) {
                 return DrAdapterResult.success("FTCTL_DR operation runtime is pending creation",
                         GSON.toJson(details));
             }
@@ -363,7 +363,7 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
                         statusMessage(status, "FTCTL_DR status refresh timed out"),
                         GSON.toJson(details), STATUS_REFRESH_WAIT_SECONDS);
             }
-            if (deferRuntimeNotFound(plan, status, runtime)) {
+            if (deferRuntimeNotFound(plan, projectionRun, status, runtime)) {
                 return DrAdapterResult.success("FTCTL_DR runtime is not created yet; projection will retry", GSON.toJson(details));
             }
             reconcileAcceptedRunFromStatus(plan, status, runtime);
@@ -4298,11 +4298,16 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
         }
     }
 
-    private boolean deferRuntimeNotFound(DrPlanVO plan, FtctlDrStatusAnswer status, JsonObject runtime) {
+    private boolean deferRuntimeNotFound(DrPlanVO plan, DrRunVO projectionRun,
+            FtctlDrStatusAnswer status, JsonObject runtime) {
         if (!isNotFoundStatus(status, runtime)) {
             return false;
         }
-        DrRunVO run = drRunDao != null ? drRunDao.findActiveByPlanId(plan.getId()) : null;
+        // The caller already resolved and correlated the active operation Run.
+        // Re-querying here creates a non-repeatable-read window in which a
+        // concurrent projector can temporarily hide the Run and bypass the
+        // runtime creation grace period.
+        DrRunVO run = projectionRun;
         if (run == null || run.getCompleted() != null) {
             return false;
         }

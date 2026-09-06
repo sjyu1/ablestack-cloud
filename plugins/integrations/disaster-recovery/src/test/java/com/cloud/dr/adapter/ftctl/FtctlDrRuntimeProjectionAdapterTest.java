@@ -907,7 +907,7 @@ public class FtctlDrRuntimeProjectionAdapterTest {
     }
 
     @Test
-    public void remoteTestFailoverDefersRunNotFoundBeforeProjectingSessionFailure() {
+    public void remoteTestFailoverDefersRunNotFoundUsingResolvedRunWithoutSecondDaoRead() {
         DrPlanVO plan = new DrPlanVO("remote-test-pending", 1L, 2L, DrConstants.DIRECTION_KVM_TO_KVM);
         plan.setEngineType(DrConstants.ENGINE_TYPE_FTCTL_DR);
         plan.setEngineBindingType(DrConstants.ENGINE_BINDING_TYPE_FTCTL_DR);
@@ -920,7 +920,7 @@ public class FtctlDrRuntimeProjectionAdapterTest {
         ReflectionTestUtils.setField(run, "id", 401L);
         ReflectionTestUtils.setField(session, "id", 31L);
 
-        Mockito.when(drRunDao.findActiveByPlanId(plan.getId())).thenReturn(run);
+        Mockito.when(drRunDao.findActiveByPlanId(plan.getId())).thenReturn(run, null);
         Mockito.when(drRemoteAgentClient.isRemoteKvmSource(plan)).thenReturn(true);
         Mockito.when(drRemoteAgentClient.execute(Mockito.eq(plan), Mockito.eq("STATUS"),
                 Mockito.any(FtctlDrStatusCommand.class), Mockito.isNull(), Mockito.eq(FtctlDrStatusAnswer.class)))
@@ -952,6 +952,7 @@ public class FtctlDrRuntimeProjectionAdapterTest {
         Assert.assertEquals(DrTestSessionState.REQUESTED, session.getState());
         Assert.assertEquals(DrConstants.ERROR_RUNTIME_STARTING, run.getProjectionState());
         Assert.assertNull(run.getErrorCode());
+        Mockito.verify(drRunDao, Mockito.times(1)).findActiveByPlanId(plan.getId());
         Mockito.verify(drTestSessionDao, Mockito.never()).update(Mockito.eq(session.getId()),
                 Mockito.any(DrTestSessionVO.class));
         Mockito.verify(drTargetMaterializationService, Mockito.never())

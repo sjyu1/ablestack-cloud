@@ -85,6 +85,25 @@ public class DrPlanOwnedTransportServiceImplTest {
     }
 
     @Test
+    public void reverseExportRejectsPartialMultiDiskContract() {
+        String profileJson = "{\"request\":{},\"mapping\":{\"disks\":["
+                + "{\"device\":\"disk-0\"},{\"device\":\"disk-1\"}]}}";
+        FtctlDrActionAnswer answer = answer(
+                "{\"result\":\"ok\",\"exports\":[{\"device\":\"disk-1\",\"port\":11834}]}");
+        Mockito.when(drRemoteAgentClient.execute(Mockito.eq(plan), Mockito.eq("ACTION"),
+                Mockito.any(FtctlDrActionCommand.class), Mockito.isNull(),
+                Mockito.eq(FtctlDrActionAnswer.class)))
+                .thenReturn(answer);
+
+        try {
+            service.startReverseTargetExport(plan, run, profileJson);
+            Assert.fail("A partial multi-disk export contract must be rejected");
+        } catch (com.cloud.utils.exception.CloudRuntimeException expected) {
+            Assert.assertTrue(expected.getMessage().contains("incomplete export set"));
+        }
+    }
+
+    @Test
     public void testFailoverDrainDoesNotRequestReverseCutoverBaseline() {
         run = new DrRunVO(plan.getId(), DrConstants.RUN_TYPE_TEST_FAILOVER);
         FtctlDrActionAnswer actionAnswer = answer("{\"result\":\"ok\"}");

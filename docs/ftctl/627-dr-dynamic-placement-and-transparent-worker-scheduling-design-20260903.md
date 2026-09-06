@@ -719,3 +719,43 @@ This rule covers a stopped VM whose Cloud `host_id` is null and a VM that moved
 after the Run began. Regression tests require a stopped VM, a runtime on a
 non-first candidate, exact owner discovery, and proof that the mutation was sent
 only to the owner. Existing new-run scheduling behavior remains unchanged.
+
+## 22. Relocation Recovery Lock Boundary
+
+When a SharedMountPoint source VM moves, the former worker may report
+`DR_QCOW2_SOURCE_RUNTIME_UNAVAILABLE`. Cloud resolves the VM's current host and
+dispatches `RECOVER_SYNC` there so the Plan profile and scheduler can be
+re-established without changing the durable checkpoint or forcing Full Seed.
+
+`RECOVER_SYNC` is a Plan-scoped scheduler-control operation. It has the same
+locking contract as Sync, Pause, and Resume and must not contend on the legacy
+host-global FT/HA lock. An unrelated Plan scheduler running on the selected
+host must not turn relocation into `DR_ENGINE_BUSY_TIMEOUT`. The recovery Run
+may retry a transient Plan lock, but success requires the first post-relocation
+Cycle to complete as `CBT_INCREMENTAL` or `NO_CHANGE` and clear the temporary
+`WAITING_SOURCE_RECOVERY` UI state without direct DB repair.
+
+The operation projector applies its runtime-creation grace period to the
+already resolved and correlated `RECOVER_SYNC` Run. It must not re-query the
+active Run before deciding whether `run_not_found` is terminal. That repeated
+DAO read creates a race with dispatch and concurrent projection: a valid Run
+can be temporarily absent even though the relocated scheduler creates its Run
+state a few seconds later. During the grace period the UI keeps the operation
+in `DR_RUNTIME_STARTING`; only the same resolved Run may become
+`DR_RUNTIME_NOT_CREATED` after the grace expires.
+
+## 23. Plan-Owned Export Set Atomicity
+
+Failback transport preparation is successful only when the source-site Agent
+returns one unique NBD export for every disk in the Plan mapping. Cloud compares
+the returned device set with the complete mapping before injecting exports into
+the reverse profile. A missing, blank, duplicate, or extra device rejects the
+transport contract before reverse transfer starts; a partial set must never be
+treated as an accepted Failback data plane.
+
+The target-site FTCTL owns atomic publication and per-Plan serialization of the
+export set. Cloud does not reconstruct a partial answer from persisted state and
+does not silently retry a transfer with fewer disks. This preserves the
+successful single-disk path while making N-disk Failback independent of a timer
+reconciliation race. Tests cover incomplete two-disk responses in Cloud and a
+concurrent Agent-start/reconciler transition in FTCTL.

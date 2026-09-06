@@ -3,6 +3,9 @@
 // distributed with this work for additional information.
 package com.cloud.dr;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import javax.inject.Inject;
 
 import org.apache.commons.lang3.StringUtils;
@@ -47,7 +50,8 @@ public class DrPlanOwnedTransportServiceImpl extends ManagerBase implements DrPl
         FtctlDrActionCommand command = command(plan, run, FtctlDrActionCommand.Action.TARGET_EXPORT_START,
                 "target", targetHost.getUuid(), profileJson);
         Answer answer = agentManager.easySend(targetHost.getId(), command);
-        return requireExports(answer, "Target Agent did not prepare the Plan-owned RBD export");
+        return requireExports(answer, "Target Agent did not prepare the Plan-owned RBD export",
+                plan, profileJson);
     }
 
     @Override
@@ -62,7 +66,8 @@ public class DrPlanOwnedTransportServiceImpl extends ManagerBase implements DrPl
                 "reverse-target", workerUuid, GSON.toJson(profile));
         Answer answer = drRemoteAgentClient.execute(plan, "ACTION", command,
                 workerUuid, FtctlDrActionAnswer.class);
-        return requireExports(answer, "Original-site Agent did not prepare the reverse RBD export");
+        return requireExports(answer, "Original-site Agent did not prepare the reverse RBD export",
+                plan, profileJson);
     }
 
     @Override
@@ -128,7 +133,7 @@ public class DrPlanOwnedTransportServiceImpl extends ManagerBase implements DrPl
         return host;
     }
 
-    private JsonArray requireExports(Answer answer, String fallback) {
+    private JsonArray requireExports(Answer answer, String fallback, DrPlanVO plan, String profileJson) {
         requireSuccess(answer, fallback);
         if (!(answer instanceof FtctlDrActionAnswer)) {
             throw new CloudRuntimeException(fallback + ": Agent returned no structured export status");
@@ -137,7 +142,41 @@ public class DrPlanOwnedTransportServiceImpl extends ManagerBase implements DrPl
         if (exports.size() == 0) {
             throw new CloudRuntimeException(fallback + ": Agent returned no RBD export endpoints");
         }
+        Set<String> expectedDevices = expectedExportDevices(plan, profileJson);
+        Set<String> actualDevices = new HashSet<String>();
+        for (JsonElement element : exports) {
+            String device = element != null && element.isJsonObject()
+                    ? firstString(element.getAsJsonObject(), "device") : null;
+            if (StringUtils.isBlank(device) || !actualDevices.add(device)) {
+                throw new CloudRuntimeException(fallback
+                        + ": Agent returned a blank or duplicate export device");
+            }
+        }
+        if (!expectedDevices.isEmpty() && !expectedDevices.equals(actualDevices)) {
+            throw new CloudRuntimeException(fallback + ": Agent returned an incomplete export set; expected "
+                    + expectedDevices.size() + " devices but received " + actualDevices.size());
+        }
         return exports;
+    }
+
+    private Set<String> expectedExportDevices(DrPlanVO plan, String profileJson) {
+        JsonObject profile = parseObject(profileJson);
+        JsonArray disks = firstArray(objectAt(profile, "mapping"), "disks");
+        if (disks.size() == 0 && plan != null) {
+            disks = firstArray(parseObject(plan.getMappingJson()), "disks");
+        }
+        Set<String> devices = new HashSet<String>();
+        for (JsonElement element : disks) {
+            if (element == null || !element.isJsonObject()) {
+                continue;
+            }
+            JsonObject disk = element.getAsJsonObject();
+            String device = firstString(disk, "device", "cbtDiskId", "sourceDiskRef");
+            if (StringUtils.isNotBlank(device)) {
+                devices.add(device);
+            }
+        }
+        return devices;
     }
 
     private void requireSuccess(Answer answer, String fallback) {
@@ -172,5 +211,21 @@ public class DrPlanOwnedTransportServiceImpl extends ManagerBase implements DrPl
     private JsonArray firstArray(JsonObject parent, String name) {
         JsonElement value = parent != null ? parent.get(name) : null;
         return value != null && value.isJsonArray() ? value.getAsJsonArray() : new JsonArray();
+    }
+
+    private String firstString(JsonObject parent, String... names) {
+        if (parent == null) {
+            return null;
+        }
+        for (String name : names) {
+            JsonElement value = parent.get(name);
+            if (value != null && value.isJsonPrimitive()) {
+                String text = StringUtils.trimToNull(value.getAsString());
+                if (text != null) {
+                    return text;
+                }
+            }
+        }
+        return null;
     }
 }
