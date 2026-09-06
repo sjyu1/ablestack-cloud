@@ -535,6 +535,13 @@ convert an incremental Cycle into Full Seed. With a valid durable bitmap epoch,
 the first post-relocation Cycle is `CBT_INCREMENTAL` or `NO_CHANGE`; Full Seed
 remains limited to an explicit Full Resync or proven baseline invalidation.
 
+For stopped-source synchronization, the persistent bitmap embedded in the
+qcow2 file is the durable baseline authority. The `baseline-*.bitmap` file in
+a worker's `/run` directory is disposable cache. If it is absent after worker
+relocation or restart, FTCTL validates the expected bitmap directly from qcow2
+metadata and then atomically recreates only the cache marker. Cloud must not
+project `DR_QCOW2_BASELINE_NOT_DURABLE` from a missing worker-local marker.
+
 ## Durable baseline handoff during source-host relocation
 
 `RECOVER_SYNC` is a scheduler relocation operation, not a new protection
