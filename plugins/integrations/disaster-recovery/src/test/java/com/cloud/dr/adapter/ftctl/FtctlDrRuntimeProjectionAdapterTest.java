@@ -174,6 +174,18 @@ public class FtctlDrRuntimeProjectionAdapterTest {
         Boolean readyWithQuiesce = ReflectionTestUtils.invokeMethod(adapter,
                 "isCutoverReadyRuntime", plan, status, runtime);
         Assert.assertTrue(Boolean.TRUE.equals(readyWithQuiesce));
+
+        runtime.addProperty("source_runtime_quiesce_state", "OFFLINE");
+        runtime.addProperty("source_runtime_quiesce_mode", "SOURCE_ALREADY_STOPPED");
+        runtime.addProperty("source_power_state", "POWERED_OFF");
+        Boolean readyWithStoppedSource = ReflectionTestUtils.invokeMethod(adapter,
+                "isCutoverReadyRuntime", plan, status, runtime);
+        Assert.assertTrue(Boolean.TRUE.equals(readyWithStoppedSource));
+
+        runtime.addProperty("source_power_state", "UNKNOWN");
+        Boolean rejectedWithoutStoppedEvidence = ReflectionTestUtils.invokeMethod(adapter,
+                "isCutoverReadyRuntime", plan, status, runtime);
+        Assert.assertFalse(Boolean.TRUE.equals(rejectedWithoutStoppedEvidence));
     }
 
     @Test

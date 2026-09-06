@@ -165,4 +165,31 @@ public class DrRemoteAgentClientTest {
 
         Assert.assertEquals("source-vm-uuid", captured[0].getSourceVmUuid());
     }
+
+    @Test
+    public void sourcePowerObservationReadsMoldWithoutChangingPowerState() {
+        DrRemoteAgentClient client = Mockito.spy(new DrRemoteAgentClient());
+        DrSiteDao siteDao = Mockito.mock(DrSiteDao.class);
+        DrSiteCredentialService credentialService = Mockito.mock(DrSiteCredentialService.class);
+        DrMoldInventoryClient inventoryClient = Mockito.mock(DrMoldInventoryClient.class);
+        DrResolvedSiteCredential credential = Mockito.mock(DrResolvedSiteCredential.class);
+        DrSiteVO site = Mockito.mock(DrSiteVO.class);
+        ReflectionTestUtils.setField(client, "drSiteDao", siteDao);
+        ReflectionTestUtils.setField(client, "drSiteCredentialService", credentialService);
+        ReflectionTestUtils.setField(client, "drMoldInventoryClient", inventoryClient);
+        DrPlanVO plan = new DrPlanVO("remote-source", 1L, 2L, DrConstants.DIRECTION_KVM_TO_KVM);
+        plan.setSourceExternalRef("source-vm-uuid");
+        Mockito.doReturn(true).when(client).isRemoteKvmSource(plan);
+        Mockito.when(siteDao.findById(1L)).thenReturn(site);
+        Mockito.when(credentialService.resolveCredential(site)).thenReturn(credential);
+        Mockito.when(credential.hasSecrets()).thenReturn(true);
+        Mockito.when(inventoryClient.getVirtualMachinePowerState(credential, "source-vm-uuid"))
+                .thenReturn("POWERED_OFF");
+
+        Assert.assertEquals("POWERED_OFF", client.getSourceVmPowerState(plan));
+        Mockito.verify(inventoryClient).getVirtualMachinePowerState(credential, "source-vm-uuid");
+        Mockito.verify(inventoryClient, Mockito.never()).ensureVirtualMachinePowerState(
+                Mockito.any(), Mockito.anyString(), Mockito.anyBoolean());
+        Mockito.verify(credential).close();
+    }
 }

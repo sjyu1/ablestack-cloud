@@ -658,3 +658,27 @@ failed Cycle and its NBD error are not active evidence; transfer bytes,
 effective mode, and NBD teardown come from the latest durable completed Cycle.
 After recovery succeeds, normal Plan and runtime errors are shown again under
 their ordinary precedence rules.
+
+## 20. Planned Failover Power Observation Contract
+
+For a planned SharedMountPoint qcow2 Failover, Cloud reads the source VM power
+state from the source Mold immediately before building the action command. A
+running source uses the existing `QMP_STOP` contract. An already stopped source
+uses `SOURCE_ALREADY_STOPPED` and carries
+`sourceRuntimeObservedPowerState=POWERED_OFF` in both request JSON and profile
+JSON. A missing domain, stale host, or failed QMP lookup is never converted into
+an offline observation.
+
+The FTCTL Run is cutover-ready when its Run-owned frozen disk map is valid and
+either `PAUSED/QMP_STOP` or `OFFLINE/SOURCE_ALREADY_STOPPED` is present. For the
+offline case, FTCTL additionally validates every qcow2 persistent bitmap in the
+disk set before publishing the evidence. Cloud rechecks the source Mold state
+before target promotion and requires `POWERED_OFF`; this closes the observation
+race without adding a durable worker or VM-host binding.
+
+This is a changed-module deployment contract. The disaster-recovery plugin and
+the FTCTL runtime script are built and tested from WSL ext4, then deployed in
+the same shape to both source and target test clusters. A full Cloud or FTCTL
+release build is not required unless explicitly requested. Existing running-VM
+planned Failover, disaster Failover, VMware-to-RBD, and RBD-to-RBD behavior must
+pass their current regression gates unchanged.

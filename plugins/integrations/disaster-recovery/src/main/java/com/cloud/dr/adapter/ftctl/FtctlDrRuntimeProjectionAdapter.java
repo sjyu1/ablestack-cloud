@@ -1799,10 +1799,14 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
         }
         Long checkpointSequence = longValue(runtime, "failover_restore_point_sequence");
         boolean sourceRuntimeQuiesceReady = !requiresPlannedFileRuntimeQuiesce(plan, runtime)
-                || (StringUtils.equalsIgnoreCase(stringValue(runtime, "source_runtime_quiesce_state"), "PAUSED")
-                        && StringUtils.equalsIgnoreCase(stringValue(runtime, "source_runtime_quiesce_mode"), "QMP_STOP")
-                        && StringUtils.length(stringValue(runtime, "cutover_source_disk_map_sha256")) == 64
-                        && stringValue(runtime, "cutover_source_disk_map_sha256").matches("[0-9a-fA-F]{64}"));
+                || ((StringUtils.equalsIgnoreCase(stringValue(runtime, "source_runtime_quiesce_state"), "PAUSED")
+                            && StringUtils.equalsIgnoreCase(stringValue(runtime, "source_runtime_quiesce_mode"), "QMP_STOP"))
+                        || (StringUtils.equalsIgnoreCase(stringValue(runtime, "source_runtime_quiesce_state"), "OFFLINE")
+                            && StringUtils.equalsIgnoreCase(stringValue(runtime, "source_runtime_quiesce_mode"),
+                                    "SOURCE_ALREADY_STOPPED")
+                            && StringUtils.equalsIgnoreCase(stringValue(runtime, "source_power_state"), "POWERED_OFF")))
+                && StringUtils.length(stringValue(runtime, "cutover_source_disk_map_sha256")) == 64
+                && stringValue(runtime, "cutover_source_disk_map_sha256").matches("[0-9a-fA-F]{64}");
         return isRemoteKvmToKvmPlan(plan)
                 && StringUtils.equals(state, "CUTOVER_READY")
                 && checkpointSequence != null && checkpointSequence > 0L

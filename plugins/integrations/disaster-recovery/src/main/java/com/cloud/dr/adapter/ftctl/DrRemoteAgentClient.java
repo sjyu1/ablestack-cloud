@@ -215,6 +215,23 @@ public class DrRemoteAgentClient {
         }
     }
 
+    public String getSourceVmPowerState(DrPlanVO plan) {
+        if (!isRemoteKvmSource(plan)) {
+            throw new CloudRuntimeException("Remote KVM source Plan is required for source VM observation");
+        }
+        DrSiteVO sourceSite = drSiteDao.findById(plan.getSourceSiteId());
+        DrResolvedSiteCredential credential = drSiteCredentialService.resolveCredential(sourceSite);
+        if (credential == null || !credential.hasSecrets()) {
+            throw new CloudRuntimeException("Remote DR source site credentials are unavailable");
+        }
+        try {
+            return drMoldInventoryClient.getVirtualMachinePowerState(credential,
+                    plan.getSourceExternalRef());
+        } finally {
+            credential.close();
+        }
+    }
+
     public String sourceWorkerUuid(DrPlanVO plan) {
         return null;
     }

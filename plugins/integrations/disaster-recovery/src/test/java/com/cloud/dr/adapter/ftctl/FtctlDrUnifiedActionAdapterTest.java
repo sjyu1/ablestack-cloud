@@ -29,6 +29,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.cloud.agent.AgentManager;
 import com.cloud.agent.api.FtctlDrActionAnswer;
@@ -616,6 +617,7 @@ public class FtctlDrUnifiedActionAdapterTest {
         Mockito.when(drPlanOwnedTransportService.startForwardTargetExport(
                 Mockito.eq(plan), Mockito.eq(run), Mockito.anyString()))
                 .thenReturn(exports("10.10.31.2", 12031, "dr-export-sda"));
+        Mockito.when(drRemoteAgentClient.getSourceVmPowerState(plan)).thenReturn("POWERED_ON");
         Mockito.when(drRemoteAgentClient.transitionSourceScheduler(Mockito.eq(plan),
                 Mockito.eq(FtctlDrActionCommand.Action.PAUSE_SYNC), Mockito.eq(run.getUuid()),
                 Mockito.anyString())).thenAnswer(invocation -> new FtctlDrActionAnswer(
@@ -629,7 +631,7 @@ public class FtctlDrUnifiedActionAdapterTest {
                     answer.setSupportedFeatures(java.util.Arrays.asList(
                             "control-protocol-v2", "dr-site-agent-rbd-transport-v1",
                             "file-checkpoint-invariance-v1",
-                            "dr-file-planned-failover-qmp-quiesce-v1"));
+                            "dr-file-planned-failover-runtime-quiesce-v2"));
                     return answer;
                 });
         ArgumentCaptor<FtctlDrActionCommand> commandCaptor = ArgumentCaptor.forClass(FtctlDrActionCommand.class);
@@ -651,11 +653,13 @@ public class FtctlDrUnifiedActionAdapterTest {
         JsonObject request = JsonParser.parseString(command.getRequestJson()).getAsJsonObject();
         Assert.assertTrue(request.get("sourceRuntimeQuiesceRequired").getAsBoolean());
         Assert.assertEquals("QMP_STOP", request.get("sourceRuntimeQuiesceMode").getAsString());
+        Assert.assertEquals("POWERED_ON", request.get("sourceRuntimeObservedPowerState").getAsString());
         Assert.assertEquals(run.getUuid(), request.get("cutoverRunUuid").getAsString());
         JsonObject profileRequest = JsonParser.parseString(command.getProfileJson()).getAsJsonObject()
                 .getAsJsonObject("request");
         Assert.assertTrue(profileRequest.get("sourceRuntimeQuiesceRequired").getAsBoolean());
         Assert.assertEquals("QMP_STOP", profileRequest.get("sourceRuntimeQuiesceMode").getAsString());
+        Assert.assertEquals("POWERED_ON", profileRequest.get("sourceRuntimeObservedPowerState").getAsString());
         Assert.assertEquals(run.getUuid(), profileRequest.get("cutoverRunUuid").getAsString());
         Mockito.verify(drRemoteAgentClient, Mockito.never()).ensureSourceVmPowerState(plan, false);
         org.mockito.InOrder order = Mockito.inOrder(drPlanOwnedTransportService, drRemoteAgentClient);
@@ -667,6 +671,39 @@ public class FtctlDrUnifiedActionAdapterTest {
         order.verify(drRemoteAgentClient).execute(Mockito.eq(plan), Mockito.eq("ACTION"),
                 Mockito.isA(FtctlDrActionCommand.class), Mockito.isNull(),
                 Mockito.eq(FtctlDrActionAnswer.class));
+    }
+
+    @Test
+    public void sharedMountPointPlannedFailoverUsesOfflineQuiesceOnlyForObservedStoppedSource() {
+        DrPlanVO plan = new DrPlanVO("cross-site-file-offline", 1L, 2L,
+                DrConstants.DIRECTION_KVM_TO_KVM);
+        plan.setSourceExternalRef("source-vm-uuid");
+        plan.setActiveSide(DrConstants.AUTHORITY_SIDE_SOURCE);
+        plan.setMappingJson("{\"target\":{\"storagePoolType\":\"SharedMountPoint\"},"
+                + "\"disks\":[{\"target\":{\"storagePoolType\":\"SharedMountPoint\"}}]}");
+        DrRunVO run = run(DrConstants.RUN_TYPE_FAILOVER, "{\"mode\":\"planned\",\"finalSync\":true}");
+        FtctlDrActionCommand command = new FtctlDrActionCommand(
+                FtctlDrActionCommand.Action.FAILOVER, plan.getUuid(), run.getUuid());
+        command.setRequestJson("{}");
+        command.setProfileJson("{\"request\":{}}");
+        Mockito.when(drPlanOwnedTransportService.supports(plan)).thenReturn(true);
+        Mockito.when(drRemoteAgentClient.getSourceVmPowerState(plan)).thenReturn("POWERED_OFF");
+
+        ReflectionTestUtils.invokeMethod(adapter, "applyPlannedFileSourceQuiesceContract",
+                new DrExecutionContext(plan, run), FtctlDrActionCommand.Action.FAILOVER, command);
+
+        JsonObject request = JsonParser.parseString(command.getRequestJson()).getAsJsonObject();
+        JsonObject profileRequest = JsonParser.parseString(command.getProfileJson()).getAsJsonObject()
+                .getAsJsonObject("request");
+        Assert.assertEquals("SOURCE_ALREADY_STOPPED",
+                request.get("sourceRuntimeQuiesceMode").getAsString());
+        Assert.assertEquals("POWERED_OFF",
+                request.get("sourceRuntimeObservedPowerState").getAsString());
+        Assert.assertEquals("SOURCE_ALREADY_STOPPED",
+                profileRequest.get("sourceRuntimeQuiesceMode").getAsString());
+        Assert.assertEquals("POWERED_OFF",
+                profileRequest.get("sourceRuntimeObservedPowerState").getAsString());
+        Mockito.verify(drRemoteAgentClient, Mockito.never()).ensureSourceVmPowerState(plan, false);
     }
 
     @Test
@@ -1233,7 +1270,8 @@ public class FtctlDrUnifiedActionAdapterTest {
                     FtctlDrCapabilitiesAnswer answer = new FtctlDrCapabilitiesAnswer(
                             invocation.getArgument(2), true, "ok");
                     answer.setSupportedFeatures(java.util.Arrays.asList(
-                            "control-protocol-v2", "dr-site-agent-rbd-transport-v1"));
+                            "control-protocol-v2", "dr-site-agent-rbd-transport-v1",
+                            "dr-file-planned-failover-runtime-quiesce-v2"));
                     return answer;
                 });
     }

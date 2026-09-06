@@ -409,9 +409,14 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
                 || !isSharedMountPointFilePlan(context.getPlan())) {
             return;
         }
+        String observedPowerState = drRemoteAgentClient.getSourceVmPowerState(context.getPlan());
+        String quiesceMode = StringUtils.equalsIgnoreCase(observedPowerState, "POWERED_OFF")
+                ? "SOURCE_ALREADY_STOPPED" : "QMP_STOP";
         JsonObject request = parseObject(command.getRequestJson());
         request.addProperty("sourceRuntimeQuiesceRequired", true);
-        request.addProperty("sourceRuntimeQuiesceMode", "QMP_STOP");
+        request.addProperty("sourceRuntimeQuiesceMode", quiesceMode);
+        request.addProperty("sourceRuntimeObservedPowerState", observedPowerState);
+        request.addProperty("sourceRuntimeObservedAtEpochMs", System.currentTimeMillis());
         request.addProperty("cutoverRunUuid", context.getRun().getUuid());
         request.addProperty("sourcePowerOffAfterCheckpoint", true);
         command.setRequestJson(GSON.toJson(request));
@@ -423,7 +428,10 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
             profile.add("request", profileRequest);
         }
         profileRequest.addProperty("sourceRuntimeQuiesceRequired", true);
-        profileRequest.addProperty("sourceRuntimeQuiesceMode", "QMP_STOP");
+        profileRequest.addProperty("sourceRuntimeQuiesceMode", quiesceMode);
+        profileRequest.addProperty("sourceRuntimeObservedPowerState", observedPowerState);
+        profileRequest.addProperty("sourceRuntimeObservedAtEpochMs",
+                request.get("sourceRuntimeObservedAtEpochMs").getAsLong());
         profileRequest.addProperty("cutoverRunUuid", context.getRun().getUuid());
         profileRequest.addProperty("sourcePowerOffAfterCheckpoint", true);
         command.setProfileJson(GSON.toJson(profile));
@@ -1006,7 +1014,7 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
         if (action == FtctlDrActionCommand.Action.FAILOVER
                 && isSharedMountPointFilePlan(context.getPlan())
                 && StringUtils.equalsIgnoreCase(requestString(requestJson(context.getRun()), "mode"), "planned")) {
-            requiredFeatures.add("dr-file-planned-failover-qmp-quiesce-v1");
+            requiredFeatures.add("dr-file-planned-failover-runtime-quiesce-v2");
         }
         if (action == FtctlDrActionCommand.Action.FAILOVER
                 && isRemoteKvmToKvmPlan(context.getPlan())
