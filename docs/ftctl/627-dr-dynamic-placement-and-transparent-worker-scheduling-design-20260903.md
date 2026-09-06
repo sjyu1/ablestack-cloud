@@ -526,6 +526,15 @@ DB edit from `WAITING_SOURCE_RECOVERY` to `READY`, retain its last durable
 checkpoint, and complete the next Cycle as incremental or `NO_CHANGE`, never
 as placement-triggered Full Seed. VMware-to-RBD and RBD-to-RBD run their normal
 power-state and migration smoke suites as shared broker regression gates.
+
+The worker-local canonical disk map is placement cache, not replication
+authority. After live migration, Cloud supplies the current VM and storage
+locator to the newly leased worker, and FTCTL reconstructs the canonical map
+before choosing the Cycle transport. A missing local map cannot by itself
+convert an incremental Cycle into Full Seed. With a valid durable bitmap epoch,
+the first post-relocation Cycle is `CBT_INCREMENTAL` or `NO_CHANGE`; Full Seed
+remains limited to an explicit Full Resync or proven baseline invalidation.
+
 ## Durable baseline handoff during source-host relocation
 
 `RECOVER_SYNC` is a scheduler relocation operation, not a new protection
