@@ -70,6 +70,7 @@ public class FtctlDrSiteAgentBrokerServiceImpl extends ManagerBase implements Ft
         Command command = deserialize(normalizedType, commandJson);
         List<HostVO> candidates = eligibleWorkers();
         preferCurrentVmHost(command, candidates);
+        preferOperationRuntimeOwner(command, candidates);
         if (candidates.isEmpty()) {
             throw new CloudRuntimeException("No eligible FTCTL DR site Agent worker is available");
         }
@@ -243,6 +244,38 @@ public class FtctlDrSiteAgentBrokerServiceImpl extends ManagerBase implements Ft
                 return;
             }
         }
+    }
+
+    private void preferOperationRuntimeOwner(Command command, List<HostVO> candidates) {
+        if (!(command instanceof FtctlDrActionCommand) || candidates.isEmpty()) {
+            return;
+        }
+        FtctlDrActionCommand action = (FtctlDrActionCommand) command;
+        if (!continuesExistingRuntime(action.getAction()) || StringUtils.isBlank(action.getRunUuid())) {
+            return;
+        }
+        FtctlDrStatusCommand status = new FtctlDrStatusCommand(action.getPlanUuid(), action.getRunUuid(),
+                FtctlDrStatusCommand.StatusScope.OPERATION);
+        status.setSourceVmUuid(sourceVmUuid(action));
+        try {
+            DispatchResult owner = dispatch("STATUS", status, new ArrayList<HostVO>(candidates));
+            if (owner.answer instanceof FtctlDrStatusAnswer
+                    && runMatches((FtctlDrStatusAnswer) owner.answer, action.getRunUuid())) {
+                candidates.removeIf(candidate -> candidate.getId() == owner.host.getId());
+                candidates.add(0, owner.host);
+            }
+        } catch (RuntimeException ignored) {
+            // Keep the live-placement fallback when no prior runtime is discoverable.
+        }
+    }
+
+    private boolean continuesExistingRuntime(FtctlDrActionCommand.Action action) {
+        return action == FtctlDrActionCommand.Action.CUTOVER_COMMIT
+                || action == FtctlDrActionCommand.Action.CUTOVER_COMMIT_STATUS
+                || action == FtctlDrActionCommand.Action.FAILOVER_ABORT
+                || action == FtctlDrActionCommand.Action.FAILBACK_COMMIT
+                || action == FtctlDrActionCommand.Action.FAILBACK_COMMIT_STATUS
+                || action == FtctlDrActionCommand.Action.FAILBACK_ABORT;
     }
 
     private String sourceVmUuid(Command command) {

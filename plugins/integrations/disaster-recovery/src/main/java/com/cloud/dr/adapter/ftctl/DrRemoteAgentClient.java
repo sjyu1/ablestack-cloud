@@ -245,6 +245,8 @@ public class DrRemoteAgentClient {
             ((FtctlDrStatusCommand) command).setSourceVmUuid(sourceVmUuid);
         } else if (command instanceof FtctlDrCancelCommand) {
             ((FtctlDrCancelCommand) command).setSourceVmUuid(sourceVmUuid);
+        } else if (command instanceof FtctlDrActionCommand) {
+            ((FtctlDrActionCommand) command).setContextParam("sourceVmUuid", sourceVmUuid);
         }
     }
 

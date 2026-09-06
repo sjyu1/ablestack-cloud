@@ -167,6 +167,20 @@ public class DrRemoteAgentClientTest {
     }
 
     @Test
+    public void sourceActionCarriesVmIdentityForCommandTimePlacement() {
+        DrRemoteAgentClient client = new DrRemoteAgentClient();
+        DrPlanVO plan = new DrPlanVO("remote-source", 1L, 2L, DrConstants.DIRECTION_KVM_TO_KVM);
+        plan.setSourceExternalRef("source-vm-uuid");
+        FtctlDrActionCommand command = new FtctlDrActionCommand(
+                FtctlDrActionCommand.Action.CUTOVER_COMMIT, plan.getUuid(), "run-uuid");
+
+        ReflectionTestUtils.invokeMethod(client, "attachSourceVmIdentity", plan, command);
+
+        Assert.assertEquals("source-vm-uuid", command.getContext().get("sourceVmUuid"));
+        Assert.assertNull(command.getSourceWorkerUuid());
+    }
+
+    @Test
     public void sourcePowerObservationReadsMoldWithoutChangingPowerState() {
         DrRemoteAgentClient client = Mockito.spy(new DrRemoteAgentClient());
         DrSiteDao siteDao = Mockito.mock(DrSiteDao.class);

@@ -584,6 +584,23 @@ Required regression cases are: status routes to the current VM host, stale
 failure remains authoritative, stopped VM discovery can scan storage-capable
 workers, and mutating actions are still dispatched exactly once.
 
+## Remote action placement identity
+
+Every remote source Action, including the post-promotion
+`DR_CUTOVER_COMMIT_V2` acknowledgement, carries the immutable source VM UUID in
+its command context. The receiving Site Agent broker resolves that UUID against
+current local inventory immediately before its single dispatch. This keeps a
+failover Run and its authority commit on the same current source host after live
+migration without persisting a host UUID in the Plan or treating placement as
+authority. Commands that already contain a profile must use the same context;
+profile-less continuation commands must not fall back to the first host in
+numeric order merely because their payload omits source identity.
+
+The regression contract covers a live-migrated source whose failover-final
+checkpoint is produced on the new host, followed by a profile-less cutover
+commit. The broker must prefer the VM's current host, dispatch the mutating
+command exactly once, and never write the observed host UUID back to Plan data.
+
 ## Cross-host authority ordering
 
 `scheduler_lease_epoch` is local to one FTCTL worker and is not comparable after
@@ -682,3 +699,23 @@ the same shape to both source and target test clusters. A full Cloud or FTCTL
 release build is not required unless explicitly requested. Existing running-VM
 planned Failover, disaster Failover, VMware-to-RBD, and RBD-to-RBD behavior must
 pass their current regression gates unchanged.
+
+## 21. In-flight Runtime Owner Discovery
+
+DR Plans never persist a VM host, coordinator, source worker, or target worker as
+execution authority. New operations continue to use live VM placement and
+storage-capable worker admission. Continuation operations are different: a
+`CUTOVER_COMMIT`, `FAILBACK_COMMIT`, matching status operation, or abort must be
+delivered to the worker that owns the already-created Run runtime.
+
+Before one of those mutations, the source-site broker sends a read-only
+`OPERATION` status query for the immutable `planUuid + runUuid` to every eligible
+worker. An exact Run UUID match selects the authoritative runtime owner. The
+mutation is then sent once to that worker and is never retried on another worker.
+If no owner exists yet, the broker retains the ordinary live-placement fallback;
+it must not manufacture or persist a worker binding.
+
+This rule covers a stopped VM whose Cloud `host_id` is null and a VM that moved
+after the Run began. Regression tests require a stopped VM, a runtime on a
+non-first candidate, exact owner discovery, and proof that the mutation was sent
+only to the owner. Existing new-run scheduling behavior remains unchanged.

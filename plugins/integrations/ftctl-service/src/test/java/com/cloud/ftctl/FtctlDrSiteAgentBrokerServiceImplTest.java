@@ -178,6 +178,43 @@ public class FtctlDrSiteAgentBrokerServiceImplTest {
     }
 
     @Test
+    public void continuationActionDiscoversStoppedVmRuntimeOwnerBeforeSingleDispatch() throws Exception {
+        HostVO first = host(41L, "first-host");
+        HostVO runtimeOwner = host(42L, "runtime-owner");
+        eligible(first, runtimeOwner);
+        UserVmVO stoppedVm = Mockito.mock(UserVmVO.class);
+        Mockito.when(stoppedVm.getHostId()).thenReturn(null);
+        Mockito.when(userVmDao.findByUuid("source-vm-uuid")).thenReturn(stoppedVm);
+        FtctlDrActionCommand command = new FtctlDrActionCommand(
+                FtctlDrActionCommand.Action.CUTOVER_COMMIT, "plan-uuid", "run-uuid");
+        command.setContext(Collections.singletonMap("sourceVmUuid", "source-vm-uuid"));
+        Mockito.when(agentManager.send(Mockito.eq(41L), Mockito.any(Command.class)))
+                .thenAnswer(invocation -> {
+                    Command dispatched = invocation.getArgument(1);
+                    Assert.assertTrue(dispatched instanceof FtctlDrStatusCommand);
+                    return statusAnswer((FtctlDrStatusCommand) dispatched, "NOT_FOUND", "not found");
+                });
+        Mockito.when(agentManager.send(Mockito.eq(42L), Mockito.any(Command.class)))
+                .thenAnswer(invocation -> {
+                    Command dispatched = invocation.getArgument(1);
+                    if (dispatched instanceof FtctlDrStatusCommand) {
+                        return statusAnswer((FtctlDrStatusCommand) dispatched, "CUTOVER_READY", "owner");
+                    }
+                    return new Answer(dispatched, true, "accepted");
+                });
+
+        FtctlDrSiteAgentCommandResponse response = brokerService.execute(
+                "ACTION", new Gson().toJson(command), null);
+
+        Assert.assertEquals("runtime-owner", response.getWorkerHostUuid());
+        Assert.assertTrue(response.getResult());
+        Mockito.verify(agentManager).send(Mockito.eq(41L), Mockito.isA(FtctlDrStatusCommand.class));
+        Mockito.verify(agentManager).send(Mockito.eq(42L), Mockito.isA(FtctlDrStatusCommand.class));
+        Mockito.verify(agentManager).send(Mockito.eq(42L), Mockito.isA(FtctlDrActionCommand.class));
+        Mockito.verify(agentManager, Mockito.never()).send(Mockito.eq(41L), Mockito.isA(FtctlDrActionCommand.class));
+    }
+
+    @Test
     public void readOnlyStatusTriesNextWorkerAfterNonAuthoritativeAnswer() throws Exception {
         HostVO first = host(41L, "first-host");
         HostVO second = host(42L, "second-host");
