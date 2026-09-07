@@ -1625,7 +1625,11 @@ public class FtctlDrRuntimeProjectionAdapterTest {
         cutover.setCloudPromotionState("PROMOTED");
         cutover.setEngineAckState("ACKNOWLEDGED");
         DrPlanRuntimeVO authority = new DrPlanRuntimeVO(plan.getId());
-        authority.setProtectionState(DrConstants.PLAN_STATE_READY);
+        authority.setProtectionState("FAILED_OVER_UNPROTECTED");
+        authority.setSchedulerState("STOPPED");
+        authority.setSchedulerHealthState("SUPPRESSED");
+        authority.setSchedulerPidAlive(false);
+        authority.setOwnerMatched(false);
         authority.setAuthoritySequence(113L);
         DrReplicaVO replica = new DrReplicaVO(plan.getId(), plan.getTargetSiteId());
         replica.setState(DrConstants.REPLICA_STATE_READY);
@@ -1664,6 +1668,10 @@ public class FtctlDrRuntimeProjectionAdapterTest {
         Assert.assertTrue(result.isSuccess());
         Assert.assertEquals(DrConstants.PLAN_STATE_READY, plan.getState());
         Assert.assertEquals(DrConstants.PLAN_STATE_READY, authority.getProtectionState());
+        Assert.assertEquals("RUNNING", authority.getSchedulerState());
+        Assert.assertEquals("HEALTHY", authority.getSchedulerHealthState());
+        Assert.assertTrue(authority.isSchedulerPidAlive());
+        Assert.assertTrue(authority.isOwnerMatched());
         Assert.assertEquals("TARGET", plan.getActiveSide());
     }
 

@@ -175,3 +175,56 @@ Confirm button    enabled
 실패한 과거 Run과 세션은 증거 보존을 위해 DB에서 수동 변경하지 않았다. 새
 Failback 실행은 새 Run으로 시작하며, 실제 완료 판정은 사용자의 UI 재테스트에서
 검증한다.
+
+## 9. 교차 포맷 재보호 후 TARGET 보호 상태 수렴 계약
+
+RBD 원본을 SharedMountPoint qcow2 대상에서 페일오버한 뒤 재보호하면, FTCTL은 대상
+사이트에서 역방향 증분 스케줄러를 시작한다. Cloud는 과거 cutover session이
+`PROMOTED / ACKNOWLEDGED`로 남아 있다는 이유만으로 현재 상태를
+`FAILED_OVER_UNPROTECTED`로 되돌리면 안 된다. 아래 런타임 증거가 모두 충족되면 현재
+권위 상태는 `TARGET_PROTECTED`다.
+
+```text
+active_side                         TARGET
+protection_state                    READY
+scheduler_state                     RUNNING
+scheduler_health                    HEALTHY
+scheduler_pid_alive                 true
+owner_matched                       true
+baseline_state                      LOCAL_DURABLE | DURABLE | COMMITTED
+latest_completed_checkpoint_sequence > 0
+error_code                          empty
+```
+
+이 판정은 대상 스토리지의 물리 포맷과 무관하다. RBD, qcow2 및 교차 포맷 경로가 같은
+authority 계약을 사용한다. `target_materialized=false`는 복제 대상이 Cloud VM으로 아직
+구체화되지 않았다는 뜻일 수 있으므로, 이미 커밋된 TARGET 권위의 역방향 보호 상태를
+무효화하는 조건으로 사용하지 않는다.
+
+### 9.1 배포 원자성
+
+`FtctlDrStatusAnswer` ABI, KVM Agent wrapper, disaster-recovery projection 클래스는 하나의
+호환 단위다. 이 중 일부만 교체하면 최신 FTCTL 응답 JSON은 DB에 저장되더라도 구조화된
+runtime 컬럼이 과거 `STOPPED / SUPPRESSED` 값으로 남아 UI가 재보호 필요 상태를 표시할
+수 있다. 수정 모듈 배포 시 다음을 하나의 검증 단위로 취급한다.
+
+1. 31번과 32번 관리 서버에 동일한 disaster-recovery 클래스 해시를 배포한다.
+2. 서비스 재시작 후 `/client/` HTTP 200과 `WEB-INF` 보존을 확인한다.
+3. DB 수동 수정 없이 projection refresh가 runtime 컬럼을
+   `READY / RUNNING / HEALTHY / pid-alive / owner-matched`로 수렴시킨다.
+4. UI 상세 화면에서 `TARGET_PROTECTED`와 사용 가능 상태를 확인한 뒤에만 Failback
+   재테스트를 시작한다.
+
+`preserveFailedOverTargetAuthority()`는 오류 보상이나 늦은 cutover ACK를 처리하기 위한
+보존 경로이지 상태 강등 경로가 아니다. 구조화 runtime이 위 TARGET 보호 조건과 최신
+완료 Cycle을 이미 충족하면 plan을 `READY / TARGET`으로 유지하고 runtime scheduler
+필드를 변경하지 않는다. 따라서 재보호 terminal과 다음 증분 Cycle 중 어느 투영이 먼저
+도착해도 결과는 단조롭게 `TARGET_PROTECTED`로 수렴한다.
+
+### 9.2 회귀 범위
+
+실환경과 동일하게 구조화 runtime이 `FAILED_OVER_UNPROTECTED / STOPPED / SUPPRESSED`인
+상태에서 건강한 다음 증분 Cycle을 투영하는 테스트를 유지한다. 투영 후 plan, runtime,
+replica가 각각 `READY / TARGET`, `READY / RUNNING / HEALTHY`, `READY / TARGET`으로 함께
+수렴해야 한다. 기존 VMware-to-RBD, RBD-to-RBD, qcow2-to-qcow2 경로는 동일 테스트 묶음의
+회귀 대상으로 유지한다.

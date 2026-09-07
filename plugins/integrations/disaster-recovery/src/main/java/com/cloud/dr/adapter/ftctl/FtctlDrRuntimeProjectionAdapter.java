@@ -593,7 +593,7 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
                 stringValue(runtime, "nbd_teardown_error_message"));
         boolean nbdQuarantined = StringUtils.equalsIgnoreCase(nbdTeardownState, "QUARANTINED")
                 || nbdQuarantinedDeviceCount != null && nbdQuarantinedDeviceCount > 0;
-        if (committedTargetAuthority) {
+        if (committedTargetAuthority && !targetProtectedRuntime) {
             schedulerState = "STOPPED";
             schedulerDesiredState = "STOPPED";
             schedulerHealth = "SUPPRESSED";
@@ -3874,6 +3874,18 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
     }
 
     private void preserveFailedOverTargetAuthority(DrPlanVO plan) {
+        DrPlanRuntimeVO planRuntime = drPlanRuntimeDao != null
+                ? drPlanRuntimeDao.findByPlanId(plan.getId()) : null;
+        if (isPersistedTargetProtectedRuntime(planRuntime)) {
+            plan.setState(DrConstants.PLAN_STATE_READY);
+            plan.setActiveSide(DrConstants.AUTHORITY_SIDE_TARGET);
+            plan.setLastErrorCode(null);
+            plan.setLastErrorMessage(null);
+            plan.markUpdated();
+            drPlanDao.update(plan.getId(), plan);
+            preserveServingTargetReplica(plan);
+            return;
+        }
         plan.setState(DrConstants.PLAN_STATE_FAILED_OVER);
         plan.setActiveSide("TARGET");
         plan.setLastErrorCode(null);
@@ -3883,7 +3895,6 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
         if (drPlanRuntimeDao == null) {
             return;
         }
-        DrPlanRuntimeVO planRuntime = drPlanRuntimeDao.findByPlanId(plan.getId());
         if (planRuntime == null) {
             planRuntime = new DrPlanRuntimeVO(plan.getId());
         }
@@ -3924,6 +3935,20 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
         }
         preserveServingTargetReplica(plan);
         ensureCommittedTargetAuthorityProjection(plan);
+    }
+
+    private boolean isPersistedTargetProtectedRuntime(DrPlanRuntimeVO runtime) {
+        return runtime != null
+                && StringUtils.equalsIgnoreCase(runtime.getProtectionState(), DrConstants.PLAN_STATE_READY)
+                && StringUtils.equalsIgnoreCase(runtime.getSchedulerState(), "RUNNING")
+                && StringUtils.equalsIgnoreCase(runtime.getSchedulerHealthState(), "HEALTHY")
+                && runtime.isSchedulerPidAlive()
+                && runtime.isOwnerMatched()
+                && StringUtils.equalsAnyIgnoreCase(runtime.getBaselineState(),
+                        "LOCAL_DURABLE", "DURABLE", "COMMITTED")
+                && runtime.getLatestCompletedCycleSequence() != null
+                && runtime.getLatestCompletedCycleSequence() > 0L
+                && StringUtils.isBlank(runtime.getErrorCode());
     }
 
     private long resolveAuthoritySequenceFloor(DrPlanVO plan, Long requestedGeneration,
