@@ -1034,7 +1034,12 @@ public class BackupManagerImpl extends ManagerBase implements BackupManager {
         }
         createCheckedBackup(cmd, owner, isScheduledBackup, backupSize, vm, vmId, backupProvider, backupScheduleId);
         if (isScheduledBackup) {
-            deleteOldestBackupFromScheduleIfRequired(vmId, backupScheduleId);
+            try {
+                deleteOldestBackupFromScheduleIfRequired(vmId, backupScheduleId);
+            } catch (RuntimeException e) {
+                logger.warn("Failed to apply backup retention cleanup after creating scheduled backup for VM [ID: {}], schedule [ID: {}]. " +
+                        "The backup creation flow will not be failed by this cleanup error.", vmId, backupScheduleId, e);
+            }
         }
         logger.info("Completed VM backup request [vmId: {}, vmUuid: {}, vmName: {}, provider: {}, offeringId: {}, scheduleId: {}, elapsedMs: {}]",
                 vm.getId(), vm.getUuid(), vm.getInstanceName(), offering.getProvider(), offering.getId(), backupScheduleId, System.currentTimeMillis() - backupStartTime);
