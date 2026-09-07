@@ -2049,6 +2049,38 @@ public class FtctlDrRuntimeProjectionAdapterTest {
     }
 
     @Test
+    public void lateTargetRuntimeCannotRegressCommittedSourceAuthorityDuringFailbackResume() {
+        DrPlanVO plan = new DrPlanVO("failback-source-authority", 1L, 2L,
+                DrConstants.DIRECTION_KVM_TO_KVM);
+        ReflectionTestUtils.setField(plan, "id", 44L);
+        plan.setState(DrConstants.PLAN_STATE_FAILED_OVER);
+        plan.setActiveSide(DrConstants.AUTHORITY_SIDE_TARGET);
+        plan.setLastErrorCode("STALE_TARGET_RUNTIME");
+        plan.setLastErrorMessage("late target sample");
+        DrFailbackSessionVO session = new DrFailbackSessionVO(plan.getId(), 71L,
+                "failback-session", "PROTECTION_RESUMING");
+        session.setCommitOutcome("ACKNOWLEDGED");
+        session.setEngineAckState("ACKNOWLEDGED");
+        session.setTargetPowerState("POWERED_OFF");
+        session.setSourcePowerState("POWERED_ON");
+        FtctlDrStatusAnswer status = Mockito.mock(FtctlDrStatusAnswer.class);
+        Mockito.when(status.getStatusJson()).thenReturn("{\"state\":\"FAILED_OVER\","
+                + "\"active_side\":\"TARGET\"}");
+        JsonObject runtime = JsonParser.parseString(status.getStatusJson()).getAsJsonObject();
+        Mockito.when(drReplicaDao.listActiveByPlanId(plan.getId())).thenReturn(Collections.emptyList());
+
+        Boolean preserved = ReflectionTestUtils.invokeMethod(adapter,
+                "preserveCommittedSourceAuthorityDuringFailback", plan, status, runtime, session);
+
+        Assert.assertTrue(Boolean.TRUE.equals(preserved));
+        Assert.assertEquals(DrConstants.PLAN_STATE_SYNCING, plan.getState());
+        Assert.assertEquals(DrConstants.AUTHORITY_SIDE_SOURCE, plan.getActiveSide());
+        Assert.assertNull(plan.getLastErrorCode());
+        Assert.assertNull(plan.getLastErrorMessage());
+        Mockito.verify(drPlanDao).update(plan.getId(), plan);
+    }
+
+    @Test
     public void matchingEngineAuthorityRepairsRetryRequiredCutoverForFailbackReadiness() {
         DrPlanVO plan = new DrPlanVO("engine-authority-repair", 1L, 2L,
                 DrConstants.DIRECTION_KVM_TO_KVM);

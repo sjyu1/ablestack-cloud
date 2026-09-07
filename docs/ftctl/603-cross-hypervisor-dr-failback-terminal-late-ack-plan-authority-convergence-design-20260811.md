@@ -121,3 +121,26 @@ cleanup are specified by
 That contract is part of terminal convergence: a successful terminal state is
 not complete until the read model displays the exact latest durable cycle and
 contains no stale failure-only metadata.
+
+## 9. Committed Source Authority Projection Barrier
+
+Once a Failback session reaches `PROTECTION_RESUMING` with acknowledged commit,
+acknowledged engine authority, source `POWERED_ON`, and target `POWERED_OFF`, the
+session is the authoritative owner of the transition. Plan-authority polling may
+still receive an older target-site runtime sample. That sample must not change
+the Plan back to `TARGET`, `FAILED_OVER`, or `DEGRADED`.
+
+`FtctlDrRuntimeProjectionAdapter` therefore resolves the latest Failback session
+even when the periodic projection has no finite operation Run. While the above
+contract is active it projects only `SYNCING / SOURCE`, clears stale target-only
+errors, and keeps the replica `READY / POWERED_OFF / SOURCE`. The Failback
+lifecycle remains the only component allowed to advance the session to
+`COMPLETED`; it does so after the remote source scheduler is healthy and the
+required post-Failback checkpoint is durable.
+
+After completion, a source-side authority sample and the completed session
+converge the Plan to `READY / SOURCE`. A later, genuinely committed Failover is
+not blocked because the barrier applies only to the non-terminal
+`PROTECTION_RESUMING` state. The regression suite must include the ordering
+`source authority commit -> late target FAILED_OVER sample -> post-Failback
+checkpoint` and prove that Plan authority never moves backward.

@@ -1536,6 +1536,13 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
         JsonObject runtime = parseObject(status.getStatusJson());
         DrCutoverSessionVO cutoverSession = upsertCutoverSession(plan, projectionRun, status, runtime);
         DrFailbackSessionVO failbackSession = drFailbackLifecycleService.reconcile(plan, projectionRun, runtime);
+        if (failbackSession == null && drFailbackSessionDao != null) {
+            failbackSession = drFailbackSessionDao.findLatestActiveByPlanId(plan.getId());
+        }
+        if (preserveCommittedSourceAuthorityDuringFailback(plan, status, runtime, failbackSession)) {
+            reconcileAcceptedRunFromStatus(plan, status, runtime);
+            return;
+        }
         DrRunVO terminalReconciliationRun = resolveCanceledFailoverReconciliationRun(plan, projectionRun);
         if (reconcileCanceledFailoverPreparation(plan, terminalReconciliationRun, runtime)) {
             return;
@@ -1704,6 +1711,39 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
             drPlanDao.update(plan.getId(), plan);
         }
         reconcileAcceptedRunFromStatus(plan, status, runtime);
+    }
+
+    private boolean preserveCommittedSourceAuthorityDuringFailback(DrPlanVO plan,
+            FtctlDrStatusAnswer status, JsonObject runtime, DrFailbackSessionVO session) {
+        if (plan == null || session == null
+                || !StringUtils.equalsIgnoreCase(session.getState(), "PROTECTION_RESUMING")
+                || !StringUtils.equalsIgnoreCase(session.getCommitOutcome(), "ACKNOWLEDGED")
+                || !StringUtils.equalsIgnoreCase(session.getEngineAckState(), "ACKNOWLEDGED")
+                || !StringUtils.equalsIgnoreCase(session.getTargetPowerState(), "POWERED_OFF")
+                || !StringUtils.equalsIgnoreCase(session.getSourcePowerState(), "POWERED_ON")) {
+            return false;
+        }
+        boolean changed = false;
+        if (!StringUtils.equals(plan.getState(), DrConstants.PLAN_STATE_SYNCING)) {
+            plan.setState(DrConstants.PLAN_STATE_SYNCING);
+            changed = true;
+        }
+        if (!StringUtils.equalsIgnoreCase(plan.getActiveSide(), DrConstants.AUTHORITY_SIDE_SOURCE)) {
+            plan.setActiveSide(DrConstants.AUTHORITY_SIDE_SOURCE);
+            changed = true;
+        }
+        if (StringUtils.isNotBlank(plan.getLastErrorCode()) || StringUtils.isNotBlank(plan.getLastErrorMessage())) {
+            plan.setLastErrorCode(null);
+            plan.setLastErrorMessage(null);
+            changed = true;
+        }
+        if (changed) {
+            plan.markUpdated();
+            drPlanDao.update(plan.getId(), plan);
+        }
+        updateReplicaRuntimeProjection(plan, status, runtime, DrConstants.REPLICA_STATE_READY,
+                DrConstants.AUTHORITY_SIDE_SOURCE, DrConstants.REPLICA_POWER_STATE_POWERED_OFF);
+        return true;
     }
 
     private void ensurePlannedSourceIsolation(DrPlanVO plan, DrRunVO run,
