@@ -158,10 +158,12 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
             plans.sort(Comparator.comparingInt((DrPlanVO plan) -> plan.getProtectionGroupOrder() != null
                     ? plan.getProtectionGroupOrder() : Integer.MAX_VALUE).reversed());
         }
-        DrProtectionGroupPreflight preflight = evaluatePreflight(plans, groupRun.getAction(), groupRun.isQuiesceRequired());
-        if (!preflight.isReady()) {
-            finalizeBlockedGroup(groupRun, preflight);
-            return;
+        if (requiresExecutionPreflight(groupRun)) {
+            DrProtectionGroupPreflight preflight = evaluatePreflight(plans, groupRun.getAction(), groupRun.isQuiesceRequired());
+            if (!preflight.isReady()) {
+                finalizeBlockedGroup(groupRun, preflight);
+                return;
+            }
         }
         groupRun.setState("RUNNING");
         drGroupRunDao.update(groupRun.getId(), groupRun);
@@ -207,8 +209,12 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
                         continue;
                     }
                     child = reconcileGroupChildTerminal(plan, groupRun, child);
-                    progress.add(progressEntry(plan, child, child.getState(), child.getErrorMessage()));
-                    if (StringUtils.equals(child.getState(), DrConstants.RUN_STATE_SUCCEEDED)) {
+                    boolean terminalSuccess = isGroupChildTerminalSuccess(child);
+                    String progressState = terminalSuccess ? DrConstants.RUN_STATE_SUCCEEDED
+                            : isFullReseedChild(child) && StringUtils.equals(child.getState(), DrConstants.RUN_STATE_SUCCEEDED)
+                                    ? "RESULT_FINALIZING" : child.getState();
+                    progress.add(progressEntry(plan, child, progressState, child.getErrorMessage()));
+                    if (terminalSuccess) {
                         succeeded++;
                     } else if (StringUtils.equalsAny(child.getState(), DrConstants.RUN_STATE_FAILED, DrConstants.RUN_STATE_CANCELED)) {
                         failed++;
@@ -226,6 +232,10 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
             }
         }
         completeGroupRun(groupRun, plans, succeeded, failed);
+    }
+
+    boolean requiresExecutionPreflight(DrGroupRunVO groupRun) {
+        return groupRun == null || !StringUtils.equalsIgnoreCase(groupRun.getState(), "RUNNING");
     }
 
     void completeGroupRun(DrGroupRunVO groupRun, List<DrPlanVO> plans, int succeeded, int failed) {
@@ -274,10 +284,16 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
         if (!isFullReseedChild(child)) {
             return child;
         }
+        DrRunVO converged = convergeGroupChildTerminal(groupRun, child);
+        if (isGroupChildTerminalSuccess(converged)) {
+            return converged;
+        }
+        if (drAdmissionController != null) {
+            drAdmissionController.renew(child.getId());
+        }
+        // A completed child waits for its accepted Cycle to become durable in the
+        // projection DB. Do not block the group monitor on a remote status call.
         if (!StringUtils.equals(child.getState(), DrConstants.RUN_STATE_SUCCEEDED)) {
-            if (drAdmissionController != null) {
-                drAdmissionController.renew(child.getId());
-            }
             try {
                 drProjectionService.refreshPlanProjection(plan.getId(), true);
             } catch (RuntimeException e) {
@@ -286,18 +302,31 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
             }
         }
         DrRunVO refreshed = findGroupChildRun(groupRun, plan);
-        return convergeGroupChildTerminal(groupRun, refreshed != null ? refreshed : child);
+        return convergeGroupChildTerminal(groupRun, refreshed != null ? refreshed : converged);
     }
 
     DrRunVO convergeGroupChildTerminal(DrGroupRunVO groupRun, DrRunVO child) {
-        if (groupRun == null || child == null || !StringUtils.equals(child.getState(), DrConstants.RUN_STATE_SUCCEEDED)) {
+        if (groupRun == null || child == null
+                || !StringUtils.equals(child.getState(), DrConstants.RUN_STATE_SUCCEEDED)) {
             return child;
         }
         return Transaction.execute(new TransactionCallback<DrRunVO>() {
             @Override
             public DrRunVO doInTransaction(TransactionStatus status) {
                 DrRunVO current = drRunDao.findById(child.getId());
-                if (current == null || !current.isTerminalAuthoritative() || acceptedDurableCycle(current) == null) {
+                DrSyncCycleVO durableCycle = current != null && isFullReseedChild(current)
+                        ? acceptedDurableCycle(current) : null;
+                if (current != null && isFullReseedChild(current) && !current.isTerminalAuthoritative()) {
+                    if (durableCycle != null) {
+                        current.setTerminalSource("CYCLE_DURABLE");
+                        current.setTerminalAuthoritative(true);
+                        current.setProjectionState("succeeded");
+                        current.setProjectionChecked(new Date());
+                        current.markUpdated();
+                        drRunDao.update(current.getId(), current);
+                    }
+                }
+                if (!isGroupChildTerminalSuccess(current)) {
                     return current != null ? current : child;
                 }
                 if (drAdmissionController != null) {
@@ -310,7 +339,7 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
                     for (Long planId : parsePlanIds(currentGroup.getPlanIdsJson())) {
                         DrPlanVO member = drPlanDao.findById(planId);
                         DrRunVO memberRun = member != null ? findGroupChildRun(currentGroup, member) : null;
-                        if (memberRun != null && StringUtils.equals(memberRun.getState(), DrConstants.RUN_STATE_SUCCEEDED)) {
+                        if (isGroupChildTerminalSuccess(memberRun)) {
                             succeeded++;
                         } else if (memberRun != null && StringUtils.equalsAny(memberRun.getState(),
                                 DrConstants.RUN_STATE_FAILED, DrConstants.RUN_STATE_CANCELED)) {
@@ -340,18 +369,35 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
         }
     }
 
+    boolean isGroupChildTerminalSuccess(DrRunVO run) {
+        if (run == null || !StringUtils.equals(run.getState(), DrConstants.RUN_STATE_SUCCEEDED)) {
+            return false;
+        }
+        return !isFullReseedChild(run) || run.isTerminalAuthoritative() && acceptedDurableCycle(run) != null;
+    }
+
     private DrSyncCycleVO acceptedDurableCycle(DrRunVO run) {
         if (run == null || !StringUtils.equalsIgnoreCase(run.getRunType(), DrConstants.RUN_TYPE_SYNC)) {
             return null;
         }
         DrSyncCycleVO cycle = run.getAcceptedCycleSequence() != null
                 ? drSyncCycleDao.findByPlanSequence(run.getPlanId(), run.getAcceptedCycleSequence())
-                : drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(run.getId(), "FULL_RESEED");
-        return cycle != null && cycle.getCompleted() != null
-                && StringUtils.equalsIgnoreCase(cycle.getRequestedMode(), "FULL_RESEED")
+                : drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(run.getId(), "FULL_SEED");
+        if (cycle == null && run.getAcceptedCycleSequence() == null) {
+            cycle = drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(run.getId(), "FULL_RESEED");
+        }
+        boolean tokenMatches = cycle != null && (StringUtils.isBlank(run.getAcceptedCycleToken())
+                || StringUtils.equals(run.getAcceptedCycleToken(), cycle.getCycleToken()));
+        return cycle != null && tokenMatches && cycle.getCompleted() != null
+                && isFullSeedCycleMode(cycle.getRequestedMode())
                 && StringUtils.equalsAnyIgnoreCase(cycle.getState(), "READY", "COMPLETED", "TARGET_READY")
                 && StringUtils.equalsAnyIgnoreCase(cycle.getCommitState(), "LOCAL_DURABLE", "COMMITTED", "DURABLE")
                 ? cycle : null;
+    }
+
+    private boolean isFullSeedCycleMode(String mode) {
+        String normalized = StringUtils.upperCase(StringUtils.trimToEmpty(mode), Locale.ROOT).replace('-', '_');
+        return StringUtils.equalsAny(normalized, "FULL_SEED", "FULL_RESEED");
     }
 
     private void updateProgress(DrGroupRunVO run, JsonArray progress, int succeeded, int failed) {
@@ -410,6 +456,11 @@ public class DrProtectionGroupServiceImpl extends ManagerBase implements DrProte
         entry.addProperty("resourceWaiting", StringUtils.equalsAnyIgnoreCase(plan.getLastErrorCode(),
                 "DR_RESOURCE_BUSY", "DR_NBD_CAPACITY_INVALID", "DR_TARGET_EXPORT_UNAVAILABLE"));
         DrSyncCycleVO acceptedCycle = run != null ? acceptedDurableCycle(run) : null;
+        if (run != null && isFullReseedChild(run)
+                && StringUtils.equals(run.getState(), DrConstants.RUN_STATE_SUCCEEDED)
+                && !isGroupChildTerminalSuccess(run)) {
+            entry.addProperty("terminalizationState", "RESULT_FINALIZING");
+        }
         if (acceptedCycle != null && !StringUtils.equalsAny(state, DrConstants.RUN_STATE_SUCCEEDED,
                 DrConstants.RUN_STATE_FAILED, DrConstants.RUN_STATE_CANCELED)) {
             long ageMillis = Math.max(0L, System.currentTimeMillis() - acceptedCycle.getCompleted().getTime());

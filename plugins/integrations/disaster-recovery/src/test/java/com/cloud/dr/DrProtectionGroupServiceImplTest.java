@@ -174,7 +174,7 @@ public class DrProtectionGroupServiceImplTest {
     }
 
     @Test
-    public void groupMonitorReconcilesChildWhenAcceptedCycleIsDurable() {
+    public void groupMonitorKeepsNonAuthoritativeSucceededChildFinalizing() {
         DrGroupRunVO groupRun = new DrGroupRunVO("group-1", "group one", DrConstants.RUN_TYPE_SYNC,
                 "[37]", 1, false, 1);
         DrRunVO running = new DrRunVO(readyPlan.getId(), DrConstants.RUN_TYPE_SYNC);
@@ -186,6 +186,7 @@ public class DrProtectionGroupServiceImplTest {
         ReflectionTestUtils.setField(succeeded, "id", 401L);
         succeeded.setIdempotencyKey(running.getIdempotencyKey());
         succeeded.setState(DrConstants.RUN_STATE_SUCCEEDED);
+        succeeded.setRequestJson(running.getRequestJson());
 
         when(drRunDao.listByPlanId(readyPlan.getId())).thenReturn(Collections.singletonList(succeeded));
 
@@ -193,6 +194,55 @@ public class DrProtectionGroupServiceImplTest {
 
         verify(drProjectionService).refreshPlanProjection(readyPlan.getId(), true);
         Assert.assertEquals(DrConstants.RUN_STATE_SUCCEEDED, result.getState());
+        Assert.assertFalse(service.isGroupChildTerminalSuccess(result));
+        verify(drAdmissionController).renew(running.getId());
+    }
+
+    @Test
+    public void fullReseedChildRequiresMatchingAuthoritativeDurableCycle() {
+        DrRunVO child = new DrRunVO(readyPlan.getId(), DrConstants.RUN_TYPE_SYNC);
+        child.setState(DrConstants.RUN_STATE_SUCCEEDED);
+        child.setRequestJson("{\"mode\":\"FULL_RESEED\",\"forceFullReseed\":true}");
+        child.setAcceptedCycleSequence(42L);
+        child.setAcceptedCycleToken("cycle-42");
+        child.setTerminalAuthoritative(true);
+        DrSyncCycleVO cycle = new DrSyncCycleVO(readyPlan.getId(), "engine-run", 42L);
+        cycle.setCycleToken("different-cycle");
+        cycle.setRequestedMode("FULL_SEED");
+        cycle.setState("READY");
+        cycle.setCommitState("LOCAL_DURABLE");
+        cycle.setCompleted(new Date());
+        when(drSyncCycleDao.findByPlanSequence(readyPlan.getId(), 42L)).thenReturn(cycle);
+
+        Assert.assertFalse(service.isGroupChildTerminalSuccess(child));
+
+        cycle.setCycleToken("cycle-42");
+        Assert.assertTrue(service.isGroupChildTerminalSuccess(child));
+    }
+
+    @Test
+    public void progressReportsResultFinalizingUntilFullReseedTerminalIsAuthoritative() {
+        DrRunVO child = new DrRunVO(readyPlan.getId(), DrConstants.RUN_TYPE_SYNC);
+        child.setState(DrConstants.RUN_STATE_SUCCEEDED);
+        child.setRequestJson("{\"mode\":\"FULL_RESEED\",\"forceFullReseed\":true}");
+
+        JsonObject progress = ReflectionTestUtils.invokeMethod(service, "progressEntry", readyPlan, child,
+                "RESULT_FINALIZING", null);
+
+        Assert.assertEquals("RESULT_FINALIZING", progress.get("state").getAsString());
+        Assert.assertEquals("RESULT_FINALIZING", progress.get("terminalizationState").getAsString());
+    }
+
+    @Test
+    public void restartedRunningGroupContinuesWithoutRepeatingAdmissionPreflight() {
+        DrGroupRunVO running = new DrGroupRunVO("group-1", "group one", DrConstants.RUN_TYPE_SYNC,
+                "[37]", 1, false, 1);
+        running.setState("RUNNING");
+        DrGroupRunVO queued = new DrGroupRunVO("group-1", "group one", DrConstants.RUN_TYPE_SYNC,
+                "[37]", 1, false, 1);
+
+        Assert.assertFalse(service.requiresExecutionPreflight(running));
+        Assert.assertTrue(service.requiresExecutionPreflight(queued));
     }
 
     @Test
@@ -210,7 +260,7 @@ public class DrProtectionGroupServiceImplTest {
         child.setTerminalAuthoritative(true);
         DrSyncCycleVO cycle = new DrSyncCycleVO(readyPlan.getId(), child.getUuid(), 42L);
         cycle.setCycleToken(readyPlan.getUuid() + ":42");
-        cycle.setRequestedMode("FULL_RESEED");
+        cycle.setRequestedMode("FULL_SEED");
         cycle.setState("READY");
         cycle.setCommitState("LOCAL_DURABLE");
         cycle.setCompleted(new Date());
@@ -226,6 +276,73 @@ public class DrProtectionGroupServiceImplTest {
         Assert.assertEquals(1, groupRun.getSucceededCount());
         verify(drAdmissionController).release(child.getId());
         verify(drGroupRunDao).update(groupRun.getId(), groupRun);
+    }
+
+    @Test
+    public void durableAcceptedCyclePromotesSucceededChildBeforeGroupCompletion() {
+        DrGroupRunVO groupRun = new DrGroupRunVO("group-1", "group one", DrConstants.RUN_TYPE_SYNC,
+                "[37]", 1, false, 1);
+        ReflectionTestUtils.setField(groupRun, "id", 551L);
+        DrRunVO child = new DrRunVO(readyPlan.getId(), DrConstants.RUN_TYPE_SYNC);
+        ReflectionTestUtils.setField(child, "id", 552L);
+        child.setIdempotencyKey(groupRun.getUuid() + ":" + readyPlan.getId());
+        child.setState(DrConstants.RUN_STATE_SUCCEEDED);
+        child.setRequestJson("{\"mode\":\"FULL_RESEED\",\"forceFullReseed\":true}");
+        child.setAcceptedCycleSequence(43L);
+        child.setAcceptedCycleToken("cycle-43");
+        DrSyncCycleVO cycle = new DrSyncCycleVO(readyPlan.getId(), child.getUuid(), 43L);
+        cycle.setCycleToken("cycle-43");
+        cycle.setRequestedMode("FULL_SEED");
+        cycle.setState("READY");
+        cycle.setCommitState("LOCAL_DURABLE");
+        cycle.setCompleted(new Date());
+
+        when(drRunDao.findById(child.getId())).thenReturn(child);
+        when(drSyncCycleDao.findByPlanSequence(readyPlan.getId(), 43L)).thenReturn(cycle);
+        when(drGroupRunDao.findById(groupRun.getId())).thenReturn(groupRun);
+        when(drRunDao.listByPlanId(readyPlan.getId())).thenReturn(Collections.singletonList(child));
+
+        DrRunVO result = service.convergeGroupChildTerminal(groupRun, child);
+
+        Assert.assertTrue(result.isTerminalAuthoritative());
+        Assert.assertEquals("CYCLE_DURABLE", result.getTerminalSource());
+        Assert.assertEquals(1, groupRun.getSucceededCount());
+        verify(drRunDao).update(child.getId(), child);
+        verify(drAdmissionController).release(child.getId());
+        verify(drGroupRunDao).update(groupRun.getId(), groupRun);
+    }
+
+    @Test
+    public void durableSucceededChildConvergesFromDbWithoutRemoteProjectionRefresh() {
+        DrGroupRunVO groupRun = new DrGroupRunVO("group-1", "group one", DrConstants.RUN_TYPE_SYNC,
+                "[37]", 1, false, 1);
+        ReflectionTestUtils.setField(groupRun, "id", 561L);
+        DrRunVO child = new DrRunVO(readyPlan.getId(), DrConstants.RUN_TYPE_SYNC);
+        ReflectionTestUtils.setField(child, "id", 562L);
+        child.setIdempotencyKey(groupRun.getUuid() + ":" + readyPlan.getId());
+        child.setState(DrConstants.RUN_STATE_SUCCEEDED);
+        child.setRequestJson("{\"mode\":\"FULL_RESEED\",\"forceFullReseed\":true}");
+        child.setAcceptedCycleSequence(44L);
+        child.setAcceptedCycleToken("cycle-44");
+        DrSyncCycleVO cycle = new DrSyncCycleVO(readyPlan.getId(), child.getUuid(), 44L);
+        cycle.setCycleToken("cycle-44");
+        cycle.setRequestedMode("FULL_RESEED");
+        cycle.setState("READY");
+        cycle.setCommitState("LOCAL_DURABLE");
+        cycle.setCompleted(new Date());
+
+        when(drRunDao.findById(child.getId())).thenReturn(child);
+        when(drSyncCycleDao.findByPlanSequence(readyPlan.getId(), 44L)).thenReturn(cycle);
+        when(drGroupRunDao.findById(groupRun.getId())).thenReturn(groupRun);
+        when(drRunDao.listByPlanId(readyPlan.getId())).thenReturn(Collections.singletonList(child));
+
+        DrRunVO result = service.reconcileGroupChildTerminal(readyPlan, groupRun, child);
+
+        Assert.assertTrue(result.isTerminalAuthoritative());
+        Assert.assertEquals("CYCLE_DURABLE", result.getTerminalSource());
+        verify(drProjectionService, never()).refreshPlanProjection(anyLong(),
+                org.mockito.ArgumentMatchers.anyBoolean());
+        verify(drAdmissionController).release(child.getId());
     }
 
     @Test

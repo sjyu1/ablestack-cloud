@@ -239,6 +239,45 @@ to the atomic gate become `SKIPPED`. A runnable request returns `QUEUED`, and th
 UI polls `listDrProtectionGroupRuns` by group UUID until the returned run UUID
 reaches `SUCCEEDED` or `FAILED`.
 
+For a group Full Seed, child API acceptance and target materialization are not
+terminal success. Cloud advances the next bounded batch and completes the group
+only when every child Run is `SUCCEEDED`, `terminal_authoritative=true`, and its
+immutable accepted Cycle sequence/token resolves to a completed persisted Full
+Seed Cycle (`FULL_SEED`, with legacy `FULL_RESEED` accepted) with a durable
+commit state. A successful child that has not met this
+predicate remains `RESULT_FINALIZING`; its admission lease is renewed and Cloud
+continues projection reconciliation. The same predicate controls child counts,
+batch advancement, lease release, and group completion so the aggregate result
+cannot precede the final member's durable checkpoint.
+
+If target materialization completed the child Run before FTCTL published its
+terminal journal, the group monitor may promote that already successful Run to
+`CYCLE_DURABLE / terminal_authoritative=true` only inside a transaction and
+only after the Run's immutable accepted sequence/token identifies a completed,
+durably committed Full Seed Cycle. This evidence-based convergence is also the
+restart recovery path; it never substitutes the latest unrelated plan Cycle or
+requires a manual DB correction.
+
+Management-server restart recovery does not repeat new-request admission for a
+persisted `RUNNING` group. The group was already atomically admitted, and its
+own child Runs and leases would make a repeated eligibility check self-blocking.
+Recovery resumes the persisted ordered batches, reconciles existing children,
+and applies the same accepted-Cycle terminal predicate. Only a newly `QUEUED`
+group performs execution-time preflight before its first dispatch.
+
+Group terminal reconciliation is DB-first. The monitor first resolves a
+successful Full Seed child from its immutable accepted sequence/token and the
+matching durable Cycle. Once the child Run is `SUCCEEDED`, it must not block on
+a source Mold or FTCTL status request; the independent projection scheduler
+publishes later durable evidence into DB and the next monitor pass converges it.
+A remote projection refresh remains a bounded aid only while the child Run
+itself is non-terminal.
+
+The UI/control request name `FULL_RESEED` and the persisted Cycle mode
+`FULL_SEED` represent the same Full Seed operation. Terminal reconciliation
+normalizes both values at this boundary; it must not reject an otherwise
+matching durable Cycle because the request and persistence vocabularies differ.
+
 ### 13.2 UI contract
 
 Opening the protection-group dialog and changing its action performs a fresh
