@@ -2590,8 +2590,8 @@ public class FtctlDrRuntimeProjectionAdapterTest {
                     null, null, null, 15L, null, 0, "", statusJson);
         });
         Mockito.when(drRunDao.findActiveByPlanId(plan.getId())).thenReturn(run);
-        Mockito.when(drPlanDao.findById(plan.getId())).thenReturn(plan);
         Mockito.when(drReplicaDao.listActiveByPlanId(plan.getId())).thenReturn(Collections.singletonList(replica));
+        Mockito.when(drPlanDao.findById(plan.getId())).thenReturn(plan);
 
         DrAdapterResult result = adapter.refreshPlanProjection(plan);
 
@@ -2795,6 +2795,72 @@ public class FtctlDrRuntimeProjectionAdapterTest {
                 .thenReturn(false);
 
         Assert.assertNull(adapter.resolveRefreshProjectionRun(plan));
+    }
+
+    @Test
+    public void failedFullReseedWithNewerOwnedDurableCycleRemainsProjectable() {
+        DrPlanVO plan = new DrPlanVO("late-full-seed", 1L, 2L, DrConstants.DIRECTION_VMWARE_TO_KVM);
+        DrRunVO run = new DrRunVO(plan.getId(), DrConstants.RUN_TYPE_SYNC);
+        run.setRequestJson("{\"mode\":\"FULL_RESEED\"}");
+        run.setState(DrConstants.RUN_STATE_FAILED);
+        run.setCompleted(new Date());
+        run.setAcceptedCycleSequence(1L);
+        run.setAcceptedCycleToken(plan.getUuid() + ":1");
+        DrSyncCycleVO recovered = durableFullSeedCycle(plan, run, 2L);
+        Mockito.when(drRunDao.findActiveByPlanId(plan.getId())).thenReturn(null);
+        Mockito.when(drRunDao.findLatestByPlanId(plan.getId())).thenReturn(run);
+        Mockito.when(drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(run.getId(), "FULL_RESEED"))
+                .thenReturn(recovered);
+        Mockito.when(drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(run.getId(), "FULL_SEED"))
+                .thenReturn(null);
+
+        Assert.assertSame(run, adapter.resolveRefreshProjectionRun(plan));
+    }
+
+    @Test
+    public void correctedTerminalReopensFailedFullReseedAndRebindsDurableCycle() {
+        DrPlanVO plan = new DrPlanVO("late-full-seed", 1L, 2L, DrConstants.DIRECTION_VMWARE_TO_KVM);
+        DrRunVO run = new DrRunVO(plan.getId(), DrConstants.RUN_TYPE_SYNC);
+        run.setRequestJson("{\"mode\":\"FULL_RESEED\"}");
+        run.setState(DrConstants.RUN_STATE_FAILED);
+        run.setCompleted(new Date());
+        run.setAcceptedCycleSequence(1L);
+        run.setAcceptedCycleToken(plan.getUuid() + ":1");
+        run.setErrorCode("DR_CBT_QUERY_FAILED");
+        DrSyncCycleVO recovered = durableFullSeedCycle(plan, run, 2L);
+        Mockito.when(drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(run.getId(), "FULL_RESEED"))
+                .thenReturn(recovered);
+        Mockito.when(drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(run.getId(), "FULL_SEED"))
+                .thenReturn(null);
+        FtctlDrStatusAnswer status = Mockito.mock(FtctlDrStatusAnswer.class);
+        Mockito.when(status.getResult()).thenReturn(true);
+        Mockito.when(status.getControlRequestRunUuid()).thenReturn(run.getUuid());
+        Mockito.when(status.getWorkerState()).thenReturn("TERMINAL_PUBLISHED");
+        Mockito.when(status.getWorkerExitCode()).thenReturn(0);
+        Mockito.when(status.getTerminalAuthoritative()).thenReturn(true);
+        Mockito.when(status.getState()).thenReturn("READY");
+        Mockito.when(status.getStep()).thenReturn("full-resync-completed");
+
+        Assert.assertTrue(adapter.reopenFailedFullReseedRunIfDurablyRecovered(
+                plan, run, status, new JsonObject()));
+        Assert.assertEquals(DrConstants.RUN_STATE_ACCEPTED, run.getState());
+        Assert.assertNull(run.getCompleted());
+        Assert.assertEquals(Long.valueOf(2L), run.getAcceptedCycleSequence());
+        Assert.assertEquals(plan.getUuid() + ":2", run.getAcceptedCycleToken());
+        Assert.assertNull(run.getErrorCode());
+        Mockito.verify(drRunDao).update(run.getId(), run);
+    }
+
+    private DrSyncCycleVO durableFullSeedCycle(DrPlanVO plan, DrRunVO run, long sequence) {
+        DrSyncCycleVO cycle = new DrSyncCycleVO(plan.getId(), run.getUuid(), sequence);
+        cycle.setRunId(run.getId());
+        cycle.setCycleToken(plan.getUuid() + ":" + sequence);
+        cycle.setRequestedMode("FULL_RESEED");
+        cycle.setEffectiveMode("FULL_RESEED");
+        cycle.setState("READY");
+        cycle.setCommitState("LOCAL_DURABLE");
+        cycle.setCompleted(new Date());
+        return cycle;
     }
 
     @Test

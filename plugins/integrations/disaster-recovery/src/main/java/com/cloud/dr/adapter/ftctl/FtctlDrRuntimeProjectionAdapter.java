@@ -2984,7 +2984,8 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
         if (run == null) {
             return;
         }
-        if (!isProjectableRunState(run)) {
+        boolean lateFullSeedRecovered = reopenFailedFullReseedRunIfDurablyRecovered(plan, run, status, runtime);
+        if (!lateFullSeedRecovered && !isProjectableRunState(run)) {
             // A failed failback run remains immutable history. Its later rollback
             // acknowledgement still owns the current plan authority projection.
             if (isRolledBackFailback(plan, run, runtime)) {
@@ -3334,9 +3335,89 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
             return activeRun;
         }
         DrRunVO latestRun = drRunDao.findLatestByPlanId(plan.getId());
+        if (latestRun != null && isFailedFullReseedRunWithNewerDurableCycle(plan, latestRun)) {
+            return latestRun;
+        }
         return latestRun != null && drFailbackLifecycleService != null
                 && drFailbackLifecycleService.requiresCancellationCompensation(latestRun)
                 ? latestRun : null;
+    }
+
+    boolean reopenFailedFullReseedRunIfDurablyRecovered(DrPlanVO plan, DrRunVO run,
+            FtctlDrStatusAnswer status, JsonObject runtime) {
+        if (plan == null || run == null || status == null || runtime == null
+                || !isFailedFullReseedRunWithNewerDurableCycle(plan, run)
+                || !status.getResult()) {
+            return false;
+        }
+        String controlRun = StringUtils.defaultIfBlank(status.getControlRequestRunUuid(),
+                stringValue(runtime, "control_request_run_uuid"));
+        String workerState = StringUtils.defaultIfBlank(status.getWorkerState(),
+                stringValue(runtime, "worker_state"));
+        Integer workerExitCode = status.getWorkerExitCode() != null ? status.getWorkerExitCode()
+                : integerValue(runtime, "worker_exit_code");
+        boolean terminalAuthoritative = Boolean.TRUE.equals(status.getTerminalAuthoritative())
+                || Boolean.TRUE.equals(booleanValue(runtime, "terminal_authoritative"));
+        String runtimeState = StringUtils.defaultIfBlank(status.getState(), stringValue(runtime, "state"));
+        String runtimeStep = StringUtils.defaultIfBlank(status.getStep(), stringValue(runtime, "step"));
+        if (!StringUtils.equals(run.getUuid(), controlRun)
+                || !terminalAuthoritative
+                || !StringUtils.equalsAnyIgnoreCase(workerState, "TERMINAL_PUBLISHED", "SUCCEEDED")
+                || !Integer.valueOf(0).equals(workerExitCode)
+                || !StringUtils.equalsIgnoreCase(runtimeState, DrConstants.PLAN_STATE_READY)
+                || !StringUtils.equalsIgnoreCase(runtimeStep, "full-resync-completed")) {
+            return false;
+        }
+        DrSyncCycleVO recoveredCycle = findNewerDurableFullSeedCycle(plan, run);
+        if (recoveredCycle == null) {
+            return false;
+        }
+        run.setAcceptedCycleSequence(recoveredCycle.getSequence());
+        run.setAcceptedCycleToken(recoveredCycle.getCycleToken());
+        run.setState(DrConstants.RUN_STATE_ACCEPTED);
+        run.setCompleted(null);
+        run.setProjectionState("target-materializing");
+        run.setProjectionChecked(new Date());
+        run.setErrorCode(null);
+        run.setErrorMessage(null);
+        run.setRetryable(false);
+        run.setRetryAfterSeconds(null);
+        run.setNextRetryAt(null);
+        run.setTerminalSource(null);
+        run.setTerminalVersion(null);
+        run.setTerminalAuthoritative(false);
+        run.markUpdated();
+        drRunDao.update(run.getId(), run);
+        return true;
+    }
+
+    private boolean isFailedFullReseedRunWithNewerDurableCycle(DrPlanVO plan, DrRunVO run) {
+        return plan != null && run != null
+                && StringUtils.equalsIgnoreCase(run.getState(), DrConstants.RUN_STATE_FAILED)
+                && run.getCompleted() != null
+                && isFullReseedRun(run)
+                && findNewerDurableFullSeedCycle(plan, run) != null;
+    }
+
+    private DrSyncCycleVO findNewerDurableFullSeedCycle(DrPlanVO plan, DrRunVO run) {
+        if (plan == null || run == null || drSyncCycleDao == null || plan.getId() != run.getPlanId()) {
+            return null;
+        }
+        DrSyncCycleVO fullReseed = drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(
+                run.getId(), "FULL_RESEED");
+        DrSyncCycleVO fullSeed = drSyncCycleDao.findLatestCompletedByRunIdAndRequestedMode(
+                run.getId(), "FULL_SEED");
+        DrSyncCycleVO candidate = fullReseed == null ? fullSeed : fullSeed == null
+                || fullReseed.getSequence() >= fullSeed.getSequence() ? fullReseed : fullSeed;
+        long acceptedSequence = run.getAcceptedCycleSequence() != null ? run.getAcceptedCycleSequence() : 0L;
+        return candidate != null
+                && candidate.getSequence() > acceptedSequence
+                && candidate.getCompleted() != null
+                && candidate.getRunId() != null && candidate.getRunId() == run.getId()
+                && StringUtils.equalsAnyIgnoreCase(candidate.getState(), "READY", "COMPLETED", "TARGET_READY")
+                && StringUtils.equalsAnyIgnoreCase(candidate.getCommitState(), "LOCAL_DURABLE", "COMMITTED", "DURABLE")
+                && StringUtils.equals(candidate.getCycleToken(), plan.getUuid() + ":" + candidate.getCheckpointSequence())
+                ? candidate : null;
     }
 
     private DrRunVO resolveProtectionProducerRun(DrPlanVO plan, FtctlDrStatusAnswer status, JsonObject runtime) {

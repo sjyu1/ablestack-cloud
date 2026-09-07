@@ -178,3 +178,39 @@ CBT, RBD diff, failover, or failback behavior.
 7. In the UI, verify protection status and execution readiness are rendered
    from `protectionstate` and `readinessstate` respectively, including dark
    mode, after the operator presses Update.
+
+## 9. Failed requested cycle followed by durable same-Run Full Seed
+
+### 9.1 Failure
+
+A transient VMware CBT query fault can publish `FAILED` before systemd restarts
+the scheduler. If that same Cloud Run subsequently owns a newer durable Full
+Seed, the authority projection stores the valid Cycle but the completed failed
+Run is no longer selected for operation-scoped status. Target materialization
+is therefore skipped and the UI remains `SYNCING` without a target VM.
+
+### 9.2 Strict recovery contract
+
+Cloud may select and reopen a completed failed `SYNC/FULL_RESEED` Run only when:
+
+1. a newer completed `FULL_SEED` or `FULL_RESEED` Cycle is owned by the same
+   Cloud Run row;
+2. its state is ready/complete, commit is durable, and token equals the Plan
+   UUID plus the engine checkpoint generation;
+3. operation-scoped FTCTL status names the same control Run and reports an
+   authoritative successful terminal (`TERMINAL_PUBLISHED`, exit code `0`);
+4. runtime state is `READY/full-resync-completed`.
+
+Cloud then rebinds `accepted_cycle_sequence/token`, clears the obsolete Run
+failure, and invokes the existing target-materialization workflow. It does not
+mark the Run successful until the Cloud target VM and restore-point contracts
+are satisfied. Plan authority continues to use the latest scheduler Cycle, so
+a later incremental is never replaced by the recovered Full Seed.
+
+| Area | AS-IS | TO-BE |
+|---|---|---|
+| Projection Run selection | Completed failed Run is ignored | Strict newer same-Run durable proof makes it queryable |
+| Accepted Cycle | Superseded failed sequence remains bound | Rebind to the recovered durable Full Seed |
+| Target materialization | Never enqueued | Existing idempotent materializer resumes |
+| Failure safety | Broad late success would hide errors | Run, terminal, token, mode, durability, and sequence must all match |
+| Existing providers | Shared behavior may regress | No copy/provider decision changes; baseline path tests remain mandatory |
