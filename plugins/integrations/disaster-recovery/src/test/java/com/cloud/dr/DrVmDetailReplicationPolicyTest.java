@@ -17,6 +17,9 @@ public class DrVmDetailReplicationPolicyTest {
         source.put("tpmversion", "NONE");
         source.put("io.policy", "io_uring");
         source.put("iothreads", "true");
+        source.put("cpuNumber", "4");
+        source.put("cpuSpeed", "2200");
+        source.put("memory", "8192");
         source.put("clone.fast.status", "running");
         source.put("ftctl.enabled", "true");
         source.put("dr.plan.id", "99");
@@ -31,6 +34,9 @@ public class DrVmDetailReplicationPolicyTest {
         Assert.assertEquals("NONE", copied.get("tpmversion"));
         Assert.assertEquals("io_uring", copied.get("io.policy"));
         Assert.assertEquals("true", copied.get("iothreads"));
+        Assert.assertFalse(copied.containsKey("cpuNumber"));
+        Assert.assertFalse(copied.containsKey("cpuSpeed"));
+        Assert.assertFalse(copied.containsKey("memory"));
         Assert.assertFalse(copied.containsKey("clone.fast.status"));
         Assert.assertFalse(copied.containsKey("ftctl.enabled"));
         Assert.assertFalse(copied.containsKey("dr.plan.id"));

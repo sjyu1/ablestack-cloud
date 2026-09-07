@@ -149,10 +149,15 @@ public class DrReprotectPreflightServiceImpl extends ManagerBase implements DrRe
         }
 
         Long planCycleSequence = canonicalCutoverSequence(cutover);
-        DrSyncCycleVO cutoverCycle = planCycleSequence != null && planCycleSequence > 0L
-                ? drSyncCycleDao.findByPlanSequence(plan.getId(), planCycleSequence) : null;
         String cloudCycleToken = planCycleSequence != null && planCycleSequence > 0L
                 ? plan.getUuid() + ":" + planCycleSequence : null;
+        DrSyncCycleVO cutoverCycle = StringUtils.isNotBlank(cloudCycleToken)
+                ? drSyncCycleDao.findByPlanCycleToken(plan.getId(), cloudCycleToken) : null;
+        if (isDurableCycle(cutoverCycle, cloudCycleToken)) {
+            return true;
+        }
+        cutoverCycle = planCycleSequence != null && planCycleSequence > 0L
+                ? drSyncCycleDao.findByPlanSequence(plan.getId(), planCycleSequence) : null;
         if (isDurableCycle(cutoverCycle, cloudCycleToken)) {
             return true;
         }

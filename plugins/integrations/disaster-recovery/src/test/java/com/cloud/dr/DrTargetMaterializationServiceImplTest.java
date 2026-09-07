@@ -27,6 +27,7 @@ import com.cloud.dr.dao.DrTestSessionDao;
 import com.cloud.storage.VolumeApiService;
 import com.cloud.storage.VolumeVO;
 import com.cloud.storage.dao.VolumeDao;
+import com.cloud.service.ServiceOfferingVO;
 import com.cloud.user.AccountVO;
 import com.cloud.user.dao.AccountDao;
 import com.cloud.vm.UserVmManager;
@@ -277,6 +278,57 @@ public class DrTargetMaterializationServiceImplTest {
         Assert.assertFalse(details.containsKey("clone.fast.status"));
         Assert.assertFalse(details.containsKey("boot.mode"));
         Assert.assertTrue(details.get(DrVmDetailReplicationPolicy.REPLICATED_KEYS_DETAIL).contains("tpmversion"));
+    }
+
+    @Test
+    public void targetVmDetailsOnlyContainComputeValuesCustomizableBySelectedOffering() {
+        DrPlanVO plan = new DrPlanVO("compute-details", 1L, 2L, DrConstants.DIRECTION_KVM_TO_KVM);
+        plan.setMappingJson("{\"source\":{\"hardware\":{\"vmDetails\":{"
+                + "\"cpuNumber\":\"1\",\"cpuSpeed\":\"1000\",\"memory\":\"1024\","
+                + "\"UEFI\":\"LEGACY\"}}}}");
+        DrResolvedTargetPlacement placement = new DrResolvedTargetPlacement();
+        placement.setTargetCpuNumber(2);
+        placement.setTargetCpuSpeed(2000);
+        placement.setTargetMemory(4096);
+        ServiceOfferingVO offering = Mockito.mock(ServiceOfferingVO.class);
+        Mockito.when(offering.getCpu()).thenReturn(null);
+        Mockito.when(offering.getSpeed()).thenReturn(2000);
+        Mockito.when(offering.getRamSize()).thenReturn(null);
+        VolumeVO root = Mockito.mock(VolumeVO.class);
+        Mockito.when(root.getSize()).thenReturn(100L * 1024L * 1024L * 1024L);
+
+        Map<String, String> details = service.buildTargetVmDetails(plan, null, placement, offering, root,
+                new DrResolvedTargetHardware());
+
+        Assert.assertEquals("2", details.get("cpuNumber"));
+        Assert.assertFalse(details.containsKey("cpuSpeed"));
+        Assert.assertEquals("4096", details.get("memory"));
+        Assert.assertEquals("LEGACY", details.get("UEFI"));
+        Assert.assertFalse(details.get(DrVmDetailReplicationPolicy.REPLICATED_KEYS_DETAIL).contains("cpuSpeed"));
+    }
+
+    @Test
+    public void staticTargetOfferingReceivesNoCustomComputeParameters() {
+        DrPlanVO plan = new DrPlanVO("static-compute-details", 1L, 2L, DrConstants.DIRECTION_KVM_TO_KVM);
+        plan.setMappingJson("{\"source\":{\"hardware\":{\"vmDetails\":{"
+                + "\"cpuNumber\":\"1\",\"cpuSpeed\":\"1000\",\"memory\":\"1024\"}}}}");
+        DrResolvedTargetPlacement placement = new DrResolvedTargetPlacement();
+        placement.setTargetCpuNumber(2);
+        placement.setTargetCpuSpeed(2000);
+        placement.setTargetMemory(4096);
+        ServiceOfferingVO offering = Mockito.mock(ServiceOfferingVO.class);
+        Mockito.when(offering.getCpu()).thenReturn(2);
+        Mockito.when(offering.getSpeed()).thenReturn(2000);
+        Mockito.when(offering.getRamSize()).thenReturn(4096);
+        VolumeVO root = Mockito.mock(VolumeVO.class);
+        Mockito.when(root.getSize()).thenReturn(100L * 1024L * 1024L * 1024L);
+
+        Map<String, String> details = service.buildTargetVmDetails(plan, null, placement, offering, root,
+                new DrResolvedTargetHardware());
+
+        Assert.assertFalse(details.containsKey("cpuNumber"));
+        Assert.assertFalse(details.containsKey("cpuSpeed"));
+        Assert.assertFalse(details.containsKey("memory"));
     }
 
     @Test

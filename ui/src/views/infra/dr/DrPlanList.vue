@@ -2995,27 +2995,21 @@ export default {
         return
       }
       this.createLoading = true
-      const refreshSourceHardware = requiresSourceHardwareRefresh(this.editingPlan)
-      updateDrPlan(this.editingPlan.id, this.buildPlanPayload({
-        includeUnchangedEditFields: refreshSourceHardware
-      })).then(admission => {
+      const changedPayload = this.buildPlanPayload()
+      const refreshSourceHardware = requiresSourceHardwareRefresh(this.editingPlan, changedPayload)
+      const payload = refreshSourceHardware
+        ? this.buildPlanPayload({ includeUnchangedEditFields: true })
+        : changedPayload
+      updateDrPlan(this.editingPlan.id, payload).then(admission => waitForDrMutation(admission)).then(result => {
         notification.success({
           message: this.$t('label.dr.plan.edit'),
           description: this.$t('label.success')
         })
         this.closeCreateModal()
-        this.createLoading = false
-        return waitForDrMutation(admission).then(result => {
-          if (!result?.id) return this.fetchData()
-          return getDrPlan(result.id).then(plan => {
-            this.upsertPlan(plan)
-            return this.fetchData()
-          })
-        }).catch(error => {
-          notification.error({
-            message: this.$t('label.dr.plan.edit'),
-            description: this.errorMessage(error)
-          })
+        if (!result?.id) return this.fetchData()
+        return getDrPlan(result.id).then(plan => {
+          this.upsertPlan(plan)
+          return this.fetchData()
         })
       }).catch(error => {
         notification.error({

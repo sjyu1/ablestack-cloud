@@ -905,3 +905,94 @@ Regression coverage must include the real terminal payload with
 `accepted=false`, plus a near-match whose target remains powered on. The
 validated VMware-to-RBD, local RBD-to-RBD, normal Failover, and Failback action
 contracts are unchanged.
+
+## 29. Target compute offering and replicated VM Detail boundary
+
+ABLESTACK-to-ABLESTACK source inventory can contain `cpuNumber`, `cpuSpeed`,
+and `memory` in `vmDetails`. These keys are effective values of the source
+compute offering, not portable VM Detail settings. Passing them unchanged to
+`deployVirtualMachineForVolume` conflicts with a target offering that fixes
+only some dimensions. For example, a target offering may allow custom CPU and
+memory while fixing CPU speed at 2000 MHz; sending `cpuSpeed=2000` is still an
+invalid customization request.
+
+The target materialization contract is therefore:
+
+1. preserve portable source VM Details such as `UEFI`, TPM, disk controllers,
+   I/O policy, and I/O thread settings;
+2. exclude `cpuNumber`, `cpuSpeed`, and `memory` from the replicated Detail
+   manifest and hardware reconciliation loop;
+3. derive target sizing from the guided target placement and selected service
+   offering;
+4. emit a sizing key in the deploy command only when the corresponding target
+   offering field is actually customizable (`NULL` in the offering);
+5. keep fixed offering values out of `cmd.getDetails()` even when their value
+   equals the requested or source value.
+
+This rule applies to both persistent replica and test VM materialization because
+they share `DrReplicaDeployVMVolumeCmd`. It does not alter disk transfer,
+checkpoint, VMware-to-RBD, or RBD-to-RBD provider behavior.
+
+| Layer | AS-IS | TO-BE |
+| --- | --- | --- |
+| Source Detail policy | Copies source sizing keys as portable VM Details | Treats sizing as target placement data |
+| Target deploy command | Fixed CPU speed can be sent as a custom value | Sends only offering-supported custom dimensions |
+| Target reconciliation | Reapplies source sizing keys after creation | Reconciles portable VM Details only |
+| UI/Run | Full sync is accepted, then fails before Agent dispatch | Run reaches materialization and FTCTL dispatch without offering conflict |
+
+Regression coverage must include a partially customizable offering (custom CPU
+and memory, fixed CPU speed), a fully static offering, and the existing KVM VM
+Detail preservation case. The UI full-resync Run must become terminal only from
+the normal Cloud/Agent/FTCTL evidence path; failed rows are not repaired by
+direct DB updates.
+
+## 30. Protected plan edit and asynchronous completion contract
+
+Plan metadata edits must not reconstruct a protected plan's runtime mapping.
+The absence of `sourceHostUuid` is the expected representation of dynamic
+placement and is not evidence that source hardware discovery is incomplete.
+The guided edit form may request a structural refresh only when the persisted
+mapping contains an explicit source hardware discovery error or an incomplete
+disk storage contract and the operator has actually changed a structural
+placement field. Metadata, RPO, RTO, and policy-only edits never opt into that
+repair path. Otherwise the form sends changed fields only.
+
+The update dialog remains in edit mode while the asynchronous Cloud job is
+running. It closes and emits success only after the job reaches `SUCCEEDED`.
+Admission is not completion. A failed job keeps the populated edit form open,
+shows one failure notification, and must never reset the same dialog into plan
+creation mode.
+
+| Layer | AS-IS | TO-BE |
+| --- | --- | --- |
+| Placement refresh | Missing `sourceHostUuid` forces guided mapping regeneration | Dynamic host placement remains valid; refresh only explicit incomplete inventory |
+| Update payload | Metadata-only edit can include regenerated mapping JSON | Metadata-only edit sends only changed mutable fields |
+| Async UI state | Admission shows success and resets the form before terminal result | Terminal success closes the form; terminal failure preserves edit state |
+| Runtime guard | Correctly rejects changed protected mappings | Remains unchanged and receives no mapping field for metadata-only edits |
+
+Regression coverage includes a host-unpinned KVM mapping, explicit discovery
+failure, incomplete SharedMountPoint disk metadata, and changed-field payload
+selection. UI validation must confirm exactly one terminal notification and a
+persisted description without `DR_RUNTIME_RESOURCE_EXISTS`.
+
+## 31. Reprotect canonical checkpoint identity
+
+For ABLESTACK-to-ABLESTACK cutover, the FTCTL `plan_cycle_sequence` is the
+suffix of the canonical `cycle_token`; it is not the Cloud `dr_sync_cycle`
+row's `sequence`. Cloud sequencing can advance independently while projection
+aliases are reconciled. Reprotect preflight must therefore resolve the durable
+cutover Cycle by `(plan_id, cycle_token)` first. A lookup by Cloud sequence is
+retained only as a legacy fallback, and the resolved row must still be
+`READY`, `LOCAL_DURABLE`, have `target_durable_at`, and carry the exact expected
+token. The engine checkpoint sequence remains the FTCTL checkpoint identity
+passed to Reprotect and must not be rewritten to the Cloud row sequence.
+
+| Layer | AS-IS | TO-BE |
+| --- | --- | --- |
+| Cutover identity | Treats `plan_cycle_sequence` as a Cloud DB sequence | Treats it as the canonical token suffix |
+| Durable lookup | Misses a valid row when DB sequence and token suffix diverge | Resolves exact token first, then guarded legacy fallback |
+| Reprotect gate | Rejects a durable cutover with `DR_REPROTECT_CHECKPOINT_MISMATCH` | Accepts only the exact durable canonical Cycle |
+
+Regression coverage must include an FTCTL checkpoint, token suffix, and Cloud
+row sequence that are all different. VMware-to-RBD and RBD-to-RBD retain their
+existing checkpoint validation paths.

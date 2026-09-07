@@ -14,6 +14,7 @@ import org.apache.commons.lang3.StringUtils;
 public final class DrVmDetailReplicationPolicy {
     public static final String REPLICATED_KEYS_DETAIL = "dr.source.vm.details.keys";
     private static final String[] TRANSIENT_PREFIXES = {"clone.fast.", "dr.", "ftctl."};
+    private static final String[] TARGET_COMPUTE_PARAMETERS = {"cpunumber", "cpuspeed", "memory"};
 
     private DrVmDetailReplicationPolicy() {
     }
@@ -34,7 +35,8 @@ public final class DrVmDetailReplicationPolicy {
     static boolean isCopyable(String key) {
         String normalized = StringUtils.lowerCase(StringUtils.trimToEmpty(key), Locale.ROOT);
         if (StringUtils.isBlank(normalized)
-                || StringUtils.equalsAny(normalized, "volumeid", "deployvm", "boot.mode")) {
+                || StringUtils.equalsAny(normalized, "volumeid", "deployvm", "boot.mode")
+                || StringUtils.equalsAny(normalized, TARGET_COMPUTE_PARAMETERS)) {
             return false;
         }
         for (String prefix : TRANSIENT_PREFIXES) {

@@ -89,7 +89,7 @@ describe('DR plan form compute sizing', () => {
   })
 
   it('refreshes an existing SharedMountPoint mapping with an incomplete source storage contract', () => {
-    expect(requiresSourceHardwareRefresh({
+    const plan = {
       direction: 'KVM_TO_KVM',
       mappingjson: JSON.stringify({
         source: { hardware: { sourceHostUuid: 'host-uuid' } },
@@ -98,13 +98,26 @@ describe('DR plan form compute sizing', () => {
           target: { type: 'file', format: 'qcow2' }
         }]
       })
-    })).toBe(true)
+    }
+    expect(requiresSourceHardwareRefresh(plan)).toBe(true)
+    expect(requiresSourceHardwareRefresh(plan, { targetcomputeref: 'offering-2' })).toBe(true)
+    expect(requiresSourceHardwareRefresh(plan, { description: 'metadata only' })).toBe(false)
+    expect(requiresSourceHardwareRefresh(plan, { rposeconds: 600 })).toBe(false)
   })
 
   it('keeps normal and VMware edit payloads on the changed-field path', () => {
     expect(requiresSourceHardwareRefresh({
       direction: 'KVM_TO_KVM',
       mappingjson: JSON.stringify({ source: { hardware: { sourceHostUuid: 'host-uuid' } } })
+    })).toBe(false)
+    expect(requiresSourceHardwareRefresh({
+      direction: 'KVM_TO_KVM',
+      mappingjson: JSON.stringify({
+        source: { hardware: { firmware: 'UEFI' } },
+        disks: [{
+          source: { path: '/mnt/glue-gfs/volume-uuid', type: 'file', format: 'qcow2' }
+        }]
+      })
     })).toBe(false)
     expect(requiresSourceHardwareRefresh({
       direction: 'VMWARE_TO_KVM',
