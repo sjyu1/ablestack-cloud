@@ -293,8 +293,8 @@
             </a-select>
           </a-form-item>
           <template v-if="usesMoldCredential">
-            <div class="cross-dr-form-section-title"><span>{{ $t('label.dr.site.connection.info') }}</span></div>
-            <a-form-item :required="siteFormMode === 'create'">
+            <div key="mold-credentials" class="cross-dr-form-section-title"><span>{{ $t('label.dr.site.connection.info') }}</span></div>
+            <a-form-item key="mold-api-url" :required="siteFormMode === 'create'">
               <template #label>
                 <tooltip-label
                   :title="$t('label.dr.mold.api.url')"
@@ -305,7 +305,7 @@
                 :placeholder="$t('message.dr.site.mold.api.url.placeholder')"
                 @change="resetSiteInventory" />
             </a-form-item>
-            <a-form-item :required="siteFormMode === 'create'">
+            <a-form-item key="mold-api-key" :required="siteFormMode === 'create'">
               <template #label>
                 <tooltip-label
                   :title="$t('label.dr.mold.api.key')"
@@ -316,7 +316,7 @@
                 :placeholder="$t('message.dr.site.mold.api.key.placeholder')"
                 @change="resetSiteInventory" />
             </a-form-item>
-            <a-form-item :required="siteFormMode === 'create'">
+            <a-form-item key="mold-secret-key" :required="siteFormMode === 'create'">
               <template #label>
                 <tooltip-label
                   :title="$t('label.dr.mold.secret.key')"
@@ -330,8 +330,8 @@
             </a-form-item>
           </template>
           <template v-else-if="usesVCenterCredential">
-            <div class="cross-dr-form-section-title"><span>{{ $t('label.dr.site.connection.info') }}</span></div>
-            <a-form-item :required="siteFormMode === 'create'">
+            <div key="vcenter-credentials" class="cross-dr-form-section-title"><span>{{ $t('label.dr.site.connection.info') }}</span></div>
+            <a-form-item key="vcenter-url" :required="siteFormMode === 'create'">
               <template #label>
                 <tooltip-label
                   :title="$t('label.dr.vcenter.url')"
@@ -341,7 +341,7 @@
                 v-model:value="createForm.vcenterurl"
                 :placeholder="$t('message.dr.site.vcenter.url.placeholder')" />
             </a-form-item>
-            <a-form-item :required="siteFormMode === 'create'">
+            <a-form-item key="vcenter-username" :required="siteFormMode === 'create'">
               <template #label>
                 <tooltip-label
                   :title="$t('label.dr.vcenter.username')"
@@ -349,9 +349,10 @@
               </template>
               <a-input
                 v-model:value="createForm.vcenterusername"
+                data-testid="dr-site-vcenter-username"
                 :placeholder="$t('message.dr.site.vcenter.username.placeholder')" />
             </a-form-item>
-            <a-form-item :required="siteFormMode === 'create'">
+            <a-form-item key="vcenter-password" :required="siteFormMode === 'create'">
               <template #label>
                 <tooltip-label
                   :title="$t('label.dr.vcenter.password')"
@@ -588,7 +589,6 @@ export default {
     siteTypeOptions () {
       return [
         { value: 'MOLD_KVM', label: 'label.dr.site.type.mold.kvm' },
-        { value: 'MOLD_VMWARE', label: 'label.dr.site.type.mold.vmware' },
         { value: 'VMWARE_DIRECT', label: 'label.dr.site.type.vmware.direct' }
       ]
     },

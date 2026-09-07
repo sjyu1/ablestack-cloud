@@ -129,7 +129,7 @@ DR Site 추가/수정 대화상자는 볼륨 생성 화면의 입력 표준을 �
 | --- | --- | --- |
 | 이름 | DR 계획과 운영 화면에서 식별할 사이트 이름, 예시 표시 | 공백 불가 |
 | 설명 | 운영 메모 성격임을 표시 | 선택 입력 |
-| 유형 | ABLESTACK, ABLESTACK 관리 VMware, VMware Direct의 의미 설명 | 선택 필수 |
+| 유형 | 신규 등록은 ABLESTACK, VMware Direct만 제공 | 선택 필수 |
 | Mold API URL | `/client/api` 형식 예시 표시 | `http://` 또는 `https://` URL |
 | Mold API Key/Secret | 원격 Mold 계정의 API/Secret 키임을 설명 | 생성 시 전체 필수, 수정 시 전체 입력 또는 전체 미입력 |
 | vCenter URL | vCenter endpoint 예시 표시 | `http://` 또는 `https://` URL |
@@ -149,6 +149,8 @@ DR Site 추가/수정 대화상자는 볼륨 생성 화면의 입력 표준을 �
 - `vmwaredcname`: 원격 VMware Datacenter 표시 이름.
 - `zoneid`, `vmwaredcid`: local internal id 하위 호환 필드이며 신규 inventory select의 기본 값으로 사용하지 않는다.
 - `VMWARE_DIRECT`: vCenter를 직접 바라보므로 Mold Zone/VMware DC ID가 없다.
+
+신규 등록 UI는 `MOLD_KVM`, `VMWARE_DIRECT`만 선택지로 제공한다. `MOLD_VMWARE`는 기존 레코드의 조회 및 하위 호환을 위해 API와 표시 라벨에서만 유지하며 신규 등록 선택지에는 노출하지 않는다. `VMWARE_DIRECT`를 선택하면 vCenter URL, 사용자 이름, 비밀번호가 모두 실제 입력 컨트롤로 렌더링되어야 한다. 유형 변경 시 Vue가 이전 credential form item을 재사용하지 않도록 Mold/vCenter 분기와 각 입력에 서로 다른 안정적인 `key`를 부여한다. 사용자 이름 예시의 `@`는 Vue i18n linked-message 구문으로 해석되지 않도록 locale 원문에서 `{'@'}`로 표기하고, 화면에는 `administrator@vsphere.local`로 렌더링되는지 번역 컴파일 테스트로 검증한다. username 입력은 브라우저 credential 자동완성에 의해 모델 값이 초기화되지 않도록 별도 `name`/`autocomplete` 힌트를 강제하지 않는다.
 
 `DrSiteList.vue` advanced settings는 다음처럼 바꾼다.
 
@@ -472,8 +474,10 @@ Agent와 ftctl에는 변경이 필요하지 않다.
 | 테스트 | 기대 결과 |
 | --- | --- |
 | `VMWARE_DIRECT` site 추가 | Zone/VMware Datacenter advanced field가 보이지 않는다. |
+| `VMWARE_DIRECT` credential 표시 | vCenter URL, 사용자 이름, 비밀번호 입력이 모두 표시되고 입력 가능하다. |
+| 신규 site type 선택 | ABLESTACK과 VMware Direct만 표시되고 ABLESTACK 관리 VMware는 표시되지 않는다. |
 | `MOLD_KVM` site 추가 | Zone은 select로 표시되고 `listZones` 결과를 선택한다. VMware Datacenter field는 보이지 않는다. |
-| `MOLD_VMWARE` site 추가 | Zone 선택 후 VMware Datacenter select가 표시되고 `listVmwareDcs` 결과를 선택한다. |
+| 기존 `MOLD_VMWARE` site | 목록 및 상세 표시와 수정 호환은 유지하되 신규 site type 선택지에는 표시하지 않는다. |
 | create 모드 credential 미입력 | inventory API 호출 없이 placeholder/help text만 표시한다. |
 | edit 모드 기존 site | 저장 credential로 inventory를 조회하고 기존 `zoneid`, `vmwaredcid` 값을 select에 반영한다. |
 | 잘못된 Mold credential | async job 실패 또는 response reason을 UI error로 표시하고 secret을 노출하지 않는다. |

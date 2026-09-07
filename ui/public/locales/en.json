@@ -7273,7 +7273,7 @@
   "message.dr.site.mold.secret.key.tooltip": "Enter the matching secret key. The backend stores it securely and the UI does not display the original value again.",
   "message.dr.site.vcenter.url.placeholder": "https://vcenter.example.local",
   "message.dr.site.vcenter.url.tooltip": "Enter the vCenter endpoint used for VMware Direct DR operations.",
-  "message.dr.site.vcenter.username.placeholder": "administrator@vsphere.local",
+  "message.dr.site.vcenter.username.placeholder": "administrator{'@'}vsphere.local",
   "message.dr.site.vcenter.username.tooltip": "Enter a vCenter account that can query inventory and perform DR operations.",
   "message.dr.site.vcenter.password.placeholder": "vCenter password",
   "message.dr.site.vcenter.password.tooltip": "Enter the matching vCenter password. The backend stores it securely and the UI does not display the original value again.",

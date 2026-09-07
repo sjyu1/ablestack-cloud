@@ -7297,7 +7297,7 @@
   "message.dr.site.mold.secret.key.tooltip": "API 키와 쌍을 이루는 Secret 키를 입력합니다. 백엔드가 안전하게 저장하며 UI에는 원문을 다시 표시하지 않습니다.",
   "message.dr.site.vcenter.url.placeholder": "https://vcenter.example.local",
   "message.dr.site.vcenter.url.tooltip": "VMware Direct DR 작업에 사용할 vCenter 엔드포인트를 입력합니다.",
-  "message.dr.site.vcenter.username.placeholder": "administrator@vsphere.local",
+  "message.dr.site.vcenter.username.placeholder": "administrator{'@'}vsphere.local",
   "message.dr.site.vcenter.username.tooltip": "인벤토리 조회와 DR 작업을 수행할 수 있는 vCenter 계정을 입력합니다.",
   "message.dr.site.vcenter.password.placeholder": "vCenter 비밀번호",
   "message.dr.site.vcenter.password.tooltip": "vCenter 계정의 비밀번호를 입력합니다. 백엔드가 안전하게 저장하며 UI에는 원문을 다시 표시하지 않습니다.",

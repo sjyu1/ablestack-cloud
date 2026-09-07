@@ -162,6 +162,8 @@ DR Site 상세는 볼륨 상세 화면을 표준으로 삼는다. `ResourceLayou
 | `MOLD_KVM`, `MOLD_VMWARE` | Mold API URL, API Key, Secret Key, TLS 검증 여부 |
 | `VMWARE_DIRECT` 또는 VMware target | vCenter URL, vCenter username, vCenter password, TLS 검증 여부 |
 
+신규 DR Site 등록 UI에서 사용자가 선택할 수 있는 유형은 `MOLD_KVM`과 `VMWARE_DIRECT`로 제한한다. `MOLD_VMWARE`는 기존 데이터와 API 하위 호환을 위한 내부 유형으로만 유지한다. `VMWARE_DIRECT` 선택 시 URL, username, password 세 입력 컨트롤은 항상 함께 렌더링해야 하며 username은 브라우저 credential 자동완성에 종속되지 않는 일반 텍스트 입력을 사용한다.
+
 화면 표시 원칙:
 
 - `VMWARE_DIRECT` 선택 시 하이퍼바이저는 항상 `VMWARE`이므로 사용자 선택 필드로 노출하지 않는다. 필요하면 읽기 전용 요약으로만 표시한다.
