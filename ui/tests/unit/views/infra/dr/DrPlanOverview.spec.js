@@ -105,19 +105,18 @@ describe('DrPlanOverview current warning projection', () => {
     expect(wrapper.vm.riskSummary).toBe('Run reprotect.')
   })
 
-  test('shows remote source worker authority when no local host ID exists', () => {
+  test('does not expose transient source worker placement in plan details', () => {
     const wrapper = createWrapper({
       state: 'NEW',
       sourceworkerhostuuid: 'source-host-uuid',
       sourceworkerhostname: 'ablecube13-1'
     })
 
-    expect(wrapper.vm.sourceWorkerHostLabel).toBe('ablecube13-1 (source-host-uuid)')
-    expect(wrapper.vm.detailFields.find(field => field.key === 'sourceWorkerHost').value)
-      .toBe('ablecube13-1 (source-host-uuid)')
+    expect(wrapper.vm.sourceWorkerHostLabel).toBeUndefined()
+    expect(wrapper.vm.detailFields.find(field => field.key === 'sourceWorkerHost')).toBeUndefined()
   })
 
-  test('falls back to mapping source authority when convenience fields are absent', () => {
+  test('does not expose persisted source mapping as execution authority', () => {
     const wrapper = createWrapper({
       state: 'NEW',
       mappingjson: JSON.stringify({
@@ -130,6 +129,7 @@ describe('DrPlanOverview current warning projection', () => {
       })
     })
 
-    expect(wrapper.vm.sourceWorkerHostLabel).toBe('ablecube13-1 (source-host-uuid)')
+    expect(wrapper.vm.sourceWorkerHostLabel).toBeUndefined()
+    expect(wrapper.vm.detailFields.find(field => field.key === 'sourceWorkerHost')).toBeUndefined()
   })
 })

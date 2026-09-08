@@ -126,7 +126,7 @@ describe('Views > compute > RegisterFtctlProtection.vue', () => {
     expect(wrapper.vm.form.peerhostid).toBe('host-2')
   })
 
-  it('updates storage pools and FT endpoints when peer host changes', async () => {
+  it('updates storage pools while keeping FT endpoints automatically allocated', async () => {
     mockGetApi({
       hosts: [
         {
@@ -155,9 +155,10 @@ describe('Views > compute > RegisterFtctlProtection.vue', () => {
 
     expect(wrapper.vm.form.targetstoragepoolid).toBe('pool-1')
     expect(wrapper.vm.form.targetstoragescope).toBe('secondary-local')
-    expect(wrapper.vm.form.xcoloproxyendpoint).toBe('tcp:10.0.0.12:9000')
-    expect(wrapper.vm.form.xcolonbdendpoint).toBe('tcp:10.0.1.12:10809')
-    expect(wrapper.vm.form.xcolomigrateuri).toBe('tcp:10.0.1.12:9998')
+    expect(wrapper.vm.manualXcoloEndpoints).toBe(false)
+    expect(wrapper.vm.form.xcoloproxyendpoint).toBeNull()
+    expect(wrapper.vm.form.xcolonbdendpoint).toBeNull()
+    expect(wrapper.vm.form.xcolomigrateuri).toBeNull()
     expect(wrapper.vm.showBackendFields).toBe(false)
     expect(wrapper.vm.showStorageFields).toBe(true)
   })
@@ -421,7 +422,7 @@ describe('Views > compute > RegisterFtctlProtection.vue', () => {
     expect(wrapper.vm.remoteNbdExportAddressReadOnly).toBe(true)
   })
 
-  it('submits FT registerFtctlProtection with target storage pool and endpoints', async () => {
+  it('submits FT registration with automatic XCOLO port allocation', async () => {
     mockGetApi({
       hosts: [{ id: 'host-2', hypervisor: 'KVM', name: 'peer-host', ipaddress: '10.0.0.12' }],
       storagePools: [{ id: 'pool-1', name: 'pool-1', scope: 'HOST', state: 'Up' }]
@@ -457,9 +458,10 @@ describe('Views > compute > RegisterFtctlProtection.vue', () => {
       targetstoragepoolid: 'pool-1',
       peerhostid: 'host-2',
       secondaryvmname: 'vm-name-standby',
-      xcoloproxyendpoint: 'tcp:10.0.0.12:9000',
-      xcolonbdendpoint: 'tcp:10.0.0.12:10809',
-      xcolomigrateuri: 'tcp:10.0.0.12:9998'
+      xcoloportallocationmode: 'auto'
     })
+    expect(postAPI.mock.calls[0][1]).not.toHaveProperty('xcoloproxyendpoint')
+    expect(postAPI.mock.calls[0][1]).not.toHaveProperty('xcolonbdendpoint')
+    expect(postAPI.mock.calls[0][1]).not.toHaveProperty('xcolomigrateuri')
   })
 })
