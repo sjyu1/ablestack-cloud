@@ -74,6 +74,7 @@
     <bean id="drRunServiceImpl" class="com.cloud.dr.DrRunServiceImpl"/>
     <bean id="drProjectionServiceImpl" class="com.cloud.dr.DrProjectionServiceImpl"/>
     <bean id="drProtectionViewServiceImpl" class="com.cloud.dr.DrProtectionViewServiceImpl"/>
+    <bean id="drVmProtectionViewServiceImpl" class="com.cloud.dr.DrVmProtectionViewServiceImpl"/>
     <bean id="drProtectionAuthorityServiceImpl" class="com.cloud.dr.DrProtectionAuthorityServiceImpl"/>
     <bean id="drCurrentAuthorityResolverImpl" class="com.cloud.dr.DrCurrentAuthorityResolverImpl"/>
     <bean id="drFailbackPreflightServiceImpl" class="com.cloud.dr.DrFailbackPreflightServiceImpl"/>

@@ -25,6 +25,8 @@ import com.cloud.utils.db.GenericDao;
 public interface DrPlanDao extends GenericDao<DrPlanVO, Long> {
     DrPlanVO findActiveBySourceVmId(long sourceVmId);
 
+    List<DrPlanVO> listActiveBySourceVmId(long sourceVmId);
+
     DrPlanVO findActiveBySourceSiteAndExternalRef(long sourceSiteId, String sourceExternalRef);
 
     DrPlanVO findActiveByEngineBinding(String engineBindingType, long engineBindingId);

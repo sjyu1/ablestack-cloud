@@ -3,6 +3,7 @@ package com.cloud.dr.dao;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.List;
 
 import com.cloud.dr.DrTestSessionVO;
 import com.cloud.utils.db.DB;
@@ -17,6 +18,7 @@ public class DrTestSessionDaoImpl extends GenericDaoBase<DrTestSessionVO, Long> 
     private final SearchBuilder<DrTestSessionVO> activeByRun;
     private final SearchBuilder<DrTestSessionVO> activeByPlan;
     private final SearchBuilder<DrTestSessionVO> byRun;
+    private final SearchBuilder<DrTestSessionVO> activeByTargetVm;
 
     public DrTestSessionDaoImpl() {
         activeByRun = createSearchBuilder();
@@ -30,6 +32,10 @@ public class DrTestSessionDaoImpl extends GenericDaoBase<DrTestSessionVO, Long> 
         byRun = createSearchBuilder();
         byRun.and("runId", byRun.entity().getRunId(), SearchCriteria.Op.EQ);
         byRun.done();
+        activeByTargetVm = createSearchBuilder();
+        activeByTargetVm.and("targetVmId", activeByTargetVm.entity().getTargetVmId(), SearchCriteria.Op.EQ);
+        activeByTargetVm.and("removed", activeByTargetVm.entity().getRemoved(), SearchCriteria.Op.NULL);
+        activeByTargetVm.done();
     }
 
     @Override public DrTestSessionVO findActiveByRunId(long runId) {
@@ -48,6 +54,12 @@ public class DrTestSessionDaoImpl extends GenericDaoBase<DrTestSessionVO, Long> 
         SearchCriteria<DrTestSessionVO> sc = byRun.create();
         sc.setParameters("runId", runId);
         return findOneIncludingRemovedBy(sc);
+    }
+
+    @Override public List<DrTestSessionVO> listActiveByTargetVmId(long targetVmId) {
+        SearchCriteria<DrTestSessionVO> sc = activeByTargetVm.create();
+        sc.setParameters("targetVmId", targetVmId);
+        return listBy(sc);
     }
 
     @Override

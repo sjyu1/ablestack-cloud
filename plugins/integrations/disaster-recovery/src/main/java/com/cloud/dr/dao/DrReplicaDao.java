@@ -25,4 +25,6 @@ public interface DrReplicaDao extends GenericDao<DrReplicaVO, Long> {
     List<DrReplicaVO> listActiveByPlanId(long planId);
 
     DrReplicaVO findActiveByTargetVmId(long targetVmId);
+
+    List<DrReplicaVO> listActiveByTargetVmId(long targetVmId);
 }

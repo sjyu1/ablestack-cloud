@@ -35,6 +35,7 @@ const objectKeys = {
   getDrPlan: ['getdrplanresponse', 'drplan'],
   getDrFailbackPreflight: ['getdrfailbackpreflightresponse', 'drfailbackpreflight'],
   getDrProtectionView: ['getdrprotectionviewresponse', 'drprotectionview'],
+  getDrVmProtectionView: ['getdrvmprotectionviewresponse', 'drvmprotectionview'],
   getDrRun: ['getdrrunresponse', 'drrun'],
   createDrSite: ['createdrsiteresponse', 'drsite'],
   discoverDrSiteInventory: ['discoverdrsiteinventoryresponse', 'drsiteinventory'],
@@ -235,6 +236,11 @@ export function getDrFailbackPreflight (planId) {
 
 export function getDrProtectionView (planId) {
   return getAPI('getDrProtectionView', { planid: planId }).then(response => extractDrObject(response, 'getDrProtectionView'))
+}
+
+export function getDrVmProtectionView (virtualMachineId) {
+  return getAPI('getDrVmProtectionView', { virtualmachineid: virtualMachineId })
+    .then(response => extractDrObject(response, 'getDrVmProtectionView'))
 }
 
 export function refreshDrProtectionView (planId) {

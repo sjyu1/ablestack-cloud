@@ -72,7 +72,7 @@
           :columns="['displayname', 'state', 'type', 'created']"
           :routerlinks="(record) => { return { displayname: '/vmsnapshot/' + record.id } }"/>
       </a-tab-pane>
-      <a-tab-pane :tab="$t('label.dr.plans')" key="drplans" v-if="'listDrPlans' in $store.getters.apis">
+      <a-tab-pane :tab="$t('label.dr.plans')" key="drplans" v-if="'getDrVmProtectionView' in $store.getters.apis">
         <DrPlanVmTab :resource="vm" :loading="loading" />
       </a-tab-pane>
       <a-tab-pane :tab="$t('label.backup')" key="backups" v-if="'listBackups' in $store.getters.apis">
@@ -493,7 +493,7 @@ export default {
         tab = new URLSearchParams(queryString).get('tab')
       }
       if (tab === 'disasterrecoverycluster') {
-        return 'listDrPlans' in this.$store.getters.apis ? 'drplans' : 'details'
+        return 'getDrVmProtectionView' in this.$store.getters.apis ? 'drplans' : 'details'
       }
       return tab || 'details'
     },

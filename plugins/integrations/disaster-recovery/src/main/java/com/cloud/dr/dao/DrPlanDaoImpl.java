@@ -82,6 +82,13 @@ public class DrPlanDaoImpl extends GenericDaoBase<DrPlanVO, Long> implements DrP
     }
 
     @Override
+    public List<DrPlanVO> listActiveBySourceVmId(long sourceVmId) {
+        SearchCriteria<DrPlanVO> sc = activeBySourceVmSearch.create();
+        sc.setParameters("sourceVmId", sourceVmId);
+        return listBy(sc);
+    }
+
+    @Override
     public DrPlanVO findActiveBySourceSiteAndExternalRef(long sourceSiteId, String sourceExternalRef) {
         SearchCriteria<DrPlanVO> sc = activeBySourceSiteExternalRefSearch.create();
         sc.setParameters("sourceSiteId", sourceSiteId);

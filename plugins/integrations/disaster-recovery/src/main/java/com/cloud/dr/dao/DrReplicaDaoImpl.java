@@ -55,4 +55,11 @@ public class DrReplicaDaoImpl extends GenericDaoBase<DrReplicaVO, Long> implemen
         sc.setParameters("targetVmId", targetVmId);
         return findOneBy(sc);
     }
+
+    @Override
+    public List<DrReplicaVO> listActiveByTargetVmId(long targetVmId) {
+        SearchCriteria<DrReplicaVO> sc = activeByTargetVmSearch.create();
+        sc.setParameters("targetVmId", targetVmId);
+        return listBy(sc);
+    }
 }
