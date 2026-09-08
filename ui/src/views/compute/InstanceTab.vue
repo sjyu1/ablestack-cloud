@@ -72,34 +72,6 @@
           :columns="['displayname', 'state', 'type', 'created']"
           :routerlinks="(record) => { return { displayname: '/vmsnapshot/' + record.id } }"/>
       </a-tab-pane>
-      <a-tab-pane :tab="$t('label.dr')" key="disasterrecoverycluster" v-if="'createDisasterRecoveryClusterVm' in $store.getters.apis">
-        <a-button
-          type="primary"
-          style="width: 100%; margin-bottom: 10px"
-          @click="showAddMirVMModal"
-          :loading="loadingMirror"
-          :disabled="!('createDisasterRecoveryClusterVm' in $store.getters.apis)">
-          <template #icon><plus-outlined /></template> {{ $t('label.add.dr.mirroring.vm') }}
-        </a-button>
-        <DRTable :resource="vm" :loading="loading">
-          <template #actions="record">
-            <tooltip-button
-              tooltipPlacement="bottom"
-              :tooltip="$t('label.dr.simulation.test')"
-              icon="ExperimentOutlined"
-              :disabled="!('connectivityTestsDisasterRecovery' in $store.getters.apis)"
-              @onClick="DrSimulationTest(record)" />
-            <tooltip-button
-              tooltipPlacement="bottom"
-              :tooltip="$t('label.dr.remove.mirroring')"
-              :disabled="!('deleteDisasterRecoveryClusterVm' in $store.getters.apis)"
-              type="primary"
-              :danger="true"
-              icon="link-outlined"
-              @onClick="removeMirror(record)" />
-          </template>
-        </DRTable>
-      </a-tab-pane>
       <a-tab-pane :tab="$t('label.dr.plans')" key="drplans" v-if="'listDrPlans' in $store.getters.apis">
         <DrPlanVmTab :resource="vm" :loading="loading" />
       </a-tab-pane>
@@ -253,36 +225,6 @@
       <CreateVolume :resource="resource" @close-action="closeModals" />
     </a-modal>
 
-    <a-modal
-      :visible="showAddMirrorVMModal"
-      :title="$t('label.add.dr.mirroring.vm')"
-      :maskClosable="false"
-      :closable="true"
-      :footer="null"
-      @cancel="closeModals">
-      <DRMirroringVMAdd :resource="resource" @close-action="closeModals" />
-    </a-modal>
-
-    <a-modal
-      :visible="showDrSimulationTestModal"
-      :title="$t('label.dr.simulation.test')"
-      :maskClosable="false"
-      :closable="true"
-      :footer="null"
-      width="850px"
-      @cancel="closeModals">
-      <DRsimulationTestModal :resource="resource" @close-action="closeModals" />
-    </a-modal>
-
-    <a-modal
-      :visible="showRemoveMirrorVMModal"
-      :title="$t('label.dr.remove.mirroring')"
-      :maskClosable="false"
-      :closable="true"
-      :footer="null"
-      @cancel="closeModals">
-      <DRMirroringVMRemove :resource="resource" @close-action="closeModals" />
-    </a-modal>
   </a-spin>
 </template>
 
@@ -301,15 +243,10 @@ import NicsTab from '@/views/network/NicsTab'
 import GuestNetworkTab from '@/views/compute/GuestNetworkTab'
 import InstanceSchedules from '@/views/compute/InstanceSchedules.vue'
 import ListResourceTable from '@/components/view/ListResourceTable'
-import TooltipButton from '@/components/widgets/TooltipButton'
 import ResourceIcon from '@/components/view/ResourceIcon'
 import AnnotationsTab from '@/components/view/AnnotationsTab'
 import VolumesTab from '@/components/view/VolumesTab.vue'
 import SecurityGroupSelection from '@views/compute/wizard/SecurityGroupSelection'
-import DRTable from '@/views/compute/dr/DRTable'
-import DRsimulationTestModal from '@/views/compute/dr/DRsimulationTestModal'
-import DRMirroringVMAdd from '@/views/compute/dr/DRMirroringVMAdd'
-import DRMirroringVMRemove from '@/views/compute/dr/DRMirroringVMRemove'
 import DrPlanVmTab from '@/views/compute/dr/DrPlanVmTab.vue'
 import GPUTab from '@/components/view/GPUTab.vue'
 import FtctlTab from '@/views/compute/FtctlTab.vue'
@@ -325,17 +262,12 @@ export default {
     CreateVolume,
     NicsTab,
     GuestNetworkTab,
-    DRTable,
-    DRsimulationTestModal,
-    DRMirroringVMAdd,
-    DRMirroringVMRemove,
     DrPlanVmTab,
     GPUTab,
     FtctlTab,
     InstanceSchedules,
     ListResourceTable,
     SecurityGroupSelection,
-    TooltipButton,
     ResourceIcon,
     AnnotationsTab,
     VolumesTab
@@ -360,10 +292,6 @@ export default {
       showUpdateSecurityGroupsModal: false,
       showAddVolumeModal: false,
       diskOfferings: [],
-      showAddMirrorVMModal: false,
-      showDrSimulationTestModal: false,
-      showRemoveMirrorVMModal: false,
-      loadingMirror: false,
       annotations: [],
       dataResource: {},
       editeNic: '',
@@ -556,17 +484,18 @@ export default {
       }
     },
     resolveCurrentTabFromRoute () {
+      let tab = null
       if (this.$route?.query?.tab) {
-        return this.$route.query.tab
+        tab = this.$route.query.tab
       }
-      if (typeof window !== 'undefined' && window.location?.hash) {
+      if (!tab && typeof window !== 'undefined' && window.location?.hash) {
         const queryString = window.location.hash.split('?')[1] || ''
-        const tab = new URLSearchParams(queryString).get('tab')
-        if (tab) {
-          return tab
-        }
+        tab = new URLSearchParams(queryString).get('tab')
       }
-      return 'details'
+      if (tab === 'disasterrecoverycluster') {
+        return 'listDrPlans' in this.$store.getters.apis ? 'drplans' : 'details'
+      }
+      return tab || 'details'
     },
     async fetchData () {
       this.annotations = []
@@ -627,15 +556,9 @@ export default {
       this.showUpdateSecurityGroupsModal = true
       this.loadingSG = false
     },
-    showAddMirVMModal () {
-      this.showAddMirrorVMModal = true
-    },
     closeModals () {
       this.showAddVolumeModal = false
       this.showUpdateSecurityGroupsModal = false
-      this.showAddMirrorVMModal = false
-      this.showRemoveMirrorVMModal = false
-      this.showDrSimulationTestModal = false
     },
     updateSecurityGroupsSelection (securitygroupids) {
       this.securitygroupids = securitygroupids || []
@@ -647,12 +570,6 @@ export default {
         this.closeModals()
         this.parentFetchData()
       })
-    },
-    DrSimulationTest () {
-      this.showDrSimulationTestModal = true
-    },
-    removeMirror () {
-      this.showRemoveMirrorVMModal = true
     },
     async handleChangeTab (activeKey) {
       // Load host device data only when the device tab is selected.
