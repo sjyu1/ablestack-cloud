@@ -921,6 +921,10 @@ public class FtctlDrUnifiedActionAdapterTest {
         Mockito.when(drRestorePointDao.findLatestTargetReadyByPlanId(plan.getId())).thenReturn(checkpoint);
         ArgumentCaptor<FtctlDrActionCommand> commandCaptor = ArgumentCaptor.forClass(FtctlDrActionCommand.class);
         mockCapabilities();
+        Mockito.when(agentManager.easySend(Mockito.eq(103L), Mockito.argThat(command ->
+                command instanceof FtctlDrActionCommand
+                        && ((FtctlDrActionCommand) command).getAction() == FtctlDrActionCommand.Action.PAUSE_SYNC)))
+                .thenAnswer(invocation -> new FtctlDrActionAnswer(invocation.getArgument(1), true, "paused"));
         Mockito.when(agentManager.send(Mockito.eq(103L), commandCaptor.capture())).thenAnswer(invocation -> {
             FtctlDrActionCommand command = invocation.getArgument(1);
             return new FtctlDrActionAnswer(command, true, "accepted", FtctlDrActionCommand.Action.TEST_PREPARE,
@@ -931,8 +935,43 @@ public class FtctlDrUnifiedActionAdapterTest {
         DrAdapterResult result = adapter.execute(new DrExecutionContext(plan, run));
 
         Assert.assertTrue(result.isSuccess());
-        Assert.assertTrue(commandCaptor.getValue().getArtifactSpecJson()
+        FtctlDrActionCommand action = commandCaptor.getValue();
+        Assert.assertTrue(action.getArtifactSpecJson()
                 .contains("\"canonicalLocator\":\"file:/mnt/glue-gfs/rocky9-vm-dr-disk-0\""));
+        Assert.assertTrue(action.getArtifactSpecJson().contains("\"checkpointImmutableRequired\":true"));
+        Assert.assertTrue(action.getRequestJson().contains("\"checkpointWriterState\":\"DRAINED\""));
+        org.mockito.InOrder order = Mockito.inOrder(agentManager);
+        order.verify(agentManager).easySend(Mockito.eq(103L), Mockito.isA(FtctlDrActionCommand.class));
+        order.verify(agentManager).send(Mockito.eq(103L), Mockito.isA(FtctlDrActionCommand.class));
+    }
+
+    @Test
+    public void vmwareSharedMountPointTestCleanupResumesLocalProtectionScheduler() throws Exception {
+        DrPlanVO plan = ftctlDrPlan();
+        plan.setMappingJson("{\"target\":{\"storagePoolType\":\"SharedMountPoint\",\"storagePath\":\"/mnt/glue-gfs\"},"
+                + "\"disks\":[{\"device\":\"sda\",\"target\":{\"path\":\"windows-dr-disk-0\","
+                + "\"storagePoolType\":\"SharedMountPoint\",\"storagePath\":\"/mnt/glue-gfs\",\"format\":\"qcow2\"}}]}");
+        DrRunVO run = run(DrConstants.RUN_TYPE_TEST_CLEANUP, "{}");
+        mockCapabilities();
+        Mockito.when(agentManager.send(Mockito.eq(103L), Mockito.isA(FtctlDrActionCommand.class)))
+                .thenAnswer(invocation -> new FtctlDrActionAnswer(invocation.getArgument(1), true, "cleaned",
+                        FtctlDrActionCommand.Action.TEST_ARTIFACT_CLEANUP, plan.getUuid(), run.getUuid(),
+                        "success", true, "READY", "test-cleanup-completed", 100, run.getUuid(), 0L,
+                        null, 0, "{\"result\":\"success\"}", "{\"state\":\"READY\"}"));
+        Mockito.when(agentManager.easySend(Mockito.eq(103L), Mockito.argThat(command ->
+                command instanceof FtctlDrActionCommand
+                        && ((FtctlDrActionCommand) command).getAction() == FtctlDrActionCommand.Action.RESUME_SYNC)))
+                .thenAnswer(invocation -> new FtctlDrActionAnswer(invocation.getArgument(1), true, "resumed"));
+
+        DrAdapterResult result = adapter.execute(new DrExecutionContext(plan, run));
+
+        Assert.assertTrue(result.isSuccess());
+        Mockito.verify(agentManager).easySend(Mockito.eq(103L), Mockito.argThat(command ->
+                command instanceof FtctlDrActionCommand
+                        && ((FtctlDrActionCommand) command).getAction() == FtctlDrActionCommand.Action.RESUME_SYNC));
+        Mockito.verify(drRemoteAgentClient, Mockito.never()).transitionSourceScheduler(
+                Mockito.eq(plan), Mockito.any(FtctlDrActionCommand.Action.class),
+                Mockito.eq(run.getUuid()), Mockito.anyString());
     }
 
     @Test
@@ -1058,12 +1097,13 @@ public class FtctlDrUnifiedActionAdapterTest {
         Mockito.when(drRestorePointDao.findLatestTargetReadyByPlanId(plan.getId()))
                 .thenReturn(checkpoint(plan, "ftctl:" + plan.getUuid() + ":run-sync:2"));
         mockCapabilities();
-
         DrAdapterResult result = adapter.execute(new DrExecutionContext(plan, run));
 
         Assert.assertFalse(result.isSuccess());
         Assert.assertEquals("DR_TEST_ARTIFACT_SPEC_INVALID", result.getErrorCode());
         Mockito.verify(agentManager, Mockito.never()).send(Mockito.eq(103L), Mockito.isA(FtctlDrActionCommand.class));
+        Mockito.verify(agentManager, Mockito.never()).easySend(
+                Mockito.eq(103L), Mockito.isA(FtctlDrActionCommand.class));
     }
 
     @Test

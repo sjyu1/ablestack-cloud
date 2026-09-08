@@ -211,6 +211,28 @@ public class FtctlDrRuntimeProjectionAdapterTest {
     }
 
     @Test
+    public void vmwareCutoverUsesFinalOperationCheckpointInsteadOfStaleSchedulerCheckpoint() {
+        DrPlanVO plan = new DrPlanVO("vmware-file-cutover-sequence", 1L, 2L,
+                "VMWARE_TO_KVM");
+        FtctlDrStatusAnswer status = Mockito.mock(FtctlDrStatusAnswer.class);
+        Mockito.when(status.getState()).thenReturn("CUTOVER_READY");
+        Mockito.when(status.getGuestPreparationState()).thenReturn("READY");
+        Mockito.when(status.getManifestSchemaVersion()).thenReturn("FTCTL_GUESTPREP_MANIFEST_V2");
+        Mockito.when(status.getManifestSha256()).thenReturn(String.join("", Collections.nCopies(64, "a")));
+        Mockito.when(status.getGuestPreparationCheckpointSequence()).thenReturn(37L);
+        Mockito.when(status.getTargetDiskCount()).thenReturn(1);
+        JsonObject runtime = JsonParser.parseString("{\"state\":\"CUTOVER_READY\","
+                + "\"checkpoint_sequence\":37,\"failover_restore_point_sequence\":37,"
+                + "\"latest_completed_checkpoint_sequence\":36}")
+                .getAsJsonObject();
+
+        Boolean ready = ReflectionTestUtils.invokeMethod(adapter,
+                "isCutoverReadyRuntime", plan, status, runtime);
+
+        Assert.assertTrue(Boolean.TRUE.equals(ready));
+    }
+
+    @Test
     public void disasterFailoverStatusNeverPollsRemoteSource() {
         DrPlanVO plan = new DrPlanVO("target-disaster-status", 1L, 2L,
                 DrConstants.DIRECTION_KVM_TO_KVM);

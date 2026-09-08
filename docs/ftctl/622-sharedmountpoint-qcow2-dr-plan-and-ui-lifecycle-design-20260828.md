@@ -353,27 +353,39 @@ the corrected GFS replica is durable and no process has it open.
 
 The controller must establish a stable FILE checkpoint before it asks FTCTL to
 materialize a Test Failover disk. Request acceptance and a Running libvirt VM
-are not sufficient. The existing Plan remains the only validation object.
+are not sufficient. The existing Plan remains the only validation object. This
+rule is selected from the target storage contract, not from the source
+provider: VMware-to-SharedMountPoint and KVM-to-SharedMountPoint use the same
+immutable FILE boundary after their provider-specific capture has committed.
 
-For remote `KVM_TO_KVM` SharedMountPoint plans, Cloud owns this transition:
+For every SharedMountPoint target plan, Cloud owns this transition. A remote
+`KVM_TO_KVM` plan pauses its source scheduler through the source Site Agent; a
+locally managed VMware plan pauses the VDDK data-plane scheduler through the
+automatically selected local coordinator:
 
 1. submit and persist the asynchronous Test Failover Run;
-2. pause the source scheduler through the registered source Site Agent;
-3. stop and drain the Plan-owned forward target export;
-   this Test Failover drain never carries a cutover checkpoint sequence and
+2. pause the provider scheduler through its owning Agent and wait for a
+   terminal pause acknowledgement;
+3. reread the latest target-ready restore point after the pause and bind that
+   sequence and token to both the request and artifact specification;
+4. stop and drain a Plan-owned forward target export when that transport is in
+   use;
+   its checkpoint sequence identifies the immutable Test Failover boundary and
    never creates a reverse Failover baseline;
-4. dispatch `TEST_PREPARE` with the same latest durable sequence and
+5. dispatch `TEST_PREPARE` with the same latest durable sequence and
    checkpoint reference in both request and artifact contract;
-5. project FTCTL `checkpoint_lease_state=HELD`,
+6. project FTCTL `checkpoint_lease_state=HELD`,
    `test_checkpoint_seal_state=SEALED`, and
    `test_checkpoint_integrity_state=PASSED` before target VM creation;
-6. continue through Cloud volume import, test VM creation, and configured boot
+7. continue through Cloud volume import, test VM creation, and configured boot
    validation;
-7. on Test Cleanup or pre-materialization failure, restart the forward export
-   and resume the source scheduler without DB repair.
+8. on Test Cleanup or pre-materialization failure, restart the applicable
+   transport and resume the same provider scheduler without DB repair.
 
-The Cloud transition is provider-scoped. VMware-to-RBD and RBD-to-RBD retain
-their existing action order. A FILE transition failure must compensate only
+The provider-specific capture remains unchanged. VMware-to-RBD and RBD-to-RBD
+retain their existing action order, while VMware-to-SharedMountPoint adds the
+FILE boundary only after the existing VMware durable checkpoint. A FILE
+transition failure must compensate only
 resources that were acquired by that Run and must preserve the original
 structured error.
 
@@ -996,3 +1008,32 @@ passed to Reprotect and must not be rewritten to the Cloud row sequence.
 Regression coverage must include an FTCTL checkpoint, token suffix, and Cloud
 row sequence that are all different. VMware-to-RBD and RBD-to-RBD retain their
 existing checkpoint validation paths.
+
+## 32. VMware FILE cutover checkpoint authority
+
+A planned VMware failover creates one final operation-owned checkpoint after
+the preceding scheduler Cycle. During `CUTOVER_READY`, the guest preparation
+manifest belongs to that final checkpoint. The older
+`latest_completed_checkpoint_sequence` remains scheduler history and must not
+be used to reject the cutover.
+
+Cloud resolves the promotion sequence in this order:
+
+1. `failover_restore_point_sequence`;
+2. operation `checkpoint_sequence`;
+3. latest completed scheduler sequence only as a legacy fallback.
+
+The guest preparation sequence must equal the resolved promotion sequence and
+the final checkpoint must already have a durable restore point. This preserves
+the existing VMware-to-RBD capture contract while allowing the same VMware CBT
+producer to promote a SharedMountPoint qcow2 target.
+
+| Layer | AS-IS | TO-BE |
+| --- | --- | --- |
+| Cloud projection | Compares the final guest manifest with the previous scheduler Cycle | Compares it with the operation-owned failover checkpoint |
+| UI Run | Remains `RUNNING / runtime-transfer` after FTCTL reaches `CUTOVER_READY` | Proceeds through target power-on, commit acknowledgement, and `SUCCEEDED` |
+| Existing paths | VMware capture works but target format leaks into cutover sequencing | VMware capture remains unchanged; target-specific reverse baseline is isolated |
+
+Regression coverage must include `latest_completed=36`, final checkpoint 37,
+and guest preparation sequence 37. A stale or mismatched guest preparation
+sequence must remain blocked.

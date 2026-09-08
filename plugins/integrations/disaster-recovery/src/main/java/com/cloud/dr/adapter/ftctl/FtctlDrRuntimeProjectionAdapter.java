@@ -1818,11 +1818,14 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
                 stringValue(runtime, "manifest_sha256"));
         Long manifestCheckpoint = status.getGuestPreparationCheckpointSequence() != null
                 ? status.getGuestPreparationCheckpointSequence() : longValue(runtime, "guestprep_checkpoint_sequence");
-        Long durableCheckpoint = status.getLatestCompletedCheckpointSequence() != null
-                ? status.getLatestCompletedCheckpointSequence()
-                : longValue(runtime, "latest_completed_checkpoint_sequence");
-        if (durableCheckpoint == null) {
-            durableCheckpoint = longValue(runtime, "checkpoint_sequence");
+        Long cutoverCheckpoint = longValue(runtime, "failover_restore_point_sequence");
+        if (cutoverCheckpoint == null) {
+            cutoverCheckpoint = longValue(runtime, "checkpoint_sequence");
+        }
+        if (cutoverCheckpoint == null) {
+            cutoverCheckpoint = status.getLatestCompletedCheckpointSequence() != null
+                    ? status.getLatestCompletedCheckpointSequence()
+                    : longValue(runtime, "latest_completed_checkpoint_sequence");
         }
         Integer targetDiskCount = firstInteger(status.getTargetDiskCount(), integerValue(runtime, "target_disk_count"));
         boolean vmwareCutoverReady = StringUtils.equalsIgnoreCase(plan.getDirection(), "VMWARE_TO_KVM")
@@ -1832,7 +1835,7 @@ public class FtctlDrRuntimeProjectionAdapter extends ManagerBase implements DrPr
                 && StringUtils.length(manifestSha256) == 64
                 && manifestSha256.matches("[0-9a-fA-F]{64}")
                 && manifestCheckpoint != null
-                && (durableCheckpoint == null || manifestCheckpoint.equals(durableCheckpoint))
+                && manifestCheckpoint.equals(cutoverCheckpoint)
                 && targetDiskCount != null && targetDiskCount > 0;
         if (vmwareCutoverReady) {
             return true;

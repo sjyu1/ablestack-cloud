@@ -233,6 +233,7 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
         FtctlDrActionCommand.Action action = resolveAction(context.getRun());
         boolean testCheckpointBarrier = action == FtctlDrActionCommand.Action.TEST_PREPARE
                 && requiresTestCheckpointBarrier(context.getPlan());
+        boolean testCheckpointBarrierAcquired = false;
         boolean testCheckpointCleanup = action == FtctlDrActionCommand.Action.TEST_ARTIFACT_CLEANUP
                 && requiresTestCheckpointBarrier(context.getPlan());
         boolean plannedRemoteKvmIsolationRequired = requiresPlannedRemoteKvmIsolation(context, action);
@@ -289,6 +290,7 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
             command = buildActionCommand(context, action, sourceHardware);
             applyPlannedFileSourceQuiesceContract(context, action, command);
             preparePlanOwnedTransport(context, action, command);
+            testCheckpointBarrierAcquired = testCheckpointBarrier;
             if (plannedRemoteKvmIsolationRequired) {
                 DrAdapterResult isolationFailure = preparePlannedRemoteKvmIsolation(context, command);
                 if (isolationFailure != null) {
@@ -301,11 +303,11 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
                 command.setAuthoritySpecJson(GSON.toJson(reprotectPreflight.getAuthoritySpec()));
             }
         } catch (IllegalArgumentException e) {
-            compensateTestCheckpointBarrier(context, testCheckpointBarrier);
+            compensateTestCheckpointBarrier(context, testCheckpointBarrierAcquired);
             return DrAdapterResult.failure("DR_TEST_ARTIFACT_SPEC_INVALID", e.getMessage(),
                     GSON.toJson(buildExecutionDetails(context, action, coordinatorHostId)));
         } catch (CloudRuntimeException e) {
-            compensateTestCheckpointBarrier(context, testCheckpointBarrier);
+            compensateTestCheckpointBarrier(context, testCheckpointBarrierAcquired);
             return DrAdapterResult.retryable(DrConstants.ERROR_ENGINE_UNAVAILABLE,
                     "Unable to prepare remote DR transport: " + e.getMessage(),
                     GSON.toJson(buildExecutionDetails(context, action, coordinatorHostId)), 10);
@@ -320,12 +322,12 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
         try {
             Answer answer = sendActionCommand(context, action, coordinatorHostId, command);
             DrAdapterResult result = toAdapterResult(context, action, coordinatorHostId, answer);
-            if (testCheckpointBarrier && !result.isSuccess()) {
+            if (testCheckpointBarrierAcquired && !result.isSuccess()) {
                 compensateTestCheckpointBarrier(context, true);
             } else if (plannedRemoteKvmIsolated && !result.isSuccess()) {
                 compensatePlannedRemoteKvmIsolation(context);
             } else if (testCheckpointCleanup && result.isSuccess()) {
-                resumeRemoteSourceProtection(context.getPlan(), context.getRun());
+                resumeTestCheckpointProtection(context);
             }
             return result;
         } catch (OperationTimedoutException e) {
@@ -334,7 +336,7 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
             if (acceptedFromStatus != null) {
                 return acceptedFromStatus;
             }
-            compensateTestCheckpointBarrier(context, testCheckpointBarrier);
+            compensateTestCheckpointBarrier(context, testCheckpointBarrierAcquired);
             if (plannedRemoteKvmIsolated) {
                 compensatePlannedRemoteKvmIsolation(context);
             }
@@ -342,7 +344,7 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
                     "Unable to dispatch FTCTL_DR run to Agent: " + e.getMessage(), GSON.toJson(buildExecutionDetails(context, action, coordinatorHostId)));
         } catch (AgentUnavailableException e) {
             LOGGER.warn("FTCTL_DR coordinator Agent is unavailable for run {} on host {}: {}", context.getRun().getId(), coordinatorHostId, e.getMessage());
-            compensateTestCheckpointBarrier(context, testCheckpointBarrier);
+            compensateTestCheckpointBarrier(context, testCheckpointBarrierAcquired);
             if (plannedRemoteKvmIsolated) {
                 compensatePlannedRemoteKvmIsolation(context);
             }
@@ -350,7 +352,7 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
                     "FTCTL_DR coordinator Agent is unavailable: " + e.getMessage(), GSON.toJson(buildExecutionDetails(context, action, coordinatorHostId)));
         } catch (CloudRuntimeException e) {
             LOGGER.warn("FTCTL_DR remote site dispatch failed for run {}: {}", context.getRun().getId(), e.getMessage());
-            compensateTestCheckpointBarrier(context, testCheckpointBarrier);
+            compensateTestCheckpointBarrier(context, testCheckpointBarrierAcquired);
             if (plannedRemoteKvmIsolated) {
                 compensatePlannedRemoteKvmIsolation(context);
             }
@@ -593,26 +595,36 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
             FtctlDrActionCommand command) {
         DrPlanVO plan = context.getPlan();
         boolean immutableFileCheckpoint = isSharedMountPointFilePlan(plan);
-        FtctlDrActionAnswer pause = drRemoteAgentClient.transitionSourceScheduler(plan,
-                FtctlDrActionCommand.Action.PAUSE_SYNC, context.getRun().getUuid(), command.getProfileJson());
+        FtctlDrActionAnswer pause = transitionTestCheckpointScheduler(context,
+                FtctlDrActionCommand.Action.PAUSE_SYNC, command.getProfileJson());
         if (pause == null || !pause.getResult()) {
-            throw new CloudRuntimeException("Remote source scheduler did not acknowledge the immutable checkpoint barrier");
+            throw new CloudRuntimeException("Protection scheduler did not acknowledge the immutable checkpoint barrier");
         }
-        JsonObject request = parseObject(command.getRequestJson());
-        Long checkpointSequence = firstLong(request, "checkpointSequence");
-        if (checkpointSequence == null || checkpointSequence <= 0L) {
-            throw new CloudRuntimeException("A positive durable checkpoint sequence is required for FILE Test Failover");
+        try {
+            DrRestorePointVO checkpoint = drRestorePointDao.findLatestTargetReadyByPlanId(plan.getId());
+            Long checkpointSequence = checkpoint != null ? checkpoint.getCheckpointSequence() : null;
+            if (checkpointSequence == null || checkpointSequence <= 0L) {
+                throw new CloudRuntimeException("A positive durable checkpoint sequence is required for Test Failover");
+            }
+            JsonObject request = parseObject(command.getRequestJson());
+            addControllerCheckpointEvidence(request, plan, checkpoint);
+            drPlanOwnedTransportService.stopForwardTargetExport(plan, context.getRun(),
+                    command.getProfileJson(), checkpointSequence);
+            request.addProperty("checkpointWriterState", "DRAINED");
+            request.addProperty("checkpointImmutableRequired", immutableFileCheckpoint);
+            command.setRequestJson(GSON.toJson(request));
+            JsonObject profile = parseObject(command.getProfileJson());
+            JsonObject profileRequest = objectAt(profile, "request");
+            addControllerCheckpointEvidence(profileRequest, plan, checkpoint);
+            profileRequest.addProperty("checkpointWriterState", "DRAINED");
+            profileRequest.addProperty("checkpointImmutableRequired", immutableFileCheckpoint);
+            command.setProfileJson(GSON.toJson(profile));
+            command.setCheckpointRef(checkpoint.getSourceSnapshotRef());
+            command.setArtifactSpecJson(buildTestArtifactSpec(plan, context.getRun(), checkpoint));
+        } catch (RuntimeException e) {
+            compensateTestCheckpointBarrier(context, true);
+            throw e;
         }
-        drPlanOwnedTransportService.stopForwardTargetExport(plan, context.getRun(),
-                command.getProfileJson(), checkpointSequence);
-        request.addProperty("checkpointWriterState", "DRAINED");
-        request.addProperty("checkpointImmutableRequired", immutableFileCheckpoint);
-        command.setRequestJson(GSON.toJson(request));
-        JsonObject profile = parseObject(command.getProfileJson());
-        JsonObject profileRequest = objectAt(profile, "request");
-        profileRequest.addProperty("checkpointWriterState", "DRAINED");
-        profileRequest.addProperty("checkpointImmutableRequired", immutableFileCheckpoint);
-        command.setProfileJson(GSON.toJson(profile));
     }
 
     private void compensateTestCheckpointBarrier(DrExecutionContext context, boolean required) {
@@ -620,11 +632,54 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
             return;
         }
         try {
-            resumeRemoteSourceProtection(context.getPlan(), context.getRun());
+            resumeTestCheckpointProtection(context);
         } catch (RuntimeException compensationFailure) {
             LOGGER.error("Unable to restore FILE DR protection after Test Failover preparation failed for Plan {}: {}",
                     context.getPlan().getUuid(), compensationFailure.getMessage(), compensationFailure);
         }
+    }
+
+    private void resumeTestCheckpointProtection(DrExecutionContext context) {
+        FtctlDrActionAnswer resume = transitionTestCheckpointScheduler(context,
+                FtctlDrActionCommand.Action.RESUME_SYNC, buildProfileJson(
+                        context.getPlan(), context.getRun(), redactJson(requestJson(context.getRun())).getAsJsonObject()));
+        if (resume == null || !resume.getResult()) {
+            throw new CloudRuntimeException("Protection scheduler did not acknowledge Test Failover cleanup resume");
+        }
+    }
+
+    private FtctlDrActionAnswer transitionTestCheckpointScheduler(DrExecutionContext context,
+            FtctlDrActionCommand.Action action, String profileJson) {
+        DrPlanVO plan = context.getPlan();
+        DrRunVO run = context.getRun();
+        if (isRemoteKvmToKvmPlan(plan)) {
+            return drRemoteAgentClient.transitionSourceScheduler(plan, action, run.getUuid(), profileJson);
+        }
+        Long coordinatorHostId = resolveCoordinatorHostId(plan);
+        if (coordinatorHostId == null || coordinatorHostId <= 0L) {
+            throw new CloudRuntimeException("A local protection scheduler host is required for checkpoint transition");
+        }
+        String runType = action == FtctlDrActionCommand.Action.PAUSE_SYNC
+                ? DrConstants.RUN_TYPE_PAUSE_SYNC : DrConstants.RUN_TYPE_RESUME_SYNC;
+        FtctlDrActionCommand transition = new FtctlDrActionCommand(action, plan.getUuid(),
+                DrRemoteAgentClient.sourceTransitionRunUuid(plan.getUuid(), run.getUuid(), action));
+        transition.setActionName(action.name());
+        transition.setCliCommand(action.getCliCommand());
+        transition.setRunType(runType);
+        transition.setActionIntent(runType);
+        transition.setDirection(plan.getDirection());
+        transition.setRole("coordinator");
+        transition.setSourceWorkerUuid(resolveHostUuid(resolveWorkerHostId(plan, run, DrWorkerRole.SOURCE)));
+        transition.setTargetWorkerUuid(resolveHostUuid(resolveWorkerHostId(plan, run, DrWorkerRole.TARGET)));
+        transition.setCoordinatorWorkerUuid(resolveHostUuid(coordinatorHostId));
+        transition.setProfileJson(profileJson);
+        transition.setWaitForCompletion(true);
+        transition.setWait(45);
+        Answer answer = agentManager.easySend(coordinatorHostId, transition);
+        if (!(answer instanceof FtctlDrActionAnswer)) {
+            throw new CloudRuntimeException("Local protection scheduler transition did not return an FTCTL response");
+        }
+        return (FtctlDrActionAnswer) answer;
     }
 
     private boolean requiresTestCheckpointBarrier(DrPlanVO plan) {
@@ -632,9 +687,6 @@ public class FtctlDrUnifiedActionAdapter extends ManagerBase implements DrReplic
     }
 
     private boolean isSharedMountPointFilePlan(DrPlanVO plan) {
-        if (!isRemoteKvmToKvmPlan(plan)) {
-            return false;
-        }
         JsonObject mapping = parseObject(plan.getMappingJson());
         JsonObject target = objectAt(mapping, "target");
         if (StringUtils.equalsIgnoreCase(firstString(target, "storagePoolType", "poolType"), "SharedMountPoint")) {
