@@ -1330,3 +1330,52 @@ CREATE TABLE IF NOT EXISTS `cloud`.`vm_guest_network_section_state` (
     CONSTRAINT `fk_vm_guest_network_section__vm_id`
       FOREIGN KEY (`vm_id`) REFERENCES `vm_instance` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Keep the Europa in-place upgrade path aligned with fresh installations and
+-- the 4.22.1 to 4.23 upgrade path for bounded DR fleet execution.
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.dr_plan', 'protection_group_uuid', 'varchar(40) NULL AFTER `coordinator_worker_host_id`');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.dr_plan', 'protection_group_name', 'varchar(255) NULL AFTER `protection_group_uuid`');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.dr_plan', 'protection_group_order', 'int NULL AFTER `protection_group_name`');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.dr_plan', 'protection_group_max_parallel', 'int NULL AFTER `protection_group_order`');
+CALL `cloud`.`IDEMPOTENT_ADD_COLUMN`('cloud.dr_plan', 'protection_group_quiesce_required', 'tinyint(1) NULL AFTER `protection_group_max_parallel`');
+
+CREATE TABLE IF NOT EXISTS `cloud`.`dr_resource_lease` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(40) NOT NULL,
+  `resource_key` varchar(160) NOT NULL,
+  `operation_class` varchar(32) NOT NULL,
+  `plan_id` bigint unsigned NOT NULL,
+  `run_id` bigint unsigned NOT NULL,
+  `state` varchar(32) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `created` datetime NOT NULL,
+  `updated` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dr_resource_lease_uuid` (`uuid`),
+  KEY `idx_dr_resource_lease_capacity` (`resource_key`, `state`, `expires_at`),
+  KEY `idx_dr_resource_lease_run` (`run_id`, `state`, `expires_at`),
+  KEY `idx_dr_resource_lease_plan` (`plan_id`, `created`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cloud`.`dr_group_run` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(40) NOT NULL,
+  `group_uuid` varchar(40) NOT NULL,
+  `group_name` varchar(255) NOT NULL,
+  `action` varchar(32) NOT NULL,
+  `state` varchar(32) NOT NULL,
+  `plan_ids_json` text NOT NULL,
+  `progress_json` mediumtext DEFAULT NULL,
+  `max_parallel` int NOT NULL DEFAULT 1,
+  `quiesce_required` tinyint(1) NOT NULL DEFAULT 0,
+  `total_count` int NOT NULL DEFAULT 0,
+  `succeeded_count` int NOT NULL DEFAULT 0,
+  `failed_count` int NOT NULL DEFAULT 0,
+  `created` datetime NOT NULL,
+  `updated` datetime NOT NULL,
+  `completed` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dr_group_run_uuid` (`uuid`),
+  KEY `idx_dr_group_run_group` (`group_uuid`, `created`),
+  KEY `idx_dr_group_run_state` (`state`, `updated`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

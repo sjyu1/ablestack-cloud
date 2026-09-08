@@ -18,6 +18,11 @@ SET foreign_key_checks = 0;
 use cloud;
 
 DROP VIEW IF EXISTS `cloud`.`port_forwarding_rules_view`;
+DROP TABLE IF EXISTS `cloud`.`dr_test_disk`;
+DROP TABLE IF EXISTS `cloud`.`dr_test_session`;
+DROP TABLE IF EXISTS `cloud`.`dr_target_resource_claim`;
+DROP TABLE IF EXISTS `cloud`.`dr_group_run`;
+DROP TABLE IF EXISTS `cloud`.`dr_resource_lease`;
 DROP TABLE IF EXISTS `cloud`.`dr_event`;
 DROP TABLE IF EXISTS `cloud`.`dr_run_step`;
 DROP TABLE IF EXISTS `cloud`.`dr_run`;
@@ -27,6 +32,8 @@ DROP TABLE IF EXISTS `cloud`.`dr_restore_point_artifact`;
 DROP TABLE IF EXISTS `cloud`.`dr_restore_point`;
 DROP TABLE IF EXISTS `cloud`.`dr_plan`;
 DROP TABLE IF EXISTS `cloud`.`dr_site_pair`;
+DROP TABLE IF EXISTS `cloud`.`dr_site_health_check`;
+DROP TABLE IF EXISTS `cloud`.`dr_site_credential`;
 DROP TABLE IF EXISTS `cloud`.`dr_site`;
 DROP TABLE IF EXISTS `cloud`.`ftctl_protection_volume`;
 DROP TABLE IF EXISTS `cloud`.`ftctl_protection`;
@@ -2553,6 +2560,8 @@ CREATE TABLE `cloud`.`ftctl_protection` (
   `backend_mode` varchar(64) NULL COMMENT 'FTCTL backend mode',
   `provisioning_backend` varchar(64) NOT NULL DEFAULT 'libvirt-managed' COMMENT 'Protection resource provisioning owner',
   `fencing_policy` varchar(64) NULL COMMENT 'FTCTL fencing policy',
+  `xcolo_port_allocation_mode` varchar(16) NULL COMMENT 'FTCTL XCOLO port allocation mode',
+  `xcolo_port_slot` int NULL COMMENT 'FTCTL XCOLO automatic port allocation slot',
   `admin_state` varchar(64) NULL,
   `provisioning_state` varchar(64) NULL,
   `protection_state` varchar(64) NULL,
@@ -2605,6 +2614,7 @@ CREATE TABLE `cloud`.`dr_site` (
   `hypervisor_type` varchar(64) NOT NULL,
   `endpoint` varchar(2048) NULL,
   `credential_ref` varchar(255) NULL,
+  `credential_id` bigint unsigned NULL,
   `zone_id` bigint unsigned NULL,
   `zone_external_id` varchar(255) NULL,
   `zone_name` varchar(255) NULL,
@@ -2634,6 +2644,7 @@ CREATE TABLE `cloud`.`dr_site` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_dr_site__uuid` (`uuid`),
   KEY `i_dr_site__name` (`name`),
+  KEY `i_dr_site__credential_id` (`credential_id`),
   KEY `i_dr_site__zone_id` (`zone_id`),
   CONSTRAINT `fk_dr_site__zone_id` FOREIGN KEY (`zone_id`) REFERENCES `data_center` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
@@ -2684,6 +2695,11 @@ CREATE TABLE `cloud`.`dr_plan` (
   `source_worker_host_id` bigint unsigned NULL,
   `target_worker_host_id` bigint unsigned NULL,
   `coordinator_worker_host_id` bigint unsigned NULL,
+  `protection_group_uuid` varchar(40) NULL,
+  `protection_group_name` varchar(255) NULL,
+  `protection_group_order` int NULL,
+  `protection_group_max_parallel` int NULL,
+  `protection_group_quiesce_required` tinyint(1) NULL,
   `last_source_checkpoint_at` datetime NULL,
   `last_target_durable_at` datetime NULL,
   `target_ready_at` datetime NULL,
@@ -2793,6 +2809,10 @@ CREATE TABLE `cloud`.`dr_replica` (
   `hypervisor_type` varchar(64) NULL,
   `active_side` varchar(64) NULL,
   `runtime_state_json` text NULL,
+  `ownership_generation` bigint unsigned NOT NULL DEFAULT 1,
+  `ownership_state` varchar(32) NULL,
+  `materialization_digest` char(64) NULL,
+  `power_state_observed_at` datetime NULL,
   `created` datetime NOT NULL,
   `updated` datetime NULL,
   `removed` datetime NULL,
@@ -2819,6 +2839,9 @@ CREATE TABLE `cloud`.`dr_replica_disk` (
   `state` varchar(64) NULL,
   `size_bytes` bigint NULL,
   `details_json` text NULL,
+  `target_claim_id` bigint unsigned NULL,
+  `artifact_uuid` varchar(40) NULL,
+  `locator_hash` char(64) NULL,
   `created` datetime NOT NULL,
   `updated` datetime NULL,
   `removed` datetime NULL,
@@ -2845,6 +2868,8 @@ CREATE TABLE `cloud`.`dr_run` (
   `external_job_ref` varchar(2048) NULL,
   `engine_accepted` tinyint(1) NOT NULL DEFAULT 0,
   `accepted_at` datetime NULL,
+  `accepted_cycle_sequence` bigint unsigned NULL,
+  `accepted_cycle_token` varchar(255) NULL,
   `dispatch_started` datetime NULL,
   `dispatch_completed` datetime NULL,
   `projection_state` varchar(64) NULL,
@@ -2857,6 +2882,9 @@ CREATE TABLE `cloud`.`dr_run` (
   `current_step_name` varchar(255) NULL,
   `error_code` varchar(128) NULL,
   `error_message` text NULL,
+  `terminal_source` varchar(32) NULL,
+  `terminal_version` int unsigned NULL,
+  `terminal_authoritative` tinyint(1) NOT NULL DEFAULT 0,
   `started` datetime NULL,
   `completed` datetime NULL,
   `created` datetime NOT NULL,
@@ -2970,6 +2998,10 @@ CREATE TABLE `cloud`.`dr_plan_runtime` (
     `control_request_run_uuid` varchar(40) DEFAULT NULL,
     `owner_matched` tinyint(1) NOT NULL DEFAULT 0,
     `worker_state` varchar(32) DEFAULT NULL,
+    `worker_identity_state` varchar(32) DEFAULT NULL,
+    `worker_liveness_state` varchar(32) DEFAULT NULL,
+    `worker_launch_nonce` varchar(64) DEFAULT NULL,
+    `worker_generation` bigint unsigned DEFAULT NULL,
     `current_cycle_sequence` bigint unsigned DEFAULT NULL,
     `current_cycle_state` varchar(32) DEFAULT NULL,
     `current_cycle_mode` varchar(32) DEFAULT NULL,
@@ -2984,6 +3016,14 @@ CREATE TABLE `cloud`.`dr_plan_runtime` (
     `projection_integrity_sequence` bigint unsigned DEFAULT NULL,
     `transfer_activity_state` varchar(32) DEFAULT NULL,
     `transfer_payload_bytes` bigint unsigned DEFAULT NULL,
+    `owned_process_count` int unsigned NOT NULL DEFAULT 0,
+    `runtime_endpoints_drained` tinyint(1) NOT NULL DEFAULT 0,
+    `reconciliation_state` varchar(32) DEFAULT NULL,
+    `reconciliation_run_uuid` varchar(40) DEFAULT NULL,
+    `reconciliation_checks` int unsigned NOT NULL DEFAULT 0,
+    `terminal_source` varchar(32) DEFAULT NULL,
+    `terminal_version` int unsigned DEFAULT NULL,
+    `terminal_authoritative` tinyint(1) NOT NULL DEFAULT 0,
     `transfer_progress_schema_version` int unsigned DEFAULT NULL,
     `transfer_cycle_sequence` bigint unsigned DEFAULT NULL,
     `transfer_sample_sequence` bigint unsigned DEFAULT NULL,
@@ -3079,8 +3119,7 @@ CREATE TABLE `cloud`.`dr_sync_cycle` (
     `removed` datetime DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_dr_sync_cycle__uuid` (`uuid`),
-    UNIQUE KEY `uk_dr_sync_cycle__plan_run_sequence` (`plan_id`, `engine_run_uuid`, `sequence`),
-    KEY `i_dr_sync_cycle__plan_sequence` (`plan_id`, `sequence`),
+    UNIQUE KEY `uk_dr_sync_cycle__plan_sequence` (`plan_id`, `sequence`),
     KEY `i_dr_sync_cycle__plan_state_updated` (`plan_id`, `state`, `updated`),
     CONSTRAINT `fk_dr_sync_cycle__plan_id` FOREIGN KEY (`plan_id`) REFERENCES `dr_plan` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_dr_sync_cycle__run_id` FOREIGN KEY (`run_id`) REFERENCES `dr_run` (`id`) ON DELETE SET NULL
@@ -3099,7 +3138,10 @@ CREATE TABLE IF NOT EXISTS `cloud`.`dr_cutover_session` (
   `cloud_promotion_state` varchar(32), `target_power_state` varchar(32),
   `target_power_on_at` datetime, `boot_validated_at` datetime,
   `engine_ack_state` varchar(32), `engine_ack_at` datetime,
-  `cloud_authority_generation` bigint unsigned, `completed_at` datetime,
+  `cloud_authority_generation` bigint unsigned,
+  `commit_contract_version` varchar(64), `engine_session_id` varchar(255),
+  `commit_attempt_id` varchar(64), `commit_envelope_sha256` varchar(64),
+  `commit_state` varchar(32), `completed_at` datetime,
   `authority_ended_at` datetime, `authority_ended_by_run_id` bigint unsigned,
   `cleanup_required` tinyint(1) NOT NULL DEFAULT 0,
   `details_json` mediumtext, `error_code` varchar(128), `error_message` varchar(1024),
@@ -3127,9 +3169,18 @@ CREATE TABLE IF NOT EXISTS `cloud`.`dr_failback_session` (
   `plan_id` bigint unsigned NOT NULL, `run_id` bigint unsigned NOT NULL,
   `engine_session_id` varchar(255) NOT NULL, `checkpoint_sequence` bigint unsigned,
   `authority_generation` bigint unsigned, `state` varchar(64) NOT NULL,
+  `acceptance_state` varchar(32), `failure_phase` varchar(64), `failed_component` varchar(128),
+  `driver_exit_code` int, `baseline_file_state` varchar(32),
+  `operation_intent` varchar(32), `requested_mode` varchar(32), `effective_mode` varchar(32),
+  `mode_decision_code` varchar(64), `initial_seed_required` tinyint(1),
+  `source_disk_probe_state` varchar(32), `source_disk_count` int,
+  `target_writer_probe_state` varchar(32), `estimated_virtual_bytes` bigint unsigned,
+  `worker_pid_alive` tinyint(1),
   `target_power_state` varchar(32), `source_power_state` varchar(32),
   `boot_validation_state` varchar(64), `engine_ack_state` varchar(32),
   `commit_attempt_id` varchar(64), `commit_outcome` varchar(32),
+  `commit_contract_version` varchar(32), `commit_envelope_sha256` char(64),
+  `commit_dispatch_state` varchar(32), `commit_probe_count` int,
   `scheduler_generation` bigint unsigned, `scheduler_ack_generation` bigint unsigned,
   `scheduler_state` varchar(32), `rollback_state` varchar(32),
   `rollback_generation` bigint unsigned, `lifecycle_version` bigint unsigned NOT NULL DEFAULT 0,
@@ -3148,6 +3199,7 @@ CREATE TABLE IF NOT EXISTS `cloud`.`dr_failback_session` (
   `data_ready_at` datetime, `target_stopped_at` datetime, `source_powered_on_at` datetime,
   `boot_validated_at` datetime, `engine_ack_at` datetime,
   `commit_requested_at` datetime, `commit_verified_at` datetime,
+  `commit_dispatched_at` datetime, `commit_probe_deadline_at` datetime,
   `protection_resume_requested_at` datetime, `protection_resume_verified_at` datetime,
   `rollback_requested_at` datetime, `rollback_verified_at` datetime, `last_probe_at` datetime,
   `completed_at` datetime,
@@ -3157,4 +3209,145 @@ CREATE TABLE IF NOT EXISTS `cloud`.`dr_failback_session` (
   UNIQUE KEY `uk_dr_failback_session_run` (`run_id`),
   KEY `idx_dr_failback_session_plan_active` (`plan_id`,`removed`),
   KEY `idx_dr_failback_session_reconcile` (`state`,`last_probe_at`,`removed`,`plan_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `cloud`.`dr_site_credential` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(40) NOT NULL,
+  `site_id` bigint unsigned NOT NULL,
+  `credential_type` varchar(64) NOT NULL,
+  `endpoint` varchar(2048) NULL,
+  `principal` varchar(255) NULL,
+  `secret_payload` text NULL,
+  `tls_verify` tinyint(1) NOT NULL DEFAULT 1,
+  `state` varchar(64) NULL,
+  `last_validated` datetime NULL,
+  `created` datetime NOT NULL,
+  `updated` datetime NULL,
+  `removed` datetime NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dr_site_credential__uuid` (`uuid`),
+  KEY `i_dr_site_credential__site_id` (`site_id`),
+  KEY `i_dr_site_credential__state` (`state`),
+  CONSTRAINT `fk_dr_site_credential__site_id` FOREIGN KEY (`site_id`) REFERENCES `dr_site` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE `cloud`.`dr_site_health_check` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(40) NOT NULL,
+  `site_id` bigint unsigned NOT NULL,
+  `site_uuid` varchar(40) NOT NULL,
+  `site_name` varchar(255) NOT NULL,
+  `site_type` varchar(64) NOT NULL,
+  `hypervisor_type` varchar(64) NOT NULL,
+  `endpoint` varchar(2048) NULL,
+  `credential_id` bigint unsigned NULL,
+  `credential_state` varchar(64) NULL,
+  `trigger_type` varchar(64) NOT NULL,
+  `health_state` varchar(64) NOT NULL,
+  `reason_code` varchar(128) NULL,
+  `message` text NULL,
+  `latency_ms` bigint NULL,
+  `checked_at` datetime NOT NULL,
+  `management_server_id` bigint unsigned NULL,
+  `job_id` varchar(255) NULL,
+  `details_json` text NULL,
+  `created` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dr_site_health_check__uuid` (`uuid`),
+  KEY `i_dr_site_health_check__site_checked` (`site_id`, `checked_at`),
+  KEY `i_dr_site_health_check__state_checked` (`health_state`, `checked_at`),
+  KEY `i_dr_site_health_check__trigger_checked` (`trigger_type`, `checked_at`),
+  CONSTRAINT `fk_dr_site_health_check__site_id` FOREIGN KEY (`site_id`) REFERENCES `dr_site` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE `cloud`.`dr_target_resource_claim` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(40) NOT NULL,
+  `plan_id` bigint unsigned NOT NULL,
+  `replica_id` bigint unsigned NOT NULL,
+  `replica_disk_id` bigint unsigned DEFAULT NULL,
+  `claim_run_id` bigint unsigned DEFAULT NULL,
+  `resource_type` varchar(32) NOT NULL,
+  `resource_id` bigint unsigned NOT NULL,
+  `resource_uuid` varchar(64) DEFAULT NULL,
+  `resource_locator_hash` char(64) DEFAULT NULL,
+  `ownership_generation` bigint unsigned NOT NULL DEFAULT 1,
+  `claim_state` varchar(32) NOT NULL,
+  `active_resource_key` varchar(160) DEFAULT NULL,
+  `active_role_key` varchar(160) DEFAULT NULL,
+  `manifest_sha256` char(64) DEFAULT NULL,
+  `created` datetime NOT NULL,
+  `updated` datetime NOT NULL,
+  `released` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dr_target_claim_uuid` (`uuid`),
+  UNIQUE KEY `uk_dr_target_claim_active_resource` (`active_resource_key`),
+  UNIQUE KEY `uk_dr_target_claim_active_role` (`active_role_key`),
+  KEY `idx_dr_target_claim_plan` (`plan_id`, `claim_state`),
+  KEY `idx_dr_target_claim_replica` (`replica_id`, `claim_state`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `cloud`.`dr_test_session` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT, `uuid` varchar(40) NOT NULL,
+  `plan_id` bigint unsigned NOT NULL, `run_id` bigint unsigned NOT NULL, `cleanup_run_id` bigint unsigned DEFAULT NULL,
+  `state` varchar(64) NOT NULL, `network_mode` varchar(32) DEFAULT NULL, `network_id` bigint unsigned DEFAULT NULL,
+  `target_vm_id` bigint unsigned DEFAULT NULL, `target_vm_uuid` varchar(40) DEFAULT NULL, `target_vm_name` varchar(255) DEFAULT NULL,
+  `checkpoint_sequence` bigint unsigned DEFAULT NULL, `restore_point_ref` varchar(1024) DEFAULT NULL,
+  `validation_mode` varchar(32) DEFAULT NULL, `boot_timeout_seconds` int unsigned DEFAULT NULL,
+  `artifact_contract_version` varchar(16) DEFAULT NULL, `artifact_manifest` mediumtext, `boot_validation_state` varchar(64) DEFAULT NULL,
+  `cleanup_required` tinyint(1) NOT NULL DEFAULT 0, `error_code` varchar(128) DEFAULT NULL, `error_message` varchar(1024) DEFAULT NULL,
+  `details_json` mediumtext, `created` datetime NOT NULL, `updated` datetime NOT NULL, `removed` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`), UNIQUE KEY `uk_dr_test_session_uuid` (`uuid`), KEY `idx_dr_test_session_plan_active` (`plan_id`, `removed`),
+  KEY `idx_dr_test_session_run` (`run_id`), KEY `idx_dr_test_session_vm` (`target_vm_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `cloud`.`dr_test_disk` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT, `session_id` bigint unsigned NOT NULL, `disk_index` int NOT NULL,
+  `provider` varchar(32) DEFAULT NULL, `artifact_ref` varchar(1024) DEFAULT NULL, `target_volume_id` bigint unsigned DEFAULT NULL,
+  `target_volume_uuid` varchar(40) DEFAULT NULL, `state` varchar(64) NOT NULL, `details_json` mediumtext,
+  `created` datetime NOT NULL, `updated` datetime NOT NULL, `removed` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`), UNIQUE KEY `uk_dr_test_disk_session_index` (`session_id`, `disk_index`), KEY `idx_dr_test_disk_volume` (`target_volume_id`),
+  CONSTRAINT `fk_dr_test_disk_session` FOREIGN KEY (`session_id`) REFERENCES `dr_test_session` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `cloud`.`dr_resource_lease` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(40) NOT NULL,
+  `resource_key` varchar(160) NOT NULL,
+  `operation_class` varchar(32) NOT NULL,
+  `plan_id` bigint unsigned NOT NULL,
+  `run_id` bigint unsigned NOT NULL,
+  `state` varchar(32) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `created` datetime NOT NULL,
+  `updated` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dr_resource_lease_uuid` (`uuid`),
+  KEY `idx_dr_resource_lease_capacity` (`resource_key`, `state`, `expires_at`),
+  KEY `idx_dr_resource_lease_run` (`run_id`, `state`, `expires_at`),
+  KEY `idx_dr_resource_lease_plan` (`plan_id`, `created`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `cloud`.`dr_group_run` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(40) NOT NULL,
+  `group_uuid` varchar(40) NOT NULL,
+  `group_name` varchar(255) NOT NULL,
+  `action` varchar(32) NOT NULL,
+  `state` varchar(32) NOT NULL,
+  `plan_ids_json` text NOT NULL,
+  `progress_json` mediumtext DEFAULT NULL,
+  `max_parallel` int NOT NULL DEFAULT 1,
+  `quiesce_required` tinyint(1) NOT NULL DEFAULT 0,
+  `total_count` int NOT NULL DEFAULT 0,
+  `succeeded_count` int NOT NULL DEFAULT 0,
+  `failed_count` int NOT NULL DEFAULT 0,
+  `created` datetime NOT NULL,
+  `updated` datetime NOT NULL,
+  `completed` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dr_group_run_uuid` (`uuid`),
+  KEY `idx_dr_group_run_group` (`group_uuid`, `created`),
+  KEY `idx_dr_group_run_state` (`state`, `updated`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
