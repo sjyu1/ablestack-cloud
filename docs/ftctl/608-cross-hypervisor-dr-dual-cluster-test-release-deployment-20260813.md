@@ -802,3 +802,71 @@ clearing stale client cache rendered the current release string
 staging directories were removed after checksum and postflight verification;
 the pre-deployment backup remains at
 `/root/dr-test-release-backup-20260901-2010` on each node.
+
+## 2026-09-08 Four-cluster Upstream-aligned Test Release
+
+The Origin feature branches were first aligned with the latest upstream base
+and pushed before release creation. Cloud commit
+`5616f85f282f61a566d84a3b9c2e89437862166a` is zero commits behind
+`upstream/ablestack-europa`; qemu tools commit
+`fc61961d39053be076584b6d32b98fecc8c651fe` is zero commits behind
+`upstream/main`. The upstream pull requests are
+[Cloud #940](https://github.com/ablecloud-team/ablestack-cloud/pull/940) and
+[qemu tools #54](https://github.com/ablecloud-team/ablestack-qemu-exec-tools/pull/54).
+
+The successful full test release Runs were
+[Cloud 34198202015](https://github.com/dhslove/ablestack-cloud/actions/runs/34198202015),
+[qemu tools 34193785518](https://github.com/dhslove/ablestack-qemu-exec-tools/actions/runs/34193785518),
+and [FTCTL 34193788559](https://github.com/dhslove/ablestack-qemu-exec-tools/actions/runs/34193788559).
+The Cloud release is `4.23.0.0-Mold.Europa.202609080713.1`; all five qemu
+tool packages are `0.9.5-1`.
+
+Fresh-install and update DB paths were checked from the built management RPM.
+`create-schema.sql`, `schema-42210to42300.sql`, and
+`schema-Europa-After.sql` all contain the DR resource lease, group Run, and
+canonical Cycle identity contracts. After deployment, every management DB
+contained both expected tables and the two-column
+`uk_dr_sync_cycle__plan_sequence` index.
+
+The same management/common/UI/usage release was installed on
+`10.10.13.10`, `10.10.31.10`, `10.10.32.10`, and `10.10.22.10`. The same
+common/Agent release and qemu tool set were installed on all twelve compute
+hosts. Postflight verification confirmed:
+
+- all four Mold and usage services are active, all `/client/` endpoints return
+  HTTP 200, `WEB-INF` is preserved, and the active UI exposes the DR menu;
+- all management classpath JARs pass archive integrity checks and the active
+  aggregate JAR reports Cloud revision `5616f85f282f61a566d84a3b9c2e89437862166a`;
+- the UI static index matches the packaged UI and contains
+  `blockingLoadingState`, `fetchSyncProgress`, `extractJobId`, and
+  `getDrVmProtectionView`;
+- all twelve Agents and FTCTL timers are active, with Cloud Agent release
+  `4.23.0.0-Mold.Europa.202609080713.1` and FTCTL release `0.9.5-1`;
+- installed `dr_runtime.sh` SHA256 is
+  `816e5434689a24570f1dacaec37d1e4a49d40c6c7e343b092cd47c7424ddcdc2`
+  and `dr_scheduler.sh` SHA256 is
+  `f2d6a9d0d3ec311ca155c22cc231fd679b4a7740df99558708ec931a4c479cc9`
+  on every compute host;
+- active DR resource leases and nonterminal DR Runs are zero on all four
+  controllers; 31, 32, and 22 each report three `Up / Enabled` routing hosts.
+
+Cluster 13 reports two `Up / Enabled` hosts and one `Up /
+ErrorInMaintenance` host. The latter state existed before this deployment;
+the Agent and FTCTL service on that host are active and at the aligned package
+versions, so it is retained as a separate infrastructure maintenance item.
+
+### Deployment transaction safeguards
+
+Package replacement exposed two deployment-runner defects that must not be
+treated as product failures. First, starting Mold before all replacement JARs
+were stable could produce a one-time `ZipException: zip file is empty`.
+Deployment must finish the RPM transaction, overlay the packaged library,
+run `sync`, validate every classpath JAR, and only then start Mold. HTTP 200 and
+an error-free second startup are required before proceeding.
+
+Second, a nested SSH command can consume a streamed shell script from standard
+input and silently skip the remaining Agent copy/install steps. Host deployment
+must use a local script file or `ssh -n`, then assert the exact installed
+common/Agent version on every host. This release was re-deployed with direct
+per-host transfer and verification; VM inventories were unchanged across the
+Agent replacements.
