@@ -11743,6 +11743,17 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         IpAddresses addr = new IpAddresses(null, ipv6Address, macAddress);
         long serviceOfferingId = curVm.getServiceOfferingId();
         ServiceOffering serviceOffering = serviceOfferingDao.findById(curVm.getId(), serviceOfferingId);
+
+        if (serviceOffering.getCpu() != null) {
+            customParameters.remove(UsageEventVO.DynamicParameters.cpuNumber.name());
+        }
+        if (serviceOffering.getSpeed() != null && !serviceOffering.isCustomCpuSpeedSupported()) {
+            customParameters.remove(UsageEventVO.DynamicParameters.cpuSpeed.name());
+        }
+        if (serviceOffering.getRamSize() != null) {
+            customParameters.remove(UsageEventVO.DynamicParameters.memory.name());
+        }
+
         List<SecurityGroupVO> securityGroupList = _securityGroupMgr.getSecurityGroupsForVm(curVm.getId());
         List<Long> securityGroupIdList = securityGroupList.stream().map(SecurityGroupVO::getId).collect(Collectors.toList());
         String name = cmd.getName();
