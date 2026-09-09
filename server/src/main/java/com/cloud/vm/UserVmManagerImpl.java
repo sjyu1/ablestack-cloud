@@ -11759,12 +11759,14 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         ServiceOfferingVO serviceOffering = serviceOfferingDao.findById(curVm.getId(), serviceOfferingId);
         ServiceOfferingVO baseOffering = serviceOfferingDao.findById(serviceOfferingId);
 
-        if (!baseOffering.isDynamic()) {
+        if (!baseOffering.isDynamic() || baseOffering.getCpu() != null) {
             customParameters.remove(UsageEventVO.DynamicParameters.cpuNumber.name());
+        }
+        if (!baseOffering.isCustomCpuSpeedSupported()) {
             customParameters.remove(UsageEventVO.DynamicParameters.cpuSpeed.name());
+        }
+        if (!baseOffering.isDynamic() || baseOffering.getRamSize() != null) {
             customParameters.remove(UsageEventVO.DynamicParameters.memory.name());
-        } else if (!baseOffering.isCustomCpuSpeedSupported()) {
-            customParameters.remove(UsageEventVO.DynamicParameters.cpuSpeed.name());
         }
 
         List<SecurityGroupVO> securityGroupList = _securityGroupMgr.getSecurityGroupsForVm(curVm.getId());
