@@ -11420,13 +11420,15 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
     }
 
     protected boolean flattenOneSharedMountPointFastCloneVolume() {
+        boolean recovered = recoverFastCloneSourceOverlayCommit();
+
         if (checkOneRunningSharedMountPointFastCloneVolume()) {
             return true;
         }
 
         List<VolumeDetailVO> pendingDetails = volumeDetailsDao.findDetails(FAST_CLONE_FLATTEN_STATUS, FAST_CLONE_FLATTEN_PENDING, false);
         if (CollectionUtils.isEmpty(pendingDetails)) {
-            return recoverFastCloneSourceOverlayCommit();
+            return recovered;
         }
 
         for (VolumeDetailVO pendingDetail : pendingDetails) {
