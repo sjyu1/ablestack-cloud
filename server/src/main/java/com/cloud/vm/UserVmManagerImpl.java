@@ -11747,7 +11747,7 @@ public class UserVmManagerImpl extends ManagerBase implements UserVmManager, Vir
         if (serviceOffering.getCpu() != null) {
             customParameters.remove(UsageEventVO.DynamicParameters.cpuNumber.name());
         }
-        if (serviceOffering.getSpeed() != null && !serviceOffering.isCustomCpuSpeedSupported()) {
+        if (serviceOffering.getSpeed() != null) {
             customParameters.remove(UsageEventVO.DynamicParameters.cpuSpeed.name());
         }
         if (serviceOffering.getRamSize() != null) {
