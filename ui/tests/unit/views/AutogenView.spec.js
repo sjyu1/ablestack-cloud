@@ -459,6 +459,41 @@ describe('Views > AutogenView.vue', () => {
     })
   })
 
+  describe('background list refresh', () => {
+    const response = rows => ({ testapinamecase1response: { count: rows.length, testapinamecase1: rows } })
+    it('keeps rows and column objects while a refresh is pending, then applies new data', async () => {
+      mockAxios.mockResolvedValue(response([{ id: 'a', column1: 'old' }]))
+      await router.push({ name: 'testRouter7' })
+      await flushPromises()
+      const columns = wrapper.vm.columns
+      let finish
+      mockAxios.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      const pending = wrapper.vm.fetchData({ irefresh: true, autoscheduled: true })
+      expect(wrapper.vm.loading).toBe(false)
+      expect(wrapper.vm.items[0].column1).toBe('old')
+      expect(wrapper.vm.columns).toBe(columns)
+      finish(response([{ id: 'a', column1: 'new' }]))
+      await pending
+      expect(wrapper.vm.items[0].column1).toBe('new')
+      expect(wrapper.vm.columns).toBe(columns)
+    })
+    it('keeps the last snapshot on failure and distinguishes a successful empty response', async () => {
+      mockAxios.mockResolvedValue(response([{ id: 'a' }]))
+      await router.push({ name: 'testRouter7' })
+      await flushPromises()
+      mockAxios.mockRejectedValueOnce(new Error('offline'))
+      await expect(wrapper.vm.fetchData({ irefresh: true, autoscheduled: true })).rejects.toThrow('offline')
+      expect(wrapper.vm.items[0].id).toBe('a')
+      expect(wrapper.vm.listRefreshError).toBe(true)
+      expect(wrapper.vm.loading).toBe(false)
+      mockAxios.mockResolvedValueOnce(response([]))
+      await wrapper.vm.fetchData({ irefresh: true, autoscheduled: true })
+      expect(wrapper.vm.items).toEqual([])
+      expect(wrapper.vm.itemCount).toBe(0)
+      expect(wrapper.vm.listRefreshError).toBe(false)
+    })
+  })
+
   describe('Methods', () => {
     describe('switchProject', () => {
       it('API not called when switchProject() is called with not have projectId', async (done) => {
@@ -1610,6 +1645,8 @@ describe('Views > AutogenView.vue', () => {
         expect(mockAxios).toHaveBeenLastCalledWith({
           url: '/',
           method: 'GET',
+          timeout: 15000,
+          backgroundJob: true,
           params: {
             command: 'queryAsyncJobResult',
             response: 'json',
@@ -1651,6 +1688,8 @@ describe('Views > AutogenView.vue', () => {
         expect(mockAxios).toHaveBeenLastCalledWith({
           url: '/',
           method: 'GET',
+          timeout: 15000,
+          backgroundJob: true,
           params: {
             command: 'queryAsyncJobResult',
             response: 'json',
@@ -1661,7 +1700,7 @@ describe('Views > AutogenView.vue', () => {
         done()
       })
 
-      it('fetchData() should not be called when $pollJob error response', async (done) => {
+      it('refreshes resource data on a terminal job failure', async (done) => {
         originalFunc.fetchData = wrapper.vm.fetchData
         wrapper.vm.fetchData = jest.fn((args) => {})
         const fetchData = jest.spyOn(wrapper.vm, 'fetchData')
@@ -1682,11 +1721,13 @@ describe('Views > AutogenView.vue', () => {
         })
         await flushPromises()
 
-        expect(fetchData).not.toHaveBeenCalled()
+        expect(fetchData).toHaveBeenCalled()
         expect(mockAxios).toHaveBeenCalled()
         expect(mockAxios).toHaveBeenLastCalledWith({
           url: '/',
           method: 'GET',
+          timeout: 15000,
+          backgroundJob: true,
           params: {
             command: 'queryAsyncJobResult',
             response: 'json',

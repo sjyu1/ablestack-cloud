@@ -19,6 +19,8 @@
 
 package com.cloud.hypervisor.kvm.resource;
 
+import org.junit.After;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -365,6 +367,46 @@ public class LibvirtComputingResourceTest {
             Assert.assertNull(disk.getMetadataCacheMaxSizeBytes());
             metadataCache.verifyNoInteractions();
         }
+    }
+
+    // These tests retain the existing libvirt fixtures; OS locking and bounded CLI
+    // transport are exercised separately by KvmVmOperationGuardTest/KvmBoundedStatsTest.
+    private org.mockito.MockedStatic<KvmVmOperationGuard> operationGuard;
+    private org.mockito.MockedStatic<KvmBoundedStats> boundedStats;
+
+    @Before
+    public void mockMonitoringTransport() throws Exception {
+        operationGuard = org.mockito.Mockito.mockStatic(KvmVmOperationGuard.class);
+        operationGuard.when(() -> KvmVmOperationGuard.begin(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(org.mockito.Mockito.mock(KvmVmOperationGuard.class));
+        operationGuard.when(() -> KvmVmOperationGuard.collect(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(call -> ((java.util.concurrent.Callable<?>) call.getArgument(2)).call());
+        operationGuard.when(() -> KvmVmOperationGuard.guestCommand(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenAnswer(call -> ((org.libvirt.Domain) call.getArgument(0)).qemuAgentCommand(call.getArgument(1), call.getArgument(2), 0));
+        boundedStats = org.mockito.Mockito.mockStatic(KvmBoundedStats.class);
+        boundedStats.when(() -> KvmBoundedStats.freeMemory(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(call -> libvirtComputingResourceSpy.getMemoryFreeInKBs(call.getArgument(0)));
+        boundedStats.when(() -> KvmBoundedStats.xml(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> {
+            org.libvirt.Domain domain = call.getArgument(0);
+            LibvirtDomainXMLParser parser = org.mockito.Mockito.mock(LibvirtDomainXMLParser.class);
+            java.util.List<DiskDef> disks = libvirtComputingResourceSpy.getDisks(domain.getConnect(), domain.getName());
+            java.util.List<InterfaceDef> nics = libvirtComputingResourceSpy.getInterfaces(domain.getConnect(), domain.getName());
+            org.mockito.Mockito.when(parser.getDisks()).thenReturn(disks);
+            org.mockito.Mockito.when(parser.getInterfaces()).thenReturn(nics);
+            return parser;
+        });
+        boundedStats.when(() -> KvmBoundedStats.info(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(call -> ((org.libvirt.Domain) call.getArgument(0)).getInfo());
+        boundedStats.when(() -> KvmBoundedStats.block(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(call -> ((org.libvirt.Domain) call.getArgument(0)).blockStats(call.getArgument(1)));
+        boundedStats.when(() -> KvmBoundedStats.network(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(call -> ((org.libvirt.Domain) call.getArgument(0)).interfaceStats(call.getArgument(1)));
+    }
+
+    @After
+    public void closeMonitoringTransport() {
+        boundedStats.close();
+        operationGuard.close();
     }
 
     @Before
@@ -6403,6 +6445,24 @@ public class LibvirtComputingResourceTest {
     }
 
     @Test
+    public void counterResetReplacesBaselineWithoutPublishingZeroSample() throws Exception {
+        LibvirtExtendedVmStatsEntry oldStats = new LibvirtExtendedVmStatsEntry();
+        LibvirtExtendedVmStatsEntry resetStats = new LibvirtExtendedVmStatsEntry();
+        oldStats.setCpuTime(1000);
+        resetStats.setCpuTime(10);
+        java.lang.reflect.Field field = LibvirtComputingResource.class.getDeclaredField("vmStats");
+        field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, LibvirtExtendedVmStatsEntry> samples = (Map<String, LibvirtExtendedVmStatsEntry>) field.get(libvirtComputingResourceSpy);
+        samples.put(VM_NAME, oldStats);
+        doReturn(domainMock).when(libvirtComputingResourceSpy).getDomain(connMock, VM_NAME);
+        doReturn(resetStats).when(libvirtComputingResourceSpy).getVmCurrentStats(domainMock);
+        Assert.assertNull(libvirtComputingResourceSpy.getVmStat(connMock, VM_NAME));
+        Assert.assertSame(resetStats, samples.get(VM_NAME));
+        verify(libvirtComputingResourceSpy, never()).calculateVmMetrics(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+
+    @Test
     public void getVmStatTestVmIsNullReturnsNull() throws LibvirtException {
         doReturn(null).when(libvirtComputingResourceSpy).getDomain(connMock, VM_NAME);
 
@@ -6416,6 +6476,9 @@ public class LibvirtComputingResourceTest {
 
     @Test
     public void getVmStatTestVmIsNotNullReturnsMetrics() throws LibvirtException {
+        doReturn(connMock).when(domainMock).getConnect();
+        doReturn(VM_NAME).when(domainMock).getName();
+        doReturn(List.of()).when(libvirtComputingResourceSpy).getInterfaces(connMock, VM_NAME);
         doReturn(domainMock).when(libvirtComputingResourceSpy).getDomain(connMock, VM_NAME);
         doReturn(Mockito.mock(LibvirtExtendedVmStatsEntry.class)).when(libvirtComputingResourceSpy).getVmCurrentStats(domainMock);
         doReturn(Mockito.mock(VmStatsEntry.class)).when(libvirtComputingResourceSpy).calculateVmMetrics(Mockito.any(), Mockito.any(), Mockito.any());
@@ -6702,12 +6765,15 @@ public class LibvirtComputingResourceTest {
 
     @Test
     public void testCreateTpmDef() {
+        Mockito.doReturn(Map.of("host.tpm.enable", "true", "host.tpm.models", "tpm-tis", "host.tpm.versions", "2.0"))
+                .when(libvirtComputingResourceSpy).getTpmCapabilities();
         VirtualMachineTO virtualMachineTO = Mockito.mock(VirtualMachineTO.class);
         Map<String, String> details = new HashMap<>();
         details.put(VmDetailConstants.VIRTUAL_TPM_MODEL, "tpm-tis");
         details.put(VmDetailConstants.VIRTUAL_TPM_VERSION, "2.0");
         Mockito.when(virtualMachineTO.getDetails()).thenReturn(details);
         LibvirtVMDef.TpmDef tpmDef = libvirtComputingResourceSpy.createTpmDef(virtualMachineTO);
+        assertTrue(tpmDef.toString().contains("persistent_state='yes'"));
         assertEquals(LibvirtVMDef.TpmDef.TpmModel.TIS, tpmDef.getModel());
         assertEquals(LibvirtVMDef.TpmDef.TpmVersion.V2_0, tpmDef.getVersion());
     }
@@ -6719,9 +6785,8 @@ public class LibvirtComputingResourceTest {
         details.put(VmDetailConstants.VIRTUAL_TPM_MODEL, "tpm-crb");
         details.put(VmDetailConstants.VIRTUAL_TPM_VERSION, "3.0");
         Mockito.when(virtualMachineTO.getDetails()).thenReturn(details);
-        LibvirtVMDef.TpmDef tpmDef = libvirtComputingResourceSpy.createTpmDef(virtualMachineTO);
-        assertEquals(LibvirtVMDef.TpmDef.TpmModel.CRB, tpmDef.getModel());
-        assertEquals(LibvirtVMDef.TpmDef.TpmVersion.V2_0, tpmDef.getVersion());
+        Assert.assertThrows(com.cloud.exception.InvalidParameterValueException.class,
+                () -> libvirtComputingResourceSpy.createTpmDef(virtualMachineTO));
     }
 
     @Test
@@ -7731,5 +7796,37 @@ public class LibvirtComputingResourceTest {
         Pair<Integer, Long> expectedResult = new Pair<>(expectedPeriod, expectedQuota);
         Pair<Integer, Long> result = libvirtComputingResourceSpy.getPeriodAndQuota(cpuQuotaPercentage);
         Assert.assertEquals(expectedResult, result);
+    }
+
+    @Test
+    public void testTpmCommandCapturesFastProcessOutput() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            assertEquals("tpm\n", libvirtComputingResourceSpy.runTpmCommand("/usr/bin/printf", "tpm\n"));
+        }
+        Assert.assertThrows(java.io.IOException.class, () -> libvirtComputingResourceSpy.runTpmCommand("/usr/bin/false"));
+    }
+
+    @Test
+    public void testAdditionalIsoOmitsOsBootOrderForBiosAndUefi() {
+        for (boolean uefi : new boolean[] {false, true}) {
+            VirtualMachineTO to = createDefaultVM(false);
+            Map<String, String> details = new HashMap<>();
+            details.put("deploy.additional.iso", "true");
+            details.put(VmDetailConstants.BOOT_ORDER, "cdrom");
+            if (uefi) {
+                details.put(GuestDef.BootType.UEFI.toString(), "legacy");
+            }
+            GuestDef guest = libvirtComputingResourceSpy.createGuestFromSpec(to, new LibvirtVMDef(), to.getUuid(), details);
+            Assert.assertFalse(guest.toString().contains("<boot dev="));
+        }
+    }
+
+    @Test
+    public void testLegacyBootOrderHasNoDuplicateDevices() {
+        VirtualMachineTO to = createDefaultVM(false);
+        GuestDef guest = libvirtComputingResourceSpy.createGuestFromSpec(to, new LibvirtVMDef(), to.getUuid(), null);
+        String xml = guest.toString();
+        Assert.assertEquals(xml.indexOf("<boot dev='hd'"), xml.lastIndexOf("<boot dev='hd'"));
+        Assert.assertTrue(xml.indexOf("<boot dev='hd'") < xml.indexOf("<boot dev='cdrom'"));
     }
 }

@@ -340,6 +340,9 @@ public class VirtualMachineManagerImpl extends ManagerBase implements VirtualMac
     private DiskOfferingDao _diskOfferingDao;
     @Inject
     private VMTemplateDao _templateDao;
+
+    @Inject
+    private com.cloud.template.TemplateManager isoTemplateManager;
     @Inject
     private VMTemplateZoneDao templateZoneDao;
     @Inject
@@ -1360,6 +1363,21 @@ public class VirtualMachineManagerImpl extends ManagerBase implements VirtualMac
     @Override
     public void orchestrateStart(final String vmUuid, final Map<VirtualMachineProfile.Param, Object> params, final DeploymentPlan planToDeploy, final DeploymentPlanner planner)
             throws InsufficientCapacityException, ConcurrentOperationException, ResourceUnavailableException {
+        VMInstanceVO vm = _vmDao.findByUuid(vmUuid);
+        checkFastCloneSourcePowerOperation(vm);
+        String token = _userVmMgr.prepareSharedMountPointClonePower(vm.getId(), "start");
+        boolean succeeded = false;
+        try {
+            orchestrateStartAfterClonePause(vmUuid, params, planToDeploy, planner);
+            succeeded = true;
+        } finally {
+            _userVmMgr.completeSharedMountPointClonePower(vm.getId(), token, "start", succeeded);
+        }
+    }
+
+    private void orchestrateStartAfterClonePause(final String vmUuid, final Map<VirtualMachineProfile.Param, Object> params,
+            final DeploymentPlan planToDeploy, final DeploymentPlanner planner)
+            throws InsufficientCapacityException, ConcurrentOperationException, ResourceUnavailableException {
 
         logger.debug(() -> LogUtils.logGsonWithoutException("Trying to start VM [%s] using plan [%s] and planner [%s].", vmUuid, planToDeploy, planner));
         final CallContext cctxt = CallContext.current();
@@ -1368,6 +1386,7 @@ public class VirtualMachineManagerImpl extends ManagerBase implements VirtualMac
         VMInstanceVO vm = _vmDao.findByUuid(vmUuid);
 
         final boolean firstStart = vm.getUpdated() == 0;
+        checkFastCloneSourcePowerOperation(vm);
 
         final VirtualMachineGuru vmGuru = getVmGuru(vm);
 
@@ -1548,6 +1567,7 @@ public class VirtualMachineManagerImpl extends ManagerBase implements VirtualMac
                         reuseVolume = true;
                     }
 
+                    isoTemplateManager.validateIsoDestination(vm, dest.getHost().getId());
                     vmGuru.finalizeVirtualMachineProfile(vmProfile, dest, ctx);
 
                     final VirtualMachineTO vmTO = hvGuru.implement(vmProfile);
@@ -2423,8 +2443,15 @@ public class VirtualMachineManagerImpl extends ManagerBase implements VirtualMac
 
     private void orchestrateStop(final String vmUuid, final boolean cleanUpEvenIfUnableToStop) throws AgentUnavailableException, OperationTimedoutException, ConcurrentOperationException {
         final VMInstanceVO vm = _vmDao.findByUuid(vmUuid);
-
-        advanceStop(vm, cleanUpEvenIfUnableToStop);
+        checkFastCloneSourcePowerOperation(vm);
+        String token = _userVmMgr.prepareSharedMountPointClonePower(vm.getId(), "stop");
+        boolean succeeded = false;
+        try {
+            advanceStop(vm, cleanUpEvenIfUnableToStop);
+            succeeded = true;
+        } finally {
+            _userVmMgr.completeSharedMountPointClonePower(vm.getId(), token, "stop", succeeded);
+        }
     }
 
     private void updatePersistenceMap(Map<String, Boolean> vlanToPersistenceMap, NetworkVO networkVO) {
@@ -4145,9 +4172,38 @@ public class VirtualMachineManagerImpl extends ManagerBase implements VirtualMac
         }
     }
 
+    protected void checkFastCloneSourcePowerOperation(VirtualMachine vm) {
+        if (vm == null || vm.getHypervisorType() != HypervisorType.KVM) {
+            return;
+        }
+        VMInstanceDetailVO phase = vmInstanceDetailsDao.findDetail(vm.getId(), VmDetailConstants.FAST_CLONE_SOURCE_PHASE);
+        if (phase == null) {
+            return;
+        }
+        ServiceOfferingVO offering = _offeringDao.findById(vm.getId(), vm.getServiceOfferingId());
+        if (!VmDetailConstants.FAST_CLONE_SOURCE_PHASE_READY.equals(phase.getValue()) || offering == null || offering.isVolatileVm()) {
+            throw new CloudRuntimeException("Power operation blocked while SharedMountPoint clone source phase is " + phase.getValue());
+        }
+    }
+
     private void orchestrateReboot(final String vmUuid, final Map<VirtualMachineProfile.Param, Object> params) throws InsufficientCapacityException, ConcurrentOperationException,
     ResourceUnavailableException {
         final VMInstanceVO vm = _vmDao.findByUuid(vmUuid);
+        checkFastCloneSourcePowerOperation(vm);
+        String token = _userVmMgr.prepareSharedMountPointClonePower(vm.getId(), "reboot");
+        boolean succeeded = false;
+        try {
+            orchestrateRebootAfterClonePause(vmUuid, params);
+            succeeded = true;
+        } finally {
+            _userVmMgr.completeSharedMountPointClonePower(vm.getId(), token, "reboot", succeeded);
+        }
+    }
+
+    private void orchestrateRebootAfterClonePause(final String vmUuid, final Map<VirtualMachineProfile.Param, Object> params)
+            throws InsufficientCapacityException, ConcurrentOperationException, ResourceUnavailableException {
+        final VMInstanceVO vm = _vmDao.findByUuid(vmUuid);
+        checkFastCloneSourcePowerOperation(vm);
         if (_vmSnapshotMgr.hasActiveVMSnapshotTasks(vm.getId())) {
             logger.error("Unable to reboot Instance: {} due to: {} has active Instance Snapshot tasks", vm, vm.getInstanceName());
             throw new CloudRuntimeException("Unable to reboot Instance: " + vm + " due to: " + vm.getInstanceName() + " has active Instance Snapshots tasks");

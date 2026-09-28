@@ -706,6 +706,19 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     }
 
     @Override
+    public void validateIsoDestination(VirtualMachine vm, long hostId) throws com.cloud.exception.InsufficientServerCapacityException {
+        if (vm.getType() != VirtualMachine.Type.User) {
+            return;
+        }
+        UserVmVO userVm = _userVmDao.findById(vm.getId());
+        if (userVm != null && slotsNeededFor(loadAttachedIsoSlots(userVm)) > effectiveMaxCdroms(vm, hostId)) {
+            throw new com.cloud.exception.InsufficientServerCapacityException(
+                    "Destination cannot accommodate the attached ISOs (cluster limit, host capability or ConfigDrive)",
+                    Host.class, hostId);
+        }
+    }
+
+    @Override
     public void prepareIsoForVmProfile(VirtualMachineProfile profile, DeployDestination dest) {
         UserVmVO vm = _userVmDao.findById(profile.getId());
         Map<Integer, Long> slotToIsoId = loadAttachedIsoSlots(vm);
@@ -713,7 +726,11 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
 
         // Pre-allocate every cdrom slot at boot. QEMU/IDE refuses to hot-add new cdrom drives, so
         // runtime attachIso can only media-swap into a slot the domain already owns.
-        int totalSlots = Math.max(effectiveMaxCdroms(vm, dest.getHost().getId()), slotsNeededFor(slotToIsoId));
+        int effectiveMax = effectiveMaxCdroms(vm, dest.getHost().getId());
+        if (slotsNeededFor(slotToIsoId) > effectiveMax) {
+            throw new InvalidParameterValueException("Attached ISO slots exceed the destination host/cluster CD-ROM limit: " + effectiveMax);
+        }
+        int totalSlots = effectiveMax;
         if (usesConfigDrive(vm) && slotToIsoId.containsKey(CDROM_PRIMARY_DEVICE_SEQ + 1)) {
             throw new InvalidParameterValueException("The second CD-ROM slot is reserved for ConfigDrive; detach the extra ISO before starting or migrating this Instance.");
         }
@@ -1475,21 +1492,44 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     }
 
     boolean attachISOToVM(long vmId, long userId, long isoId, boolean attach, boolean forced, boolean isVirtualRouter) {
-        UserVmVO vm = _userVmDao.findById(vmId);
-        VMTemplateVO iso = _tmpltDao.findById(isoId);
-
-        int targetSlot = isVirtualRouter ? CDROM_PRIMARY_DEVICE_SEQ
-                : (attach ? chooseAttachSlot(vmId, vm) : findAttachedSlot(vmId, vm, isoId));
-        boolean success = attachISOToVM(vmId, isoId, targetSlot, attach, forced, isVirtualRouter);
-        if (!success || isVirtualRouter) {
-            return success;
+        if (isVirtualRouter) {
+            return attachISOToVM(vmId, isoId, CDROM_PRIMARY_DEVICE_SEQ, attach, forced, true);
         }
-        if (attach) {
-            persistIsoAttachment(vmId, vm, iso, targetSlot);
-        } else {
-            persistIsoDetachment(vmId, vm, isoId, targetSlot);
+        // API jobs may arrive concurrently (including from different UI sessions).
+        // Hold a distributed VM lock across the fresh read, slot choice, agent call and DB update.
+        final com.cloud.utils.db.GlobalLock lock = com.cloud.utils.db.GlobalLock.getInternLock("vm-iso-" + vmId);
+        try {
+            if (!lock.lock(60)) {
+                throw new CloudRuntimeException("Another ISO operation is in progress for this Instance. Retry after it completes.");
+            }
+            try {
+                UserVmVO vm = _userVmDao.findById(vmId);
+                if (vm == null) {
+                    throw new InvalidParameterValueException("Unable to find Instance for ISO operation.");
+                }
+                VMTemplateVO iso = _tmpltDao.findById(isoId);
+                if (attach) {
+                    enforceCdromAttachLimits(vmId, vm, isoId);
+                } else {
+                    // Never fall back to the primary slot after a concurrent detach changed the state.
+                    resolveIsoIdForDetach(vm.getIsoId(), _vmIsoMapDao.listByVmId(vmId), isoId);
+                }
+                int targetSlot = attach ? chooseAttachSlot(vmId, vm) : findAttachedSlot(vmId, vm, isoId);
+                boolean success = attachISOToVM(vmId, isoId, targetSlot, attach, forced, false);
+                if (success) {
+                    if (attach) {
+                        persistIsoAttachment(vmId, vm, iso, targetSlot);
+                    } else {
+                        persistIsoDetachment(vmId, vm, isoId, targetSlot);
+                    }
+                }
+                return success;
+            } finally {
+                lock.unlock();
+            }
+        } finally {
+            lock.releaseRef();
         }
-        return success;
     }
 
     private int chooseAttachSlot(long vmId, UserVmVO vm) {

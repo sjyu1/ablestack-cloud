@@ -16,6 +16,7 @@
 // under the License.
 package com.cloud.api.query.dao;
 
+import org.apache.cloudstack.backup.BackupSnapshotGuard;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -74,6 +75,8 @@ import com.cloud.network.Network;
 import com.cloud.network.vpc.VpcVO;
 import com.cloud.network.vpc.dao.VpcDao;
 import com.cloud.service.ServiceOfferingDetailsVO;
+import com.cloud.service.ServiceOfferingVO;
+import com.cloud.vm.VmDetailConstants;
 import com.cloud.service.dao.ServiceOfferingDao;
 import com.cloud.storage.DiskOfferingVO;
 import com.cloud.storage.GuestOS;
@@ -125,6 +128,9 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
     private static final String FAST_CLONE_FLATTEN_PROGRESS = "clone.fast.flatten.progress";
 
     @Inject
+    private BackupSnapshotGuard backupSnapshotGuard;
+
+    @Inject
     private ConfigurationDao _configDao;
     @Inject
     public AccountManager _accountMgr;
@@ -157,6 +163,8 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
     @Inject
     private ServiceOfferingDao serviceOfferingDao;
     @Inject
+    private UserVmManager userVmManager;
+    @Inject
     private VgpuProfileDao vgpuProfileDao;
     @Inject
     VMTemplateDao vmTemplateDao;
@@ -170,6 +178,9 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
     ExtensionHelper extensionHelper;
     @Inject
     BackupDao backupDao;
+
+    @Inject
+    private org.apache.cloudstack.backup.BackupVolumeGuard backupVolumeGuard;
     @Inject
     private BackupOfferingDao backupOfferingDao;
 
@@ -230,6 +241,7 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
     public UserVmResponse newUserVmResponse(ResponseView view, String objectName, UserVmJoinVO userVm, Set<VMDetails> details, Boolean accumulateStats, Boolean showUserData,
             Account caller) {
         UserVmResponse userVmResponse = new UserVmResponse();
+        userVmResponse.setVolumeMutationBlockedReason(backupVolumeGuard.reason(userVm.getId()));
 
         if (userVm.getHypervisorType() != null) {
             userVmResponse.setHypervisor(userVm.getHypervisorType().getHypervisorDisplayName());
@@ -249,6 +261,29 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
         if (fastCloneStatus != null) {
             userVmResponse.setCloneFastStatus(fastCloneStatus.getValue());
         }
+        VMInstanceDetailVO sourcePhase = _vmInstanceDetailsDao.findDetail(userVm.getId(), VmDetailConstants.FAST_CLONE_SOURCE_PHASE);
+        boolean sourcePowerAllowed = false;
+        if (sourcePhase != null && VmDetailConstants.FAST_CLONE_SOURCE_PHASE_READY.equals(sourcePhase.getValue())) {
+            ServiceOfferingVO offering = serviceOfferingDao.findById(userVm.getId(), userVm.getServiceOfferingId());
+            sourcePowerAllowed = offering != null && !offering.isVolatileVm();
+        }
+        userVmResponse.setCloneFastSourcePowerAllowed(sourcePowerAllowed);
+        VMInstanceDetailVO clonePhase = _vmInstanceDetailsDao.findDetail(userVm.getId(), VmDetailConstants.FAST_CLONE_CLONE_PHASE);
+        userVmResponse.setCloneFastPhase(sourcePhase != null ? "source_" + sourcePhase.getValue()
+                : clonePhase != null ? "clone_" + clonePhase.getValue() : null);
+        userVmResponse.setCloneFastPowerAllowed(sourcePowerAllowed
+                || (sourcePhase == null && clonePhase != null && userVmManager.isSharedMountPointClonePowerAllowed(userVm.getId())));
+        if (sourcePhase == null && clonePhase != null) {
+            VMInstanceDetailVO bandwidth = _vmInstanceDetailsDao.findDetail(userVm.getId(), VmDetailConstants.FAST_CLONE_BANDWIDTH);
+            VMInstanceDetailVO bandwidthStatus = _vmInstanceDetailsDao.findDetail(userVm.getId(), VmDetailConstants.FAST_CLONE_BANDWIDTH_STATUS);
+            try {
+                userVmResponse.setCloneFastFlattenBandwidth(bandwidth == null ? UserVmManager.FlattenSharedMountPointBandwidth.value()
+                        : Integer.valueOf(bandwidth.getValue()));
+                userVmResponse.setCloneFastFlattenBandwidthStatus(bandwidthStatus == null ? null : bandwidthStatus.getValue());
+            } catch (NumberFormatException e) {
+                userVmResponse.setCloneFastFlattenBandwidthStatus("failed");
+            }
+        }
         VMInstanceDetailVO fastCloneFlattenProgress = _vmInstanceDetailsDao.findDetail(userVm.getId(), FAST_CLONE_FLATTEN_PROGRESS);
         if (fastCloneFlattenProgress != null) {
             userVmResponse.setCloneFastFlattenProgress(fastCloneFlattenProgress.getValue());
@@ -257,6 +292,8 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
             setFastCloneFlattenVolume(userVmResponse, userVm.getId());
         }
         setActiveBackupStatus(userVmResponse, userVm.getId());
+        userVmResponse.setVmSnapshotBlockedReason(backupSnapshotGuard.snapshotReason(userVm.getId()));
+        userVmResponse.setBackupBlockedReason(backupSnapshotGuard.backupReason(userVm.getId()));
 
         User user = _userDao.getUser(userVm.getUserId());
         if (user != null) {
@@ -396,6 +433,8 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
             // stats calculation
             VmStats vmStats = ApiDBUtils.getVmStatistics(userVm.getId(), accumulateStats);
             if (vmStats != null) {
+                if (vmStats.getSampledAt() > 0) userVmResponse.setStatsLastSampled(vmStats.getSampledAt());
+                userVmResponse.setStatsCollectionStatus(vmStats.getCollectionStatus());
                 userVmResponse.setCpuUsed(new DecimalFormat("#.##").format(vmStats.getCPUUtilization()) + "%");
                 userVmResponse.setNetworkKbsRead((long)vmStats.getNetworkReadKBs());
                 userVmResponse.setNetworkKbsWrite((long)vmStats.getNetworkWriteKBs());
@@ -485,7 +524,6 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
                     nicResponse.setPublicIpId(publicIp.getUuid());
                     nicResponse.setPublicIp(publicIp.getAddress().toString());
                 }
-                nicResponse.setLinkState(userVm.getLinkState());
 
                 nicResponse.setObjectName("nic");
 
@@ -599,8 +637,14 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
         List<VbmcVO> vbmcPortVo = vbmcDao.listByVmId(userVm.getId());
         if(vbmcPortVo.size() > 0) {
             userVmResponse.setVbmcPort(Integer.toString(vbmcPortVo.get(0).getPort()));
+            VbmcVO endpoint = vbmcPortVo.get(0);
+            userVmResponse.setVbmcStatus(endpoint.getStatus());
+            userVmResponse.setVbmcAddress(endpoint.getAddress());
+            userVmResponse.setVbmcAllowedCidr(endpoint.getAllowedCidr());
+            userVmResponse.setVbmcLastError(endpoint.getLastError());
         } else {
             userVmResponse.setVbmcPort("None");
+            userVmResponse.setVbmcStatus("Unallocated");
         }
         if (userVm.getUserDataId() != null) {
             userVmResponse.setUserDataId(userVm.getUserDataUuid());
@@ -849,7 +893,6 @@ public class UserVmJoinDaoImpl extends GenericDaoBaseWithTagInformation<UserVmJo
                 nicResponse.setPublicIpId(publicIp.getUuid());
                 nicResponse.setPublicIp(publicIp.getAddress().toString());
             }
-            nicResponse.setLinkState(uvo.getLinkState());
 
             /* 18: extra dhcp options */
             nicResponse.setObjectName("nic");

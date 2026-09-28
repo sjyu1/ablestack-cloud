@@ -166,7 +166,15 @@
     </a-affix>
 
     <div v-show="showAction">
-      <keep-alive v-if="currentAction.component && (!currentAction.invokedAsGroupAction || (this.selectedRowKeys.length > 0 && currentAction.api === 'destroyVirtualMachine'))">
+      <component
+        v-if="showAction && currentAction.selfManagedDialog"
+        :is="currentAction.component"
+        :resource="resource"
+        :current-action="currentAction"
+        dialog-only
+        @close-action="closeAction"
+      />
+      <keep-alive v-else-if="currentAction.component && (!currentAction.invokedAsGroupAction || currentAction.api === 'destroyVirtualMachine')">
         <a-modal
           :visible="showAction"
           :closable="true"
@@ -821,6 +829,7 @@
         <advisories-view
           v-if="$route.meta.advisories && !loading"
         />
+        <p v-if="listRefreshError" role="status">{{ $t('message.list.refresh.stale') }}</p>
         <list-view
           :loading="loading"
           :columns="columns"
@@ -868,6 +877,7 @@
 </template>
 
 <script>
+import { createListRefresh, listRowKey, canRefreshList } from '@/utils/listRefresh'
 import { ref, reactive, toRaw, h } from 'vue'
 import { Button } from 'ant-design-vue'
 import { getAPI, postAPI, callAPI } from '@/api'
@@ -886,6 +896,7 @@ import SearchFilter from '@/components/view/SearchFilter'
 import OsLogo from '@/components/widgets/OsLogo'
 import ResourceIcon from '@/components/view/ResourceIcon'
 import BulkActionProgress from '@/components/view/BulkActionProgress'
+import { bulkColumns, updateBulkItem } from '@/utils/bulkAction'
 import TooltipLabel from '@/components/widgets/TooltipLabel'
 import DetailsInput from '@/components/widgets/DetailsInput'
 import AdvisoriesView from '@/components/view/AdvisoriesView'
@@ -958,30 +969,37 @@ export default {
       promises: [],
       detailActionsVisible: false,
       autoRefreshTimer: null,
+      listRequestVersion: 0,
+      listRequestPending: false,
+      listRequestScope: null,
+      listRequestPromise: null,
+      listRefreshQueued: false,
+      listLoadedScope: null,
+      listSchemaScope: null,
+      listSecurityScope: null,
+      listCustomRender: {},
+      listRefreshError: false,
+      listLastUpdated: null,
       autoRefreshInterval: 10000
     }
   },
   beforeUnmount () {
-    eventBus.off('vm-refresh-data')
-    eventBus.off('async-job-complete')
-    eventBus.off('exec-action')
-    eventBus.off('desktop-refresh-data')
-    eventBus.off('resource-request-refresh-data')
-    eventBus.off('automation-refresh-data')
-    eventBus.off('dr-refresh-data')
+    for (const [name, handler] of this.listEventHandlers || []) eventBus.off(name, handler)
     this.clearAutoRefresh()
+    this.listRequestVersion += 1
   },
   mounted () {
-    eventBus.on('exec-action', (args) => {
+    this.onListEvent('exec-action', (args) => {
       const { action, isGroupAction } = args
       this.execAction(action, isGroupAction)
     })
   },
   created () {
+    this.listEventHandlers = []
     this.formRef = ref()
     this.form = reactive({})
     this.rules = reactive({})
-    eventBus.on('vm-refresh-data', () => {
+    this.onListEvent('vm-refresh-data', () => {
       if (this.$route.path === '/vm' || this.$route.path.includes('/vm/')) {
         this.fetchData()
       }
@@ -990,37 +1008,37 @@ export default {
         this.fetchData()
       }
     })
-    eventBus.on('desktop-refresh-data', () => {
+    this.onListEvent('desktop-refresh-data', () => {
       if (this.$route.path === '/desktopcluster' || this.$route.path.includes('/desktopcluster/')) {
         this.fetchData()
       }
     })
-    eventBus.on('resource-request-refresh-data', () => {
+    this.onListEvent('resource-request-refresh-data', () => {
       if (this.$route.path === '/desktopcluster' || this.$route.path.includes('/desktopcluster/')) {
         this.fetchData()
       }
     })
-    // eventBus.on('automation-refresh-data', () => {
+    // this.onListEvent('automation-refresh-data', () => {
     //   if (this.$route.path === '/automationtemplate' || this.$route.path.includes('/automationtemplate/')) {
     //     this.fetchData()
     //   }
     // })
-    eventBus.on('automation-controller-refresh-data', () => {
+    this.onListEvent('automation-controller-refresh-data', () => {
       if (this.$route.path === '/automationcontroller' || this.$route.path.includes('/automationcontroller/')) {
         this.fetchData()
       }
     })
-    eventBus.on('dr-refresh-data', () => {
+    this.onListEvent('dr-refresh-data', () => {
       if (this.$route.path === '/disasterrecoverycluster' || this.$route.path.includes('/disasterrecoverycluster/')) {
         this.fetchData()
       }
     })
-    eventBus.on('refresh-icon', () => {
+    this.onListEvent('refresh-icon', () => {
       if (this.$showIcon()) {
         this.fetchData()
       }
     })
-    eventBus.on('async-job-complete', (action) => {
+    this.onListEvent('async-job-complete', (action) => {
       if (this.$route.path.includes('/vm/')) {
         if (action && 'api' in action && ['destroyVirtualMachine'].includes(action.api)) {
           return
@@ -1037,7 +1055,7 @@ export default {
       }
       this.fetchData()
     })
-    eventBus.on('update-bulk-job-status', (args) => {
+    this.onListEvent('update-bulk-job-status', (args) => {
       var { items, action } = args
       for (const item of items) {
         this.$store.getters.headerNotices.map(function (j) {
@@ -1048,14 +1066,14 @@ export default {
       }
     })
 
-    eventBus.on('update-resource-state', (args) => {
+    this.onListEvent('update-resource-state', (args) => {
       var {
         selectedItems,
         resource,
         state,
         jobid
       } = args
-      if (selectedItems.length === 0) {
+      if (selectedItems.length === 0 || (this.showGroupActionModal && selectedItems !== this.selectedItems)) {
         return
       }
       var tempResource = []
@@ -1076,11 +1094,8 @@ export default {
           } else {
             objIndex = selectedItems.findIndex(obj => (obj.id === tempResource[r] || obj.username === tempResource[r] || obj.name === tempResource[r]))
           }
-          if (state && objIndex !== -1) {
-            this.selectedItems[objIndex].status = state
-          }
-          if (jobid && objIndex !== -1) {
-            this.selectedItems[objIndex].jobid = jobid
+          if (objIndex !== -1) {
+            updateBulkItem(this.selectedItems[objIndex], state, jobid)
           }
         }
       }
@@ -1105,6 +1120,8 @@ export default {
     this.currentPath = this.$route.fullPath
     this.resetSelection()
     this.clearAutoRefresh()
+    this.listRequestVersion += 1
+    this.listRequestPending = false
     next()
   },
   watch: {
@@ -1134,10 +1151,8 @@ export default {
     dataView (newVal, oldVal) {
       if (newVal) {
         this.detailActionsVisible = false
-        this.clearAutoRefresh()
-      } else {
-        this.scheduleAutoRefresh()
       }
+      this.scheduleAutoRefresh()
     },
     '$store.getters.metrics' (oldVal, newVal) {
       this.fetchData()
@@ -1148,7 +1163,7 @@ export default {
     showAction (visible) {
       if (visible) {
         this.clearAutoRefresh()
-      } else if (!this.dataView) {
+      } else {
         this.scheduleAutoRefresh()
       }
     }
@@ -1291,23 +1306,33 @@ export default {
       this.selectedRowKeys = []
       this.selectedItems = []
     },
+    onListEvent (name, handler) {
+      this.listEventHandlers.push([name, handler])
+      eventBus.on(name, handler)
+    },
     shouldAutoRefresh () {
-      return !this.dataView && this.autoRefreshInterval > 0
+      return this.autoRefreshInterval > 0 && /^(list|get|quota)/i.test(this.apiName || '')
     },
     scheduleAutoRefresh () {
       this.clearAutoRefresh()
       if (!this.shouldAutoRefresh()) {
         return
       }
-      this.autoRefreshTimer = setInterval(() => {
-        this.fetchData({ irefresh: true, autoscheduled: true })
-      }, this.autoRefreshInterval)
+      this.autoRefreshTimer = createListRefresh({
+        interval: this.dataView ? 30000 : this.autoRefreshInterval,
+        active: () => this.shouldAutoRefresh() && !this.showAction && canRefreshList(this.$el),
+        refresh: () => this.fetchData({ irefresh: true, autoscheduled: true })
+      })
     },
     clearAutoRefresh () {
       if (this.autoRefreshTimer) {
-        clearInterval(this.autoRefreshTimer)
+        this.autoRefreshTimer.stop()
         this.autoRefreshTimer = null
       }
+    },
+    listScope () {
+      return JSON.stringify([this.$route.fullPath, this.$store.getters.project?.id,
+        this.$store.getters.userInfo?.id, this.$store.getters.metrics, this.$store.getters.listAllProjects])
     },
     getStyle () {
       if (['snapshot', 'vmsnapshot', 'publicip'].includes(this.$route.name)) {
@@ -1402,11 +1427,30 @@ export default {
           : null
         this.routeName = matchedRoute?.meta?.name || this.$route?.meta?.name || this.$route?.name || ''
       }
-      this.apiName = ''
-      this.actions = []
-      this.columns = []
-      this.columnKeys = []
-      this.selectedColumns = []
+      const securityScope = JSON.stringify([this.$store.getters.userInfo?.id, this.$store.getters.project?.id, this.$route.params.id])
+      if (this.listSecurityScope !== securityScope) {
+        this.items = []
+        this.resource = {}
+        this.itemCount = 0
+        this.listLoadedScope = null
+        this.listSecurityScope = securityScope
+      }
+      const scope = this.listScope()
+      if (this.listRequestPending && this.listRequestScope === scope) {
+        if (!params.autoscheduled) this.listRefreshQueued = true
+        return this.listRequestPromise
+      }
+      const version = ++this.listRequestVersion
+      const sameList = this.listLoadedScope === scope
+      const schemaScope = JSON.stringify([this.$route.path, this.$i18n?.locale, this.$store.getters.metrics, this.$store.getters.listAllProjects, this.$store.getters.userInfo?.id])
+      const rebuildSchema = this.listSchemaScope !== schemaScope
+      if (rebuildSchema) {
+        this.apiName = ''
+        this.actions = []
+        this.columns = []
+        this.columnKeys = []
+        this.selectedColumns = []
+      }
       const refreshed = ('irefresh' in params)
       const isAutoScheduled = Boolean(params.autoscheduled)
 
@@ -1462,7 +1506,7 @@ export default {
         'vpc', 'securitygroups', 'publicip', 'vpncustomergateway', 'template', 'iso', 'event', 'kubernetes', 'sharedfs',
         'autoscalevmgroup', 'vnfapp', 'webhook', 'kmskey', 'hsmprofile'].includes(this.$route.name)
 
-      if (this.dataView && !refreshed) {
+      if (this.dataView && !refreshed && !sameList) {
         this.resource = {}
         this.$emit('change-resource', this.resource)
       }
@@ -1471,107 +1515,112 @@ export default {
         params.listsystemvms = true
       }
 
-      if (this.$route && this.$route.meta && this.$route.meta.permission) {
-        this.apiName = this.$route.meta.permission[0]
-        if (!store.getters.metrics && !this.dataView &&
+      const customRender = rebuildSchema ? {} : this.listCustomRender
+      if (rebuildSchema) {
+        if (this.$route && this.$route.meta && this.$route.meta.permission) {
+          this.apiName = this.$route.meta.permission[0]
+          if (!store.getters.metrics && !this.dataView &&
             this.apiName && this.apiName.endsWith('Metrics') &&
             store.getters.apis[this.apiName.replace(/Metrics$/, '')]) {
-          this.apiName = this.apiName.replace(/Metrics$/, '')
-        }
-
-        // [CHANGE] meta.columns → 항상 배열 보정
-        if (this.$route.meta.columns) {
-          const columns = this.$route.meta.columns
-          if (columns && typeof columns === 'function') {
-            this.columnKeys = asArray(columns(this.$store.getters))
-          } else {
-            this.columnKeys = asArray(columns)
+            this.apiName = this.apiName.replace(/Metrics$/, '')
           }
-        }
 
-        // [CHANGE] meta.actions → 항상 배열 보정
-        if (this.$route.meta.actions) {
-          const acts = this.$route.meta.actions
-          this.actions = asArray(typeof acts === 'function' ? acts(this.$store.getters) : acts)
-        }
-      }
-
-      if (this.apiName === '' || this.apiName === undefined) {
-        return
-      }
-
-      if (!this.columnKeys || this.columnKeys.length === 0) {
-        // [CHANGE] API 메타 응답 반복 안전화
-        const apiMeta = store.getters && store.getters.apis && store.getters.apis[this.apiName]
-        const respFields = apiMeta && apiMeta.response
-        for (const field of asArray(respFields)) {
-          this.columnKeys.push(field.name)
-        }
-        this.columnKeys = [...new Set(this.columnKeys)]
-        this.columnKeys.sort(function (a, b) {
-          if (a === 'name' && b !== 'name') { return -1 }
-          if (a < b) { return -1 }
-          if (a > b) { return 1 }
-          return 0
-        })
-      }
-
-      const customRender = {}
-      // [CHANGE] 컬럼 루프 안전화
-      for (const columnKey of asArray(this.columnKeys)) {
-        let key = columnKey
-        let title = columnKey === 'cidr' && this.columnKeys.includes('ip6cidr') ? 'ipv4.cidr' : key
-        if (typeof columnKey === 'object') {
-          if ('customTitle' in columnKey && 'field' in columnKey) {
-            key = columnKey.field
-            title = columnKey.customTitle
-            customRender[key] = columnKey[key]
-          } else {
-            key = Object.keys(columnKey)[0]
-            title = (typeof title === 'object') ? key : title
-            customRender[key] = columnKey[key]
-          }
-        }
-        const sorter = key === 'resources'
-          ? (a, b) => {
-            const cpuCompare = Number(a.cpunumber || 0) - Number(b.cpunumber || 0)
-            if (cpuCompare !== 0) {
-              return cpuCompare
+          // [CHANGE] meta.columns → 항상 배열 보정
+          if (this.$route.meta.columns) {
+            const columns = this.$route.meta.columns
+            if (columns && typeof columns === 'function') {
+              this.columnKeys = asArray(columns(this.$store.getters))
+            } else {
+              this.columnKeys = asArray(columns)
             }
-            return Number(a.memory || 0) - Number(b.memory || 0)
           }
-          : (a, b) => genericCompare(a[key] || '', b[key] || '')
-        this.columns.push({
-          key: key,
-          title: this.$t('label.' + String(title).toLowerCase()),
-          dataIndex: key,
-          sorter: sorter
-        })
-        this.selectedColumns.push(key)
-      }
-      this.allColumns = this.columns
 
-      if (!store.getters.metrics) {
-        if (!this.$store.getters.customColumns[this.$store.getters.userInfo.id]) {
-          this.$store.getters.customColumns[this.$store.getters.userInfo.id] = {}
-          this.$store.getters.customColumns[this.$store.getters.userInfo.id][this.$route.path] = this.selectedColumns
-        } else {
-          this.selectedColumns = this.$store.getters.customColumns[this.$store.getters.userInfo.id][this.$route.path] || this.selectedColumns
-          if (this.$store.getters.listAllProjects && !this.projectView) {
-            this.selectedColumns.push('project')
+          // [CHANGE] meta.actions → 항상 배열 보정
+          if (this.$route.meta.actions) {
+            const acts = this.$route.meta.actions
+            this.actions = asArray(typeof acts === 'function' ? acts(this.$store.getters) : acts)
           }
-          this.updateSelectedColumns()
         }
-      }
 
-      this.chosenColumns = this.columns.filter(column => {
-        return ![this.$t('label.state'), this.$t('label.hostname'), this.$t('label.hostid'), this.$t('label.zonename'),
-          this.$t('label.zone'), this.$t('label.zoneid'), this.$t('label.ip'), this.$t('label.ipaddress'), this.$t('label.privateip'),
-          this.$t('label.linklocalip'), this.$t('label.size'), this.$t('label.sizegb'), this.$t('label.current'),
-          this.$t('label.created'), this.$t('label.order'), this.$t('label.networkname'), this.$t('label.kvdoenable'),
-          this.$t('label.usedfsbytes'), this.$t('label.qemuagentversion')].includes(column.title)
-      })
-      this.chosenColumns.splice(this.chosenColumns.length - 1, 1)
+        if (this.apiName === '' || this.apiName === undefined) {
+          return
+        }
+
+        if (!this.columnKeys || this.columnKeys.length === 0) {
+        // [CHANGE] API 메타 응답 반복 안전화
+          const apiMeta = store.getters && store.getters.apis && store.getters.apis[this.apiName]
+          const respFields = apiMeta && apiMeta.response
+          for (const field of asArray(respFields)) {
+            this.columnKeys.push(field.name)
+          }
+          this.columnKeys = [...new Set(this.columnKeys)]
+          this.columnKeys.sort(function (a, b) {
+            if (a === 'name' && b !== 'name') { return -1 }
+            if (a < b) { return -1 }
+            if (a > b) { return 1 }
+            return 0
+          })
+        }
+
+        // [CHANGE] 컬럼 루프 안전화
+        for (const columnKey of asArray(this.columnKeys)) {
+          let key = columnKey
+          let title = columnKey === 'cidr' && this.columnKeys.includes('ip6cidr') ? 'ipv4.cidr' : key
+          if (typeof columnKey === 'object') {
+            if ('customTitle' in columnKey && 'field' in columnKey) {
+              key = columnKey.field
+              title = columnKey.customTitle
+              customRender[key] = columnKey[key]
+            } else {
+              key = Object.keys(columnKey)[0]
+              title = (typeof title === 'object') ? key : title
+              customRender[key] = columnKey[key]
+            }
+          }
+          const sorter = key === 'resources'
+            ? (a, b) => {
+              const cpuCompare = Number(a.cpunumber || 0) - Number(b.cpunumber || 0)
+              if (cpuCompare !== 0) {
+                return cpuCompare
+              }
+              return Number(a.memory || 0) - Number(b.memory || 0)
+            }
+            : (a, b) => genericCompare(a[key] || '', b[key] || '')
+          this.columns.push({
+            key: key,
+            title: this.$t('label.' + String(title).toLowerCase()),
+            dataIndex: key,
+            sorter: sorter
+          })
+          this.selectedColumns.push(key)
+        }
+        this.allColumns = this.columns
+
+        if (!store.getters.metrics) {
+          if (!this.$store.getters.customColumns[this.$store.getters.userInfo.id]) {
+            this.$store.getters.customColumns[this.$store.getters.userInfo.id] = {}
+            this.$store.getters.customColumns[this.$store.getters.userInfo.id][this.$route.path] = this.selectedColumns
+          } else {
+            this.selectedColumns = this.$store.getters.customColumns[this.$store.getters.userInfo.id][this.$route.path] || this.selectedColumns
+            if (this.$store.getters.listAllProjects && !this.projectView) {
+              this.selectedColumns.push('project')
+            }
+            this.updateSelectedColumns()
+          }
+        }
+
+        this.chosenColumns = this.columns.filter(column => {
+          return ![this.$t('label.state'), this.$t('label.hostname'), this.$t('label.hostid'), this.$t('label.zonename'),
+            this.$t('label.zone'), this.$t('label.zoneid'), this.$t('label.ip'), this.$t('label.ipaddress'), this.$t('label.privateip'),
+            this.$t('label.linklocalip'), this.$t('label.size'), this.$t('label.sizegb'), this.$t('label.current'),
+            this.$t('label.created'), this.$t('label.order'), this.$t('label.networkname'), this.$t('label.kvdoenable'),
+            this.$t('label.usedfsbytes'), this.$t('label.qemuagentversion')].includes(column.title)
+        })
+        this.chosenColumns.splice(this.chosenColumns.length - 1, 1)
+
+        this.listSchemaScope = schemaScope
+        this.listCustomRender = customRender
+      }
 
       if (['listTemplates', 'listIsos'].includes(this.apiName) && this.dataView) {
         delete params.showunique
@@ -1589,13 +1638,11 @@ export default {
         }
       }
 
-      this.loading = true
+      this.loading = !sameList
       if (this.$route.path.startsWith('/cniconfiguration')) {
         params.forcks = true
       }
-      if (!(refreshed && isAutoScheduled)) {
-        this.loading = true
-      }
+
       if (this.$route.params && this.$route.params.id) {
         params.id = this.$route.params.id
         if (['listNetworks'].includes(this.apiName) && 'displaynetwork' in this.$route.query) {
@@ -1669,7 +1716,14 @@ export default {
         delete params.listall
       }
 
-      callAPI(this.apiName, params).then(json => {
+      this.listRequestPending = true
+      this.listRequestScope = scope
+      const requestApi = this.apiName
+      const request = callAPI(requestApi, params).then(json => {
+        if (version !== this.listRequestVersion || scope !== this.listScope()) return
+        this.listLastUpdated = Date.now()
+        this.listLoadedScope = scope
+        this.listRefreshError = false
         var responseName
         var objectName
         for (const key in json) {
@@ -1697,6 +1751,13 @@ export default {
           return
         }
 
+        if (!this.dataView && Object.prototype.hasOwnProperty.call(json[responseName], 'count')) {
+          const lastPage = Math.max(1, Math.ceil(apiItemCount / this.pageSize))
+          if (this.page > lastPage) {
+            this.$router.replace({ query: { ...this.$route.query, page: String(lastPage) } })
+            return
+          }
+        }
         this.items = json[responseName][objectName]
         if (!this.items || this.items.length === 0) {
           this.items = []
@@ -1734,16 +1795,6 @@ export default {
           })
         }
 
-        if (this.apiName === 'listBackups') {
-          const kbossFields = ['compressionstatus', 'validationstatus']
-          const hasKbossData = this.items.some(backup => kbossFields.some(field => backup[field]))
-          if (!hasKbossData) {
-            this.columns = this.columns.filter(col => !kbossFields.includes(col.dataIndex))
-            this.allColumns = this.allColumns.filter(col => !kbossFields.includes(col.dataIndex))
-            this.selectedColumns = this.selectedColumns.filter(key => !kbossFields.includes(key))
-          }
-        }
-
         for (let idx = 0; idx < this.items.length; idx += 1) {
           this.items[idx].key = idx
           for (const key in customRender) {
@@ -1757,15 +1808,25 @@ export default {
           this.$router.push({ path: '/exception/404' })
         }
         if (!this.showAction || this.dataView || (this.items.length === 1 && this.apiName === 'getUserKeys')) {
-          this.resource = this.items?.[0] || {}
-          this.$emit('change-resource', this.resource)
+          const resource = this.items?.[0] || {}
+          if (JSON.stringify(resource) !== JSON.stringify(this.resource)) {
+            this.resource = resource
+            this.$emit('change-resource', this.resource)
+          }
         }
       }).catch(error => {
+        if (version !== this.listRequestVersion || scope !== this.listScope()) return
+        if (sameList) {
+          this.listRefreshError = true
+          if (isAutoScheduled) throw error
+          this.$notifyError(error)
+          return
+        }
         if (!error || !error.message) {
           console.log('API request likely got cancelled due to route change:', this.apiName)
           return
         }
-        if ([401].includes(error.response.status)) {
+        if ([401].includes(error.response?.status)) {
           return
         }
 
@@ -1781,19 +1842,26 @@ export default {
 
         this.$notifyError(error)
 
-        if ([405].includes(error.response.status)) {
+        if ([405].includes(error.response?.status)) {
           this.$router.push({ path: '/dashboard' })
         }
-        if ([430, 431, 432].includes(error.response.status)) {
+        if ([430, 431, 432].includes(error.response?.status)) {
           this.$router.push({ path: '/dashboard' })
         }
-        if ([530, 531, 532, 533, 534, 535, 536, 537].includes(error.response.status)) {
+        if ([530, 531, 532, 533, 534, 535, 536, 537].includes(error.response?.status)) {
           this.$router.push({ path: '/dashboard' })
         }
       }).finally(f => {
+        if (version !== this.listRequestVersion) return
+        this.listRequestPending = false
         this.loading = false
         this.searchParams = params
+        if (this.listRefreshQueued) {
+          this.listRefreshQueued = false
+          this.fetchData({ irefresh: true })
+        }
       })
+      this.listRequestPromise = request
 
       // [CHANGE] 라우터 쿼리 action 루프 안전화
       if ('action' in this.$route.query) {
@@ -1808,6 +1876,7 @@ export default {
           }
         }
       }
+      return request
     },
     closeAction () {
       this.actionLoading = false
@@ -1832,11 +1901,13 @@ export default {
       this.$router.push({ query: queryParams })
     },
     onRowSelectionChange (selection) {
+      // List refreshes must not replace the snapshot owned by active jobs.
+      if (this.showGroupActionModal) return
       this.selectedRowKeys = selection
       if (selection?.length > 0) {
         this.modalWidth = '50vw'
         this.selectedItems = (this.items.filter(function (item) {
-          return selection.indexOf(item.id) !== -1
+          return selection.includes(listRowKey(item))
         }))
       } else {
         this.modalWidth = '30vw'
@@ -1851,6 +1922,7 @@ export default {
       this.execAction(action, false)
     },
     execAction (action, isGroupAction) {
+      this.listEventHandlers = []
       this.formRef = ref()
       this.form = reactive({})
       this.rules = reactive({})
@@ -2102,7 +2174,7 @@ export default {
         param.loading = false
       })
     },
-    pollActionCompletion (jobId, action, resourceName, resource, showLoading = true) {
+    pollActionCompletion (jobId, action, resourceName, resource, showLoading = true, selectedItems = this.selectedItems) {
       if (this.shouldNavigateBack(action)) {
         action.isFetchData = false
       }
@@ -2113,8 +2185,8 @@ export default {
           description: resourceName,
           name: resourceName,
           successMethod: result => {
-            if (this.selectedItems.length > 0) {
-              eventBus.emit('update-resource-state', { selectedItems: this.selectedItems, resource, state: 'success' })
+            if (selectedItems === this.selectedItems && selectedItems.length > 0) {
+              eventBus.emit('update-resource-state', { selectedItems, resource, state: 'success' })
             }
             if (action.response) {
               const response = action.response(result.jobresult)
@@ -2152,16 +2224,17 @@ export default {
             resolve(true)
           },
           errorMethod: () => {
-            if (this.selectedItems.length > 0) {
-              eventBus.emit('update-resource-state', { selectedItems: this.selectedItems, resource, state: 'failed' })
+            if (selectedItems === this.selectedItems && selectedItems.length > 0) {
+              eventBus.emit('update-resource-state', { selectedItems, resource, state: 'failed' })
             }
             resolve(true)
           },
           loadingMessage: `${this.$t(action.label)} - ${resourceName}`,
           showLoading: showLoading,
           catchMessage: this.$t('error.fetching.async.job.result'),
+          catchMethod: () => resolve(false),
           action,
-          bulkAction: `${this.selectedItems.length > 0}` && this.showGroupActionModal,
+          bulkAction: `${selectedItems.length > 0}` && this.showGroupActionModal,
           resourceId: resource
         })
       })
@@ -2205,7 +2278,7 @@ export default {
       this.promises = []
       if (!this.dataView && this.currentAction.invokedAsGroupAction && this.selectedRowKeys.length > 0) {
         if (this.selectedRowKeys.length > 0) {
-          this.bulkColumns = this.chosenColumns
+          this.bulkColumns = bulkColumns(this.chosenColumns)
           this.selectedItems = this.selectedItems.map(v => ({ ...v, status: 'InProgress' }))
           this.bulkColumns.splice(0, 0, {
             key: 'status',
@@ -2251,19 +2324,22 @@ export default {
       }
     },
     callGroupApi (params, resourceName) {
+      const selectedItems = this.selectedItems
       return new Promise((resolve, reject) => {
         const action = this.currentAction
         postAPI(action.api, params).then(json => {
-          resolve(this.handleResponse(json, resourceName, this.getDataIdentifier(params), action, false))
+          resolve(this.handleResponse(json, resourceName, this.getDataIdentifier(params), action, false, selectedItems))
           this.closeAction()
         }).catch(error => {
-          if ([401].includes(error.response.status)) {
+          if ([401].includes(error.response?.status)) {
+            resolve(false)
             return
           }
-          if (this.selectedItems.length !== 0) {
+          if (selectedItems === this.selectedItems && selectedItems.length !== 0) {
             this.$notifyError(error)
-            eventBus.emit('update-resource-state', { selectedItems: this.selectedItems, resource: this.getDataIdentifier(params), state: 'failed' })
+            eventBus.emit('update-resource-state', { selectedItems, resource: this.getDataIdentifier(params), state: 'failed' })
           }
+          resolve(false)
         })
       })
     },
@@ -2272,7 +2348,7 @@ export default {
       dataIdentifier = params.id || params.username || params.name || params.vmsnapshotid || params.ids
       return dataIdentifier
     },
-    handleResponse (response, resourceName, resource, action, showLoading = true) {
+    handleResponse (response, resourceName, resource, action, showLoading = true, selectedItems = this.selectedItems) {
       return new Promise(resolve => {
         let jobId = null
         for (const obj in response) {
@@ -2280,13 +2356,13 @@ export default {
             if (response[obj].jobid) {
               jobId = response[obj].jobid
             } else {
-              if (this.selectedItems.length > 0) {
-                eventBus.emit('update-resource-state', { selectedItems: this.selectedItems, resource, state: 'success' })
+              if (selectedItems === this.selectedItems && selectedItems.length > 0) {
+                eventBus.emit('update-resource-state', { selectedItems, resource, state: 'success' })
                 if (resource) {
-                  this.selectedItems.filter(item => item === resource)
+                  selectedItems.filter(item => item === resource)
                 }
               }
-              if (this.selectedItems.length === 0) {
+              if (selectedItems.length === 0) {
                 let message = ''
                 let messageDuration = 2
                 if ('successMessage' in action) {
@@ -2316,8 +2392,10 @@ export default {
           this.$store.dispatch('UpdateConfiguration')
         }
         if (jobId) {
-          eventBus.emit('update-resource-state', { selectedItems: this.selectedItems, resource, state: 'InProgress', jobid: jobId })
-          resolve(this.pollActionCompletion(jobId, action, resourceName, resource, showLoading))
+          if (selectedItems === this.selectedItems) {
+            eventBus.emit('update-resource-state', { selectedItems, resource, state: 'InProgress', jobid: jobId })
+          }
+          resolve(this.pollActionCompletion(jobId, action, resourceName, resource, showLoading, selectedItems))
         }
         resolve(false)
       })
@@ -2455,7 +2533,7 @@ export default {
           })
           this.closeAction()
         }).catch(error => {
-          if ([401].includes(error.response.status)) {
+          if ([401].includes(error.response?.status)) {
             return
           }
 

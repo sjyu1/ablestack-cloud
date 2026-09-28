@@ -190,7 +190,7 @@ public abstract class BaseDeployVMCmd extends BaseAsyncCreateCustomIdCmd impleme
     private List<String> securityGroupNameList;
 
     @Parameter(name = ApiConstants.IP_NETWORK_LIST, type = CommandType.MAP, description = "ip to network mapping. Can't be specified with networkIds parameter."
-            + " Example: iptonetworklist[0].ip=10.10.10.11&iptonetworklist[0].ipv6=fc00:1234:5678::abcd&iptonetworklist[0].networkid=uuid&iptonetworklist[0].mac=aa:bb:cc:dd:ee::ff - requests to use ip 10.10.10.11 in network id=uuid")
+            + " Example: iptonetworklist[0].ip=10.10.10.11&iptonetworklist[0].ipv6=fc00:1234:5678::abcd&iptonetworklist[0].enabled=false&iptonetworklist[0].networkid=uuid&iptonetworklist[0].mac=aa:bb:cc:dd:ee::ff - requests to use ip 10.10.10.11 in network id=uuid")
     private Map ipToNetworkList;
 
     @Parameter(name = ApiConstants.IP_ADDRESS, type = CommandType.STRING, description = "the ip address for default vm's network")
@@ -351,11 +351,14 @@ public abstract class BaseDeployVMCmd extends BaseAsyncCreateCustomIdCmd impleme
     public ApiConstants.TpmVersion getTpmVersion() {
         if (StringUtils.isNotBlank(tpmversion)) {
             try {
-                String type = tpmversion.trim().toUpperCase();
+                String type = tpmversion.trim().toUpperCase(java.util.Locale.ROOT);
+                if ("2.0".equals(type)) { type = "V2_0"; }
+                if ("1.2".equals(type)) { type = "V1_2"; }
+                if ("TPM".equals(type)) { throw new IllegalArgumentException("Ambiguous TPM version"); }
                 return ApiConstants.TpmVersion.valueOf(type);
             } catch (IllegalArgumentException e) {
                 String errMesg = "Invalid TpmVersion " + tpmversion + "Specified for vm " + getName()
-                        + " Valid values are: " + Arrays.toString(ApiConstants.BootType.values());
+                        + " Valid values are: " + "[NONE, V1_2, V2_0, 1.2, 2.0]";
                 logger.warn(errMesg);
                 throw new InvalidParameterValueException(errMesg);
             }
@@ -374,14 +377,25 @@ public abstract class BaseDeployVMCmd extends BaseAsyncCreateCustomIdCmd impleme
             customparameterMap.put(VmDetailConstants.ROOT_DISK_SIZE, rootdisksize.toString());
         }
 
-        if(customparameterMap.containsKey(ApiConstants.TpmVersion.V2_0.toString())){
-            customparameterMap.put("tpmversion", customparameterMap.get(ApiConstants.TpmVersion.V2_0.toString()));
-        }else if(customparameterMap.containsKey("tpmversion")){
-            customparameterMap.put("tpmversion", customparameterMap.get("tpmversion"));
-        }else if(getTpmVersion() != null){
-            customparameterMap.put("tpmversion", getTpmVersion().toString());
-        }else{
-            customparameterMap.put("tpmversion", "NONE");
+        for (String alias : java.util.List.of("1.2", "2.0")) {
+            if (customparameterMap.containsKey(alias)) {
+                String value = customparameterMap.remove(alias);
+                if (customparameterMap.containsKey("tpmversion")
+                        && !java.util.Objects.equals(com.cloud.vm.KvmTpmConfig.normalizeVersion(customparameterMap.get("tpmversion")),
+                            com.cloud.vm.KvmTpmConfig.normalizeVersion(value))) {
+                    throw new InvalidParameterValueException("Conflicting legacy TPM detail values.");
+                }
+                customparameterMap.put("tpmversion", value);
+            }
+        }
+        if (getTpmVersion() != null) {
+            String value = getTpmVersion().toString();
+            if (customparameterMap.containsKey("tpmversion")
+                    && !java.util.Objects.equals(com.cloud.vm.KvmTpmConfig.normalizeVersion(customparameterMap.get("tpmversion")),
+                        com.cloud.vm.KvmTpmConfig.normalizeVersion(value))) {
+                throw new InvalidParameterValueException("Conflicting TPM API and details values.");
+            }
+            customparameterMap.put("tpmversion", value);
         }
 
         IoDriverPolicy ioPolicy = getIoDriverPolicy();
@@ -687,7 +701,14 @@ public abstract class BaseDeployVMCmd extends BaseAsyncCreateCustomIdCmd impleme
             }
             requestedMac = NetUtils.standardizeMacAddress(requestedMac);
         }
-        return new IpAddresses(requestedIp, requestedIpv6, requestedMac);
+        if (ips.containsKey("linkstate")) {
+            throw new InvalidParameterValueException("iptonetworklist.linkstate is no longer supported; use enabled.");
+        }
+        String enabled = ips.get(ApiConstants.ENABLED);
+        if (enabled != null && !"true".equalsIgnoreCase(enabled) && !"false".equalsIgnoreCase(enabled)) {
+            throw new InvalidParameterValueException("iptonetworklist.enabled must be true or false.");
+        }
+        return new IpAddresses(requestedIp, requestedIpv6, requestedMac, enabled == null || Boolean.parseBoolean(enabled));
     }
 
     @Nonnull

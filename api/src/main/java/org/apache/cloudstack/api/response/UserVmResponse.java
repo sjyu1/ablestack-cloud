@@ -230,6 +230,13 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
     @Param(description = "The ID of the backup offering of the Instance", since = "4.14")
     private String backupOfferingId;
 
+    @SerializedName("volumemutationblockedreason")
+    @Param(description = "Reason why disk topology changes are blocked by backup protection")
+    private String volumeMutationBlockedReason = "";
+
+    public String getVolumeMutationBlockedReason() { return volumeMutationBlockedReason; }
+    public void setVolumeMutationBlockedReason(String reason) { volumeMutationBlockedReason = reason == null ? "" : reason; }
+
     @SerializedName(ApiConstants.BACKUP_OFFERING_NAME)
     @Param(description = "The name of the backup offering of the Instance", since = "4.14")
     private String backupOfferingName;
@@ -257,6 +264,17 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
     @SerializedName(ApiConstants.VGPU)
     @Param(description = "The vGPU type used by the Instance", since = "4.4")
     private String vgpu;
+
+    @SerializedName("statslastsampled")
+    @Param(description = "Unix epoch milliseconds of the last successful persisted VM statistics sample")
+    private Long statsLastSampled;
+
+    @SerializedName("statscollectionstatus")
+    @Param(description = "Statistics freshness: FRESH, STALE or UNKNOWN. STALE is not a VM power state.")
+    private String statsCollectionStatus;
+
+    public void setStatsLastSampled(Long value) { statsLastSampled = value; }
+    public void setStatsCollectionStatus(String value) { statsCollectionStatus = value; }
 
     @SerializedName("cpuused")
     @Param(description = "The amount of the Instance's CPU currently used")
@@ -356,6 +374,26 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
     @Param(description = "SharedMountPoint fast clone flatten status of the virtual machine.")
     private String cloneFastStatus;
 
+    @SerializedName("clonefastsourcepowerallowed")
+    @Param(description = "whether the SharedMountPoint clone source is ready for power operations.")
+    private Boolean cloneFastSourcePowerAllowed;
+
+    @SerializedName("clonefastpowerallowed")
+    @Param(description = "whether the SharedMountPoint clone VM permits coordinated power operations.")
+    private Boolean cloneFastPowerAllowed;
+
+    @SerializedName("clonefastphase")
+    @Param(description = "role-qualified SharedMountPoint clone phase, including preparation, pause and recovery-required states.")
+    private String cloneFastPhase;
+
+    @SerializedName("clonefastflattenbandwidth")
+    @Param(description = "Configured per-disk clone flatten bandwidth limit in MiB/s. Zero means unlimited.")
+    private Integer cloneFastFlattenBandwidth;
+
+    @SerializedName("clonefastflattenbandwidthstatus")
+    @Param(description = "Result of the latest bandwidth request: applying, applied, pending or failed.")
+    private String cloneFastFlattenBandwidthStatus;
+
     @SerializedName("clonefastflattenprogress")
     @Param(description = "SharedMountPoint fast clone flatten progress percentage of the virtual machine.")
     private String cloneFastFlattenProgress;
@@ -371,6 +409,17 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
     @SerializedName("clonefastflattendeviceid")
     @Param(description = "device ID of the volume currently being flattened by SharedMountPoint fast clone.")
     private Long cloneFastFlattenDeviceId;
+
+    @SerializedName("vmsnapshotblockedreason")
+    @Param(description = "Reason VM snapshot creation and restore are blocked")
+    private String vmSnapshotBlockedReason;
+    @SerializedName("backupblockedreason")
+    @Param(description = "Reason backup creation and scheduling are blocked")
+    private String backupBlockedReason;
+    public void setVmSnapshotBlockedReason(String value) { vmSnapshotBlockedReason = value; }
+    public void setBackupBlockedReason(String value) { backupBlockedReason = value; }
+    public String getVmSnapshotBlockedReason() { return vmSnapshotBlockedReason; }
+    public String getBackupBlockedReason() { return backupBlockedReason; }
 
     @SerializedName("activebackupstatus")
     @Param(description = "Active backup status of the virtual machine.")
@@ -1191,6 +1240,46 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
         this.cloneFastStatus = cloneFastStatus;
     }
 
+    public void setCloneFastSourcePowerAllowed(Boolean allowed) {
+        this.cloneFastSourcePowerAllowed = allowed;
+    }
+
+    public Boolean getCloneFastSourcePowerAllowed() {
+        return cloneFastSourcePowerAllowed;
+    }
+
+    public void setCloneFastPowerAllowed(Boolean allowed) {
+        this.cloneFastPowerAllowed = allowed;
+    }
+
+    public Boolean getCloneFastPowerAllowed() {
+        return cloneFastPowerAllowed;
+    }
+
+    public void setCloneFastPhase(String phase) {
+        this.cloneFastPhase = phase;
+    }
+
+    public String getCloneFastPhase() {
+        return cloneFastPhase;
+    }
+
+    public Integer getCloneFastFlattenBandwidth() {
+        return cloneFastFlattenBandwidth;
+    }
+
+    public void setCloneFastFlattenBandwidth(Integer bandwidth) {
+        this.cloneFastFlattenBandwidth = bandwidth;
+    }
+
+    public String getCloneFastFlattenBandwidthStatus() {
+        return cloneFastFlattenBandwidthStatus;
+    }
+
+    public void setCloneFastFlattenBandwidthStatus(String status) {
+        this.cloneFastFlattenBandwidthStatus = status;
+    }
+
     public void setCloneFastFlattenProgress(String cloneFastFlattenProgress) {
         this.cloneFastFlattenProgress = cloneFastFlattenProgress;
     }
@@ -1442,6 +1531,30 @@ public class UserVmResponse extends BaseResponseWithTagInformation implements Co
         }
         this.vnfDetails.put(key,value);
     }
+
+    @SerializedName("vbmcstatus")
+    @Param(description = "Virtual BMC Status")
+    private String vbmcStatus;
+
+    public void setVbmcStatus(String value) { vbmcStatus = value; }
+
+    @SerializedName("vbmcaddress")
+    @Param(description = "Virtual BMC Address")
+    private String vbmcAddress;
+
+    public void setVbmcAddress(String value) { vbmcAddress = value; }
+
+    @SerializedName("vbmcallowedcidr")
+    @Param(description = "Virtual BMC AllowedCidr")
+    private String vbmcAllowedCidr;
+
+    public void setVbmcAllowedCidr(String value) { vbmcAllowedCidr = value; }
+
+    @SerializedName("vbmclasterror")
+    @Param(description = "Virtual BMC LastError")
+    private String vbmcLastError;
+
+    public void setVbmcLastError(String value) { vbmcLastError = value; }
 
     public void setVbmcPort(String vbmcPort) {
         this.vbmcPort = vbmcPort;
