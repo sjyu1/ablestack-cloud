@@ -20,6 +20,9 @@ import { getAPI, postAPI } from '@/api'
 import Dialog from '@/views/compute/VmProcessToolsDialog.vue'
 import { requiredRpcs } from '@/views/compute/vmProcessDisplay'
 import { clearIsoOperations } from '@/utils/vmIsoActions'
+import { createI18n } from 'vue-i18n'
+import ko from '@public/locales/ko_KR.json'
+import en from '@public/locales/en.json'
 
 jest.mock('@/api', () => ({ getAPI: jest.fn(), postAPI: jest.fn() }))
 const response = (cmd, value) => ({ [cmd.toLowerCase() + 'response']: value })
@@ -89,6 +92,14 @@ test('requires actual OS confirmation for a registered Windows installation hint
   expect(wrapper.vm.stage).toBe('INSTALL_PENDING')
 })
 
+test.each([['ko', ko], ['en', en]])('%s installation commands survive the real locale formatter', (locale, messages) => {
+  const i18n = createI18n({ locale, messages: { [locale]: messages } })
+  expect(i18n.global.t('message.vmprocess.tools.command.windows')).toContain('X:\\install.bat')
+  expect(i18n.global.t('message.vmprocess.tools.command.windows')).not.toContain('-Mode Apply')
+  expect(i18n.global.t('message.vmprocess.tools.command.linux')).toContain('bash /mnt/ablestack-tools/install-linux.sh')
+  expect(i18n.global.t('message.vmprocess.tools.command.linux')).not.toContain('--mode')
+})
+
 test('shows connecting while the ISO job is pending', async () => {
   let finish
   poll = jest.fn(() => new Promise(resolve => { finish = resolve }))
@@ -132,6 +143,13 @@ test.each(['failure', 'expired', 'wrong VM', 'missing boot', 'invalid status'])(
 test('requires a READY capability and a fresh valid process snapshot', async () => {
   const wrapper = mount(); await wrapper.vm.verify()
   expect(wrapper.vm.stage).toBe('READY'); expect(wrapper.emitted('verified')).toHaveLength(1)
+})
+
+test('removes the original QGA-unreachable installation hint after readiness is verified', async () => {
+  selected = { ...catalog, selectionSource: 'REGISTERED_OS', registeredOsName: 'Ubuntu 24.04' }
+  const wrapper = mount(); await wrapper.vm.verify()
+  expect(wrapper.vm.stage).toBe('READY')
+  expect(wrapper.html()).not.toContain('message.vmprocess.tools.declared')
 })
 
 test('discards late capabilities after changing VM or closing the dialog', async () => {

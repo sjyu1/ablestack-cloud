@@ -23,7 +23,7 @@ under the License.
       <a-descriptions-item :label="$t('label.vmprocess.tools.stage')">{{ $t('label.vmprocess.tools.' + stage.toLowerCase()) }}</a-descriptions-item>
       <a-descriptions-item v-if="catalog?.status === 'MATCHED'" :label="$t('label.vmprocess.tools.media')">{{ media?.displaytext || media?.name || catalog.name }}</a-descriptions-item>
     </a-descriptions>
-    <a-alert v-if="catalog?.selectionSource === 'REGISTERED_OS'" class="tools-block" type="info" show-icon :message="$t('message.vmprocess.tools.declared', { os: catalog.registeredOsName })" />
+    <a-alert v-if="catalog?.selectionSource === 'REGISTERED_OS' && stage !== 'READY'" class="tools-block" type="info" show-icon :message="$t('message.vmprocess.tools.declared', { os: catalog.registeredOsName })" />
     <a-checkbox v-if="stage === 'SELECT' && catalog?.selectionSource === 'REGISTERED_OS'" v-model:checked="osConfirmed" class="tools-block">{{ $t('message.vmprocess.tools.os.confirm') }}</a-checkbox>
     <a-alert v-if="error" class="tools-block" type="error" show-icon :message="error" />
     <a-alert v-if="stage === 'INSTALL_PENDING' || stage === 'REBOOT_REQUIRED'" class="tools-block" type="info" show-icon :message="$t('message.vmprocess.tools.install.pending')" :description="$t('message.vmprocess.tools.install.manual')" />

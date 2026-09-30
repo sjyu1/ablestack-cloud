@@ -40,7 +40,7 @@
   "message.vmprocess.tools.install.manual": "ISO 연결 후 VM 콘솔에서 관리자 권한으로 Tools를 설치하세요.",
   "message.vmprocess.tools.console": "ISO 드라이브를 확인한 뒤 다음 명령을 게스트 관리자 셸에서 실행하세요. ISO 연결만으로 준비 완료가 되지 않습니다.",
   "message.vmprocess.tools.command.linux": "lsblk -o NAME,LABEL,FSTYPE,MOUNTPOINT\nABLESTACK Tools ISO에 해당하는 /dev/srX 장치를 확인한 뒤 실행하세요.\nsudo mkdir -p /mnt/ablestack-tools\nsudo mount -o ro /dev/srX /mnt/ablestack-tools\nsudo bash /mnt/ablestack-tools/install-linux.sh",
-  "message.vmprocess.tools.command.windows": "관리자 PowerShell에서 ISO 드라이브 문자를 확인하세요.\nGet-Volume | Where-Object DriveType -eq 'CD-ROM'\nX:를 ABLESTACK Tools 드라이브 문자로 바꾼 뒤 실행하세요.\n& \"X:\\install.bat\"",
+  "message.vmprocess.tools.command.windows": "관리자 PowerShell에서 ISO 드라이브 문자를 확인하세요.\nGet-Volume\nX:를 ABLESTACK Tools 드라이브 문자로 바꾼 뒤 실행하세요.\n& \"X:\\install.bat\"",
   "message.vmprocess.tools.reboot": "설치 결과가 재부팅 필요를 알리면 게스트를 재부팅한 뒤 다시 확인하세요. 기존 ISO는 자동으로 분리하지 않습니다.",
   "message.vmprocess.tools.ready": "필요한 QGA RPC 8개와 프로세스 읽기 동작을 확인했습니다.",
   "message.vmprocess.tools.rpc": "필요한 QGA RPC 8개가 아직 활성화되지 않았습니다. 게스트 설치 결과와 QGA 서비스를 확인하세요.",
