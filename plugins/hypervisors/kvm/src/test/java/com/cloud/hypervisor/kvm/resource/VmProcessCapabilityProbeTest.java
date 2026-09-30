@@ -98,7 +98,7 @@ public class VmProcessCapabilityProbeTest {
         try (org.mockito.MockedStatic<KvmVmOperationGuard> guard = org.mockito.Mockito.mockStatic(KvmVmOperationGuard.class)) {
             new VmProcessCapabilityProbe().collect(command);
             guard.verify(() -> KvmVmOperationGuard.collect(org.mockito.ArgumentMatchers.isNull(),
-                    org.mockito.ArgumentMatchers.eq(command.getVmName()), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(10000L)));
+                    org.mockito.ArgumentMatchers.eq(command.getVmName()), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(10000L), org.mockito.ArgumentMatchers.eq(1000L)));
         }
     }
     @Test public void readyRequiresRuntimeProofAndKeepsOsSpecificActions() {

@@ -40,7 +40,7 @@ public class VmProcessCapabilityProbe {
                 if (!command.getVmUuid().equals(KvmVmOperationGuard.probe(1000, "virsh", "-c", "qemu:///system", "domuuid", command.getVmName()).trim()))
                     return VmProcessCapability.fail(unknown, "CHECK_FAILED", "VM domain identity changed");
                 return observe(command);
-            }, 10000L);
+            }, 10000L, 1000L);
             return result == null ? VmProcessCapability.fail(unknown, "CHECK_FAILED", "VM operation active, state unknown, or observation budget exceeded") : result;
         } finally { ADMISSION.release(); }
     }
