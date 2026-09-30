@@ -96,13 +96,12 @@ public class VmProcessCapabilityServiceImpl extends com.cloud.utils.component.Ma
             UserVmVO current = vmDao.findById(vmId);
             if (current == null || current.getRemoved() != null || current.getState() != VirtualMachine.State.Running
                     || !Objects.equals(hostId, current.getHostId()) || generation != current.getUpdated()
-                    || !vm.getUuid().equals(current.getUuid()) || System.nanoTime() - started > 10_000_000_000L)
+                    || !vm.getUuid().equals(current.getUuid()) || System.nanoTime() - started > 15_000_000_000L)
                 return response(VmProcessCapability.fail(result, "CHECK_FAILED", "VM placement changed or observation expired"));
             accountManager.checkAccess(CallContext.current().getCallingAccount(), AccessType.ListEntry, true, current);
             if (answer instanceof GetVmProcessCapabilitiesAnswer && answer.getResult()) {
                 Map<String, Object> observed = ((GetVmProcessCapabilitiesAnswer) answer).getCapability();
-                if (observed != null && command.getRequestId().equals(observed.get("requestId"))
-                        && result.get("authority").equals(observed.get("authority"))) {
+                if (observed != null && VmProcessCapability.valid(observed, command)) {
                     result = observed;
                     result.put("observedAt", Instant.now().toString());
                 }
@@ -134,6 +133,8 @@ public class VmProcessCapabilityServiceImpl extends com.cloud.utils.component.Ma
         Map<String, Object> publicState = new LinkedHashMap<>(internal);
         for (String field : java.util.List.of("qgaVersion", "hostToolsVersion", "guestAdapterVersion"))
             publicState.putIfAbsent(field, null);
+        // The Agent transport omits null map entries. Restore the required C1 READY error field at the API boundary.
+        publicState.putIfAbsent("error", null);
         Map<?, ?> authority = (Map<?, ?>) internal.get("authority");
         publicState.put("authority", Map.of("vmUuid", authority.get("vmUuid")));
         VmProcessCapabilityResponse response = new VmProcessCapabilityResponse();

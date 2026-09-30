@@ -311,8 +311,14 @@ public final class KvmVmOperationGuard implements AutoCloseable {
     }
 
     public static <T> T collect(Connect conn, String name, Callable<T> task) {
+        return collect(conn, name, task, Long.getLong("cloud.vm.monitor.budget.ms", 5000L));
+    }
+
+    /** Readiness also loads Windows native adapters; retain a bounded budget without changing ordinary monitoring. */
+    public static <T> T collect(Connect conn, String name, Callable<T> task, long budgetMs) {
         try {
-            DEADLINE.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Long.getLong("cloud.vm.monitor.budget.ms", 5000L)));
+            if (budgetMs < 1) return null;
+            DEADLINE.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMs));
                 String safeUuid = probe(1000, "virsh", "-c", "qemu:///system", "domuuid", name).trim();
                 try (KvmVmOperationGuard guard = new KvmVmOperationGuard(ROOT, safeUuid, "monitoring", true)) {
                     // External virsh jobs do not have Cloud leases. Failure is UNKNOWN, never IDLE.
