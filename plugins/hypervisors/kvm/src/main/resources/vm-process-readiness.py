@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Fixed read-only smoke. No signals, journal, service control, or guest writes."""
+"""Fixed smoke of this process only; no delivered signals or guest writes."""
 import base64
 import hashlib
 import gzip
@@ -68,11 +68,19 @@ try:
                 action = runpy.run_path(str(root / 'process_action_linux.py'), run_name='ablestack_readiness')
                 if not callable(action.get('validate')) or not callable(action.get('action')):
                     raise ValueError('Action adapter exports unavailable')
-                if hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'):
+                opener = action.get('open_target')
+                if callable(opener):
+                    # Only a hash-approved adapter may select its kernel-specific
+                    # handle. Legacy kernels check signal 0 against this probe
+                    # process; no signal is delivered to a VM workload.
+                    descriptor, _ = opener(os.getpid())
+                    os.close(descriptor)
+                    proof['actionRuntime'] = True
+                elif hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'):
                     descriptor = os.pidfd_open(os.getpid(), 0)
                     os.close(descriptor)
                     proof['actionRuntime'] = True
-        except (OSError, ValueError, ImportError, KeyError):
+        except Exception:
             proof['actionRuntime'] = False
 except FileNotFoundError:
     proof['code'] = 'TOOLS_REQUIRED'

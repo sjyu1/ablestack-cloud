@@ -130,4 +130,60 @@ public class VmProcessAdapterProbeTest {
         for (byte value : hash) text.append(String.format("%02x", value & 255));
         return text.toString();
     }
+    @Test public void approvedLegacyPinnedHandleWorksWithoutPythonPidfdOpen() throws Exception {
+        Map<String, Object> result = legacyHandleProof(true);
+        assertEquals("READY", result.get("code"));
+        assertEquals(true, result.get("readRuntime"));
+        assertEquals(true, result.get("actionRuntime"));
+    }
+    @Test public void unsupportedLegacyHandleKeepsOnlyProvenRead() throws Exception {
+        Map<String, Object> result = legacyHandleProof(false);
+        assertEquals("READY", result.get("code"));
+        assertEquals(true, result.get("readRuntime"));
+        assertEquals(false, result.get("actionRuntime"));
+    }
+    private Map<String, Object> legacyHandleProof(boolean supported) throws Exception {
+        org.junit.Assume.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of("/usr/bin/python3")));
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("readiness-legacy-handle-");
+        try {
+            String collector = "import os\ndef stat_record(text): return (os.getpid(),'self','R',0,'1')\n";
+            String action = "import os,signal\ndef validate(): pass\ndef action(): pass\n"
+                    + "def open_target(pid):\n assert pid == os.getpid()\n assert not hasattr(os,'pidfd_open')\n"
+                    + (supported ? " fd=os.open('/proc/self',os.O_RDONLY|os.O_DIRECTORY)\n signal.pidfd_send_signal(fd,0)\n return fd,False\n"
+                                 : " raise OSError('unsupported kernel handle')\n");
+            byte[] read = collector.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] mutation = action.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] launcher = "fixture-launcher".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            java.nio.file.Files.write(dir.resolve("process_list_linux.py"), read);
+            java.nio.file.Files.write(dir.resolve("process_action_linux.py"), mutation);
+            java.nio.file.Files.write(dir.resolve("process-action-launcher"), launcher);
+            java.nio.file.Files.setPosixFilePermissions(dir.resolve("process-action-launcher"),
+                    java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+            Map<String, Object> config = Map.of("requestId", "test", "readProfile", "ubuntu-read", "actionProfile", "linux-action", "bundles", List.of(
+                    bundle("read", "ubuntu-read", Map.of("process_list_linux.py", digest(read))),
+                    bundle("action", "linux-action", Map.of("process_action_linux.py", digest(mutation), "process-action-launcher", digest(launcher)))));
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPOutputStream zip = new java.util.zip.GZIPOutputStream(bytes)) {
+                zip.write(gson.toJson(config).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            String program;
+            try (java.io.InputStream input = getClass().getResourceAsStream("/vm-process-readiness.py")) {
+                program = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("__CONFIG_BASE64__", java.util.Base64.getEncoder().encodeToString(bytes.toByteArray()))
+                        .replace("/usr/libexec/ablestack-qemu-exec-tools/process", dir.toString())
+                        .replace("info.st_uid != 0", "info.st_uid != os.geteuid()")
+                        .replace("import runpy", "import runpy\nif hasattr(os, 'pidfd_open'): delattr(os, 'pidfd_open')");
+            }
+            Process process = new ProcessBuilder("/usr/bin/python3", "-I", "-B", "-c", program).start();
+            assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0, process.exitValue());
+            return com.cloud.agent.api.VmProcessAction.parse(new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        } finally {
+            try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.walk(dir)) {
+                for (java.nio.file.Path path : files.sorted(java.util.Comparator.reverseOrder()).collect(java.util.stream.Collectors.toList())) {
+                    java.nio.file.Files.delete(path);
+                }
+            }
+        }
+    }
 }
