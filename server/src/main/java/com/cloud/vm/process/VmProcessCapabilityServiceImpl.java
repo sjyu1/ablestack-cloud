@@ -114,9 +114,12 @@ public class VmProcessCapabilityServiceImpl extends com.cloud.utils.component.Ma
         DataCenterVO zone = dataCenterDao == null ? null : dataCenterDao.findById(vm.getDataCenterId());
         GuestOSVO registeredOs = guestOSDao == null ? null : guestOSDao.findById(vm.getGuestOSId());
         @SuppressWarnings("unchecked") Map<String, Object> os = (Map<String, Object>) result.get("os");
-        publicResponse.setToolsIso(VmProcessToolsIsoCatalog.resolve(TOOLS_ISO_CATALOG.value(),
+        VMTemplateVO template = templateDao == null ? null : templateDao.findById(vm.getTemplateId());
+        publicResponse.setToolsIso(VmProcessToolsIsoCatalog.resolveForInstallation(TOOLS_ISO_CATALOG.value(),
                 zone == null ? null : zone.getUuid(), os,
-                registeredOs == null ? null : registeredOs.getDisplayName(), isoId -> {
+                registeredOs == null ? null : registeredOs.getDisplayName(),
+                template == null || template.getArch() == null ? null : template.getArch().getType(),
+                (String) result.get("readiness"), isoId -> {
                     VMTemplateVO iso = templateDao == null ? null : templateDao.findByUuid(isoId);
                     if (iso == null) return null;
                     VMTemplateZoneVO zoneRef = zone == null || templateZoneDao == null ? null
