@@ -85,7 +85,7 @@ describe('VM settings submission lifecycle', () => {
   it('skips template lookup for ISO', async () => {
     const value = context()
     getAPI.mockImplementation(async name => name === 'listVirtualMachines' ? { listvirtualmachinesresponse: { virtualmachine: [{ ...vm(), templateid: 'iso', templateformat: 'ISO' }] } } : { listdetailoptionsresponse: { detailoptions: { details: {} } } })
-    await value.fetchState('vm'); expect(getAPI).not.toHaveBeenCalledWith('listTemplates', expect.anything())
+    await value.fetchState('vm'); expect(getAPI.mock.calls.some(([name]) => name === 'listTemplates')).toBe(false)
   })
   it('blocks edits without failing VM reads when a disk template lookup is empty', async () => {
     const value = context()
@@ -122,7 +122,8 @@ describe('VM settings supplementary metadata', () => {
     responses()
     const value = context()
     await value.refresh()
-    expect(getAPI).toHaveBeenCalledWith('listTemplates', { templatefilter: 'all', id: 'removed', showremoved: true })
+    expect(getAPI).toHaveBeenCalledWith('listTemplates', { templatefilter: 'all', id: 'removed', showremoved: true }, { optionalDiscovery: true })
+    expect(getAPI).toHaveBeenCalledWith('listDetailOptions', { resourcetype: 'UserVm', resourceid: 'vm' }, { optionalDiscovery: true })
     expect(value.rows).toHaveLength(3)
     expect(value.vm.details).toEqual(source.details)
     expect(value.policyError).toBe('')
@@ -133,7 +134,7 @@ describe('VM settings supplementary metadata', () => {
     const value = context()
     value.$store.getters.userInfo.roletype = roletype
     await value.fetchState('vm')
-    expect(getAPI).toHaveBeenCalledWith('listTemplates', { templatefilter: 'executable', id: 'removed', showremoved: true })
+    expect(getAPI).toHaveBeenCalledWith('listTemplates', { templatefilter: 'executable', id: 'removed', showremoved: true }, { optionalDiscovery: true })
   })
   it('displays settings on first entry despite an empty template response', async () => {
     responses({}, null)

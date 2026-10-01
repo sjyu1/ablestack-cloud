@@ -112,9 +112,11 @@ export default {
       if (!vm || vm.id !== id) throw new Error('loadFailed')
       const needsTemplate = !!vm.templateid && vm.templateformat !== 'ISO'
       const templatefilter = this.$store.getters.userInfo?.roletype === 'Admin' ? 'all' : 'executable'
+      // Keep transport/metadata failures local; optional discovery still sends
+      // current-session authentication errors through the normal logout path.
       const [optionResult, templateResult] = await Promise.allSettled([
-        getAPI('listDetailOptions', { resourcetype: 'UserVm', resourceid: id }),
-        needsTemplate ? getAPI('listTemplates', { templatefilter, id: vm.templateid, showremoved: true }) : Promise.resolve(null)
+        getAPI('listDetailOptions', { resourcetype: 'UserVm', resourceid: id }, { optionalDiscovery: true }),
+        needsTemplate ? getAPI('listTemplates', { templatefilter, id: vm.templateid, showremoved: true }, { optionalDiscovery: true }) : Promise.resolve(null)
       ])
       const options = optionResult.value?.listdetailoptionsresponse?.detailoptions?.details
       const templates = templateResult.value?.listtemplatesresponse?.template
