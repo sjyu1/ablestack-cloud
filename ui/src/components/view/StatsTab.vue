@@ -497,6 +497,8 @@ export default {
       const requestId = ++this.statsRequestId
       if (this.statsResourceId !== this.resource.id) {
         this.loaded = false
+        this.resetData()
+        this.statsRefreshFailed = false
         this.statsResourceId = this.resource.id
       }
       this.formatPeriod()

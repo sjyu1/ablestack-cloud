@@ -26,6 +26,7 @@ jest.mock('@/vue-app', () => ({ vueProps: {} }))
 function statsContext (resourceType = 'VirtualMachine') {
   const vm = {
     ...StatsTab.methods,
+    ...StatsTab.data.call({ getStartDate: () => null, getEndDate: () => null, $t: key => key }),
     resource: { id: 'resource-1' },
     resourceType,
     startDate: null,
@@ -110,6 +111,18 @@ describe('shared detail refresh behavior', () => {
     const pending = vm.fetchData()
     expect(vm.loaded).toBe(false)
     await pending
+  })
+  it('does not display the previous resource charts when a new resource fails', async () => {
+    getAPI.mockRejectedValue(new Error('new resource unavailable'))
+    const vm = statsContext()
+    vm.resourceUsageHistory.cpu = [{ data: [71] }]
+    vm.resource.id = 'resource-2'
+    await vm.fetchData()
+    expect(vm.chartLabels).toEqual([])
+    expect(vm.resourceUsageHistory.cpu).toEqual([])
+    expect(vm.loaded).toBe(true)
+    expect(vm.statsRefreshFailed).toBe(true)
+    expect(vm.$notifyError).toHaveBeenCalledTimes(1)
   })
   it('handles a valid empty statistics result without an endless spinner', () => {
     const vm = { resetData: jest.fn(), loaded: false, resourceStatsApi: 'listVolumesUsageHistory', resourceStatsApiResponseObject: 'volume' }
