@@ -39,6 +39,8 @@ public class LibvirtDeleteBackupCommandWrapper extends CommandWrapper<DeleteBack
         final String backupRepoType = command.getBackupRepoType();
         final String backupRepoAddress = command.getBackupRepoAddress();
         final String mountOptions = command.getMountOptions();
+        final Integer mountTimeout = command.getMountTimeout();
+        int timeout = command.getWait() > 0 ? command.getWait() * 1000 : libvirtComputingResource.getCmdsTimeout();
 
         List<String[]> commands = new ArrayList<>();
         commands.add(new String[]{
@@ -47,10 +49,12 @@ public class LibvirtDeleteBackupCommandWrapper extends CommandWrapper<DeleteBack
                 "-t", backupRepoType,
                 "-s", backupRepoAddress,
                 "-m", mountOptions,
+                "-w", mountTimeout.toString(),
                 "-p", backupPath
         });
 
-        Pair<Integer, String> result = Script.executePipedCommands(commands, libvirtComputingResource.getCmdsTimeout());
+        logger.debug("Starting NAS backup delete for path [{}] with timeout [{}] ms", backupPath, timeout);
+        Pair<Integer, String> result = Script.executePipedCommands(commands, timeout);
 
         logger.debug(String.format("Backup delete result: %s , exit code: %s", result.second(), result.first()));
 
