@@ -63,7 +63,9 @@ Linux는 브라우저 서비스 재시작 MainPID 10842→10961/InvocationID 변
 일반/다크 테마에서 실제 목록·CPU·모달·작업 결과를 확인하고 기존 VM 스냅샷/볼륨/NIC의 상단 버튼·행 작업·표/경고 배치와 비교했다. 탭 순서는 상세→IP 구성→메트릭→프로세스이다. 버튼은 상단과 프로세스 행에 있다. 갱신 중 기존 행과 테이블 높이를 보존하는 DOM 증거도 수집했다. 대량 1,000개 일회용 프로세스를 추가한 실제 PARTIAL 화면은 조회된 759행과 부분 수집 경고를 표시했다.
 
 ![최종 배포 일반 모드](processes-final-light.png)
-![최종 배포 다크 모드](processes-final-dark.png)
+![최종 배포 다크 모드](processes-final-dark-clean.png)
+
+테마 선택 화면: [일반](processes-final-light.png), [다크](processes-final-dark.png).
 
 ![Ubuntu 24 실제 설치 후 준비 확인](ubuntu24-tools-verified-dark.png)
 ![Linux 일반 모드 강제 종료 결과](linux-kill-result-light.png)
