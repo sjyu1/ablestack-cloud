@@ -8145,5 +8145,18 @@
   "message.vmprocess.profile.vm.stopped": "가상머신이 정지되어 있습니다. 등록 이력을 조회·폐기할 수 있으며, 새 정의의 등록·승인은 실행 중일 때 가능합니다.",
   "message.vmprocess.profile.history.limited": "등록 이력은 활성 버전과 최근 폐기 버전 256개까지 표시됩니다.",
   "message.vmprocess.profile.definition.absent": "현재 게스트 정의를 사용할 수 없어 재시작할 수 없습니다.",
-  "message.vmprocess.snapshot.refresh.failed": "실행 전 프로세스 목록을 다시 확인하지 못했습니다. 대상은 변경되지 않았습니다. 목록을 업데이트한 뒤 다시 시도하세요."
+  "message.vmprocess.snapshot.refresh.failed": "실행 전 프로세스 목록을 다시 확인하지 못했습니다. 대상은 변경되지 않았습니다. 목록을 업데이트한 뒤 다시 시도하세요.",
+  "label.vmdevice.partitionWarningTitle": "기존 파티션과 데이터에 영향이 있을 수 있습니다.",
+  "label.vmdevice.partitionWarning": "이 매체에는 기존 파티션이 있습니다. 가상머신에서 매체를 마운트하거나 쓰기·초기화·포맷하면 기존 파티션과 데이터에 영향을 줄 수 있습니다. 위의 경로·WWN·용량을 확인하여 사용하려는 정확한 디스크/LUN인지 확인한 후 할당하세요.",
+  "label.vmdevice.partitionAck": "선택한 매체가 사용하려는 정확한 디스크/LUN임을 확인했고, 기존 파티션과 데이터에 미칠 영향을 이해했습니다.",
+  "label.vmdevice.partitionCandidate": "미마운트 파티션 있음 · 매체 및 데이터 영향 확인 필요",
+  "label.vmdevice.mediumPath": "매체 경로",
+  "label.vmdevice.mediumIdentity": "WWN / Serial",
+  "label.vmdevice.mediumSizeModel": "용량 / 모델",
+  "label.vmdevice.mediumPartitions": "파티션 / 파일시스템 / 마운트",
+  "label.vmdevice.mountpoints": "마운트 포인트",
+  "label.vmdevice.unmounted": "없음 (미마운트)",
+  "label.vmdevice.noFilesystem": "파일시스템 없음",
+  "label.vmdevice.noPartitions": "파티션 없음",
+  "label.vmdevice.mediumChanged": "매체 정보 또는 사용 상태가 변경되었습니다. 매체와 데이터 영향을 다시 확인하세요."
 }
