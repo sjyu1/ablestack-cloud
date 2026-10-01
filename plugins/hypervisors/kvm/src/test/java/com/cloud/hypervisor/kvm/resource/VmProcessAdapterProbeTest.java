@@ -60,6 +60,28 @@ public class VmProcessAdapterProbeTest {
             }
         };
     }
+    @Test public void windowsProbePassesCatalogAsLiteralDataWithoutCompressedStaging() throws Exception {
+        GetVmProcessCapabilitiesCommand quoted = new GetVmProcessCapabilitiesCommand("vm", command.getVmUuid(),
+                command.getHostUuid(), "4", "request'quoted");
+        VmProcessAdapterProbe probe = new VmProcessAdapterProbe() {
+            @Override protected String catalog() { return VmProcessAdapterProbeTest.this.catalog(); }
+            @Override protected String execute(String uuid, boolean windows, String program) {
+                assertTrue(windows);
+                org.junit.Assert.assertFalse(program.contains("GZipStream"));
+                org.junit.Assert.assertFalse(program.contains("FromBase64String"));
+                assertTrue(program.contains("request\\u0027quoted"));
+                assertTrue(program.contains("windows-read"));
+                assertTrue(program.contains("windows-action"));
+                assertTrue(program.contains("Get-FileHash"));
+                assertTrue(program.contains("$config='"));
+                Map<String, Object> result = proof("windows-read", "windows-action", true);
+                result.put("requestId", quoted.getRequestId());
+                return gson.toJson(Map.of("state", "SUCCEEDED", "exit_code", 0, "encoding_loss", false,
+                        "out_truncated", false, "err_truncated", false, "stdout_raw", gson.toJson(result)));
+            }
+        };
+        assertEquals("READY", probe.observe(quoted, Map.of("family", "windows", "id", "mswindows")).get("readiness"));
+    }
     @Test public void legacyApprovedBundleSurvivesHostUpgradeAndMigration() throws Exception {
         Map<String, Object> result = probe(proof("old-read", "action", true)).observe(command, Map.of("family", "linux", "id", "ubuntu"));
         assertEquals("READY", result.get("readiness"));

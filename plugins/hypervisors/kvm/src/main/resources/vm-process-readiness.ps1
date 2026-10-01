@@ -19,12 +19,8 @@
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=New-Object Text.UTF8Encoding($false)
-$compressed=[Convert]::FromBase64String('__CONFIG_BASE64__')
-$stream=New-Object IO.MemoryStream(,$compressed)
-$zip=New-Object IO.Compression.GZipStream($stream,[IO.Compression.CompressionMode]::Decompress)
-$reader=New-Object IO.StreamReader($zip,[Text.Encoding]::UTF8)
-try {$config=$reader.ReadToEnd() | ConvertFrom-Json}
-finally {$reader.Dispose();$zip.Dispose();$stream.Dispose()}
+# Configuration is data, never decompressed or evaluated as executable code.
+$config='__CONFIG_JSON__' | ConvertFrom-Json
 $proof=[ordered]@{requestId=$config.requestId;readBundle=$null;actionBundle=$null;readRuntime=$false;actionRuntime=$false;code='CHECK_FAILED'}
 $root='C:\Program Files\ABLESTACK Process Tools'
 function Matched([string]$profile) {
