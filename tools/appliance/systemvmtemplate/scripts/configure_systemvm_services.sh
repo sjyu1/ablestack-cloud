@@ -145,6 +145,18 @@ function do_signature() {
   echo "Cloudstack Release $CLOUDSTACK_RELEASE $(date)" > /etc/cloudstack-release
 }
 
+function apply_security_patch() {
+  local security_patch_script=/opt/cloud/bin/setup/security_patch_systemvm.sh
+
+  if [ ! -f "${security_patch_script}" ]; then
+    echo "Missing SystemVM security patch script: ${security_patch_script}" >&2
+    return 1
+  fi
+
+  echo "Applying SystemVM security patch during template build"
+  bash "${security_patch_script}"
+}
+
 function configure_services() {
   mkdir -p /var/www/html
   mkdir -p /opt/cloud/bin
@@ -160,6 +172,7 @@ function configure_services() {
 
   install_cloud_scripts
   do_signature
+  apply_security_patch
 
   systemctl daemon-reload
   systemctl disable apt-daily.service
