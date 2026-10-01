@@ -61,7 +61,7 @@ VM 전용 옵션이나 VM 조건 분기를 추가하지 않았다. 시스템 VM/
 | VM Ubuntu24-Process (`90af4c7f-298f-4b43-afc3-8192f8ee13e0`) | 표시된 13개 탭을 일반/다크에서 조회: 상세, IP 구성, 메트릭, 프로세스, 스케줄, ISO, 볼륨, NIC, 설정, 호스트 장치, VM 스냅샷, 이벤트, 코멘트 |
 | 공통 볼륨 ROOT-93 (`a3020d3e-26dd-4c61-a0c2-6cb793f4f7af`) | 이벤트·코멘트의 새 툴바, 실제 읽기 갱신, 일반/다크 |
 | 공통 시스템 VM v-3-VM (`feb8ebca-c11b-4f0f-bf6c-eddf44577c65`) | 새 메트릭 정렬과 실제 5개 차트, 일반/다크 |
-| 모바일 430×932 | 4개 개선 탭 일반/다크. 실제 viewport 430px, 문서 폭 420px, 활성 패널 336px. 작업 순서 유지, 조건 영역 줄바꿈, 페이지 가로 넘침 없음 |
+| 좁은 화면 430px | DOM으로 viewport 430px, 문서 폭 420px, 활성 패널 336px과 작업 순서·줄바꿈·가로 넘침 없음을 확인. 좁은 화면의 테마별 이미지 검증은 완료로 계산하지 않음 |
 | 기존 대화상자 | VM 스냅샷 생성, 스케줄 추가의 기존 구성/취소 동작 확인. VM/ISO 상태를 바꾸는 확인 버튼은 누르지 않음 |
 
 읽기 갱신 중 브라우저 DOM 식별자를 비교했다. IP 영역 `90→90`, 메트릭 canvas `175→175`, 이벤트 표 영역 `272→272`, 코멘트 textarea `271→271`로 유지되었다.
@@ -105,7 +105,8 @@ VmNicsTab 기존 테스트 1개의 잘못된 linkstate 기대값은 upstream 기
 
 ## 실제 배포 화면
 
-이미지는 목업이 아니라 31번 클러스터의 배포 후 화면이다.
+이미지 16개는 목업이 아니라 31번 클러스터의 배포 후 일반/다크 화면이다.
+좁은 화면의 캡처는 브라우저 표면 축척과 테마 적용 시점이 일치하지 않아 첨부에서 제외했다. 해당 이미지 검증은 PASS에 포함하지 않는다.
 
 | 탭 | 일반 | 다크 |
 |---|---|---|
@@ -135,34 +136,5 @@ VmNicsTab 기존 테스트 1개의 잘못된 linkstate 기대값은 upstream 기
 ![일반 시스템 VM 메트릭](images/system-metrics-light.jpg)
 
 ![다크 시스템 VM 메트릭](images/system-metrics-dark.jpg)
-
-</details>
-
-<details><summary>모바일 430px</summary>
-
-
-IP 구성
-
-![일반 모바일 IP 구성](images/mobile-ip-light.jpg)
-
-![다크 모바일 IP 구성](images/mobile-ip-dark.jpg)
-
-메트릭
-
-![일반 모바일 메트릭](images/mobile-metrics-light.jpg)
-
-![다크 모바일 메트릭](images/mobile-metrics-dark.jpg)
-
-이벤트
-
-![일반 모바일 이벤트](images/mobile-events-light.jpg)
-
-![다크 모바일 이벤트](images/mobile-events-dark.jpg)
-
-코멘트
-
-![일반 모바일 코멘트](images/mobile-comments-light.jpg)
-
-![다크 모바일 코멘트](images/mobile-comments-dark.jpg)
 
 </details>
