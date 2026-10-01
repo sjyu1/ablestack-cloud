@@ -154,7 +154,7 @@ function apply_security_patch() {
   fi
 
   echo "Applying SystemVM security patch during template build"
-  bash "${security_patch_script}"
+  SECURITY_PATCH_FORCE=true bash "${security_patch_script}"
 }
 
 function configure_services() {
@@ -172,7 +172,6 @@ function configure_services() {
 
   install_cloud_scripts
   do_signature
-  apply_security_patch
 
   systemctl daemon-reload
   systemctl disable apt-daily.service
@@ -233,6 +232,7 @@ EOF
   configure_strongswan
   configure_issue
   configure_cacerts
+  apply_security_patch
 }
 
 return 2>/dev/null || configure_services
