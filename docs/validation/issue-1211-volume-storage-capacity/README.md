@@ -46,15 +46,15 @@ Node 20.20.2 / npm 10.8.2에서 수행했다.
 | 항목 | 결과 |
 | --- | --- |
 | 변경 파일 린트 --no-fix | 통과 |
-| UI 회귀 검사 | 4개 스위트 46개 통과 |
-| 신규 용량·조회 상태 검사 | 위 검사 중 18개. 초과 할당, null/invalid, managed/unknown, 오래된 응답, 입력·UUID 유지, 조회 실패 포함 |
+| UI 회귀 검사 | 4개 스위트 48개 통과 |
+| 신규 용량·조회 상태 검사 | 위 검사 중 20개. 초과 할당, null/invalid, managed/unknown, 오래된 응답, 입력·UUID 유지, 조회 실패·빈 응답·Zone 초기화 포함 |
 | UI 프로덕션 모듈 빌드 | npm run build 통과 |
 | Java/Maven | 이번 변경은 UI만 변경하여 추가 빌드 대상 없음 |
 | 경고 | 기존 Browserslist 데이터 및 번들 크기 경고. 빌드 실패 없음 |
 
 검사 명령:
 npm run lint -- --no-fix src/views/storage/CreateVolume.vue src/views/storage/StoragePoolCapacity.vue src/utils/storagePoolCapacity.js tests/unit/views/storage/StoragePoolCapacity.spec.js
-npm run test:unit -- --runInBand --runTestsByPath tests/unit/views/storage/StoragePoolCapacity.spec.js tests/unit/views/compute/DeploymentStorageSelection.spec.js tests/unit/utils/vmDiskDeployment.spec.js tests/unit/utils/vmVolumeActions.spec.js
+npm run test:unit -- --runInBand --coverage=false --runTestsByPath tests/unit/views/storage/StoragePoolCapacity.spec.js tests/unit/views/compute/DeploymentStorageSelection.spec.js tests/unit/utils/vmDiskDeployment.spec.js tests/unit/utils/vmVolumeActions.spec.js
 NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=8192" npm run build
 
 ## 31번 클러스터 배포

@@ -102,3 +102,27 @@ test('fetch failure remains distinct from no candidates and does not erase typed
   expect(vm.form.storageid).toBe('pool')
   expect(vm.storageLoading).toBe(false)
 })
+
+test('an empty current response clears an invalid pool UUID without losing entered volume fields', async () => {
+  const vm = context()
+  getAPI.mockResolvedValueOnce({ liststoragepoolsresponse: {} })
+  await CreateVolume.methods.fetchStoragePools.call(vm, 'zone')
+  expect(vm.storagePools).toEqual([])
+  expect(vm.form.storageid).toBeUndefined()
+  expect(vm.form.name).toBe('Keep typed name')
+  expect(vm.form.size).toBe('17')
+  expect(vm.storageFetchError).toBe(false)
+  expect(vm.storageLoading).toBe(false)
+})
+test('clearing the zone invalidates an outstanding response and keeps the pool list empty', async () => {
+  const vm = context()
+  let finish
+  getAPI.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const pending = CreateVolume.methods.fetchStoragePools.call(vm, 'zone')
+  await CreateVolume.methods.fetchStoragePools.call(vm, null)
+  finish({ liststoragepoolsresponse: { storagepool: [pool] } })
+  await pending
+  expect(vm.storagePools).toEqual([])
+  expect(vm.form.storageid).toBeUndefined()
+  expect(vm.storageLoading).toBe(false)
+})
