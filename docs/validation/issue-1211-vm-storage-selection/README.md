@@ -209,3 +209,7 @@ ISO 데이터 입력은 별도 모델이므로 우측 디스크 크기와 오퍼
 | 템플릿 실제 생성·시작 결과 | ISO 실제 생성·시작 결과 |
 | --- | --- |
 | ![템플릿 볼륨 결과](images/root-order/template-created-volumes-dark.jpg) | ![ISO 볼륨 결과](images/root-order/iso-created-volumes-light.jpg) |
+
+## 볼륨 생성 및 연결 용량 표시 추가 개선 (2026-10-03)
+
+[추가 구현·UI 빌드·배포·실제 생성/연결 검증과 화면](../issue-1211-volume-storage-capacity/README.md)을 기록했다. 기존 서버 구현 위에 UI 변경을 누적했으며 이번 Java 모듈 재빌드는 필요하지 않았다.
