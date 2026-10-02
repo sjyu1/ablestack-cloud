@@ -8035,6 +8035,8 @@
   "label.vmsettings.verify": "Refresh and verify VM settings before making changes.",
   "label.vmsettings.permission": "You do not have permission to change settings.",
   "label.vmsettings.stopped": "Stop the VM to change settings. Viewing and searching remain available.",
+  "label.vmsettings.optionsUnavailable": "Setting options could not be retrieved. You can view the settings, but changes are disabled. Click Update to try again.",
+  "label.vmsettings.templateUnavailable": "The setting restrictions for this virtual machine could not be retrieved. You can view the settings, but changes are disabled. Click Update to try again.",
   "label.vmsettings.loadFailed": "Unable to load settings. Previous data is retained and changes are blocked.",
   "label.vmsettings.required": "Enter a setting name and value.",
   "label.vmsettings.duplicate": "This setting already exists. Edit the existing row.",
