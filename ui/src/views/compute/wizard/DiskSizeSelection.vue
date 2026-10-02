@@ -18,7 +18,7 @@
 <template>
   <div>
     <a-row :span="24" :style="{ marginTop: '20px' }">
-      <a-col :span="isCustomizedDiskIOps || isCustomizedIOps ? 8 : 24" v-if="isCustomized">
+      <a-col :span="isCustomizedDiskIOps || isCustomizedIOps ? 8 : 24" v-if="isCustomized && showSize">
         <a-form-item
           :label="inputDecorator === 'rootdisksize' ? $t('label.root.disk.size') : $t('label.disksize')"
           class="form-item">
@@ -33,13 +33,13 @@
           <p v-if="error" style="color: red"> {{ $t(error) }} </p>
         </a-form-item>
       </a-col>
-      <a-col :span="8" v-if="isCustomizedDiskIOps || isCustomizedIOps">
+      <a-col :span="showSize ? 8 : 12" v-if="isCustomizedDiskIOps || isCustomizedIOps">
         <a-form-item :label="$t('label.diskiopsmin')">
           <a-input-number v-model:value="minIOps" @change="updateDiskIOps" />
           <p v-if="errorMinIOps" style="color: red"> {{ $t(errorMinIOps) }} </p>
         </a-form-item>
       </a-col>
-      <a-col :span="8" v-if="isCustomizedDiskIOps || isCustomizedIOps">
+      <a-col :span="showSize ? 8 : 12" v-if="isCustomizedDiskIOps || isCustomizedIOps">
         <a-form-item :label="$t('label.diskiopsmax')">
           <a-input-number v-model:value="maxIOps" @change="updateDiskIOps" />
           <p v-if="errorMaxIOps" style="color: red"> {{ $t(errorMaxIOps) }} </p>
@@ -78,6 +78,7 @@
 export default {
   name: 'DiskSizeSelection',
   props: {
+    showSize: { type: Boolean, default: true },
     inputDecorator: {
       type: String,
       default: ''
@@ -165,7 +166,7 @@ export default {
     }
   },
   mounted () {
-    this.fillValue()
+    if (this.showSize) this.fillValue()
   },
   methods: {
     fillValue () {
@@ -183,6 +184,7 @@ export default {
     updateDiskSize (value) {
       if (value < this.minDiskSize) {
         this.inputValue = this.minDiskSize
+        this.$emit('update-disk-size', this.inputDecorator, this.inputValue)
         this.error = `${this.$t('message.error.limit.value')} ` + this.minDiskSize + ' GB'
         return
       }

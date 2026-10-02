@@ -93,7 +93,7 @@ export default {
     },
     preFillContent: {
       type: Object,
-      default: () => {}
+      default: () => ({})
     },
     zoneId: {
       type: String,
@@ -141,9 +141,6 @@ export default {
       diskSelected: {}
     }
   },
-  created () {
-    this.initDataItem()
-  },
   computed: {
     tableSource () {
       return this.dataItems.map((item) => {
@@ -173,6 +170,7 @@ export default {
       }
     },
     items: {
+      immediate: true,
       deep: true,
       handler (newData) {
         this.initDataItem()

@@ -6835,6 +6835,7 @@ public class ManagementServerImpl extends MutualExclusiveIdsManagerBase implemen
         cmdList.add(DeletePoolCmd.class);
         cmdList.add(ListSwiftsCmd.class);
         cmdList.add(ListStoragePoolsCmd.class);
+        cmdList.add(org.apache.cloudstack.api.command.admin.storage.ListDeploymentStoragePoolsCmd.class);
         cmdList.add(ListStorageTagsCmd.class);
         cmdList.add(ListStorageAccessGroupsCmd.class);
         cmdList.add(FindStoragePoolsForMigrationCmd.class);
