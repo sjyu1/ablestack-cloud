@@ -163,10 +163,14 @@ export default {
     }
   },
   watch: {
-    value (newValue, oldValue) {
-      if (newValue && newValue !== oldValue) {
-        this.selectedRowKeys = [newValue]
-        this.onSelectRow(this.selectedRowKeys)
+    value: {
+      immediate: true,
+      handler (newValue, oldValue) {
+        this.selectedRowKeys = newValue ? [newValue] : ['0']
+        if (newValue && newValue !== oldValue) {
+          this.oldZoneId = this.zoneId
+          this.onSelectRow(this.selectedRowKeys)
+        }
       }
     },
     items: {
@@ -188,6 +192,11 @@ export default {
     },
     loading () {
       if (!this.loading) {
+        if (this.value && (this.oldZoneId === null || this.oldZoneId === this.zoneId)) {
+          this.selectedRowKeys = [this.value]
+          this.oldZoneId = this.zoneId
+          return
+        }
         if (this.preFillContent.diskofferingid) {
           this.selectedRowKeys = [this.preFillContent.diskofferingid]
           this.$emit('select-disk-offering-item', this.preFillContent.diskofferingid)

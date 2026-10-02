@@ -20,7 +20,7 @@
     <a-row :span="24" :style="{ marginTop: '20px' }">
       <a-col :span="isCustomizedDiskIOps || isCustomizedIOps ? 8 : 24" v-if="isCustomized && showSize">
         <a-form-item
-          :label="inputDecorator === 'rootdisksize' ? $t('label.root.disk.size') : $t('label.disksize')"
+          :label="hideSizeLabel ? undefined : inputDecorator === 'rootdisksize' ? $t('label.root.disk.size') : $t('label.disksize')"
           class="form-item">
           <span style="display: inline-flex">
             <a-input-number
@@ -79,6 +79,7 @@ export default {
   name: 'DiskSizeSelection',
   props: {
     showSize: { type: Boolean, default: true },
+    hideSizeLabel: { type: Boolean, default: false },
     inputDecorator: {
       type: String,
       default: ''

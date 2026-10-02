@@ -95,3 +95,23 @@ test('root override mounts with the already loaded offerings', () => {
   expect(wrapper.vm.rowCountNum).toBe(2)
   wrapper.unmount()
 })
+
+test('mounted offering selector retains the selected root offering across filtering', async () => {
+  const custom = { id: 'custom', name: 'Custom', iscustomized: true }
+  const fixed = { id: 'fixed', name: 'Fixed', disksize: 200 }
+  const wrapper = shallowMount(DiskOfferingSelection, {
+    props: { zoneId: 'zone', isRootDiskOffering: true, items: [custom, fixed], value: 'custom' },
+    global: { mocks: { $t: key => key }, stubs: { 'a-input-search': true, 'a-table': true, 'a-pagination': true } }
+  })
+  expect(wrapper.vm.rowSelection.selectedRowKeys).toEqual(['custom'])
+  await wrapper.setProps({ loading: true })
+  await wrapper.setProps({ items: [custom], loading: false })
+  expect(wrapper.vm.rowSelection.selectedRowKeys).toEqual(['custom'])
+  expect(wrapper.emitted('select-disk-offering-item').flat()).not.toContain('0')
+  await wrapper.setProps({ value: 'fixed', items: [custom, fixed] })
+  expect(wrapper.vm.rowSelection.selectedRowKeys).toEqual(['fixed'])
+  expect(wrapper.emitted('on-selected-root-disk-size').slice(-1)[0][0]).toEqual(fixed)
+  await wrapper.setProps({ value: '' })
+  expect(wrapper.vm.rowSelection.selectedRowKeys).toEqual(['0'])
+  wrapper.unmount()
+})

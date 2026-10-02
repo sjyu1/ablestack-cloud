@@ -8237,5 +8237,9 @@
   "message.vm.storage.iops.insufficient": "Insufficient IOPS for the requested disks.",
   "message.vm.root.size.override": "Keep the current root disk offering and change only its size.",
   "message.vm.root.offering.override": "Select another disk offering for the root disk.",
-  "message.vm.disk.limit": "The current hypervisor supports at most {limit} data disks."
+  "message.vm.disk.limit": "The current hypervisor supports at most {limit} data disks.",
+  "label.vm.root.offering": "Root disk offering",
+  "label.vm.root.capacity": "Root disk size",
+  "label.vm.root.offering.default": "Compute offering default",
+  "message.vm.root.offering.required": "The compute offering requires this root disk offering. It cannot be overridden."
 }

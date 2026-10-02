@@ -8202,5 +8202,9 @@
   "message.vm.storage.iops.insufficient": "필요 IOPS를 할당할 수 없습니다.",
   "message.vm.root.size.override": "현재 루트 디스크 오퍼링을 유지하고 용량만 변경합니다.",
   "message.vm.root.offering.override": "다른 디스크 오퍼링을 선택해 루트 디스크를 구성합니다.",
-  "message.vm.disk.limit": "현재 하이퍼바이저에서 데이터 디스크는 최대 {limit}개까지 연결할 수 있습니다."
+  "message.vm.disk.limit": "현재 하이퍼바이저에서 데이터 디스크는 최대 {limit}개까지 연결할 수 있습니다.",
+  "label.vm.root.offering": "루트 디스크 오퍼링",
+  "label.vm.root.capacity": "루트 디스크 용량",
+  "label.vm.root.offering.default": "컴퓨트 오퍼링 기본값",
+  "message.vm.root.offering.required": "컴퓨트 오퍼링이 지정한 루트 디스크 오퍼링을 사용해야 하므로 변경할 수 없습니다."
 }

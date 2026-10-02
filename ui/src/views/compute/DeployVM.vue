@@ -314,41 +314,7 @@
                         <a-input v-model:value="form.memory"/>
                       </a-form-item>
                     </span>
-                    <deployment-storage-selection
-                      v-if="storageSelectionEnabled && imageType === 'templateid'"
-                      v-model:value="rootStorageSelection"
-                      :title="$t('label.vm.storage.root')"
-                      :query="rootStorageQuery" />
-                    <a-row v-if="imageType === 'templateid' && !isTemplateHypervisorExternal" :gutter="16" class="root-overrides">
-                      <a-col :xs="24" :sm="12">
-                        <a-form-item :label="$t('label.override.rootdisk.size')">
-                          <a-switch
-                            v-model:checked="form.rootdisksizeitem"
-                            :disabled="serviceOffering?.diskofferingstrictness || (template && template.deployasis) || showOverrideDiskOfferingOption"
-                            @change="changeRootDiskSizeOverride" />
-                          <p class="option-help">{{ $t('message.vm.root.size.override') }}</p>
-                        </a-form-item>
-                      </a-col>
-                      <a-col :xs="24" :sm="12">
-                        <a-form-item :label="$t('label.override.root.diskoffering')">
-                          <a-switch
-                            v-model:checked="showOverrideDiskOfferingOption"
-                            :disabled="serviceOffering?.diskofferingstrictness || (template && template.deployasis)"
-                            @change="updateOverrideRootDiskShowParam" />
-                          <p class="option-help">{{ $t('message.vm.root.offering.override') }}</p>
-                        </a-form-item>
-                      </a-col>
-                    </a-row>
-                    <div v-if="template && template.deployasis">{{ $t('message.deployasis') }}</div>
-                    <disk-size-selection
-                      v-if="imageType === 'templateid' && showRootDiskSizeChanger"
-                      input-decorator="rootdisksize"
-                      :value="form.rootdisksize"
-                      :preFillContent="dataPreFill"
-                      :isCustomized="true"
-                      :minDiskSize="dataPreFill.minrootdisksize"
-                      @update-disk-size="updateFieldValue" />
-                    <span v-if="imageType!=='isoid' && serviceOffering && !serviceOffering.diskofferingstrictness">
+                    <span v-if="!['templateid', 'isoid'].includes(imageType) && serviceOffering && !serviceOffering.diskofferingstrictness">
                       <a-step
                         :status="zoneSelected ? 'process' : 'wait'"
                         v-if="template && !template.deployasis && template.childtemplates && template.childtemplates.length > 0" >
@@ -404,6 +370,161 @@
                 </template>
               </a-step>
               <a-step
+                v-if="['templateid', 'isoid'].includes(imageType) && !isTemplateHypervisorExternal"
+                :title="$t('label.rootdisk')"
+                :status="serviceOffering?.id ? 'process' : 'wait'">
+                <template #description>
+                  <div v-if="zoneSelected && serviceOffering?.id" class="root-disk-configuration">
+                    <template v-if="imageType === 'templateid'">
+                      <section class="root-configuration-section root-offering-section">
+                        <h4 class="root-section-heading"><span class="root-section-number">1</span>{{ $t('label.vm.root.offering') }}</h4>
+                        <a-form-item :label="$t('label.override.root.diskoffering')">
+                          <a-switch
+                            v-model:checked="showOverrideDiskOfferingOption"
+                            :disabled="serviceOffering?.diskofferingstrictness || (template && template.deployasis)"
+                            @change="updateOverrideRootDiskShowParam" />
+                          <p class="option-help">{{ $t('message.vm.root.offering.override') }}</p>
+                        </a-form-item>
+                        <div v-if="!showOverrideDiskOfferingOption" class="root-default-value">
+                          <span>{{ defaultRootOfferingName }}</span>
+                          <a-tag v-if="defaultRootOfferingName !== $t('label.vm.root.offering.default')">{{ $t('label.vm.root.offering.default') }}</a-tag>
+                        </div>
+                        <p v-if="serviceOffering?.diskofferingstrictness" class="option-help">{{ $t('message.vm.root.offering.required') }}</p>
+                        <div v-if="template && template.deployasis" class="option-help">{{ $t('message.deployasis') }}</div>
+                        <template v-if="serviceOffering && !serviceOffering.diskofferingstrictness">
+                          <div
+                            v-if="template && !template.deployasis && template.childtemplates && template.childtemplates.length > 0" >
+                            <template>
+                              <div v-if="zoneSelected">
+                                <multi-disk-selection
+                                  :items="template.childtemplates"
+                                  :diskOfferings="options.diskOfferings"
+                                  :zoneId="zoneId"
+                                  @select-multi-disk-offering="updateMultiDiskOffering($event)" />
+                              </div>
+                            </template>
+                          </div>
+
+                          <template v-else>
+                            <disk-offering-selection
+                              v-if="showOverrideDiskOfferingOption"
+                              :items="options.diskOfferings"
+                              :row-count="rowCount.diskOfferings"
+                              :zoneId="zoneId"
+                              :value="overrideDiskOffering ? overrideDiskOffering.id : ''"
+                              :loading="loading.diskOfferings"
+                              :preFillContent="dataPreFill"
+                              :isIsoSelected="imageType==='isoid'"
+                              :isRootDiskOffering="true"
+                              @on-selected-root-disk-size="onSelectRootDiskSize"
+                              @select-disk-offering-item="($event) => updateOverrideDiskOffering($event)"
+                              @handle-search-filter="($event) => handleSearchFilter('diskOfferings', $event)"
+                            ></disk-offering-selection>
+                          </template>
+                        </template>
+                      </section>
+                      <section class="root-configuration-section root-size-section">
+                        <h4 class="root-section-heading"><span class="root-section-number">2</span>{{ $t('label.vm.root.capacity') }}</h4>
+                        <template v-if="!showOverrideDiskOfferingOption">
+                          <div v-if="selectedRootDiskSize && !showRootDiskSizeChanger" class="root-default-value">
+                            <span>{{ selectedRootDiskSize }} GB</span>
+                            <a-tag v-if="serviceOffering?.diskofferingstrictness">{{ $t('label.vm.disk.fixed') }}</a-tag>
+                          </div>
+                          <a-form-item :label="$t('label.override.rootdisk.size')">
+                            <a-switch
+                              v-model:checked="form.rootdisksizeitem"
+                              :disabled="serviceOffering?.diskofferingstrictness || (template && template.deployasis)"
+                              @change="changeRootDiskSizeOverride" />
+                            <p class="option-help">{{ $t('message.vm.root.size.override') }}</p>
+                          </a-form-item>
+                          <disk-size-selection
+                            v-if="showRootDiskSizeChanger"
+                            input-decorator="rootdisksize"
+                            :hide-size-label="true"
+                            :value="form.rootdisksize"
+                            :preFillContent="dataPreFill"
+                            :isCustomized="true"
+                            :minDiskSize="dataPreFill.minrootdisksize"
+                            @update-disk-size="updateFieldValue" />
+                        </template>
+                        <a-form-item v-if="showOverrideDiskOfferingOption && overrideDiskOffering?.id && !overrideDiskOffering.iscustomized">
+                          <a-input-number :value="overrideDiskOffering.disksize" disabled />
+                          <span class="root-size-unit">GB</span>
+                          <a-tag class="root-fixed-size-tag">{{ $t('label.vm.disk.fixed') }}</a-tag>
+                        </a-form-item>
+                            <disk-size-selection
+                              v-if="!serviceOffering.diskofferingstrictness && !(template?.childtemplates?.length > 0) && ((overrideDiskOffering && (overrideDiskOffering.iscustomized || overrideDiskOffering.iscustomizediops || overrideDiskOffering.encrypt)) || (serviceOffering && serviceOffering.encryptroot))"
+                              input-decorator="rootdisksize"
+                              :value="form.rootdisksize"
+                              :hide-size-label="true"
+                              :show-size="showOverrideDiskOfferingOption"
+                              :preFillContent="dataPreFill"
+                              :minDiskSize="dataPreFill.minrootdisksize"
+                              :rootDiskSelected="overrideDiskOffering"
+                              :isCustomized="overrideDiskOffering && overrideDiskOffering.iscustomized"
+                              :kmsKeys="options.kmsKeys"
+                              :loadingKmsKeys="loading.kmsKeys"
+                              :computeOfferingEncryptRoot="serviceOffering && serviceOffering.encryptroot"
+                              @handler-error="handlerError"
+                              @update-disk-size="updateFieldValue"
+                              @update-root-disk-iops-value="updateIOPSValue"
+                              @update-root-kms-key="updateRootKmsKey"/>
+
+                        <a-form-item class="form-item-hidden"><a-input v-model:value="form.rootdisksize"/></a-form-item>
+                        <a-form-item class="form-item-hidden"><a-input v-model:value="form.offeringKvdoEnable"/></a-form-item>
+                      </section>
+                    </template>
+                    <template v-else>
+                      <section class="root-configuration-section root-offering-section">
+                        <h4 class="root-section-heading"><span class="root-section-number">1</span>{{ $t('label.vm.root.offering') }}</h4>
+                        <a-alert v-if="isoRootOfferingStrict" type="info" :message="mappedRootOffering?.displaytext || serviceOffering.diskofferingname" style="margin: 12px 0" />
+                        <disk-offering-selection
+                          v-else
+                          :items="options.diskOfferings"
+                          :row-count="rowCount.diskOfferings"
+                          :zoneId="zoneId"
+                          :value="diskOffering ? diskOffering.id : ''"
+                          :loading="loading.diskOfferings"
+                          :preFillContent="dataPreFill"
+                          :isIsoSelected="true"
+                          @on-selected-disk-size="onSelectDiskSize"
+                          @select-disk-offering-item="($event) => updateDiskOffering($event)"
+                          @handle-search-filter="($event) => handleSearchFilter('diskOfferings', $event)" />
+                      </section>
+                      <section v-if="diskOffering?.id" class="root-configuration-section root-size-section">
+                        <h4 class="root-section-heading"><span class="root-section-number">2</span>{{ $t('label.vm.root.capacity') }}</h4>
+                        <a-form-item v-if="!diskOffering.iscustomized">
+                          <a-input-number :value="diskOffering.disksize" disabled />
+                          <span class="root-size-unit">GB</span>
+                          <a-tag class="root-fixed-size-tag">{{ $t('label.vm.disk.fixed') }}</a-tag>
+                        </a-form-item>
+                        <disk-size-selection
+                          v-if="diskOffering.iscustomized || diskOffering.iscustomizediops || diskOffering.encrypt"
+                          input-decorator="size"
+                          :hide-size-label="true"
+                          :show-size="true"
+                          :preFillContent="dataPreFill"
+                          :diskSelected="diskSelected"
+                          :isCustomized="diskOffering.iscustomized"
+                          :kmsKeys="options.kmsKeys"
+                          :loadingKmsKeys="loading.kmsKeys"
+                          @handler-error="handlerError"
+                          @update-disk-size="updateFieldValue"
+                          @update-iops-value="updateIOPSValue"
+                          @update-data-kms-key="updateDataKmsKey" />
+                        <a-form-item class="form-item-hidden"><a-input v-model:value="form.size"/></a-form-item>
+                      </section>
+                    </template>
+                    <deployment-storage-selection
+                      v-if="storageSelectionEnabled && (imageType === 'templateid' || diskOffering?.id)"
+                      class="root-storage-section"
+                      v-model:value="rootStorageSelection"
+                      :title="$t('label.vm.storage.root')"
+                      :query="rootStorageQuery" />
+                  </div>
+                </template>
+              </a-step>
+              <a-step
                 :title="$t('label.data.disk')"
                 :status="zoneSelected ? 'process' : 'wait'"
                 v-if="template && !template.deployasis && template.childtemplates && template.childtemplates.length > 0" >
@@ -418,15 +539,13 @@
                 </template>
               </a-step>
               <a-step
-                v-else
-                :title="imageType === 'templateid' ? $t('label.data.disk') : $t('label.disk.size')"
+                v-else-if="imageType !== 'isoid'"
+                :title="$t('label.data.disk')"
                 :disabled="isTemplateHypervisorExternal ? true : false"
                 :status="zoneSelected ? 'process' : 'wait'">
                 <template #description>
                   <div v-if="zoneSelected && !isTemplateHypervisorExternal">
-                    <a-alert v-if="isoRootOfferingStrict" type="info" :message="mappedRootOffering?.displaytext || serviceOffering.diskofferingname" style="margin: 12px 0" />
                     <disk-offering-selection
-                      v-else
                       :items="options.diskOfferings"
                       :row-count="rowCount.diskOfferings"
                       :zoneId="zoneId"
@@ -438,23 +557,10 @@
                       @select-disk-offering-item="($event) => updateDiskOffering($event)"
                       @handle-search-filter="($event) => handleSearchFilter('diskOfferings', $event)"
                     ></disk-offering-selection>
-                    <deployment-storage-selection
-                      v-if="storageSelectionEnabled && imageType === 'isoid' && diskOffering?.id"
-                      v-model:value="rootStorageSelection"
-                      :title="$t('label.vm.storage.root')"
-                      :query="rootStorageQuery" />
-                    <a-form-item
-                      v-if="imageType === 'isoid' && diskOffering?.id && !diskOffering.iscustomized"
-                      :label="$t('label.root.disk.size')"
-                      style="margin-top: 20px">
-                      <a-input-number :value="diskOffering.disksize" disabled style="width: 160px" />
-                      <span style="margin-left: 8px">GB</span>
-                      <a-tag style="margin-left: 8px">{{ $t('label.vm.disk.fixed') }}</a-tag>
-                    </a-form-item>
                     <disk-size-selection
-                      v-if="diskOffering && (imageType === 'isoid' ? diskOffering.iscustomized || diskOffering.iscustomizediops || diskOffering.encrypt : diskOffering.iscustomizediops || diskOffering.encrypt)"
+                      v-if="diskOffering && (diskOffering.iscustomizediops || diskOffering.encrypt)"
                       input-decorator="size"
-                      :show-size="imageType === 'isoid'"
+                      :show-size="false"
                       :preFillContent="dataPreFill"
                       :diskSelected="diskSelected"
                       :isCustomized="diskOffering.iscustomized"
@@ -464,9 +570,7 @@
                       @update-disk-size="updateFieldValue"
                       @update-iops-value="updateIOPSValue"
                       @update-data-kms-key="updateDataKmsKey"/>
-                    <a-form-item class="form-item-hidden">
-                      <a-input v-model:value="form.size"/>
-                    </a-form-item>
+                    <a-form-item class="form-item-hidden"><a-input v-model:value="form.size"/></a-form-item>
                     <template v-if="imageType === 'templateid' && diskOffering?.id && diskOffering.id !== '0'">
                       <disk-quantity-selection
                         :offering="diskOffering"
@@ -1388,6 +1492,10 @@ export default {
       return this.storageSelectionEnabled && (!!this.rootStorageSelection.id && !this.rootStorageSelection.valid ||
         !!this.selectedDataDiskOffering?.id && !!this.dataStorageSelection.id && !this.dataStorageSelection.valid)
     },
+    defaultRootOfferingName () {
+      const offering = this.options.diskOfferings.find(item => item.id === this.serviceOffering?.diskofferingid)
+      return this.serviceOffering?.diskofferingname || offering?.displaytext || this.$t('label.vm.root.offering.default')
+    },
     selectedRootDiskSize () {
       if (this.imageType === 'isoid') return this.diskOffering?.iscustomized ? Number(this.form.size) || undefined : this.diskOffering?.disksize
       if (this.showOverrideDiskOfferingOption && this.overrideDiskOffering?.id) {
@@ -1904,6 +2012,11 @@ export default {
         }
 
         this.serviceOffering = _.find(this.options.serviceOfferings, (option) => option.id === instanceConfig.computeofferingid)
+        if (this.imageType === 'templateid' &&
+            (this.serviceOffering?.diskofferingstrictness || this.template?.deployasis) &&
+            (this.showOverrideDiskOfferingOption || this.showRootDiskSizeChanger)) {
+          this.updateOverrideRootDiskShowParam(false)
+        }
 
         instanceConfig.overridediskofferingid = this.rootDiskSelected?.id || this.serviceOffering?.diskofferingid
         if (instanceConfig.overridediskofferingid) {
@@ -4221,9 +4334,18 @@ export default {
 </script>
 
 <style lang="less" scoped>
-.root-overrides { margin-top: 20px; }
-.option-help { margin: 8px 0 0; opacity: .75; font-size: 12px; line-height: 1.6; }
+.root-disk-configuration { padding-top: 8px; }
+.root-configuration-section { margin-bottom: 20px; }
+.root-section-heading { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ui-text-primary); margin: 0 0 12px; }
+.root-section-number { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; flex-shrink: 0; border: 1px solid var(--ui-border); border-radius: 50%; font-size: 12px; font-weight: normal; color: var(--ui-text-secondary); }
+.root-default-value { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 12px; background: var(--ui-bg-elevated); border: 1px solid var(--ui-border); border-radius: 3px; }
+.root-default-value .ant-tag { margin: 0; }
 .root-offering-selection { margin-top: 12px; }
+.root-size-unit { margin-left: 8px; }
+.root-fixed-size-tag { margin-left: 8px; }
+.root-storage-section :deep(.storage-toolbar strong) { display: flex; align-items: center; gap: 8px; }
+.root-storage-section :deep(.storage-toolbar strong)::before { content: '3'; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; flex-shrink: 0; border: 1px solid var(--ui-border); border-radius: 50%; font-size: 12px; font-weight: normal; color: var(--ui-text-secondary); }
+.option-help { margin: 8px 0 0; opacity: .75; font-size: 12px; line-height: 1.6; }
 
   @media (min-width: 992px) {
     .deploy-vm-layout--bounded {
