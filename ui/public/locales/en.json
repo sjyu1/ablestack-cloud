@@ -8241,5 +8241,11 @@
   "label.vm.root.offering": "Root disk offering",
   "label.vm.root.capacity": "Root disk size",
   "label.vm.root.offering.default": "Compute offering default",
-  "message.vm.root.offering.required": "The compute offering requires this root disk offering. It cannot be overridden."
+  "message.vm.root.offering.required": "The compute offering requires this root disk offering. It cannot be overridden.",
+  "label.volume.storage.remaining": "Remaining capacity",
+  "message.volume.storage.capacity": "Allocated includes reservations · Remaining is physical free space",
+  "message.volume.storage.capacity.tooltip": "Physical free space at the time of retrieval. Provisionable capacity depends on placement policy.",
+  "message.volume.storage.loading": "Loading storage pools.",
+  "message.volume.storage.failed": "Unable to retrieve storage pools. Reopen the dialog to try again.",
+  "message.volume.storage.empty": "No storage pools are available."
 }

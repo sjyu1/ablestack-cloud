@@ -8206,5 +8206,11 @@
   "label.vm.root.offering": "루트 디스크 오퍼링",
   "label.vm.root.capacity": "루트 디스크 용량",
   "label.vm.root.offering.default": "컴퓨트 오퍼링 기본값",
-  "message.vm.root.offering.required": "컴퓨트 오퍼링이 지정한 루트 디스크 오퍼링을 사용해야 하므로 변경할 수 없습니다."
+  "message.vm.root.offering.required": "컴퓨트 오퍼링이 지정한 루트 디스크 오퍼링을 사용해야 하므로 변경할 수 없습니다.",
+  "label.volume.storage.remaining": "남은 용량",
+  "message.volume.storage.capacity": "할당: 예약 포함 · 남은 용량: 물리 여유",
+  "message.volume.storage.capacity.tooltip": "조회 시점의 물리 여유입니다. 실제 생성 가능 용량은 배치 정책에 따라 달라질 수 있습니다.",
+  "message.volume.storage.loading": "스토리지 목록을 불러오는 중입니다.",
+  "message.volume.storage.failed": "스토리지 목록을 불러오지 못했습니다. 대화상자를 다시 열어 확인해 주세요.",
+  "message.volume.storage.empty": "선택할 수 있는 스토리지가 없습니다."
 }
