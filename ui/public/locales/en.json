@@ -8182,5 +8182,18 @@
   "message.vmprocess.profile.vm.stopped": "The VM is stopped. Registered versions can be viewed and retired; registering or approving current guest definitions requires a running VM.",
   "message.vmprocess.profile.history.limited": "Active versions and up to 256 recent retired versions are shown.",
   "message.vmprocess.profile.definition.absent": "The current guest definition is unavailable; restart is disabled.",
-  "message.vmprocess.snapshot.refresh.failed": "The process list could not be verified before execution. The target was not changed. Refresh the list and try again."
+  "message.vmprocess.snapshot.refresh.failed": "The process list could not be verified before execution. The target was not changed. Refresh the list and try again.",
+  "label.vmdevice.partitionWarningTitle": "Existing partitions and data may be affected.",
+  "label.vmdevice.partitionWarning": "This medium contains existing partitions. Mounting, writing, initializing or formatting it in the VM may affect existing partitions and data. Check the path, WWN and capacity above to confirm the exact disk/LUN before allocation.",
+  "label.vmdevice.partitionAck": "I have confirmed this is the exact disk/LUN I intend to use and understand the potential impact on existing partitions and data.",
+  "label.vmdevice.partitionCandidate": "Unmounted partitions \u00b7 medium and data-risk confirmation required",
+  "label.vmdevice.mediumPath": "Medium path",
+  "label.vmdevice.mediumIdentity": "WWN / Serial",
+  "label.vmdevice.mediumSizeModel": "Capacity / model",
+  "label.vmdevice.mediumPartitions": "Partitions / filesystem / mounts",
+  "label.vmdevice.mountpoints": "Mount points",
+  "label.vmdevice.unmounted": "None (unmounted)",
+  "label.vmdevice.noFilesystem": "No filesystem",
+  "label.vmdevice.noPartitions": "No partitions",
+  "label.vmdevice.mediumChanged": "The medium identity or usage has changed. Check the medium and acknowledge the data risk again."
 }
