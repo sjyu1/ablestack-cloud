@@ -260,7 +260,27 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
             identity.add(volume.getUuid() + ":" + volume.getPoolId() + ":" + volume.getPath() + ":" + volume.getSize());
         }
         java.util.Collections.sort(identity);
-        vmSnapshotDetailsDao.addDetail(snapshot.getId(), "snapshot.creation.volumes", new com.google.gson.Gson().toJson(identity), false);
+        vmSnapshotDetailsDao.addDetail(snapshot.getId(), "snapshot.creation.volumes", inventoryDigest(new com.google.gson.Gson().toJson(identity)), false);
+    }
+
+    static String inventoryDigest(String inventory) {
+        // Resource detail values are VARCHAR(255); raw JSON is truncated for multi-volume VMs.
+        return "sha256:" + org.apache.commons.codec.digest.DigestUtils.sha256Hex(inventory);
+    }
+
+    static boolean matchesOriginalInventory(String stored, String inventory) {
+        return inventory.equals(stored) || inventoryDigest(inventory).equals(stored);
+    }
+
+    static boolean matchesRecoveryInventory(String stored, String inventory, String originalVolumes, String volumes) {
+        if (matchesOriginalInventory(stored, inventory)) return true;
+        // The first deployed recovery build stored raw JSON. A truncated value can be
+        // upgraded only when the entire missing suffix is the independently recorded,
+        // unchanged creation volume inventory. Never accept an arbitrary matching prefix.
+        int volumeOffset = inventory.indexOf("\"volumes\":");
+        return stored.length() == 255 && inventory.length() > 255 && volumeOffset >= 0 && volumeOffset < 255
+                && inventory.substring(0, 255).equals(stored) && originalVolumes != null
+                && matchesOriginalInventory(originalVolumes, volumes);
     }
 
     protected Map<Long, String> recoveryArtifacts(VMSnapshot snapshot) {
@@ -299,7 +319,8 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
         }
         java.util.Collections.sort(volumeIdentity); fingerprint.put("volumes", volumeIdentity);
         VMSnapshotDetailsVO original = vmSnapshotDetailsDao.findDetail(snapshot.getId(), "snapshot.creation.volumes");
-        if (original != null && !new com.google.gson.Gson().toJson(volumeIdentity).equals(original.getValue())) {
+        String volumeInventory = new com.google.gson.Gson().toJson(volumeIdentity);
+        if (original != null && !matchesOriginalInventory(original.getValue(), volumeInventory)) {
             throw new CloudRuntimeException("Original creation volume inventory changed; reconcile the disk provider first");
         }
         if (original == null && names.isEmpty() && snapshot.getType() == VMSnapshot.Type.DiskAndMemory) {
@@ -307,10 +328,12 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
         }
         String identity = new com.google.gson.Gson().toJson(fingerprint);
         VMSnapshotDetailsVO previous = vmSnapshotDetailsDao.findDetail(snapshot.getId(), "force.delete.inventory");
-        if (previous != null && !identity.equals(previous.getValue())) {
+        if (previous != null && !matchesRecoveryInventory(previous.getValue(), identity, original == null ? null : original.getValue(), volumeInventory)) {
             throw new CloudRuntimeException("Recovery inventory changed; reconcile the original recovery operation first");
         }
-        if (previous == null) vmSnapshotDetailsDao.addDetail(snapshot.getId(), "force.delete.inventory", identity, false);
+        if (previous == null || !inventoryDigest(identity).equals(previous.getValue())) {
+            vmSnapshotDetailsDao.addDetail(snapshot.getId(), "force.delete.inventory", inventoryDigest(identity), false);
+        }
         if (vmSnapshotDetailsDao.findDetail(snapshot.getId(), "force.delete.target") == null) {
             vmSnapshotDetailsDao.addDetail(snapshot.getId(), "force.delete.target", snapshot.getUuid(), false);
         }

@@ -58,6 +58,7 @@ public class KvmSnapshotRecoveryTest {
         int writes;
         @Override public String virsh(String... args) throws Exception {
             switch (args[0]) {
+            case "list": return UUID_VALUE + "\n";
             case "domstate": return state;
             case "domjobinfo": return "Job type: None\n";
             case "dumpxml": return "<domain><os><nvram>/nvram</nvram></os></domain>";
@@ -75,11 +76,11 @@ public class KvmSnapshotRecoveryTest {
                 if (request.get("execute").equals("blockdev-snapshot-delete-internal-sync")) {
                     writes++; if (failDelete) throw new IOException("native response lost");
                     Map<?, ?> arguments = (Map<?, ?>) request.get("arguments");
-                    String path = arguments.get("device").equals("disk") ? "/disk" : "/nvram";
+                    String path = "/" + arguments.get("device");
                     tables.get(path).remove(arguments.get("name")); deleted.add(path); return "{\"return\":{}}";
                 }
                 List<Object> blocks = new ArrayList<>();
-                for (String path : List.of("/disk", "/nvram")) blocks.add(Map.of("inserted", Map.of("ro", false, "node-name", path.substring(1), "image", image(path))));
+                for (String path : new TreeSet<>(tables.keySet())) blocks.add(Map.of("inserted", Map.of("ro", false, "node-name", path.substring(1), "image", image(path))));
                 return new Gson().toJson(Map.of("return", blocks));
             default: throw new IOException("Unexpected native call: " + args[0]);
             }
@@ -115,6 +116,31 @@ public class KvmSnapshotRecoveryTest {
     @Test public void liveBackingArtifactIsNeverDeleted() throws Exception {
         Native access = new Native();
         assertFalse(KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk"), Map.of(1L, "/disk"), access, Files.createTempDirectory("recover")).getResult());
+        assertEquals(0, access.writes);
+    }
+    @Test public void partialRootDataAndNvramObjectsAreCleanedWithoutDeletingReadySnapshots() throws Exception {
+        Native access = new Native(); access.tables.put("/data", new TreeSet<>(Set.of("ready", "failed")));
+        access.tables.get("/disk").add("failed"); access.tables.get("/nvram").add("failed");
+        assertTrue(KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk", 2L, "/data"), Map.of(), access, Files.createTempDirectory("recover")).getResult());
+        assertEquals(Set.of("/disk", "/data", "/nvram"), new TreeSet<>(access.deleted));
+        access.tables.values().forEach(names -> assertEquals(Set.of("ready"), names)); assertEquals("running", access.state);
+    }
+    @Test public void unreferencedExternalArtifactIsCleanedWithoutChangingActiveImages() throws Exception {
+        Native access = new Native();
+        assertTrue(KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk"), Map.of(1L, "/unused"), access, Files.createTempDirectory("recover")).getResult());
+        assertEquals(List.of("/unused"), access.deleted); assertEquals(Set.of("ready"), access.tables.get("/disk"));
+    }
+    @Test public void anotherVmBackingReferenceBlocksArtifactCleanup() throws Exception {
+        Native access = new Native() {
+            @Override public String virsh(String... args) throws Exception {
+                if (args[0].equals("list")) return UUID_VALUE + "\nother-vm\n";
+                if (args[0].equals("qemu-monitor-command") && args[1].equals("other-vm")) {
+                    return "{\"return\":[{\"inserted\":{\"image\":{\"filename\":\"/other\",\"backing-image\":{\"filename\":\"/unused\"}}}}]}";
+                }
+                return super.virsh(args);
+            }
+        };
+        assertFalse(KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk"), Map.of(1L, "/unused"), access, Files.createTempDirectory("recover")).getResult());
         assertEquals(0, access.writes);
     }
     @Test public void missingDataDiskAndIncompleteTablesKeepCloudRecoveryUnconfirmed() throws Exception {

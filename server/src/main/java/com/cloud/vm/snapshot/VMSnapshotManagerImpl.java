@@ -868,6 +868,9 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         if (snapshot.getState() != VMSnapshot.State.Error && !retry) {
             throw new InvalidParameterValueException("Forced VM snapshot deletion requires Error state");
         }
+        if (snapshot.getCurrent() != null) {
+            throw new InvalidParameterValueException("Forced deletion is limited to snapshots whose creation did not complete");
+        }
         if (Boolean.TRUE.equals(snapshot.getCurrent()) || !_vmSnapshotDao.listByParent(snapshot.getId()).isEmpty()) {
             throw new InvalidParameterValueException("Recovery cannot delete a current snapshot or a snapshot with dependent children");
         }

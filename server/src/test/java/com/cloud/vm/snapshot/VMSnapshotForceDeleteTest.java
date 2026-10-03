@@ -66,6 +66,9 @@ public class VMSnapshotForceDeleteTest {
         when(manager._storagePoolDao.findById(4L)).thenReturn(stored);
     }
     @Test public void creationErrorWithNullCurrentCanBeRecovered() { manager.validateForcedSnapshotDeletion(caller, target); }
+    @Test(expected = InvalidParameterValueException.class) public void previouslyCompletedSnapshotErrorCannotUseCreationRecovery() {
+        when(target.getCurrent()).thenReturn(false); manager.validateForcedSnapshotDeletion(caller, target);
+    }
     @Test(expected = PermissionDeniedException.class) public void ordinaryAccountCannotForceDelete() {
         when(manager._accountMgr.isRootAdmin(1L)).thenReturn(false); manager.validateForcedSnapshotDeletion(caller, target);
     }

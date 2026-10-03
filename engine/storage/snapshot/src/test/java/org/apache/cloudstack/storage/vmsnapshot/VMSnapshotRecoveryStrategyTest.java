@@ -23,6 +23,8 @@ import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
@@ -101,5 +103,21 @@ public class VMSnapshotRecoveryStrategyTest {
         try { strategy.deleteVMSnapshot(target, true); org.junit.Assert.fail("retargeted recovery admitted"); }
         catch (CloudRuntimeException e) { assertTrue(e.getMessage().contains("inventory changed")); }
         verify(strategy.agentMgr, never()).send(anyLong(), any(Command.class));
+    }
+    @Test public void multipleVolumeInventoryFitsDetailColumnAndDetectsChanges() {
+        String inventory = new com.google.gson.Gson().toJson(List.of("root:" + "x".repeat(180), "data:" + "y".repeat(180)));
+        String digest = DefaultVMSnapshotStrategy.inventoryDigest(inventory);
+        assertEquals(71, digest.length());
+        assertTrue(DefaultVMSnapshotStrategy.matchesOriginalInventory(digest, inventory));
+        assertFalse(DefaultVMSnapshotStrategy.matchesOriginalInventory(digest, inventory + "changed"));
+    }
+    @Test public void truncatedLegacyRetryRequiresIndependentlyVerifiedMissingVolumeSuffix() {
+        String volumes = new com.google.gson.Gson().toJson(List.of("root:" + "x".repeat(220)));
+        String inventory = "{\"artifacts\":{},\"current\":\"ready\",\"snapshot\":\"target\",\"volumes\":" + volumes + "}";
+        String truncated = inventory.substring(0, 255);
+        assertTrue(DefaultVMSnapshotStrategy.matchesRecoveryInventory(truncated, inventory, volumes, volumes));
+        assertFalse(DefaultVMSnapshotStrategy.matchesRecoveryInventory(truncated, inventory, null, volumes));
+        assertFalse(DefaultVMSnapshotStrategy.matchesRecoveryInventory(truncated, inventory, volumes + "changed", volumes));
+        assertFalse(DefaultVMSnapshotStrategy.matchesRecoveryInventory(truncated, inventory.replace("ready", "other"), volumes, volumes));
     }
 }

@@ -214,7 +214,37 @@ public final class KvmSnapshotRecovery {
             }
         }
         if (!result.images.keySet().equals(paths)) throw new IOException("Not all VM disks were inspected");
-        for (String path : artifacts.values()) if (result.referenced.contains(path)) throw new IOException("Snapshot artifact is referenced by a live disk or backing chain");
+        if (!artifacts.isEmpty()) {
+            Set<String> domains = new TreeSet<>();
+            for (String domain : access.virsh("list", "--all", "--uuid").split("\\R")) if (!domain.trim().isEmpty()) domains.add(domain.trim());
+            if (!domains.contains(uuid)) throw new IOException("Provider VM inventory is incomplete");
+            for (String other : domains) {
+                if (other.isEmpty() || other.equals(uuid)) continue;
+                String otherState = access.virsh("domstate", other).trim();
+                if ("shut off".equals(otherState)) {
+                    DocumentBuilderFactory factory = secureXmlFactory();
+                    org.w3c.dom.Document domain = factory.newDocumentBuilder().parse(new InputSource(new StringReader(access.virsh("dumpxml", other))));
+                    org.w3c.dom.NodeList sources = domain.getElementsByTagName("source");
+                    for (int i = 0; i < sources.getLength(); i++) {
+                        String path = ((org.w3c.dom.Element) sources.item(i)).getAttribute("file");
+                        if (path.isEmpty()) continue;
+                        JsonElement info = JsonParser.parseString(access.imageInfo(path));
+                        JsonArray chain = info.isJsonArray() ? info.getAsJsonArray() : null;
+                        if (chain == null) references(info.getAsJsonObject(), result.referenced);
+                        else for (JsonElement image : chain) references(image.getAsJsonObject(), result.referenced);
+                    }
+                } else if ("running".equals(otherState) || "paused".equals(otherState)) {
+                    for (JsonElement block : qmp(access, other, "query-block", null).getAsJsonArray()) {
+                        JsonObject entry = block.getAsJsonObject();
+                        if (!entry.has("inserted")) continue;
+                        JsonObject inserted = entry.getAsJsonObject("inserted");
+                        if (!inserted.has("image")) throw new IOException("Other VM disk references are unknown");
+                        references(inserted.getAsJsonObject("image"), result.referenced);
+                    }
+                } else throw new IOException("Other VM state does not permit artifact reference verification");
+            }
+        }
+        for (String path : artifacts.values()) if (result.referenced.contains(path)) throw new IOException("Snapshot artifact is referenced by a VM disk or backing chain");
         return result;
     }
 
@@ -247,14 +277,19 @@ public final class KvmSnapshotRecovery {
     }
 
     private static String xmlText(String xml, String parent, String child) throws Exception {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        DocumentBuilderFactory factory = secureXmlFactory();
         org.w3c.dom.Document document = factory.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
         org.w3c.dom.NodeList parents = document.getElementsByTagName(parent);
         if (parents.getLength() == 0) return null;
         org.w3c.dom.NodeList children = ((org.w3c.dom.Element) parents.item(0)).getElementsByTagName(child);
         return children.getLength() == 0 ? null : children.item(0).getTextContent().trim();
+    }
+
+    private static DocumentBuilderFactory secureXmlFactory() throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        return factory;
     }
 }
