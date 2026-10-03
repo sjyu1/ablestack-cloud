@@ -65,6 +65,8 @@ row-key="id"
             <template #bodyCell="{ column, record }"><span v-if="column.key === 'reason'">{{ record.reason ? $t(record.reason) : $t('label.vmsnapshot.eligible') }}</span><span v-else>{{ record[column.dataIndex] }}</span></template>
           </a-table>
           <a-alert v-if="blockedReason" class="mold-dialog-section" type="error" show-icon :message="$t(blockedReason)" />
+          <a-checkbox v-if="forceAvailable" v-model:checked="force" class="mold-dialog-section" :disabled="submitting || loading">{{ $t('label.vmsnapshot.force.delete') }}</a-checkbox>
+          <a-alert v-if="force" class="mold-dialog-section" type="warning" show-icon :message="$t('message.vmsnapshot.force.delete.impact')" />
           <p>{{ $t('message.vmsnapshot.fresh.check') }}</p>
           <a-checkbox v-model:checked="acknowledged" :disabled="submitting || !!blockedReason">{{ $t('message.vmsnapshot.acknowledge') }}</a-checkbox>
         </template>
@@ -89,7 +91,7 @@ row-key="id"
         <a-button v-if="allowed('revertToVMSnapshot')" :disabled="!!reason('revertToVMSnapshot', selected)" @click="openNode('restore')">{{ $t('label.action.vmsnapshot.revert') }}</a-button>
         <a-button v-if="allowed('deleteVMSnapshot')" danger :disabled="!!reason('deleteVMSnapshot', selected)" @click="openNode('delete')">{{ $t('label.action.vmsnapshot.delete') }}</a-button>
       </template>
-      <a-button v-if="['restore', 'delete'].includes(mode) && !results.length" type="primary" :danger="mode === 'delete'" :loading="submitting" :disabled="!acknowledged || !!blockedReason || loading" @click="submit">{{ $t(mode === 'delete' ? 'label.action.vmsnapshot.delete' : 'label.vmsnapshot.restore.submit') }}</a-button>
+      <a-button v-if="['restore', 'delete'].includes(mode) && !results.length" type="primary" :danger="mode === 'delete'" :loading="submitting" :disabled="!acknowledged || !!blockedReason || loading" @click="submit">{{ $t(mode === 'delete' ? force ? 'label.vmsnapshot.force.delete' : 'label.action.vmsnapshot.delete' : 'label.vmsnapshot.restore.submit') }}</a-button>
     </template>
   </MoldDialog>
 </template>
@@ -111,9 +113,10 @@ export default {
   inject: { parentFetchData: { default: null } },
   data () {
     const targets = this.currentAction.snapshotTargets || [this.resource]
-    return { mode: this.currentAction.snapshotMode, targets: targets.filter(row => row.id), selected: targets[0]?.id ? { ...targets[0] } : null, loading: false, submitting: false, acknowledged: false, contexts: [], results: [], error: '', relations: { rows: [], total: 0, partial: false }, vms: [], vmPage: 1, vmTotal: 0, vmKeyword: '', selectedVm: null, disposed: false, requestVersion: 0 }
+    return { mode: this.currentAction.snapshotMode, targets: targets.filter(row => row.id), selected: targets[0]?.id ? { ...targets[0] } : null, loading: false, submitting: false, force: false, acknowledged: false, contexts: [], results: [], error: '', relations: { rows: [], total: 0, partial: false }, vms: [], vmPage: 1, vmTotal: 0, vmKeyword: '', selectedVm: null, disposed: false, requestVersion: 0 }
   },
   computed: {
+    forceAvailable () { return this.mode === 'delete' && this.targets.length === 1 && this.$store.getters.userInfo?.roletype === 'Admin' && this.selected?.forcedeletionallowed === true },
     title () { return { restore: 'label.action.vmsnapshot.revert', delete: 'label.action.vmsnapshot.delete', relation: 'label.vmsnapshot.relations', create: 'label.action.vmsnapshot.create' }[this.mode] },
     api () { return this.mode === 'delete' ? 'deleteVMSnapshot' : 'revertToVMSnapshot' },
     tree () { return snapshotRelationTree(this.relations.rows) },
@@ -125,7 +128,7 @@ export default {
     createDefinition () { return compute.children.find(item => item.name === 'vm').actions.find(action => action.api === 'createVMSnapshot') },
     createReason () { return !this.selectedVm ? '' : !this.createDefinition.show(this.selectedVm, this.$store.getters) ? 'message.vmsnapshot.vm.state' : this.createDefinition.disabled(this.selectedVm, this.$store.getters, []) ? (this.createDefinition.tooltip(this.selectedVm, this.$store.getters, []) || 'message.vmsnapshot.busy') : '' }
   },
-  watch: { security () { this.disposed = true; this.requestVersion++; this.$emit('close-action') } },
+  watch: { force () { this.acknowledged = false }, security () { this.disposed = true; this.requestVersion++; this.$emit('close-action') } },
   created () { this.reload() },
   beforeUnmount () { this.disposed = true; this.requestVersion++ },
   methods: {
@@ -153,7 +156,7 @@ export default {
       } catch (error) { this.error = error.message || this.$t('error.fetching.data'); this.relations.partial = true } finally { if (version === this.requestVersion) this.loading = false }
     },
     selectNode (keys) { this.selected = this.relations.rows.find(row => row.id === keys[0]) || null },
-    openNode (mode) { this.mode = mode; this.targets = Object.freeze([Object.freeze({ ...this.selected })]); this.acknowledged = false; this.results = []; this.refreshContexts() },
+    openNode (mode) { this.mode = mode; this.targets = Object.freeze([Object.freeze({ ...this.selected })]); this.force = false; this.acknowledged = false; this.results = []; this.refreshContexts() },
     async loadVms (page = 1) {
       const version = ++this.requestVersion
       this.loading = true; this.error = ''; this.selectedVm = null
@@ -182,12 +185,13 @@ export default {
       const reason = !context.snapshot || !context.vm ? 'message.vmsnapshot.not.ready' : this.reason(this.api, context.snapshot, context.vm, context.busy)
       if (security !== this.security) throw new Error(this.$t('message.vmsnapshot.permission'))
       if (reason) throw new Error(this.$t(reason))
+      if (this.force && (this.mode !== 'delete' || this.targets.length !== 1 || this.$store.getters.userInfo?.roletype !== 'Admin' || context.snapshot?.forcedeletionallowed !== true)) throw new Error(this.$t('message.vmsnapshot.force.delete.unavailable'))
       const vmId = target.virtualmachineid
       if (snapshotSubmissions[vmId]) throw new Error(this.$t('message.vmsnapshot.busy'))
       const submission = Symbol(vmId)
       snapshotSubmissions[vmId] = submission
       try {
-        const response = await postAPI(this.api, { vmsnapshotid: target.id })
+        const response = await postAPI(this.api, { vmsnapshotid: target.id, ...(this.force ? { force: true } : {}) })
         const jobId = response[this.api.toLowerCase() + 'response']?.jobid
         if (!jobId) {
           trackUnknownSnapshotSubmission(vmId, target.id)
@@ -195,7 +199,7 @@ export default {
         }
         if (security !== this.security) return { jobstatus: null, trackingStatus: 'unknown', jobid: jobId }
         const job = await this.$pollJob({ jobId, originalPage: this.$route.path, title: this.$t(this.title), description: target.displayname || target.name, resourceId: target.id, action: { api: this.api, resource: target, isFetchData: false }, successMethod: () => { if (this.parentFetchData && !this.disposed) this.parentFetchData({ irefresh: true }) } })
-        return { ...job, jobid: jobId }
+        return { ...job, jobid: jobId, error: job?.jobresult?.errortext || job?.error || '' }
       } catch (error) {
         if (error.isAxiosError && !error.response) {
           trackUnknownSnapshotSubmission(vmId, target.id)

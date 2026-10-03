@@ -101,3 +101,55 @@ test.each(['lost response', 'missing job ID'])('unconfirmed %s remains unknown a
   expect(snapshotBusy(row.virtualmachineid)).toBe(true)
   wrapper.unmount()
 })
+
+const errorRow = { ...row, state: 'Error', type: 'DiskAndMemory', forcedeletionallowed: true }
+function errorLookup (allowed = true) {
+  getAPI.mockImplementation((api, args) => Promise.resolve(api === 'listVirtualMachines' ? { listvirtualmachinesresponse: { virtualmachine: [{ id: 'vb', state: 'Running' }] } } : { listvmsnapshotresponse: { vmSnapshot: args.state ? [] : [{ ...errorRow, forcedeletionallowed: allowed }], count: args.state ? 0 : 1 } }))
+}
+
+test('administrator Error recovery uses the existing dialog, renewed confirmation and exactly one force request', async () => {
+  errorLookup()
+  const wrapper = mount('delete', [errorRow]); wrapper.vm.$store.getters.userInfo.roletype = 'Admin'; await flush()
+  expect(wrapper.vm.forceAvailable).toBe(true)
+  wrapper.vm.acknowledged = true; wrapper.vm.force = true; await flush()
+  expect(wrapper.vm.acknowledged).toBe(false)
+  wrapper.vm.acknowledged = true
+  await Promise.all([wrapper.vm.submit(), wrapper.vm.submit()])
+  expect(postAPI).toHaveBeenCalledTimes(1)
+  expect(postAPI).toHaveBeenCalledWith('deleteVMSnapshot', { vmsnapshotid: 'b', force: true })
+  wrapper.unmount()
+})
+
+test.each(['User', 'DomainAdmin'])('force option is hidden for %s even with a stale eligible response', async role => {
+  errorLookup()
+  const wrapper = mount('delete', [errorRow]); wrapper.vm.$store.getters.userInfo.roletype = role; await flush()
+  expect(wrapper.vm.forceAvailable).toBe(false)
+  wrapper.vm.force = true; await flush(); wrapper.vm.acknowledged = true; await wrapper.vm.submit()
+  expect(postAPI).not.toHaveBeenCalled(); wrapper.unmount()
+})
+
+test('capability withdrawn at the fresh lookup blocks force and retains a meaningful failure', async () => {
+  errorLookup()
+  const wrapper = mount('delete', [errorRow]); wrapper.vm.$store.getters.userInfo.roletype = 'Admin'; await flush()
+  wrapper.vm.force = true; await flush(); wrapper.vm.acknowledged = true; errorLookup(false)
+  await wrapper.vm.submit()
+  expect(postAPI).not.toHaveBeenCalled()
+  expect(wrapper.vm.results[0].error).toContain('message.vmsnapshot.force.delete.unavailable')
+  wrapper.unmount()
+})
+
+test('batch recovery option is hidden and normal Error deletion omits force', async () => {
+  errorLookup()
+  const wrapper = mount('delete', [errorRow, { ...errorRow, id: 'c' }]); wrapper.vm.$store.getters.userInfo.roletype = 'Admin'; await flush()
+  expect(wrapper.vm.forceAvailable).toBe(false); wrapper.unmount()
+  const single = mount('delete', [errorRow]); await flush(); single.vm.acknowledged = true; await single.vm.submit()
+  expect(postAPI).toHaveBeenCalledWith('deleteVMSnapshot', { vmsnapshotid: 'b' }); single.unmount()
+})
+
+test('failed recovery job retains the backend explanation in results', async () => {
+  errorLookup(); poll.mockResolvedValue({ jobstatus: 2, jobresult: { errortext: 'Native VM job is active or unknown' } })
+  const wrapper = mount('delete', [errorRow]); await flush(); wrapper.vm.acknowledged = true; await wrapper.vm.submit()
+  expect(wrapper.vm.results[0].outcome).toBe('failed')
+  expect(wrapper.vm.results[0].error).toBe('Native VM job is active or unknown')
+  wrapper.unmount()
+})

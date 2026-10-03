@@ -505,6 +505,7 @@ public class ApiResponseHelper implements ResponseGenerator, ResourceIdSupport {
     NetworkDetailsDao networkDetailsDao;
     @Inject
     private VMSnapshotDao vmSnapshotDao;
+    @Inject private com.cloud.vm.snapshot.VMSnapshotService vmSnapshotService;
     @Inject
     private BackupOfferingDao backupOfferingDao;
     @Inject
@@ -885,6 +886,7 @@ public class ApiResponseHelper implements ResponseGenerator, ResourceIdSupport {
         vmSnapshotResponse.setHasAnnotation(annotationDao.hasAnnotations(vmSnapshot.getUuid(), AnnotationService.EntityType.VM_SNAPSHOT.name(),
                 _accountMgr.isRootAdmin(CallContext.current().getCallingAccount().getId())));
 
+        vmSnapshotResponse.setForceDeletionAllowed(vmSnapshotService != null && vmSnapshotService.isForcedDeletionAllowed(vmSnapshot.getId()));
         vmSnapshotResponse.setCurrent(vmSnapshot.getCurrent());
         vmSnapshotResponse.setType(vmSnapshot.getType().toString());
         vmSnapshotResponse.setObjectName("vmsnapshot");

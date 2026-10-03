@@ -133,13 +133,45 @@ public class KvmFileBasedStorageVmSnapshotStrategy extends StorageVMSnapshotStra
     }
 
     @Override
+    protected Map<Long, String> recoveryArtifacts(VMSnapshot snapshot) {
+        List<SnapshotDataStoreVO> refs = vmSnapshotHelper.getVolumeSnapshotsAssociatedWithKvmDiskOnlyVmSnapshot(snapshot.getId());
+        Map<Long, String> artifacts = new HashMap<>();
+        for (SnapshotDataStoreVO ref : refs) {
+            com.cloud.utils.db.SearchBuilder<SnapshotDataStoreVO> dependencies = snapshotDataStoreDao.createSearchBuilder();
+            dependencies.and("parent", dependencies.entity().getParentSnapshotId(), com.cloud.utils.db.SearchCriteria.Op.EQ);
+            com.cloud.utils.db.SearchCriteria<SnapshotDataStoreVO> criteria = dependencies.create();
+            criteria.setParameters("parent", ref.getSnapshotId());
+            if (!snapshotDataStoreDao.search(criteria, null).isEmpty()) throw new CloudRuntimeException("Disk snapshot has dependent storage references");
+            if (ref.getInstallPath() == null || !ref.getInstallPath().matches("[0-9a-fA-F-]{36}")
+                    || artifacts.put(ref.getVolumeId(), ref.getInstallPath()) != null) {
+                throw new CloudRuntimeException("Disk snapshot recovery reference is incomplete");
+            }
+        }
+        if (refs.isEmpty()) throw new CloudRuntimeException("Disk snapshot recovery requires the original artifact references");
+        return artifacts;
+    }
+
+    @Override
+    protected void finalizeRecoveryReferences(VMSnapshot snapshot) {
+        for (SnapshotDataStoreVO ref : vmSnapshotHelper.getVolumeSnapshotsAssociatedWithKvmDiskOnlyVmSnapshot(snapshot.getId())) {
+            SnapshotVO volumeSnapshot = snapshotDao.findById(ref.getSnapshotId());
+            if (volumeSnapshot != null) {
+                volumeSnapshot.setState(Snapshot.State.Destroyed);
+                volumeSnapshot.setRemoved(DateUtil.now());
+                snapshotDao.update(volumeSnapshot.getId(), volumeSnapshot);
+            }
+            snapshotDataStoreDao.remove(ref.getId());
+        }
+    }
+
+    @Override
     public boolean deleteVMSnapshot(VMSnapshot vmSnapshot) {
         logger.info("Starting VM snapshot delete process for snapshot [{}].", vmSnapshot.getUuid());
         UserVmVO userVm = userVmDao.findById(vmSnapshot.getVmId());
         VMSnapshotVO vmSnapshotBeingDeleted = (VMSnapshotVO) vmSnapshot;
         Long hostId = vmSnapshotHelper.pickRunningHost(vmSnapshotBeingDeleted.getVmId());
         long virtualSize = 0;
-        boolean isCurrent = vmSnapshotBeingDeleted.getCurrent();
+        boolean isCurrent = Boolean.TRUE.equals(vmSnapshotBeingDeleted.getCurrent());
 
         transitStateWithoutThrow(vmSnapshotBeingDeleted, VMSnapshot.Event.ExpungeRequested);
 
@@ -524,6 +556,7 @@ public class KvmFileBasedStorageVmSnapshotStrategy extends StorageVMSnapshotStra
         Long hostId = vmSnapshotHelper.pickRunningHost(vmSnapshot.getVmId());
         VMSnapshotVO vmSnapshotVO = (VMSnapshotVO) vmSnapshot;
         List<VolumeObjectTO> volumeTOs = vmSnapshotHelper.getVolumeTOList(userVm.getId());
+        captureCreationVolumes(vmSnapshot, volumeTOs);
 
         transitStateWithoutThrow(vmSnapshot, VMSnapshot.Event.CreateRequested);
 

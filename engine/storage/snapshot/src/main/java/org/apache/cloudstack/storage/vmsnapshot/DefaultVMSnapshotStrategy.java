@@ -166,6 +166,7 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
             GuestOSVO guestOS = guestOSDao.findById(userVm.getGuestOSId());
 
             List<VolumeObjectTO> volumeTOs = vmSnapshotHelper.getVolumeTOList(userVm.getId());
+            captureCreationVolumes(vmSnapshot, volumeTOs);
             if (vmSnapshot.getType() == VMSnapshot.Type.DiskAndMemory) {
                 checkInternalSnapshotPhysicalSpace(userVm, volumeTOs, hostId, physicalLocks);
             }
@@ -248,6 +249,102 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
                     logger.error("Cannot set Instance Snapshot state due to: " + e1.getMessage());
                 }
             }
+        }
+    }
+
+    protected void captureCreationVolumes(VMSnapshot snapshot, List<VolumeObjectTO> volumes) {
+        if (vmSnapshotDetailsDao.findDetail(snapshot.getId(), "snapshot.creation.volumes") != null) return;
+        List<String> identity = new ArrayList<>();
+        for (VolumeObjectTO to : volumes) {
+            VolumeVO volume = volumeDao.findById(to.getId());
+            identity.add(volume.getUuid() + ":" + volume.getPoolId() + ":" + volume.getPath() + ":" + volume.getSize());
+        }
+        java.util.Collections.sort(identity);
+        vmSnapshotDetailsDao.addDetail(snapshot.getId(), "snapshot.creation.volumes", new com.google.gson.Gson().toJson(identity), false);
+    }
+
+    protected Map<Long, String> recoveryArtifacts(VMSnapshot snapshot) {
+        return java.util.Collections.emptyMap();
+    }
+
+    protected void finalizeRecoveryReferences(VMSnapshot snapshot) { }
+
+    @Override
+    public boolean deleteVMSnapshot(VMSnapshot snapshot, boolean force) {
+        if (!force) return deleteVMSnapshot(snapshot);
+        UserVmVO vm = userVmDao.findById(snapshot.getVmId());
+        List<VolumeObjectTO> volumes = vmSnapshotHelper.getVolumeTOList(snapshot.getVmId());
+        List<VMSnapshotVO> ready = vmSnapshotDao.listByInstanceId(snapshot.getVmId(), VMSnapshot.State.Ready);
+        List<String> names = new ArrayList<>();
+        String current = null;
+        for (VMSnapshotVO other : ready) {
+            if (other.getType() == VMSnapshot.Type.DiskAndMemory) {
+                names.add(other.getName());
+                if (Boolean.TRUE.equals(other.getCurrent())) current = other.getName();
+            }
+        }
+        java.util.Collections.sort(names);
+        Map<Long, String> artifacts = recoveryArtifacts(snapshot);
+        Map<String, Object> fingerprint = new java.util.TreeMap<>();
+        fingerprint.put("snapshot", snapshot.getUuid()); fingerprint.put("parent", snapshot.getParent());
+        fingerprint.put("current", current); fingerprint.put("known", names); fingerprint.put("artifacts", artifacts);
+        List<String> volumeIdentity = new ArrayList<>();
+        for (VolumeObjectTO volume : volumes) {
+            VolumeVO stored = volumeDao.findById(volume.getId());
+            StoragePool pool = primaryDataStoreDao.findById(stored.getPoolId());
+            if (!InternalVmSnapshotAccounting.applies(pool, vm.getHypervisorType(), stored.getFormat())) {
+                throw new CloudRuntimeException("Recovery requires unmanaged SharedMountPoint QCOW2 volumes");
+            }
+            volumeIdentity.add(stored.getUuid() + ":" + stored.getPoolId() + ":" + stored.getPath() + ":" + stored.getSize());
+        }
+        java.util.Collections.sort(volumeIdentity); fingerprint.put("volumes", volumeIdentity);
+        VMSnapshotDetailsVO original = vmSnapshotDetailsDao.findDetail(snapshot.getId(), "snapshot.creation.volumes");
+        if (original != null && !new com.google.gson.Gson().toJson(volumeIdentity).equals(original.getValue())) {
+            throw new CloudRuntimeException("Original creation volume inventory changed; reconcile the disk provider first");
+        }
+        if (original == null && names.isEmpty() && snapshot.getType() == VMSnapshot.Type.DiskAndMemory) {
+            throw new CloudRuntimeException("Legacy snapshot recovery requires a verified Ready snapshot inventory");
+        }
+        String identity = new com.google.gson.Gson().toJson(fingerprint);
+        VMSnapshotDetailsVO previous = vmSnapshotDetailsDao.findDetail(snapshot.getId(), "force.delete.inventory");
+        if (previous != null && !identity.equals(previous.getValue())) {
+            throw new CloudRuntimeException("Recovery inventory changed; reconcile the original recovery operation first");
+        }
+        if (previous == null) vmSnapshotDetailsDao.addDetail(snapshot.getId(), "force.delete.inventory", identity, false);
+        if (vmSnapshotDetailsDao.findDetail(snapshot.getId(), "force.delete.target") == null) {
+            vmSnapshotDetailsDao.addDetail(snapshot.getId(), "force.delete.target", snapshot.getUuid(), false);
+        }
+        try {
+            vmSnapshotHelper.vmSnapshotStateTransitTo(snapshot, VMSnapshot.Event.ExpungeRequested);
+            Long host = vmSnapshotHelper.pickRunningHost(snapshot.getVmId());
+            VMSnapshotTO target = new VMSnapshotTO(snapshot.getId(), snapshot.getName(), snapshot.getType(), snapshot.getCreated().getTime(),
+                    snapshot.getDescription(), false, null, false);
+            DeleteVMSnapshotCommand command = new DeleteVMSnapshotCommand(vm.getInstanceName(), target, volumes, null);
+            command.setRecovery(vm.getUuid(), current, names, artifacts);
+            Answer answer = agentMgr.send(host, command);
+            if (!(answer instanceof DeleteVMSnapshotAnswer) || !answer.getResult()) {
+                vmSnapshotHelper.vmSnapshotStateTransitTo(snapshot, VMSnapshot.Event.OperationFailed);
+                throw new CloudRuntimeException(answer == null ? "Recovery result unknown: Agent response unavailable" : answer.getDetails());
+            }
+            Transaction.execute(new TransactionCallbackWithExceptionNoReturn<NoTransitionException>() {
+                @Override public void doInTransactionWithoutResult(TransactionStatus status) throws NoTransitionException {
+                    VMSnapshotVO fresh = vmSnapshotDao.findById(snapshot.getId());
+                    if (fresh == null || Boolean.TRUE.equals(fresh.getCurrent()) || !vmSnapshotDao.listByParent(fresh.getId()).isEmpty()) {
+                        throw new CloudRuntimeException("Recovery metadata changed before commit");
+                    }
+                    finalizeRecoveryReferences(fresh);
+                    fresh.setCurrent(false);
+                    vmSnapshotHelper.vmSnapshotStateTransitTo(fresh, VMSnapshot.Event.OperationSucceeded);
+                    vmSnapshotDetailsDao.addDetail(fresh.getId(), "force.delete.result", "Provider objects removed; failed snapshot metadata finalized", false);
+                    if (!vmSnapshotDao.remove(fresh.getId())) throw new CloudRuntimeException("Recovery metadata deletion did not commit");
+                }
+            });
+            logger.info("Forced VM snapshot deletion completed vm={} snapshot={} inventory={}", vm.getUuid(), snapshot.getUuid(), identity);
+            return true;
+        } catch (AgentUnavailableException | OperationTimedoutException e) {
+            throw new CloudRuntimeException("Recovery result unknown; retry the same target after Agent reconciliation: " + e.getMessage(), e);
+        } catch (NoTransitionException e) {
+            throw new CloudRuntimeException("Recovery state changed: " + e.getMessage(), e);
         }
     }
 

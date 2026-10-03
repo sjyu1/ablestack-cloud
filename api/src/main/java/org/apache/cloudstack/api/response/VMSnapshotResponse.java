@@ -97,6 +97,12 @@ public class VMSnapshotResponse extends BaseResponseWithTagInformation implement
     @Param(description = "Indicates if this is current Snapshot")
     private Boolean current;
 
+    @SerializedName("forcedeletionallowed")
+    @Param(description = "Whether this caller may request recovery deletion of this Error snapshot")
+    private Boolean forceDeletionAllowed;
+
+    public void setForceDeletionAllowed(boolean allowed) { this.forceDeletionAllowed = allowed; }
+
     @SerializedName("type")
     @Param(description = "Instance Snapshot type")
     private String type;

@@ -8276,5 +8276,8 @@
   "message.storage.allocated.meaning": "Allocated capacity is logical provisioned volume, template and reservation capacity. KVM internal COW snapshots do not repeatedly allocate the original disk size. Physical usage includes memory state, COW data and metadata; it may differ from allocation.",
   "label.vmsnapshot.selected.delete": "Delete selected",
   "label.vmsnapshot.current.filter.no": "Not the current reference",
-  "label.jobid": "Job ID"
+  "label.jobid": "Job ID",
+  "label.vmsnapshot.force.delete": "Force delete",
+  "message.vmsnapshot.force.delete.impact": "Clean up residual data and metadata of the failed snapshot. Active operations or unconfirmed disk state stop recovery.",
+  "message.vmsnapshot.force.delete.unavailable": "Recovery permission or snapshot state changed. Refresh the snapshot."
 }
