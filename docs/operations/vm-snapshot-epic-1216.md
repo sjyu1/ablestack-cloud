@@ -95,7 +95,7 @@ UI는 `/usr/share/cloudstack-management/webapp`의 정적 파일만 업데이트
 | UI 변경 파일 lint / production build | 통과. 기존 번들 크기 관련 경고 2건과 Browserslist 안내가 있다. |
 | 카운터 전환 Python 단위 테스트 | 4개 통과 |
 | MySQL 전환 통합 검증 | 격리 fixture DB에서 실제 SQL apply/재실행/rollback/재실행, 출처·resize·migration·스냅샷 변경 거부 검증. fixture DB 제거 완료 |
-| Apache RAT | 최종 tracked-source archive에서 CI와 같은 RAT 명령 실행. 결과는 최종 배포 기록에 기재 |
+| Apache RAT | 최종 tracked-source archive에서 CI와 같은 RAT 명령 실행. BUILD SUCCESS, 승인 13,038 / 미승인 0 / unknown 0 |
 
 Maven 테스트 합계는 5,408개이며 실패·오류는 0, skip은 5개이다. 로그: `module-build-10-all-tests.log` (API/서버), `module-build-9-all-tests.log` (스키마), `module-build-14-snapshot.log` (최종 스냅샷), `ui-tests-final-9.log`, `ui-lint-final-9.log`, `ui-build-final-9.log`. WSL ext4에서 실행했다. 전체 Cloud 빌드와 수동 GitHub Actions full build는 실행하지 않았다.
 
@@ -161,6 +161,6 @@ UI 요약·트리 스타일은 `38352ee9c27`에서 먼저 검증하고 최종 `f
 - 최종 UI backup: `/root/epic1216/ui-backup-20261003-220348`.
 - WEB-INF/META-INF 및 원래 config 보존; config SHA-256 `b54d18abc5a143c64e2dec3441af0a45619ec20f110647119e6b8d2e199ff453`. Mold active, /client/ 200, served index/bundle 전체 해시 대조 및 FTCTL 기존 marker 3개 보존 확인.
 - locale은 런타임 `fetch(locales/...)` JSON이다. 마지막 문구 수정은 en/ko_KR JSON 구문 검증 후 public→dist 정적 복사로 반영했고, 변경 파일이 정확히 이 두 파일이며 JS/CSS 해시는 동일함을 확인했다. webpack/build source와 locale/package source를 manifest에서 별도로 기록한다.
-- 최종 RAT: 검사 결과는 `license-check-final.log` 및 통합 PR의 검증 항목에 기록한다..
+- 최종 RAT: `license-check-final.log`에서 BUILD SUCCESS, resources 13,445 / approved 13,038 / unapproved 0 / unknown 0. 바이너리·NOTICE 등은 RAT 출력의 별도 분류를 따른다.
 
 원본 manifest와 관련 없는 JAR 항목을 유지한 변경 모듈 배포이며 전체 Cloud 패키지 빌드로 보고하지 않는다. merge 전에 이슈를 수동 종료하지 않고 #1216~#1223 closing reference를 가진 통합 PR 하나로 검토한다.
