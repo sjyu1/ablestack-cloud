@@ -159,8 +159,40 @@ UI 요약·트리 스타일은 `38352ee9c27`에서 먼저 검증하고 최종 `f
 - `backend-overlay.zip` SHA-256: `3f9dfb7097daaebbefecdb6c8ce8e819672e7810333a623b755b68d52aeb55fd`.
 - 최종 UI build source: `fac80416b51d25815f505bfcfffda0936c03a0a1`. locale/정적 패키지 소스: `036da8b71ebf176707a73566f762117bfa16d4dd`. 최종 UI-static SHA-256: `2fbe863cb43fd142ce8b0e9d57099d609efe2e69574359b0b5bea2e02405cdbe`. 정적 파일 834개.
 - 최종 UI backup: `/root/epic1216/ui-backup-20261003-220348`.
-- WEB-INF/META-INF 및 원래 config 보존; config SHA-256 `b54d18abc5a143c64e2dec3441af0a45619ec20f110647119e6b8d2e199ff453`. Mold active, /client/ 200, served index/bundle 전체 해시 대조 및 FTCTL 기존 marker 3개 보존 확인.
+- WEB-INF 및 원래 config 보존; META-INF 경로는 정적 배포 적용 대상에서 제외한다. config SHA-256 `b54d18abc5a143c64e2dec3441af0a45619ec20f110647119e6b8d2e199ff453`. Mold active, /client/ 200, served index/bundle 전체 해시 대조 및 FTCTL 기존 marker 3개 보존 확인.
 - locale은 런타임 `fetch(locales/...)` JSON이다. 마지막 문구 수정은 en/ko_KR JSON 구문 검증 후 public→dist 정적 복사로 반영했고, 변경 파일이 정확히 이 두 파일이며 JS/CSS 해시는 동일함을 확인했다. webpack/build source와 locale/package source를 manifest에서 별도로 기록한다.
 - 최종 RAT: `license-check-final.log`에서 BUILD SUCCESS, resources 13,445 / approved 13,038 / unapproved 0 / unknown 0. 바이너리·NOTICE 등은 RAT 출력의 별도 분류를 따른다.
 
 원본 manifest와 관련 없는 JAR 항목을 유지한 변경 모듈 배포이며 전체 Cloud 패키지 빌드로 보고하지 않는다. merge 전에 이슈를 수동 종료하지 않고 #1216~#1223 closing reference를 가진 통합 PR 하나로 검토한다.
+
+## 목록 후속 수정
+
+상태 선택기의 `self` 기본값을 ‘모두’로 변경했다. `label.ready`처럼 없는 번역 키를 사용하던 부분은 기존 Status의 `state.*` 번역을 재사용한다. 상태는 모두·사용 가능·생성 중·할당 됨·복원 중·제거 중·오류의 7개이다. 공통 목록에는 섹션별 기본값·번역 키 설정을 전달하고, 다른 목록의 기존 동작을 유지한다. 이전 self/잘못된 URL 값은 모두로 보정한다. 모두를 선택하면 state만 제거하고 검색·유형·current·계정·도메인·프로젝트 조건을 보존하며 1페이지부터 조회한다.
+
+가상머신 목록의 열 기준에 맞춰 계정·존을 표시하고 도메인 열을 제거했다. 계정 열의 기존 역할별 표시 규칙과 프로젝트 열 조건을 유지한다. 도메인·계정은 권한과 검색 조건으로 계속 사용한다. 기존 열 선택에서 도메인은 존으로 전환하여 이전 브라우저 설정에도 적용한다. API가 제공하는 zonename/zoneid를 기존 존 상세 링크에 연결한다.
+
+모든 행에 동일하게 붙던 현재 기준점 설명 툴팁을 제거했다. current=true에는 ‘현재 기준점’, false에는 ‘—’만 표시한다. 관계 트리와 대화상자 요약도 각 스냅샷의 current 값을 사용한다. 여러 VM의 현재 기준점이 전체 목록에서 함께 표시될 수 있다. 불필요한 생성 이후 변경 데이터 설명을 en/ko_KR locale에서도 제거했으며 다른 자원의 기존 Status 표시는 유지한다.
+
+검색 조건에서는 중복 내부 filter 태그만 제거하고 ‘상태: 사용 가능’ 등 번역된 상태 태그를 유지한다. 상태 태그를 지우면 state와 내부 filter를 함께 제거하여 선택기도 ‘모두’로 돌아간다. 검색·유형·current·계정·도메인·프로젝트 조건은 유지한다. 공통 SearchFilter의 VM 스냅샷 상태 번역을 보완하고 다른 자원의 기존 번역과 태그 동작은 유지한다.
+
+UI 전체 lint(`--no-fix`)는 `73506b83ba5`에서 통과했다. 최종 소스 `743b2ce8b7c`에서 변경한 두 파일의 lint와 18 suites / 287개 회귀 테스트도 통과했다. 한국어/영어 선택기·상태 태그 번역, URL 복원, 모두 선택/상태 태그 제거 시 조건 보존, 역할별 계정·존 열, current true/false의 실제 셀 렌더링과 툴팁 제거, 다른 자원의 Status·태그 유지가 포함된다. 상태 태그 테스트는 실제 compute 섹션의 `listVMSnapshot` permission을 사용하여 목록의 API 계약과 일치한다. 로그는 `ui-followup-final-lint-all.log`, `ui-api-final-lint.log`, `ui-api-final-tests-all.log`이다. Java 변경이 없어 앞선 변경 Maven 모듈 검증과 backend 배포를 유지한다.
+
+### 후속 실제 배포와 화면 검증
+
+2026-10-03 23:23 (Asia/Seoul), 최종 UI `743b2ce8b7c6704c785c1353e1f4164344b5a3d4`를 31번 관리 서버에 배포했다. 아래 UI 식별 정보가 앞선 최초 최종 UI 기록을 대체한다. production build 로그는 `ui-api-final-build.log`이다.
+
+- UI·locale·정적 패키지 소스: `743b2ce8b7c6704c785c1353e1f4164344b5a3d4`.
+- UI-static SHA-256: `5a0529c8d54815c647c8ed0809d48aa5943f89da5a50d84ed142fe5cbde9c42e`. 834개 정적 파일과 served index 해시가 일치한다.
+- UI 백업: `/root/epic1216/ui-backup-20261003-232304`.
+- WEB-INF와 config SHA-256을 보존했다. META-INF는 활성 webapp에 없으며, 배포 전후 경로 상태가 같고 정적 적용 대상에서 제외된다. Mold active / MainPID `1773105` 유지 / client HTTP 200과 기존 FTCTL 마커 3개를 확인했다.
+- 실제 다크 화면에서 모두 27건, 사용 가능 25건, 오류 2건을 조회했다. 사용 가능/오류에는 번역된 상태 태그만 표시된다. 태그 닫기 시 state/filter가 URL에서 함께 제거되고 모두 27건으로 복귀한다. 기본 모두에는 중복 filter 태그가 없다.
+- 계정·Zone 열 및 실제 존 상세 링크를 확인했고 도메인 열은 없다. 현재/비현재 셀에 각각 마우스를 올려 설명 툴팁이 없고 ‘현재 기준점’/‘—’로 표시됨을 확인했다.
+
+![상태 태그만 한글로 표시](evidence/vm-snapshot-epic-1216/state-tag-dark.jpg)
+![번역된 상태 선택기와 계정·존 열](evidence/vm-snapshot-epic-1216/filter-columns-dark.jpg)
+
+최종 브라우저 기록은 `evidence/vm-snapshot-epic-1216/ui-followup-validation.json`이다. 기존 기능·데이터 복원·저장소 검증은 앞선 기록을 유지한다.
+
+### 자동 CI 결과
+
+직전 PR HEAD `6c12e5e206f`의 자동 CI는 전체 통과 상태가 아니었다. UI Build의 테스트 파일 중복 빈 줄 5건은 `a96695eb29b`에서 수정했고 최신 소스의 UI 전체 lint가 통과했다. Build 및 두 Rocky 패키지 작업은 upstream 기준과 동일한 `core/src/test/java/com/cloud/agent/api/VmProcessProfileTest.java:18`의 wildcard import 검사에서 실패했다. 공통 pre-commit Lint에는 기존 저장소 파일뿐 아니라 이 Epic 초기 목업의 번들과 문서에 대한 codespell/문서 검사도 포함되므로 모두 upstream 원인으로 분류하지 않는다. License Check와 Merge Conflict Check는 통과했다. 수동 Full Cloud build나 전체 workflow 디스패치는 실행하지 않았다. 최신 PR HEAD의 GitHub Checks 결과와 로컬 변경 모듈·UI·31번 검증은 구분한다.
