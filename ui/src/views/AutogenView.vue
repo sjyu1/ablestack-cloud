@@ -1183,6 +1183,9 @@ export default {
       const queryParams = Object.assign({}, this.$route.query)
       const activeFilters = []
       for (const filter in queryParams) {
+        if (this.$route.name === 'vmsnapshot' && filter === 'filter') {
+          continue
+        }
         if (this.$route.name === 'host' && filter === 'type') {
           continue
         }
