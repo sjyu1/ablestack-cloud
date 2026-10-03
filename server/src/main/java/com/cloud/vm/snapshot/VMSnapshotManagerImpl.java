@@ -238,6 +238,9 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         boolean listAll = cmd.listAll();
         Long id = cmd.getId();
         Long vmId = cmd.getVmId();
+        if (cmd.isIncludeHidden() && vmId == null) {
+            throw new InvalidParameterValueException("includehidden requires virtualmachineid");
+        }
 
         String state = cmd.getState();
         String keyword = cmd.getKeyword();
@@ -314,12 +317,12 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             sc.setParameters("domain_id", domainId);
         }
 
-        if (state == null) {
+        if (state == null && !cmd.isIncludeHidden()) {
             VMSnapshot.State[] status =
             {VMSnapshot.State.Ready, VMSnapshot.State.Creating, VMSnapshot.State.Allocated, VMSnapshot.State.Error, VMSnapshot.State.Expunging,
                 VMSnapshot.State.Reverting};
             sc.setParameters("status", (Object[])status);
-        } else {
+        } else if (state != null) {
             sc.setParameters("state", state);
         }
 

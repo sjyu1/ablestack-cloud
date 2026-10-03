@@ -43,7 +43,7 @@ row-key="id"
 :data-source="contexts"
 :pagination="false"
 :scroll="{ x: 550 }">
-            <template #bodyCell="{ column, record }"><span v-if="column.key === 'reason'">{{ record.reason ? $t(record.reason) : $t('label.vmsnapshot.eligible') }}</span></template>
+            <template #bodyCell="{ column, record }"><span v-if="column.key === 'reason'">{{ record.reason ? $t(record.reason) : $t('label.vmsnapshot.eligible') }}</span><span v-else>{{ record[column.dataIndex] }}</span></template>
           </a-table>
           <a-alert v-if="blockedReason" class="mold-dialog-section" type="error" show-icon :message="$t(blockedReason)" />
           <p>{{ $t('message.vmsnapshot.fresh.check') }}</p>
@@ -58,7 +58,7 @@ row-key="id"
 :data-source="results"
 :pagination="false"
 :scroll="{ x: 550 }">
-          <template #bodyCell="{ column, record }"><span v-if="column.key === 'outcome'">{{ $t('label.vmsnapshot.outcome.' + record.outcome) }} {{ record.error || '' }}</span><CopyLabel v-if="column.key === 'jobid' && record.jobid" :label="record.jobid" /></template>
+          <template #bodyCell="{ column, record }"><span v-if="column.key === 'outcome'">{{ $t('label.vmsnapshot.outcome.' + record.outcome) }} {{ record.error || '' }}</span><CopyLabel v-else-if="column.key === 'jobid' && record.jobid" :label="record.jobid" /><span v-else>{{ record[column.dataIndex] }}</span></template>
         </a-table>
       </template>
     </a-spin>
@@ -147,9 +147,10 @@ export default {
     async create () {
       if (!this.selectedVm || this.createReason || this.loading) return
       this.loading = true
+      const security = this.security
       try {
         const vm = (await getAPI('listVirtualMachines', { id: this.selectedVm.id, listall: true })).listvirtualmachinesresponse.virtualmachine?.[0]
-        if (!vm || this.disposed || !this.allowed('createVMSnapshot')) return
+        if (!vm || this.disposed || security !== this.security || !this.allowed('createVMSnapshot')) return
         this.selectedVm = vm
         if (this.createReason) return
         this.close()
@@ -160,17 +161,19 @@ export default {
       if (security !== this.security) throw new Error(this.$t('message.vmsnapshot.permission'))
       const [context] = await freshSnapshotContext(getAPI, [target], this.allowed('listBackups'))
       const reason = !context.snapshot || !context.vm ? 'message.vmsnapshot.not.ready' : this.reason(this.api, context.snapshot, context.vm, context.busy)
+      if (security !== this.security) throw new Error(this.$t('message.vmsnapshot.permission'))
       if (reason) throw new Error(this.$t(reason))
       const vmId = target.virtualmachineid
       if (snapshotSubmissions[vmId]) throw new Error(this.$t('message.vmsnapshot.busy'))
-      snapshotSubmissions[vmId] = true
+      const submission = Symbol(vmId)
+      snapshotSubmissions[vmId] = submission
       try {
         const response = await postAPI(this.api, { vmsnapshotid: target.id })
         const jobId = response[this.api.toLowerCase() + 'response']?.jobid
         if (!jobId) throw new Error(this.$t('message.job.result.unknown'))
         const job = await this.$pollJob({ jobId, originalPage: this.$route.path, title: this.$t(this.title), description: target.displayname || target.name, resourceId: target.id, action: { api: this.api, resource: target, isFetchData: false }, successMethod: () => { if (this.parentFetchData && !this.disposed) this.parentFetchData({ irefresh: true }) } })
         return { ...job, jobid: jobId }
-      } finally { delete snapshotSubmissions[vmId] }
+      } finally { if (snapshotSubmissions[vmId] === submission) delete snapshotSubmissions[vmId] }
     },
     async submit () {
       if (this.submitting || !this.acknowledged || this.blockedReason) return

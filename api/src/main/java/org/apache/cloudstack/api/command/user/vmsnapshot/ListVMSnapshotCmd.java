@@ -54,6 +54,11 @@ public class ListVMSnapshotCmd extends BaseListTaggedResourcesCmd {
 
     public List<Long> getVmIds() { return vmIds; }
 
+    @Parameter(name = "includehidden", type = CommandType.BOOLEAN, description = "Include hidden relationship nodes; requires virtualmachineid")
+    private Boolean includeHidden;
+
+    public boolean isIncludeHidden() { return Boolean.TRUE.equals(includeHidden); }
+
     @Parameter(name = ApiConstants.NAME, type = CommandType.STRING, description = "Lists Snapshot by Snapshot name or display name")
     private String vmSnapshotName;
 

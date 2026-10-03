@@ -23,7 +23,7 @@ AUDIT = "vmsnapshot.accounting.audit-id"
 
 QUERY = """
 SELECT v.id,v.uuid,v.pool_id,v.instance_id,v.size,COALESCE(v.vm_snapshot_chain_size,0),
- COALESCE(d.value,''),COALESCE(a.value,''),
+ COALESCE(d.value,''),COALESCE(a.value,''),COALESCE(l.value,''),
  COALESCE((SELECT SHA2(GROUP_CONCAT(CONCAT_WS(':',s.id,s.state,s.vm_snapshot_type,
   COALESCE(s.parent,0),s.current,COALESCE(s.removed,'')) ORDER BY s.id),256)
   FROM vm_snapshots s WHERE s.vm_id=v.instance_id),'none')
@@ -31,6 +31,7 @@ FROM volumes v JOIN storage_pool p ON p.id=v.pool_id
  JOIN vm_instance vm ON vm.id=v.instance_id
  LEFT JOIN volume_details d ON d.volume_id=v.id AND d.name='vmsnapshot.accounting.version'
  LEFT JOIN volume_details a ON a.volume_id=v.id AND a.name='vmsnapshot.accounting.audit-id'
+ LEFT JOIN volume_details l ON l.volume_id=v.id AND l.name='vmsnapshot.accounting.legacy-chain-bytes'
 WHERE v.removed IS NULL AND v.state<>'Destroy' AND p.removed IS NULL
  AND p.pool_type='SharedMountPoint' AND p.managed=0
  AND vm.hypervisor_type='KVM' AND v.format='QCOW2'
@@ -55,7 +56,7 @@ def inventory(defaults):
     for line in mysql(defaults, QUERY).splitlines():
         values = line.split("\t")
         rows.append(dict(zip(["id", "uuid", "pool_id", "vm_id", "size", "chain_bytes",
-                              "version", "audit_id", "snapshot_fingerprint"], values)))
+                              "version", "audit_id", "legacy_bytes", "snapshot_fingerprint"], values)))
     for row in rows:
         for field in ["id", "pool_id", "vm_id", "size", "chain_bytes"]:
             row[field] = int(row[field])
@@ -64,6 +65,8 @@ def inventory(defaults):
 
 def plan(rows):
     candidates = [row for row in rows if row["chain_bytes"] > 0 and not row["version"]]
+    if any(row.get("legacy_bytes") or row.get("audit_id") for row in candidates):
+        raise ValueError("Unversioned accounting provenance exists; reconcile it before planning")
     pools = {}
     for row in candidates:
         key = str(row["pool_id"])

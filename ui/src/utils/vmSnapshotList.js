@@ -9,7 +9,7 @@ export async function loadVmSnapshotRelations (get, vmId, limit = 2000) {
   let total = 0
   let partial = false
   for (let page = 1; rows.size < limit; page++) {
-    const result = (await get('listVMSnapshot', { virtualmachineid: vmId, listall: true, page, pagesize: 100, sortkey: 'created', sortorder: 'asc' })).listvmsnapshotresponse
+    const result = (await get('listVMSnapshot', { virtualmachineid: vmId, includehidden: true, listall: true, page, pagesize: 100, sortkey: 'created', sortorder: 'asc' })).listvmsnapshotresponse
     total = result.count || 0
     const batch = result.vmSnapshot || []
     const previous = rows.size
@@ -46,7 +46,7 @@ export async function freshSnapshotContext (get, targets, checkBackups = false) 
   const vmIds = [...new Set(targets.map(row => row.virtualmachineid))]
   const vms = (await get('listVirtualMachines', { ids: vmIds.join(','), listall: true, pagesize: vmIds.length })).listvirtualmachinesresponse.virtualmachine || []
   // Fetch VM-wide transitional snapshots as well, independently of list filters.
-  const transitions = await Promise.all(['Creating', 'Reverting', 'Expunging'].map(state => get('listVMSnapshot', { virtualmachineids: vmIds.join(','), listall: true, pagesize: 1000, state })))
+  const transitions = await Promise.all(['Allocated', 'Creating', 'Reverting', 'Expunging'].map(state => get('listVMSnapshot', { virtualmachineids: vmIds.join(','), listall: true, pagesize: 1000, state })))
   const incomplete = transitions.some(result => (result.listvmsnapshotresponse.count || 0) > (result.listvmsnapshotresponse.vmSnapshot || []).length)
   const busyRows = transitions.flatMap(result => result.listvmsnapshotresponse.vmSnapshot || [])
   const backupResponses = checkBackups ? await Promise.all(['BackingUp', 'Restoring'].map(status => get('listBackups', { listall: true, status, page: 1, pagesize: 1000 }))) : []
@@ -67,6 +67,7 @@ export async function runSnapshotDeleteBatch (targets, execute, concurrency = 2)
         try {
           const job = await execute(row)
           result.jobid = job.jobid
+          result.error = job.jobstatus === 2 ? (job.jobresult?.errortext || job.error || '') : ''
           result.outcome = job.jobstatus === 1 ? 'success' : job.jobstatus === 2 ? 'failed' : 'unknown'
         } catch (error) { result.outcome = 'failed'; result.error = error.message }
         if (result.outcome !== 'success') break

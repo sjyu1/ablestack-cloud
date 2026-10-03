@@ -57,7 +57,7 @@ export default {
   },
   emits: ['close', 'exec-action'],
   data () {
-    return { resolvedPosition: { ...this.position } }
+    return { resolvedPosition: { ...this.position }, previousFocus: null }
   },
   computed: {
     menuStyle () {
@@ -68,13 +68,18 @@ export default {
     }
   },
   mounted () {
+    this.previousFocus = document.activeElement
     document.addEventListener('pointerdown', this.handleDocumentPointerDown, true)
     document.addEventListener('keydown', this.handleKeydown)
     window.addEventListener('resize', this.close)
     window.addEventListener('scroll', this.handleWindowScroll, true)
-    this.$nextTick(this.clampToViewport)
+    this.$nextTick(() => {
+      this.clampToViewport()
+      this.$refs.menu?.querySelector('[role="menuitem"]:not([aria-disabled="true"])')?.focus()
+    })
   },
   beforeUnmount () {
+    if (this.previousFocus?.isConnected) this.previousFocus.focus()
     document.removeEventListener('pointerdown', this.handleDocumentPointerDown, true)
     document.removeEventListener('keydown', this.handleKeydown)
     window.removeEventListener('resize', this.close)

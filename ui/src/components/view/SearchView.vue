@@ -389,7 +389,7 @@ export default {
         const type = this.fields.find(field => field.name === 'type')
         if (type) type.opts = [{ id: 'Disk', name: 'label.vmsnapshot.disk' }, { id: 'DiskAndMemory', name: 'label.vmsnapshot.disk.memory' }]
         const current = this.fields.find(field => field.name === 'current')
-        if (current) current.opts = [{ id: 'true', name: 'label.vmsnapshot.current.yes' }, { id: 'false', name: 'label.vmsnapshot.current.no' }]
+        if (current) current.opts = [{ id: 'true', name: 'label.vmsnapshot.current.yes' }, { id: 'false', name: 'label.vmsnapshot.current.filter.no' }]
       }
       if (arrayField.includes('displaynetwork')) {
         const typeIndex = this.fields.findIndex(item => item.name === 'displaynetwork')

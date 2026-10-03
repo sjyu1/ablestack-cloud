@@ -59,8 +59,8 @@ public class DefaultVMSnapshotStrategyTest {
     @Test
     public void internalCounterTransitionPreservesProvenanceAndDoesNotGrowOnReplayOrResize() {
         setupVolumeDaoPersistMock();
-        VolumeVO volume = new VolumeVO();
-        volume.setId(10L);
+        VolumeVO volume = Mockito.spy(createVolume(20L, 1L));
+        Mockito.when(volume.getId()).thenReturn(10L);
         volume.setInstanceId(20L);
         volume.setPoolId(1L);
         volume.setFormat(Storage.ImageFormat.QCOW2);

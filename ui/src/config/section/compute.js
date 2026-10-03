@@ -687,6 +687,7 @@ export default {
       },
       details: ['name', 'id', 'displayname', 'description', 'type', 'current', 'parentName', 'virtualmachineid', 'virtualmachinename', 'account', 'domain', 'created'],
       searchFilters: ['virtualmachineid', 'type', 'current', 'name', 'domainid', 'account', 'tags'],
+      filters: () => ['ready', 'creating', 'allocated', 'reverting', 'expunging', 'error'],
       tabs: [
         {
           name: 'details',

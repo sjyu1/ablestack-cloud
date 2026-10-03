@@ -453,9 +453,7 @@
         :visible="showAction"
         :closable="true"
         :maskClosable="false"
-        :footer="null"
-        style="top: 20px;"
-        :width="currentAction.invokedAsGroupAction ? modalWidth : '30vw'"
+        :width="currentAction.invokedAsGroupAction ? modalWidth : 760"
         :ok-button-props="getOkProps()"
         ok-text="111"
         :cancel-button-props="getCancelProps()"
@@ -788,21 +786,12 @@
               </a-form-item>
             </div>
 
-            <div
-              :span="24"
-              class="action-button"
-            >
-              <a-button @click="closeAction">{{ $t('label.cancel') }}</a-button>
-              <a-button
-                type="primary"
-                @click="handleSubmit"
-                :disabled="isSubmitDisabled"
-                ref="submit"
-              >{{ $t('label.ok') }}</a-button>
-            </div>
           </a-form>
         </a-spin>
-        <br />
+        <template #footer>
+          <a-button @click="closeAction">{{ $t('label.cancel') }}</a-button>
+          <a-button type="primary" @click="handleSubmit" :disabled="isSubmitDisabled" :loading="actionLoading" ref="submit">{{ $t('label.ok') }}</a-button>
+        </template>
       </a-modal>
     </div>
 
@@ -1489,6 +1478,9 @@ export default {
           this.pagesize = Number(this.$route.query.pagesize)
         }
         Object.assign(params, this.$route.query)
+      }
+      if (this.$route.name === 'vmsnapshot' && !rebuildSchema) {
+        this.columns.forEach(column => { column.sortOrder = (params.sortkey || 'created') === column.key ? (params.sortorder === 'asc' ? 'ascend' : 'descend') : null })
       }
       delete params.q
       delete params.filter
@@ -2601,7 +2593,7 @@ export default {
       delete query.state
       delete query.annotationfilter
       delete query.leased
-      if (!['publicip'].includes(this.$route.name)) {
+      if (!['publicip', 'vmsnapshot'].includes(this.$route.name)) {
         delete query.account
         delete query.domainid
       }
@@ -2663,6 +2655,8 @@ export default {
         } else if (filter === 'leased') {
           query.leased = true
         }
+      } else if (this.$route.name === 'vmsnapshot') {
+        if (filter !== 'all') query.state = filter[0].toUpperCase() + filter.slice(1)
       } else if (this.$route.name === 'comment') {
         query.annotationfilter = filter
       } else if (this.$route.name === 'guestvlans') {

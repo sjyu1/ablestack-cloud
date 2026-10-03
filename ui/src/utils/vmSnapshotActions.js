@@ -34,6 +34,7 @@ export function finishSnapshotJob (jobId, result) {
 }
 export function clearSnapshotJobs () {
   Object.keys(snapshotJobs).forEach(id => delete snapshotJobs[id])
+  Object.keys(snapshotSubmissions).forEach(id => delete snapshotSubmissions[id])
 }
 export function snapshotBusy (vmId) {
   return !!snapshotSubmissions[vmId] || Object.values(snapshotJobs).some(job => job.vmId === vmId)
