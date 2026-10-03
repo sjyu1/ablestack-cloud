@@ -122,7 +122,7 @@ Maven 테스트 합계는 5,408개이며 실패·오류는 0, skip은 5개이다
 
 전용 VM A `47fbae47-18cb-43d7-b00b-f14080bf9a2f`, B `5e6a5131-d75e-48af-be7e-70caa6460c03`, C `3b6b4c34-1d7d-4765-87ef-769420088670` 및 ACL fixture VM은 검토를 위해 보존한다. 최종 root 카운터는 0이며 `kvm-internal-cow-v1`/최초 legacy 출처가 유지된다. 실제 `cloud` DB에서 기존 카운터 apply/rollback을 실행한 것으로 보고하지 않는다. active Mold에서 transition apply가 거부됨도 확인했다.
 
-A의 추가 생성 시험은 기존 KVM process guard의 `restore-vm-snapshot` 잔여 lease가 `Unreconciled operation lease; observation unknown`으로 판정되어 실패했다 (job `d96e444f-cec1-46b0-af58-e674caf602fd`). UI/DB는 오류를 표시하고 실제 스냅샷을 추가하지 않았으며 할당량도 변하지 않았다. 이 lease를 임의 삭제하거나 host guard를 완화하지 않았다. VM process contract #1171의 복구 정책은 이 Epic에 포함하지 않는다. B/C의 생성 성공과 기존 A1 복원 성공을 이 실패와 구분한다.
+A의 추가 생성 시험은 기존 KVM process guard의 `restore-vm-snapshot` 잔여 lease가 `Unreconciled operation lease; observation unknown`으로 판정되어 실패했다 (job `d96e444f-cec1-46b0-af58-e674caf602fd`). 이 장애의 제한된 스냅샷 복구를 하위 이슈 #1225에 추가했다. 원래 Agent 프로세스 종료와 공통 flock 아래의 반복된 native/block/볼륨 관측을 확인한 뒤 lease와 관측 근거를 감사 경로로 옮겨 두 Error 항목을 실제 삭제했다. 일반 프로세스 복구 기능 전체로 확대하지 않는다. 추가 구현·배포·장애 주입·재시도 근거는 [#1225 검증 기록](vm-snapshot-force-delete-1225.md)을 따른다.
 
 ### 조회·권한·UI
 
