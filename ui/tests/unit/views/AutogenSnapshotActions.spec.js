@@ -16,7 +16,7 @@
 // under the License.
 import AutogenView from '@/views/AutogenView'
 import { getAPI, postAPI } from '@/api'
-import { clearSnapshotJobs } from '@/utils/vmSnapshotActions'
+import { clearSnapshotJobs, snapshotBusy } from '@/utils/vmSnapshotActions'
 jest.mock('@/api', () => ({ getAPI: jest.fn(), postAPI: jest.fn(), callAPI: jest.fn() }))
 const action = { api: 'createVMSnapshot', resource: Object.freeze({ id: 'vm-b' }), show: vm => vm.state === 'Running', disabled: vm => !!vm.vmsnapshotblockedreason }
 let context
@@ -55,4 +55,13 @@ test('explicit snapshot bulk delete stays in the toolbar while existing unnamed 
 
 test.each([['vmsnapshot', {}, 'message.vmsnapshot.list.empty'], ['vmsnapshot', { current: 'false' }, 'message.vmsnapshot.list.no.results'], ['vmsnapshot', { keyword: 'missing' }, 'message.vmsnapshot.list.no.results'], ['vm', {}, '']])('empty state distinguishes %s %j', (name, query, expected) => {
   expect(AutogenView.computed.snapshotEmptyText.call({ $route: { name, query }, $t: key => key })).toBe(expected)
+})
+
+
+test('lost create response blocks repeat submissions without claiming job failure', async () => {
+  postAPI.mockRejectedValue(Object.assign(new Error('Network Error'), { isAxiosError: true }))
+  await expect(AutogenView.methods.postSnapshotAwareAction.call(context, action, {})).rejects.toMatchObject({ trackingStatus: 'unknown' })
+  expect(snapshotBusy('vm-b')).toBe(true)
+  await expect(AutogenView.methods.postSnapshotAwareAction.call(context, action, {})).rejects.toThrow('message.vmsnapshot.busy')
+  expect(postAPI).toHaveBeenCalledTimes(1)
 })

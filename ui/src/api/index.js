@@ -89,6 +89,7 @@ export function postAPI (command, data = {}) {
   return axios({
     url: '/',
     method: 'POST',
+    ...(['createVMSnapshot', 'revertToVMSnapshot', 'deleteVMSnapshot', 'createSnapshotFromVMSnapshot'].includes(command) ? { preserveOnFailure: true } : {}),
     data: params
   })
 }

@@ -18,7 +18,7 @@ import { shallowMount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import VmSnapshotDialog from '@/views/compute/VmSnapshotDialog'
 import { getAPI, postAPI } from '@/api'
-import { clearSnapshotJobs } from '@/utils/vmSnapshotActions'
+import { clearSnapshotJobs, snapshotBusy } from '@/utils/vmSnapshotActions'
 jest.mock('@/api', () => ({ getAPI: jest.fn(), postAPI: jest.fn() }))
 jest.mock('@/config/section/compute', () => ({ children: [{ name: 'vm', actions: [{ api: 'createVMSnapshot', show: () => true, disabled: () => false }] }] }))
 const row = { id: 'b', virtualmachineid: 'vb', displayname: 'B', type: 'Disk', state: 'Ready', virtualmachinestate: 'Stopped' }
@@ -88,5 +88,17 @@ test('project changes during the last fresh lookup prevent POST', async () => {
   })
   await expect(wrapper.vm.execute(row, security)).rejects.toThrow('message.vmsnapshot.permission')
   expect(postAPI).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+
+test.each(['lost response', 'missing job ID'])('unconfirmed %s remains unknown and blocks the VM', async kind => {
+  if (kind === 'lost response') postAPI.mockRejectedValue(Object.assign(new Error('Network Error'), { isAxiosError: true }))
+  else postAPI.mockResolvedValue({ deletevmsnapshotresponse: {} })
+  const wrapper = mount(); await flush(); wrapper.vm.acknowledged = true
+  await wrapper.vm.submit()
+  expect(postAPI).toHaveBeenCalledTimes(1)
+  expect(wrapper.vm.results[0].outcome).toBe('unknown')
+  expect(snapshotBusy(row.virtualmachineid)).toBe(true)
   wrapper.unmount()
 })

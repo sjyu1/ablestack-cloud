@@ -27,6 +27,9 @@ export function trackSnapshotJob (options) {
   const vmId = action.api === 'createVMSnapshot' ? record.id : record.virtualmachineid
   if (vmId) snapshotJobs[options.jobId] = { vmId, snapshotId: record.id, unknown: false }
 }
+export function trackUnknownSnapshotSubmission (vmId, snapshotId) {
+  snapshotJobs['unconfirmed:' + vmId] = { vmId, snapshotId, unknown: true }
+}
 export function finishSnapshotJob (jobId, result) {
   if (!snapshotJobs[jobId]) return
   if ([1, 2].includes(result.jobstatus) || result.trackingStatus === 'cancelled') delete snapshotJobs[jobId]

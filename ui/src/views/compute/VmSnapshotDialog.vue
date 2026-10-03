@@ -94,7 +94,7 @@ import compute from '@/config/section/compute'
 import MoldDialog from '@/components/view/MoldDialog'
 import CopyLabel from '@/components/widgets/CopyLabel'
 import VmSnapshotSummary from '@/components/view/VmSnapshotSummary'
-import { snapshotActionReason, snapshotBusy, snapshotSubmissions } from '@/utils/vmSnapshotActions'
+import { snapshotActionReason, snapshotBusy, snapshotSubmissions, trackUnknownSnapshotSubmission } from '@/utils/vmSnapshotActions'
 import { loadVmSnapshotRelations, snapshotRelationTree, freshSnapshotContext, runSnapshotDeleteBatch } from '@/utils/vmSnapshotList'
 
 export default {
@@ -183,10 +183,19 @@ export default {
       try {
         const response = await postAPI(this.api, { vmsnapshotid: target.id })
         const jobId = response[this.api.toLowerCase() + 'response']?.jobid
-        if (!jobId) throw new Error(this.$t('message.job.result.unknown'))
+        if (!jobId) {
+          trackUnknownSnapshotSubmission(vmId, target.id)
+          return { jobstatus: null, trackingStatus: 'unknown', error: this.$t('message.vmsnapshot.submission.unknown') }
+        }
         if (security !== this.security) return { jobstatus: null, trackingStatus: 'unknown', jobid: jobId }
         const job = await this.$pollJob({ jobId, originalPage: this.$route.path, title: this.$t(this.title), description: target.displayname || target.name, resourceId: target.id, action: { api: this.api, resource: target, isFetchData: false }, successMethod: () => { if (this.parentFetchData && !this.disposed) this.parentFetchData({ irefresh: true }) } })
         return { ...job, jobid: jobId }
+      } catch (error) {
+        if (error.isAxiosError && !error.response) {
+          trackUnknownSnapshotSubmission(vmId, target.id)
+          return { jobstatus: null, trackingStatus: 'unknown', error: this.$t('message.vmsnapshot.submission.unknown') }
+        }
+        throw error
       } finally { if (snapshotSubmissions[vmId] === submission) delete snapshotSubmissions[vmId] }
     },
     async submit () {

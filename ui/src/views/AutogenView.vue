@@ -879,7 +879,7 @@ import { ref, reactive, toRaw, h } from 'vue'
 import { Button } from 'ant-design-vue'
 import { getAPI, postAPI, callAPI } from '@/api'
 import { freshSnapshotContext } from '@/utils/vmSnapshotList'
-import { snapshotBusy, snapshotSubmissions } from '@/utils/vmSnapshotActions'
+import { snapshotBusy, snapshotSubmissions, trackUnknownSnapshotSubmission } from '@/utils/vmSnapshotActions'
 import VmSnapshotSummary from '@/components/view/VmSnapshotSummary'
 import { mixinDevice } from '@/utils/mixin.js'
 import { genericCompare } from '@/utils/sort.js'
@@ -2360,7 +2360,7 @@ export default {
           }
           if (selectedItems === this.selectedItems && selectedItems.length !== 0) {
             this.$notifyError(error)
-            eventBus.emit('update-resource-state', { selectedItems, resource: this.getDataIdentifier(params), state: 'failed' })
+            eventBus.emit('update-resource-state', { selectedItems, resource: this.getDataIdentifier(params), state: error.trackingStatus === 'unknown' ? 'unknown' : 'failed' })
           }
           resolve(false)
         })
@@ -2434,7 +2434,18 @@ export default {
       if (context.busy || snapshotBusy(id) || action.disabled(vm, this.$store.getters, [])) throw new Error(this.$t(vm.vmsnapshotblockedreason ? 'message.backup.snapshot.snapshot.blocked' : 'message.vmsnapshot.busy'))
       const submission = Symbol(id)
       snapshotSubmissions[id] = submission
-      try { return await postAPI(action.api, { ...params, virtualmachineid: id }) } finally { if (snapshotSubmissions[id] === submission) delete snapshotSubmissions[id] }
+      try {
+        const response = await postAPI(action.api, { ...params, virtualmachineid: id })
+        if (!response.createvmsnapshotresponse?.jobid) throw Object.assign(new Error(this.$t('message.vmsnapshot.submission.unknown')), { trackingStatus: 'unknown' })
+        return response
+      } catch (error) {
+        if (error.trackingStatus === 'unknown' || (error.isAxiosError && !error.response)) {
+          trackUnknownSnapshotSubmission(id)
+          throw Object.assign(new Error(this.$t('message.vmsnapshot.submission.unknown')), { trackingStatus: 'unknown' })
+        }
+        throw error
+      } finally { if (snapshotSubmissions[id] === submission) delete snapshotSubmissions[id] }
+
     },
     execSubmit (e) {
       e.preventDefault()
