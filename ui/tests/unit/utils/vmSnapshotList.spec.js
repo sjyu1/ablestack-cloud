@@ -92,6 +92,7 @@ test('concurrent page count changes never claim a complete relationship', async 
 test('fresh action queries obey the API page and pagesize contract', async () => {
   const get = jest.fn(async (command, params) => {
     if (params.pagesize && !params.page) throw new Error('page is required with pagesize')
+    if (params.pagesize > 100) throw new Error('action queries exceed the safe page size')
     if (command === 'listVirtualMachines') return { listvirtualmachinesresponse: { virtualmachine: [{ id: 'v1', state: 'Stopped' }] } }
     if (command === 'listBackups') return { listbackupsresponse: { count: 0, backup: [] } }
     return { listvmsnapshotresponse: { count: params.vmsnapshotids ? 1 : 0, vmSnapshot: params.vmsnapshotids ? [row('a')] : [] } }
