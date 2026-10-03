@@ -9,7 +9,15 @@ a copy at http://www.apache.org/licenses/LICENSE-2.0 . Distributed on an
     <a-spin :spinning="loading">
       <template v-if="mode === 'create'">
         <a-input-search v-model:value="vmKeyword" :placeholder="$t('label.search')" @search="loadVms(1)" />
-        <a-table class="mold-dialog-section" size="middle" row-key="id" :columns="vmColumns" :data-source="vms" :pagination="false" :row-selection="{ type: 'radio', selectedRowKeys: selectedVm ? [selectedVm.id] : [], onChange: selectVm }" :scroll="{ x: 550 }" />
+        <a-table
+class="mold-dialog-section"
+size="middle"
+row-key="id"
+:columns="vmColumns"
+:data-source="vms"
+:pagination="false"
+:row-selection="{ type: 'radio', selectedRowKeys: selectedVm ? [selectedVm.id] : [], onChange: selectVm }"
+:scroll="{ x: 550 }" />
         <a-pagination class="mold-dialog-section" :current="vmPage" :page-size="20" :total="vmTotal" @change="loadVms" />
         <a-alert v-if="createReason" class="mold-dialog-section" type="warning" show-icon :message="$t(createReason)" />
       </template>
@@ -26,14 +34,30 @@ a copy at http://www.apache.org/licenses/LICENSE-2.0 . Distributed on an
         <VmSnapshotSummary v-if="selected" :snapshot="selected" />
         <template v-if="['restore', 'delete'].includes(mode)">
           <a-alert class="mold-dialog-section" type="warning" show-icon :message="$t(mode === 'delete' ? 'message.action.vmsnapshot.delete' : selected.type === 'DiskAndMemory' ? 'message.vmsnapshot.restore.memory.impact' : 'message.vmsnapshot.restore.disk.impact')" />
-          <a-table v-if="targets.length > 1" class="mold-dialog-section" size="small" row-key="id" :columns="targetColumns" :data-source="contexts" :pagination="false" :scroll="{ x: 550 }">
+          <a-table
+v-if="targets.length > 1"
+class="mold-dialog-section"
+size="small"
+row-key="id"
+:columns="targetColumns"
+:data-source="contexts"
+:pagination="false"
+:scroll="{ x: 550 }">
             <template #bodyCell="{ column, record }"><span v-if="column.key === 'reason'">{{ record.reason ? $t(record.reason) : $t('label.vmsnapshot.eligible') }}</span></template>
           </a-table>
           <a-alert v-if="blockedReason" class="mold-dialog-section" type="error" show-icon :message="$t(blockedReason)" />
           <p>{{ $t('message.vmsnapshot.fresh.check') }}</p>
           <a-checkbox v-model:checked="acknowledged" :disabled="submitting || !!blockedReason">{{ $t('message.vmsnapshot.acknowledge') }}</a-checkbox>
         </template>
-        <a-table v-if="results.length" class="mold-dialog-section" size="small" row-key="id" :columns="resultColumns" :data-source="results" :pagination="false" :scroll="{ x: 550 }">
+        <a-table
+v-if="results.length"
+class="mold-dialog-section"
+size="small"
+row-key="id"
+:columns="resultColumns"
+:data-source="results"
+:pagination="false"
+:scroll="{ x: 550 }">
           <template #bodyCell="{ column, record }"><span v-if="column.key === 'outcome'">{{ $t('label.vmsnapshot.outcome.' + record.outcome) }} {{ record.error || '' }}</span><CopyLabel v-if="column.key === 'jobid' && record.jobid" :label="record.jobid" /></template>
         </a-table>
       </template>

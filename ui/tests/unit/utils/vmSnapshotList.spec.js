@@ -37,7 +37,7 @@ test('parent IDs survive duplicate names and missing/cyclic parents are never in
 })
 
 test('fresh checks detect withdrawn ACL rows and other operations with a fixed number of batched queries', async () => {
-  const get = jest.fn((api, args) => Promise.resolve(api === 'listVirtualMachines' ? { listvirtualmachinesresponse: { virtualmachine: [{ id: 'v1', state: 'Running' }] } } : args.state ? response(args.state === 'Reverting' ? [row('other')] : []) : response([row('one')])) )
+  const get = jest.fn((api, args) => Promise.resolve(api === 'listVirtualMachines' ? { listvirtualmachinesresponse: { virtualmachine: [{ id: 'v1', state: 'Running' }] } } : args.state ? response(args.state === 'Reverting' ? [row('other')] : []) : response([row('one')])))
   const contexts = await freshSnapshotContext(get, [row('one'), row('removed', 'v2')])
   expect(contexts[0].busy).toBe(true)
   expect(contexts[1].snapshot).toBeUndefined()
