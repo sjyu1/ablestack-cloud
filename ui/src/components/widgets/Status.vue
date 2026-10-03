@@ -154,7 +154,15 @@ export default {
           case 'destroyed':
             state = this.$t('state.destroyed')
             break
-          case 'snapshotting':
+          case 'creating':
+            state = this.$t('state.creating')
+            break
+          case 'reverting':
+            state = this.$t('state.reverting')
+            break
+          case 'creating':
+        case 'reverting':
+        case 'snapshotting':
             state = this.$t('state.snapshotting')
             break
           case 'backedup':

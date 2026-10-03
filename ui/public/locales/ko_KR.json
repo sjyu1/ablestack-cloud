@@ -5006,6 +5006,8 @@
   "state.allocated": "할당 됨",
   "state.free": "가능",
   "state.destroyed": "삭제 됨",
+  "state.creating": "생성 중",
+  "state.reverting": "복원 중",
   "state.snapshotting": "스냅샷 중",
   "state.backedup": "백업 됨",
   "state.backingup": "백업 중",

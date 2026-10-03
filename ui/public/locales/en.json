@@ -5038,6 +5038,8 @@
   "state.allocated": "Allocated",
   "state.free": "Available",
   "state.destroyed": "Deleted",
+  "state.creating": "Creating",
+  "state.reverting": "Reverting",
   "state.snapshotting": "Snapshotting",
   "state.backedup": "Backed Up",
   "state.backingup": "Backing Up",
