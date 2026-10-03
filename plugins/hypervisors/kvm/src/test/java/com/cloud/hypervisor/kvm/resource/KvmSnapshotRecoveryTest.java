@@ -154,9 +154,11 @@ public class KvmSnapshotRecoveryTest {
         try (KvmVmOperationGuard original = new KvmVmOperationGuard(root, UUID_VALUE, "restore-vm-snapshot", false)) { original.uncertain(); }
         Path marker;
         try (java.util.stream.Stream<Path> markers = Files.list(root.resolve(UUID_VALUE))) { marker = markers.findFirst().orElseThrow(); }
-        Path audit = root.resolve("reconciled/" + UUID_VALUE); Files.createDirectories(audit);
+        Path audit = root.resolve("reconciled/" + UUID_VALUE);
+        Files.createDirectories(audit, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
         Files.writeString(audit.resolve(marker.getFileName() + ".proof"), KvmSnapshotRecovery.inspect(command(), Map.of(1L, "/disk"), Map.of(), access).fingerprint());
-        assertTrue(KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk"), Map.of(), access, root).getResult());
+        com.cloud.agent.api.DeleteVMSnapshotAnswer answer = KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk"), Map.of(), access, root);
+        assertTrue(answer.getDetails(), answer.getResult());
         assertFalse(Files.exists(marker)); assertTrue(Files.exists(audit.resolve(marker.getFileName()))); assertEquals(0, access.writes);
     }
 }
