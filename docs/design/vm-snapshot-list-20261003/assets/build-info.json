@@ -7,6 +7,9 @@
   "shared": [
     "Status.vue",
     "TooltipButton.vue",
+    "ResourceActionMenu.vue",
+    "utils/actionMenu.js",
+    "style/components/view/resource-context-menu.less",
     "style/dark-mode.less",
     "style/theme/*.less"
   ],

@@ -77,7 +77,7 @@ http://www.apache.org/licenses/LICENSE-2.0 -->
                 <a-popover placement="bottomRight" trigger="click" title="표시할 열"><template #content><a-checkbox-group v-model:value="visibleColumns" :options="columnOptions" class="column-options" /></template><a-button type="text" size="small" aria-label="열 설정"><filter-outlined /></a-button></a-popover>
               </template><template v-else>{{ column.title }}</template></template>
               <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'title'"><a href="#snapshot-info" class="snapshot-link" @click.prevent="openModal('detail', record)">{{ record.title }}</a><a-tooltip title="작업"><a-button type="text" size="small" class="quick-view" :aria-label="record.vm + ' · ' + record.title + ' 작업'" @click="showMenu(record, $event)"><more-outlined /></a-button></a-tooltip></template>
+                <template v-if="column.key === 'title'"><a href="#snapshot-info" class="snapshot-link" @click.prevent="openModal('detail', record)">{{ record.title }}</a></template>
                 <template v-else-if="column.key === 'vm'"><a href="#vm-snapshots" @click.prevent="openModal('relations', record)">{{ record.vm }}</a></template>
                 <template v-else-if="column.key === 'state'"><snapshot-status :text="record.state" display-text :show-tooltip="false" /></template>
                 <template v-else-if="column.key === 'type'">{{ typeText(record.type) }}</template>
@@ -100,18 +100,9 @@ http://www.apache.org/licenses/LICENSE-2.0 -->
       <template #content><a-form layout="vertical" class="preview-options"><a-form-item label="화면 상태"><a-select v-model:value="scenario" aria-label="목업 화면 상태" @change="resetPage"><a-select-option value="normal">정상 목록</a-select-option><a-select-option value="loading">최초 로딩</a-select-option><a-select-option value="empty">등록된 스냅샷 없음</a-select-option><a-select-option value="error">조회 실패 · 이전 결과 유지</a-select-option><a-select-option value="partial">관계 데이터 일부 조회</a-select-option></a-select></a-form-item><a-button block @click="dark = !dark">{{ dark ? '라이트 보기' : '다크 보기' }}</a-button><p class="mock-note">Vue 3 + Ant Design Vue 3.2.20<br />실제 VM 작업 없이 예시만 표시합니다.</p></a-form></template>
       <a-button class="preview-control" size="small"><experiment-outlined /> 목업</a-button>
     </a-popover>
-    <div v-if="menuRecord" class="row-context-menu" :style="menuStyle" @keydown.esc="menuRecord = null">
-      <div class="context-title">{{ menuRecord.vm }}<br /><strong>{{ menuRecord.title }}</strong></div>
-      <a-menu :selected-keys="[]" @click="onMenuAction">
-        <a-menu-item key="detail"><info-circle-outlined /> 상세 정보</a-menu-item>
-        <a-menu-item key="relations"><branches-outlined /> VM별 관계 보기</a-menu-item>
-        <a-menu-divider />
-        <a-menu-item key="restore" :disabled="!!eligibility('restore', menuRecord)"><rollback-outlined /> 이 스냅샷으로 복원</a-menu-item>
-        <a-menu-item key="delete" :disabled="!!eligibility('delete', menuRecord)" danger><delete-outlined /> 스냅샷 삭제</a-menu-item>
-      </a-menu>
-      <p v-if="eligibility('restore', menuRecord)" class="disabled-reason">복원 제한: {{ eligibility('restore', menuRecord) }}</p>
+    <div v-if="menuRecord" ref="contextMenuElement" class="resource-context-menu" :style="menuStyle" role="menu" @click.stop @contextmenu.stop.prevent>
+      <resource-action-menu :entries="menuEntries" :title="menuRecord.title" show-resource-title @execute="onMenuAction" />
     </div>
-    <div v-if="menuRecord" class="context-dismiss" @click="menuRecord = null" />
     <a-modal :visible="!!modal" :title="modalTitle" :width="modal === 'bulk' || modal === 'relations' ? 920 : 760" centered wrap-class-name="snapshot-modal" :destroy-on-close="true" @cancel="closeModal">
       <template #footer>
         <a-button @click="closeModal">{{ ['detail','relations'].includes(modal) ? '닫기' : '취소' }}</a-button>
@@ -166,12 +157,13 @@ http://www.apache.org/licenses/LICENSE-2.0 -->
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import koKR from 'ant-design-vue/es/locale/ko_KR'
-import { DashboardOutlined, CloudOutlined, DesktopOutlined, CameraOutlined, AppstoreOutlined, ClusterOutlined, GroupOutlined, KeyOutlined, FileTextOutlined, DatabaseOutlined, ShareAltOutlined, PictureOutlined, LockOutlined, NotificationOutlined, HddOutlined, SettingOutlined, MenuFoldOutlined, DownOutlined, TranslationOutlined, BellOutlined, UserOutlined, HomeOutlined, QuestionCircleOutlined, PlusOutlined, DeleteOutlined, FilterOutlined, MoreOutlined, ExperimentOutlined, InfoCircleOutlined, BranchesOutlined, RollbackOutlined } from '@ant-design/icons-vue'
+import { DashboardOutlined, CloudOutlined, DesktopOutlined, CameraOutlined, AppstoreOutlined, ClusterOutlined, GroupOutlined, KeyOutlined, FileTextOutlined, DatabaseOutlined, ShareAltOutlined, PictureOutlined, LockOutlined, NotificationOutlined, HddOutlined, SettingOutlined, MenuFoldOutlined, DownOutlined, TranslationOutlined, BellOutlined, UserOutlined, HomeOutlined, QuestionCircleOutlined, PlusOutlined, DeleteOutlined, FilterOutlined, ExperimentOutlined, InfoCircleOutlined, BranchesOutlined, RollbackOutlined } from '@ant-design/icons-vue'
 import Status from '@/components/widgets/Status.vue'
 import TooltipButton from '@/components/widgets/TooltipButton.vue'
+import ResourceActionMenu from '@/components/view/ResourceActionMenu.vue'
 import { data, eligibility, typeText, statusText, date } from './mock-data'
 
 // Extend the shared status renderer only for snapshot states missing Korean text.
@@ -208,14 +200,43 @@ const notify = text => message.info(text)
 function refresh () { scenario.value = 'normal'; notify('예시 목록을 갱신했습니다. 기존 검색·정렬·선택을 유지합니다.') }
 const parentTitle = row => data.find(x => x.id === row.parent)?.title || '없음'
 
-const menuRecord = ref(null), menuPoint = reactive({ x:0,y:0 })
+const menuRecord = ref(null), contextMenuElement = ref(null), menuPoint = reactive({ x:0,y:0 })
 const menuStyle = computed(() => ({ left: menuPoint.x + 'px', top:menuPoint.y + 'px' }))
-function showMenu (row,event) { event.preventDefault(); event.stopPropagation(); menuRecord.value = { ...row }; menuPoint.x = Math.max(8,Math.min(event.clientX,window.innerWidth-294)); menuPoint.y = Math.max(8,Math.min(event.clientY,window.innerHeight-310)) }
+const menuEntries = computed(() => [
+  { key:'relations', label:'VM별 관계 보기', icon:'BranchesOutlined', group:'STORAGE' },
+  { key:'restore', label:'이 스냅샷으로 복원', icon:'RollbackOutlined', group:'STORAGE', disabled:!!eligibility('restore',menuRecord.value), tooltip:eligibility('restore',menuRecord.value) },
+  { key:'detail', label:'상세 정보', icon:'InfoCircleOutlined', group:'GENERAL' },
+  { key:'delete', label:'스냅샷 삭제', icon:'DeleteOutlined', group:'DANGER', danger:true, disabled:!!eligibility('delete',menuRecord.value), tooltip:eligibility('delete',menuRecord.value) }
+])
+// Keep ListView's right-click entry and ResourceContextMenu's viewport/dismiss contract.
+async function showMenu (row,event) {
+  event.preventDefault(); event.stopPropagation()
+  menuRecord.value = Object.freeze({ ...row })
+  menuPoint.x = event.clientX; menuPoint.y = event.clientY
+  await nextTick()
+  if (menuRecord.value?.id !== row.id || !contextMenuElement.value) return
+  const rect = contextMenuElement.value.getBoundingClientRect()
+  // Exclude the page scrollbar from the visible area when clamping.
+  menuPoint.x = Math.max(8,Math.min(event.clientX,document.documentElement.clientWidth-rect.width-8))
+  menuPoint.y = Math.max(8,Math.min(event.clientY,document.documentElement.clientHeight-rect.height-8))
+}
 const rowEvents = row => ({ onContextmenu: event => showMenu(row,event) })
 function onMenuAction ({ key }) { const record = menuRecord.value; openModal(key,record) }
+const closeMenu = () => { menuRecord.value = null }
 const dismissMenu = event => { if (event.key === 'Escape') menuRecord.value = null }
-onMounted(() => document.addEventListener('keydown', dismissMenu))
-onUnmounted(() => document.removeEventListener('keydown', dismissMenu))
+const dismissOutside = event => { if (menuRecord.value && !contextMenuElement.value?.contains(event.target)) closeMenu() }
+onMounted(() => {
+  document.addEventListener('pointerdown', dismissOutside, true)
+  document.addEventListener('keydown', dismissMenu)
+  window.addEventListener('resize', closeMenu)
+  window.addEventListener('scroll', dismissOutside, true)
+})
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', dismissOutside, true)
+  document.removeEventListener('keydown', dismissMenu)
+  window.removeEventListener('resize', closeMenu)
+  window.removeEventListener('scroll', dismissOutside, true)
+})
 
 const modal = ref(''), target = ref(null), acknowledged = ref(false), bulkRows = ref([]), createVM = ref(undefined), relationSelected = ref('')
 const modalTitle = computed(() => ({ detail:'VM 스냅샷 상세 정보', restore:'VM 스냅샷 복원', delete:'VM 스냅샷 삭제', bulk:`선택한 VM 스냅샷 삭제 (${bulkRows.value.length}개)`, create:'VM 스냅샷 생성', relations:'VM별 스냅샷 관계' })[modal.value] || '')
@@ -273,7 +294,6 @@ const relationTree = computed(() => {
 .list-view-table-wrapper .ant-table-cell { white-space:nowrap; }
 .list-view-table-wrapper .ant-table-middle .ant-table-tbody > tr > td,.list-view-table-wrapper .ant-table-middle .ant-table-thead > tr > th { padding:12px 8px; }
 .list-view-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td { background:var(--ui-bg-selected); }
-.quick-view { margin-left:4px; padding:0 !important; width:20px; height:24px; color:var(--ui-text-muted) !important; }
 .list-pagination { margin-top:10px; margin-bottom:10px; text-align:right; }
 .column-options { display:flex; flex-direction:column; gap:10px; }
 .mold-footer { padding:12px 24px; font-size:12px; color:var(--ui-text-muted) !important; }
@@ -281,12 +301,6 @@ const relationTree = computed(() => {
 .preview-control { position:fixed; bottom:8px; right:16px; z-index:20; }
 .preview-options { width:270px; }
 .mock-note { color:var(--ui-text-muted); font-size:12px; margin:16px 0 0; }
-.row-context-menu { position:fixed; z-index:101; width:286px; background:var(--ui-bg-elevated); border:1px solid var(--ui-border); border-radius:6px; box-shadow:0 8px 24px var(--ui-shadow); }
-.row-context-menu .ant-menu { background:transparent; border:0; }
-.context-title { padding:12px 16px; border-bottom:1px solid var(--ui-border); }
-.context-dismiss { position:fixed; inset:0; z-index:100; }
-.disabled-reason { padding:8px 16px 12px; margin:0; font-size:12px; color:var(--ui-text-muted); }
-.row-context-menu .ant-menu-item-disabled,.row-context-menu .ant-menu-item-disabled .anticon { color:var(--ui-text-disabled) !important; }
 .mold-preview .ant-btn-dangerous:not([disabled]) { color:var(--ui-error-icon); border-color:var(--ui-error-border); }
 .secondary-text { color:var(--ui-text-muted); }
 .dialog-notice { margin-bottom:16px; }

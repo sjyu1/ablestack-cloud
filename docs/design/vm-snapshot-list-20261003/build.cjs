@@ -37,7 +37,7 @@ webpack(config, (error, stats) => {
     process.exitCode = 1
     return
   }
-  const metadata = { vue: fromUI('vue/package.json').version, compilerSfc: fromUI('@vue/compiler-sfc/package.json').version, antDesignVue: fromUI('ant-design-vue/package.json').version, uiSource: 'b31026f919856a1b61c1f86dca450e16ac0673e1', entry: 'src/App.vue', shared: ['Status.vue', 'TooltipButton.vue', 'style/dark-mode.less', 'style/theme/*.less'], offline: true }
+  const metadata = { vue: fromUI('vue/package.json').version, compilerSfc: fromUI('@vue/compiler-sfc/package.json').version, antDesignVue: fromUI('ant-design-vue/package.json').version, uiSource: 'b31026f919856a1b61c1f86dca450e16ac0673e1', entry: 'src/App.vue', shared: ['Status.vue', 'TooltipButton.vue', 'ResourceActionMenu.vue', 'utils/actionMenu.js', 'style/components/view/resource-context-menu.less', 'style/dark-mode.less', 'style/theme/*.less'], offline: true }
   fs.writeFileSync(path.join(__dirname, 'assets/build-info.json'), JSON.stringify(metadata, null, 2) + '\n')
   console.log(stats.toString({ all: false, assets: true, timings: true, warnings: true }))
   console.log(JSON.stringify(metadata))
