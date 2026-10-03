@@ -84,8 +84,39 @@ UI는 `/usr/share/cloudstack-management/webapp`의 정적 파일만 업데이트
 - 활성 스냅샷은 16개이며 모두 Ready/DiskAndMemory이다. 관리되지 않는 SharedMountPoint 풀과 CLVM/CLVM_NG 풀이 있다.
 - 기존 양수 카운터 14개, 합계 1,717,986,918,400 bytes를 read-only 감사에서 확인했다. 실제 물리 사용량이나 전체 할당량 차이를 이 수치만으로 설명하지 않는다.
 - 생성한 전용 시험 VM: `epic1216-a` (`47fbae47-18cb-43d7-b00b-f14080bf9a2f`), `epic1216-b` (`5e6a5131-d75e-48af-be7e-70caa6460c03`), `epic1216-c` (`3b6b4c34-1d7d-4765-87ef-769420088670`). 세 VM 모두 Stopped로 생성했다. 기존 사용자 VM에 복원·삭제를 실행하지 않았다.
-- API·스키마·서버·스냅샷 네 모듈의 선택 테스트 빌드가 통과했다. 추가 물리 공간 부족·통계 불명·다중 풀 잠금 테스트를 포함한 스냅샷 테스트 9개가 통과했다. 더 넓은 모듈 테스트와 최종 UI 검증을 진행 중이다.
+- API·스키마·서버·스냅샷 네 모듈의 전체 단위 테스트 및 모듈 install이 통과했다. 상세 결과는 아래 표에 기록한다. 최종 UI 프로덕션 빌드도 통과했다. 이는 31번 배포·기능 검증 완료를 뜻하지 않는다.
 - 배포 실행은 자동 승인 검토에 두 번 차단됐다. 첫 명령은 카운터 전환을 포함했고 두 번째 명령은 DB를 보존했으나 동일한 `blocked by policy`가 반환됐다. 실제 배포가 성공한 것으로 취급하지 않는다.
+
+## 배포 전 완료한 검증과 산출물
+
+| 검사 | 결과 |
+| --- | --- |
+| API 전체 단위 테스트 | 1,025개, 실패 0, 오류 0 |
+| 스키마 전체 단위 테스트 | 410개, 실패 0, 오류 0 |
+| 서버 전체 단위 테스트 | 3,905개, 실패 0, 오류 0, 기존 skip 5개 |
+| 스냅샷 모듈 전체 단위 테스트 | 67개, 실패 0, 오류 0 |
+| UI 관련 회귀 테스트 | 11개 suite, 176개 통과 |
+| UI lint / production build | 통과. 기존 번들 크기 관련 경고 2건, Browserslist 데이터 갱신 안내가 있다. |
+| Apache RAT | 실제 CI 명령을 tracked-source archive에서 실행. 미승인 0, unknown 0 |
+| 카운터 감사 도구 단위 테스트 | 4개 통과. 실제 DB apply/rollback은 미실행 |
+
+WSL ext4에서 module install 및 테스트를 수행했다. API/서버 전체 실행 로그는 `module-build-10-all-tests.log`, 스키마는 `module-build-9-all-tests.log`, 최종 스냅샷은 `module-build-12-snapshot.log`이다. UI는 `ui-lint-8.log`, `ui-tests-8.log`, `ui-build-final.log`, RAT는 `license-check-3.log`이다. 이 로그와 인증을 제외한 산출물은 `/home/ablecloud/work/vm-snapshot-epic-1216`에 유지한다. 전체 Cloud 빌드와 GitHub Actions CI는 실행하지 않았다.
+
+전체 테스트에서 최신 upstream ISO 기본값(2)을 과거 기본값(1)로 기대하던 fixture를 수정했고, 스냅샷 Spring 테스트 두 곳에 신규 DAO mock bean을 등록했다. 운영 ISO 동작을 변경하지 않았다.
+
+제품 의존성은 pinned lockfile로 설치한 Vue/compiler-sfc 3.2.37, Ant Design Vue 3.2.20이다. UI 빌드 이후 자동 생성 config 변경이 남아 있지 않음을 확인했다. 목업 번들은 별도 설계 산출물이며 제품 빌드와 버전·검증 범위를 구분한다.
+
+배포 디렉터리: `/home/ablecloud/work/vm-snapshot-epic-1216/deployment`.
+
+- 소스 기준: `e5ea705eb43fc77a33c4df806bd672a2cb021a9c`; upstream Europa: `b31026f919856a1b61c1f86dca450e16ac0673e1`.
+- UI 기능 소스: `f81bb3f37f9`; 이후 커밋은 설계 라이선스와 테스트 fixture뿐이며 제품 UI 변경은 없다.
+- `backend-overlay.zip`: 변경 클래스/내부 클래스 20개. SHA-256 `86e00466a0a27823863b609d602c0539c3816da1337664ea1917bc6dd6f736b6`.
+- `ui-static.tgz`: 정적 파일 834개. `config.json`, `WEB-INF`, `META-INF`를 포함하지 않는다. SHA-256 `1dbad9f0410cdfddb1eac80269f2144cdfaa562746aea3e542bde984870820b3`.
+- `backend-class-hashes.json`, `ui-static-hashes.json`, `manifest.json`으로 각 파일/클래스 및 패키지의 해시를 대조한다.
+
+실제 관리 서버 JAR은 배포 직전에 다시 식별·해시 확인하고 백업한다. 기존 원본 JAR 항목과 manifest를 유지하면서 빌드한 클래스만 반영하고 원본 소유자·권한을 보존한다. 클래스 단위 반영은 변경 모듈 배포 방식이며 전체 Cloud 패키지 빌드 결과로 보고하지 않는다. 실패하면 백업한 원본 JAR과 정적 파일로 복구하고 원인 확인 전 시험 작업을 진행하지 않는다.
+
+배포가 차단된 상태이므로 하위 이슈를 닫거나 최종 통합 PR을 생성하지 않았다. 다음 검증을 통과한 후 Epic과 모든 하위 이슈의 closing reference를 포함한 PR 하나를 생성한다.
 
 ## 배포 후 남은 통합 검증
 
