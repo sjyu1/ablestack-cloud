@@ -866,7 +866,7 @@ public class ApiResponseHelper implements ResponseGenerator, ResourceIdSupport {
             if (vmSnapshotParent == null) {
                 vmSnapshotParent = vmSnapshotDao.findByIdIncludingRemoved(vmSnapshot.getParent());
             }
-            if (vmSnapshotParent != null && vmSnapshotParent.getVmId() == vmSnapshot.getVmId()) {
+            if (vmSnapshotParent != null && vmSnapshotParent.getVmId().equals(vmSnapshot.getVmId())) {
                 vmSnapshotResponse.setParent(vmSnapshotParent.getUuid());
                 vmSnapshotResponse.setParentName(vmSnapshotParent.getDisplayName());
             } else {
