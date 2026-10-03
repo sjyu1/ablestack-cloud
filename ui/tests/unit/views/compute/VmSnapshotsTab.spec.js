@@ -94,7 +94,6 @@ test('submits the snapshot ID once and tracks the job', async () => {
   wrapper.unmount()
 })
 
-
 test.each(['lost response', 'missing job ID'])('VM detail unconfirmed %s keeps the VM locked', async kind => {
   const w = mount(); await flush()
   w.vm.openAction('deleteVMSnapshot', row); w.vm.acknowledged = true

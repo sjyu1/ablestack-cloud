@@ -95,12 +95,13 @@ export default {
         this.$pollJob({ jobId, originalPage: this.$route.path, title: this.$t('message.success.create.snapshot.from.vmsnapshot'), action: { api: 'createSnapshotFromVMSnapshot', resource: this.target }, description: values.name, successMessage: this.$t('message.success.create.snapshot.from.vmsnapshot'), errorMessage: this.$t('message.create.snapshot.from.vmsnapshot.failed'), loadingMessage: this.$t('message.create.snapshot.from.vmsnapshot.progress'), catchMessage: this.$t('error.fetching.async.job.result') }).catch(() => {})
         this.$emit('close-action')
       } catch (error) {
+        const unconfirmed = postStarted && error.isAxiosError && !error.response
+        const reportedError = unconfirmed ? new Error(this.$t('message.vmsnapshot.submission.unknown')) : error
         if (postStarted && error.isAxiosError && !error.response) {
           trackUnknownSnapshotSubmission(vmId, this.target.id)
-          error = new Error(this.$t('message.vmsnapshot.submission.unknown'))
         }
         if (error.errorFields?.length) this.formRef.value.scrollToField(error.errorFields[0].name)
-        else this.$notifyError(error)
+        else this.$notifyError(reportedError)
       } finally { if (snapshotSubmissions[vmId] === submission) delete snapshotSubmissions[vmId]; this.loading = false }
     },
     closeModal () { if (!this.loading) this.$emit('close-action') }

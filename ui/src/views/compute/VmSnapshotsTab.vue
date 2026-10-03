@@ -196,12 +196,13 @@ export default {
         }
         this.$pollJob({ jobId, originalPage, title: this.$t(api === 'deleteVMSnapshot' ? 'label.action.vmsnapshot.delete' : 'label.action.vmsnapshot.revert'), description: snapshot.displayname || snapshot.name, resourceId: snapshot.id, action: { api, resource: snapshot, isFetchData: false }, successMethod: refresh, errorMethod: refresh }).catch(() => {})
       } catch (error) {
+        const unconfirmed = postStarted && error.isAxiosError && !error.response
+        const reportedError = unconfirmed ? new Error(this.$t('message.vmsnapshot.submission.unknown')) : error
         if (postStarted && error.isAxiosError && !error.response) {
           trackUnknownSnapshotSubmission(snapshot.virtualmachineid, snapshot.id)
-          error = new Error(this.$t('message.vmsnapshot.submission.unknown'))
         }
         if (scope === this.scopeKey && !this.listRefreshDisposed) {
-          this.$notifyError(error)
+          this.$notifyError(reportedError)
           this.fetchData()
         }
       } finally { if (snapshotSubmissions[snapshot.virtualmachineid] === submission) delete snapshotSubmissions[snapshot.virtualmachineid]; this.submitting = false }

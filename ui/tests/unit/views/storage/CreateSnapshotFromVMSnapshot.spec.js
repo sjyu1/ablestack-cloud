@@ -47,7 +47,6 @@ test('a detached volume is rejected before extraction POST', async () => {
   w.unmount()
 })
 
-
 test.each(['lost response', 'missing job ID'])('unconfirmed extraction %s prevents a second POST', async kind => {
   const w = mount(); await flush()
   w.vm.formRef.value = { validate: jest.fn().mockResolvedValue(), scrollToField: jest.fn() }; w.vm.form.name = 'extract'
