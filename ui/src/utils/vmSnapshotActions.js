@@ -18,6 +18,7 @@
 import { reactive } from 'vue'
 
 export const snapshotJobs = reactive({})
+export const snapshotSubmissions = reactive({})
 const snapshotApis = ['createVMSnapshot', 'revertToVMSnapshot', 'deleteVMSnapshot', 'createSnapshotFromVMSnapshot']
 export function trackSnapshotJob (options) {
   const action = options.action
@@ -35,9 +36,10 @@ export function clearSnapshotJobs () {
   Object.keys(snapshotJobs).forEach(id => delete snapshotJobs[id])
 }
 export function snapshotBusy (vmId) {
-  return Object.values(snapshotJobs).some(job => job.vmId === vmId)
+  return !!snapshotSubmissions[vmId] || Object.values(snapshotJobs).some(job => job.vmId === vmId)
 }
 export function snapshotActionReason (api, snapshot, vm, busy = false) {
+  vm = vm || (snapshot.virtualmachinestate ? { id: snapshot.virtualmachineid, state: snapshot.virtualmachinestate } : null)
   if (busy) return 'message.vmsnapshot.busy'
   if (vm && snapshot.virtualmachineid !== vm.id) return 'message.vmsnapshot.wrong.vm'
   if (api === 'revertToVMSnapshot' && vm?.vmsnapshotblockedreason) return 'message.backup.snapshot.snapshot.blocked'

@@ -176,15 +176,15 @@
       />
       <keep-alive v-else-if="currentAction.component && (!currentAction.invokedAsGroupAction || currentAction.api === 'destroyVirtualMachine')">
         <a-modal
+          class="mold-dialog"
+          centered
           :visible="showAction"
           :closable="true"
           :maskClosable="false"
           :cancelText="$t('label.cancel')"
-          style="top: 20px;"
           @cancel="cancelAction"
           :confirmLoading="actionLoading"
           :footer="null"
-          centered
           width="auto"
         >
           <template #title>
@@ -217,7 +217,8 @@
         </a-modal>
       </keep-alive>
       <a-modal
-        v-else-if="currentAction.label === 'label.download.events'"
+          class="mold-dialog"
+          v-else-if="currentAction.label === 'label.download.events'"
         :visible="showAction"
         :closable="true"
         :maskClosable="false"
@@ -447,7 +448,8 @@
         <br />
       </a-modal>
       <a-modal
-        v-else
+          class="mold-dialog"
+          v-else
         :visible="showAction"
         :closable="true"
         :maskClosable="false"
@@ -843,6 +845,7 @@
           @update-selected-columns="updateSelectedColumns"
           @selection-change="onRowSelectionChange"
           @refresh="fetchData"
+          @table-change="handleTableChange"
         />
         <a-pagination
           class="row-element"
@@ -1590,7 +1593,8 @@ export default {
             key: key,
             title: this.$t('label.' + String(title).toLowerCase()),
             dataIndex: key,
-            sorter: sorter
+            sorter: this.$route.name === 'vmsnapshot' ? ['displayname', 'state', 'type', 'current', 'created'].includes(key) : sorter,
+            ...(this.$route.name === 'vmsnapshot' ? { sortOrder: (this.$route.query.sortkey || 'created') === key ? (this.$route.query.sortorder === 'asc' ? 'ascend' : 'descend') : null } : {})
           })
           this.selectedColumns.push(key)
         }
@@ -1816,7 +1820,7 @@ export default {
         }
       }).catch(error => {
         if (version !== this.listRequestVersion || scope !== this.listScope()) return
-        if (sameList) {
+        if (sameList || (this.$route.name === 'vmsnapshot' && this.listLoadedScope)) {
           this.listRefreshError = true
           if (isAutoScheduled) throw error
           this.$notifyError(error)
@@ -1922,6 +1926,12 @@ export default {
       this.execAction(action, false)
     },
     execAction (action, isGroupAction) {
+      if (action.snapshotMode) {
+        this.currentAction = { ...action, invokedAsGroupAction: !!isGroupAction, snapshotTargets: Object.freeze((isGroupAction ? this.selectedItems : [action.resource]).filter(Boolean).map(row => Object.freeze({ ...row }))) }
+        this.resource = action.resource || {}
+        this.showAction = true
+        return
+      }
       this.listEventHandlers = []
       this.formRef = ref()
       this.form = reactive({})
@@ -2753,6 +2763,10 @@ export default {
       query.page = page
       query.pagesize = pageSize
       this.$router.push({ query })
+    },
+    handleTableChange (pagination, filters, sorter) {
+      if (this.$route.name !== 'vmsnapshot') return
+      this.$router.push({ query: { ...this.$route.query, page: '1', sortkey: sorter?.order ? sorter.field : 'created', sortorder: sorter?.order === 'ascend' ? 'asc' : 'desc' } })
     },
     changePageSize (currentPage, pageSize) {
       const query = Object.assign({}, this.$route.query)

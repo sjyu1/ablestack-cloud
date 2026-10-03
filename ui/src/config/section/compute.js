@@ -669,7 +669,7 @@ export default {
       name: 'vmsnapshot',
       title: 'label.vm.snapshots',
       icon: 'camera-outlined',
-      docHelp: 'adminguide/storage.html#working-with-volume-snapshots',
+      docHelp: 'adminguide/virtual_machines.html#virtual-machine-snapshots',
       permission: ['listVMSnapshot'],
       resourceType: 'VMSnapshot',
       columns: () => {
@@ -686,7 +686,7 @@ export default {
         return fields
       },
       details: ['name', 'id', 'displayname', 'description', 'type', 'current', 'parentName', 'virtualmachineid', 'virtualmachinename', 'account', 'domain', 'created'],
-      searchFilters: ['name', 'domainid', 'account', 'tags'],
+      searchFilters: ['virtualmachineid', 'type', 'current', 'name', 'domainid', 'account', 'tags'],
       tabs: [
         {
           name: 'details',
@@ -705,6 +705,21 @@ export default {
       ],
       actions: [
         {
+          api: 'createVMSnapshot', icon: 'plus-outlined', label: 'label.action.vmsnapshot.create', listView: true, popup: true,
+          snapshotMode: 'create', selfManagedDialog: true,
+          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue')))
+        },
+        {
+          api: 'listVMSnapshot', icon: 'branches-outlined', label: 'label.vmsnapshot.relations', dataView: true, popup: true,
+          snapshotMode: 'relation', selfManagedDialog: true, menuGroup: 'STORAGE',
+          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue')))
+        },
+        {
+          api: 'listVMSnapshot', icon: 'info-circle-outlined', label: 'label.details', dataView: true, popup: true,
+          snapshotMode: 'detail', selfManagedDialog: true, menuGroup: 'GENERAL',
+          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue')))
+        },
+        {
           api: 'createSnapshotFromVMSnapshot',
           disabled: record => !!snapshotActionReason('createSnapshotFromVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           tooltip: record => snapshotActionReason('createSnapshotFromVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
@@ -718,6 +733,8 @@ export default {
         },
         {
           api: 'revertToVMSnapshot',
+          snapshotMode: 'restore', selfManagedDialog: true, popup: true,
+          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue'))),
           disabled: record => !!snapshotActionReason('revertToVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           tooltip: record => snapshotActionReason('revertToVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           icon: 'sync-outlined',
@@ -734,7 +751,10 @@ export default {
         },
         {
           api: 'deleteVMSnapshot',
-          disabled: record => !!snapshotActionReason('deleteVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
+          snapshotMode: 'delete', selfManagedDialog: true,
+          toolbarLabel: 'label.vmsnapshot.selected.delete',
+          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue'))),
+          disabled: (record, store, selectedItems) => selectedItems?.length ? false : !!snapshotActionReason('deleteVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           tooltip: record => snapshotActionReason('deleteVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           icon: 'delete-outlined',
           label: 'label.action.vmsnapshot.delete',

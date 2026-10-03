@@ -105,8 +105,8 @@ export default {
       if (!menu) return
       const rect = menu.getBoundingClientRect()
       this.resolvedPosition = {
-        x: Math.max(VIEWPORT_PADDING, Math.min(this.position.x, window.innerWidth - rect.width - VIEWPORT_PADDING)),
-        y: Math.max(VIEWPORT_PADDING, Math.min(this.position.y, window.innerHeight - rect.height - VIEWPORT_PADDING))
+        x: Math.max(VIEWPORT_PADDING, Math.min(this.position.x, (document.documentElement.clientWidth || window.innerWidth) - rect.width - VIEWPORT_PADDING)),
+        y: Math.max(VIEWPORT_PADDING, Math.min(this.position.y, (document.documentElement.clientHeight || window.innerHeight) - rect.height - VIEWPORT_PADDING))
       }
     }
   }

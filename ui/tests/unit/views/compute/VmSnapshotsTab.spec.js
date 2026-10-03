@@ -72,6 +72,7 @@ test('read-only users cannot open or submit mutations', async () => {
 test('revalidates VM state before submitting and refuses changed eligibility', async () => {
   const wrapper = mount(); await flush()
   wrapper.vm.openAction('revertToVMSnapshot', row)
+  wrapper.vm.acknowledged = true
   getAPI.mockImplementation(api => Promise.resolve(api === 'listVirtualMachines' ? { listvirtualmachinesresponse: { virtualmachine: [{ id: 'v1', state: 'Running' }] } } : response([row])))
   await wrapper.vm.submitAction()
   expect(postAPI).not.toHaveBeenCalled()
@@ -81,6 +82,7 @@ test('revalidates VM state before submitting and refuses changed eligibility', a
 test('submits the snapshot ID once and tracks the job', async () => {
   const wrapper = mount(); await flush()
   wrapper.vm.openAction('deleteVMSnapshot', row)
+  wrapper.vm.acknowledged = true
   getAPI.mockImplementation(api => Promise.resolve(api === 'listVirtualMachines' ? { listvirtualmachinesresponse: { virtualmachine: [{ id: 'v1', state: 'Stopped' }] } } : response([row])))
   postAPI.mockResolvedValue({ deletevmsnapshotresponse: { jobid: 'job' } })
   const first = wrapper.vm.submitAction(); const second = wrapper.vm.submitAction()
