@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.UUID;
 import javax.inject.Inject;
 
 import org.apache.cloudstack.api.command.admin.storage.ListDeploymentStoragePoolsCmd;
