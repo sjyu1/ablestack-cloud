@@ -2445,7 +2445,6 @@ export default {
         }
         throw error
       } finally { if (snapshotSubmissions[id] === submission) delete snapshotSubmissions[id] }
-
     },
     execSubmit (e) {
       e.preventDefault()

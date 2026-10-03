@@ -162,7 +162,7 @@ export default {
       this.loading = true
       const security = this.security
       try {
-        const vm = (await getAPI('listVirtualMachines', { id: this.selectedVm.id, listall: true })).listvirtualmachinesresponse.virtualmachine?.[0]
+        const vm = (await getAPI('listVirtualMachines', { id: this.selectedVm.id, listall: true }, { preserveOnFailure: true })).listvirtualmachinesresponse.virtualmachine?.[0]
         if (!vm || this.disposed || security !== this.security || !this.allowed('createVMSnapshot')) return
         this.selectedVm = vm
         if (this.createReason) return

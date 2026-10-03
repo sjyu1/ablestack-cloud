@@ -30,7 +30,7 @@ under the License.
           <a-descriptions-item :label="$t('label.type')">{{ $t(snapshot.type === 'DiskAndMemory' ? 'label.vmsnapshot.disk.memory' : 'label.vmsnapshot.disk') }}</a-descriptions-item>
           <a-descriptions-item :label="$t('label.state')"><Status :text="snapshot.state" display-text /> · {{ $t('label.vm') }}: <Status v-if="snapshot.virtualmachinestate" :text="snapshot.virtualmachinestate" display-text :show-tooltip="false" /><span v-else>—</span></a-descriptions-item>
           <a-descriptions-item :label="$t('label.current')">{{ $t(snapshot.current ? 'label.vmsnapshot.current.yes' : 'label.vmsnapshot.current.no') }} — {{ $t('message.vmsnapshot.current.reference') }}</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.parentname')">{{ snapshot.parentName || '—' }}<CopyLabel v-if="snapshot.parent" :label="snapshot.parent" /></a-descriptions-item>
+          <a-descriptions-item :label="$t('label.parentname')">{{ snapshot.parentName || '—' }}<span v-if="snapshot.parent"> · </span><CopyLabel v-if="snapshot.parent" :label="snapshot.parent" /></a-descriptions-item>
           </template>
         </a-descriptions>
 </template>
