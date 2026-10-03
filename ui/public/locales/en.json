@@ -8261,7 +8261,7 @@
   "label.vmsnapshot.restore.submit": "Restore this snapshot",
   "message.vmsnapshot.restore.memory.impact": "Restores every included disk and the saved memory state. Changes after the snapshot are lost; current VM execution is interrupted.",
   "message.vmsnapshot.restore.disk.impact": "Restores every included disk. Changes after the snapshot are lost. The VM must be stopped.",
-  "message.vmsnapshot.acknowledge": "I checked the target IDs and understand the impact.",
+  "message.vmsnapshot.acknowledge": "I checked the VM and snapshot and understand the impact.",
   "message.vmsnapshot.fresh.check": "VM, snapshot, permissions and active operations are checked again before submission. Deletes on the same VM run sequentially and stop after failure or an unknown job result.",
   "label.vmsnapshot.eligible": "Available",
   "label.vmsnapshot.eligibility": "Eligibility",
