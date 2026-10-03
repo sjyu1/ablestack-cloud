@@ -1262,8 +1262,10 @@ export default {
           return false
         }
         if (selectionCount > 0) {
-          // Hide group actions from toolbar; will be shown via context menu
-          return action.listView && !action.groupAction && ('show' in action ? action.show(this.resource, this.$store.getters) : true)
+          // Explicitly named bulk actions stay in the existing toolbar position.
+          const showExplicitGroup = action.groupAction && action.toolbarLabel &&
+            ('groupShow' in action ? action.groupShow(this.selectedItems, this.$store.getters) : true)
+          return showExplicitGroup || (action.listView && !action.groupAction && ('show' in action ? action.show(this.resource, this.$store.getters) : true))
         }
         const showOnList = action.listView && ('show' in action ? action.show(this.resource, this.$store.getters) : true)
         const showOnGroup = action.groupAction && selectionCount > 0 &&

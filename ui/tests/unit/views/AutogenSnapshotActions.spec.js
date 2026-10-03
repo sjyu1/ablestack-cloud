@@ -41,3 +41,13 @@ test('project changes during create preflight prevent POST', async () => {
   await expect(AutogenView.methods.postSnapshotAwareAction.call(context, action, {})).rejects.toThrow('message.vmsnapshot.permission')
   expect(postAPI).not.toHaveBeenCalled()
 })
+
+test('explicit snapshot bulk delete stays in the toolbar while existing unnamed group actions remain hidden', () => {
+  const create = { api: 'createVMSnapshot', listView: true }
+  const bulk = { api: 'deleteVMSnapshot', groupAction: true, toolbarLabel: 'label.vmsnapshot.selected.delete' }
+  const existingGroup = { api: 'stopVirtualMachine', groupAction: true }
+  const view = { actions: [create, bulk, existingGroup], dataView: false, selectedRowKeys: ['one', 'two'], selectedItems: [], resource: {}, $store: { getters: { apis: { createVMSnapshot: {}, deleteVMSnapshot: {}, stopVirtualMachine: {} } } } }
+  expect(AutogenView.computed.visibleListActions.call(view)).toEqual([create, bulk])
+  view.selectedRowKeys = []
+  expect(AutogenView.computed.visibleListActions.call(view)).toEqual([create])
+})
