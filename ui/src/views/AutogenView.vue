@@ -69,9 +69,9 @@
                     <a-select-option
                       v-for="filter in filters"
                       :key="filter"
-                      :label="$t('label.' + (['comment'].includes($route.name) ? 'filter.annotations.' : '') + filter)"
+                      :label="getFilterLabel(filter)"
                     >
-                      {{ $t('label.' + (['comment'].includes($route.name) ? 'filter.annotations.' : '') + filter) }}
+                      {{ getFilterLabel(filter) }}
                       <clock-circle-outlined
                         v-if="['comment'].includes($route.name) && !['Admin'].includes($store.getters.userInfo.roletype) && filter === 'all'"
                       />
@@ -1223,6 +1223,10 @@ export default {
       }).map(String)
     },
     filterValue () {
+      if (this.$route.meta?.defaultFilter) {
+        const value = String(this.$route.query.filter || this.$route.query.state || this.$route.meta.defaultFilter).toLowerCase()
+        return this.filters.includes(value) ? value : this.$route.meta.defaultFilter
+      }
       if (this.$route.query.filter) {
         return this.$route.query.filter
       }
@@ -1618,6 +1622,10 @@ export default {
             this.$store.getters.customColumns[this.$store.getters.userInfo.id][this.$route.path] = this.selectedColumns
           } else {
             this.selectedColumns = this.$store.getters.customColumns[this.$store.getters.userInfo.id][this.$route.path] || this.selectedColumns
+            if (this.$route.name === 'vmsnapshot') {
+              // Replace the former default domain column in saved selections as well.
+              this.selectedColumns = [...new Set(this.selectedColumns.map(key => key === 'domain' ? 'zonename' : key))]
+            }
             if (this.$store.getters.listAllProjects && !this.projectView) {
               this.selectedColumns.push('project')
             }
@@ -2628,6 +2636,10 @@ export default {
       }
       this.$store.getters.customColumns[this.$store.getters.userInfo.id][this.$route.path] = this.selectedColumns
       this.$store.dispatch('SetCustomColumns', this.$store.getters.customColumns)
+    },
+    getFilterLabel (filter) {
+      const key = this.$route.meta?.filterLabels?.[filter] || ('label.' + (this.$route.name === 'comment' ? 'filter.annotations.' : '') + filter)
+      return this.$t(key)
     },
     changeFilter (filter) {
       const query = Object.assign({}, this.$route.query)

@@ -679,15 +679,25 @@ export default {
           if (store.getters.listAllProjects) {
             fields.push('project')
           }
-          fields.push('domain')
         } else if (store.getters.listAllProjects) {
           fields.push('project')
         }
+        fields.push('zonename')
         return fields
       },
       details: ['name', 'id', 'displayname', 'description', 'type', 'current', 'parentName', 'virtualmachineid', 'virtualmachinename', 'account', 'domain', 'created'],
       searchFilters: ['virtualmachineid', 'type', 'current', 'name', 'domainid', 'account', 'tags'],
-      filters: () => ['ready', 'creating', 'allocated', 'reverting', 'expunging', 'error'],
+      defaultFilter: 'all',
+      filters: () => ['all', 'ready', 'creating', 'allocated', 'reverting', 'expunging', 'error'],
+      filterLabels: {
+        all: 'label.all',
+        ready: 'state.ready',
+        creating: 'state.creating',
+        allocated: 'state.allocated',
+        reverting: 'state.reverting',
+        expunging: 'state.expunging',
+        error: 'state.error'
+      },
       tabs: [
         {
           name: 'details',
