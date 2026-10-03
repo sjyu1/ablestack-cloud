@@ -68,7 +68,6 @@ import com.cloud.storage.GuestOSVO;
 import com.cloud.storage.Storage.ImageFormat;
 import com.cloud.storage.StoragePool;
 import com.cloud.storage.VolumeVO;
-import com.cloud.storage.VolumeDetailVO;
 import com.cloud.storage.InternalVmSnapshotAccounting;
 import com.cloud.storage.dao.VolumeDetailsDao;
 import com.cloud.service.dao.ServiceOfferingDao;
@@ -175,7 +174,13 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
             for (VolumeObjectTO volume : volumeTOs) {
                 virtual_size += volume.getSize();
                 VolumeVO volumeVO = volumeDao.findById(volume.getId());
-                prev_chain_size += volumeVO.getVmSnapshotChainSize() == null ? 0 : volumeVO.getVmSnapshotChainSize();
+                StoragePool pool = volumeVO.getPoolId() == null ? null : primaryDataStoreDao.findById(volumeVO.getPoolId());
+                // Usage events retain their existing per-snapshot nominal size.
+                // A legacy duplicate-allocation counter must not become a
+                // negative usage delta during the accounting transition.
+                if (!InternalVmSnapshotAccounting.applies(pool, userVm.getHypervisorType(), volumeVO.getFormat())) {
+                    prev_chain_size += volumeVO.getVmSnapshotChainSize() == null ? 0 : volumeVO.getVmSnapshotChainSize();
+                }
             }
 
             VMSnapshotTO current = null;
