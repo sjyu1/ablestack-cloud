@@ -61,10 +61,9 @@ test.each(['Admin', 'DomainAdmin', 'User'])('snapshot columns follow VM account/
   expect(snapshot.columns()).toContain('project')
 })
 
-test.each(['all', 'ready', 'self'])('snapshot filter tags exclude the internal %s selector value while preserving search conditions', filter => {
+test.each(['all', 'ready', 'self'])('snapshot filter tags exclude the %s selector and state already displayed in the dropdown while preserving search conditions', filter => {
   const query = { filter, state: 'Ready', current: 'true', account: 'account-a' }
   expect(AutogenView.computed.activeFiltersList.call(view(query))).toEqual([
-    { key: 'state', value: 'Ready', isTag: false },
     { key: 'current', value: 'true', isTag: false },
     { key: 'account', value: 'account-a', isTag: false }
   ])
