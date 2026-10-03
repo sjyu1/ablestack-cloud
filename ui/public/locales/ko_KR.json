@@ -5006,6 +5006,8 @@
   "state.allocated": "할당 됨",
   "state.free": "가능",
   "state.destroyed": "삭제 됨",
+  "message.vmsnapshot.list.empty": "현재 범위에 등록된 VM 스냅샷이 없습니다.",
+  "message.vmsnapshot.list.no.results": "검색 또는 필터 조건에 맞는 VM 스냅샷이 없습니다.",
   "state.creating": "생성 중",
   "state.reverting": "복원 중",
   "state.snapshotting": "스냅샷 중",

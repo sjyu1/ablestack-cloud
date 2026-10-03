@@ -5038,6 +5038,8 @@
   "state.allocated": "Allocated",
   "state.free": "Available",
   "state.destroyed": "Deleted",
+  "message.vmsnapshot.list.empty": "No VM snapshots registered in this scope.",
+  "message.vmsnapshot.list.no.results": "No VM snapshots match the current search or filters.",
   "state.creating": "Creating",
   "state.reverting": "Reverting",
   "state.snapshotting": "Snapshotting",

@@ -152,7 +152,7 @@ export default {
       const version = ++this.requestVersion
       this.loading = true; this.error = ''; this.selectedVm = null
       try {
-        const response = (await getAPI('listVirtualMachines', { listall: true, keyword: this.vmKeyword.trim() || undefined, page, pagesize: 20 })).listvirtualmachinesresponse
+        const response = (await getAPI('listVirtualMachines', { listall: true, keyword: this.vmKeyword.trim() || undefined, page, pagesize: 20 }, { preserveOnFailure: true })).listvirtualmachinesresponse
         if (!this.disposed && version === this.requestVersion) { this.vms = response.virtualmachine || []; this.vmTotal = response.count || 0; this.vmPage = page }
       } catch (error) { this.error = error.message } finally { if (version === this.requestVersion) this.loading = false }
     },

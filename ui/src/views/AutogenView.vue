@@ -827,6 +827,7 @@
         <p v-else-if="listRefreshError" role="status">{{ $t('message.list.refresh.stale') }}</p>
         <list-view
           :loading="loading"
+          :emptyText="snapshotEmptyText"
           :columns="columns"
           :items="items"
           :actions="actions"
@@ -1172,6 +1173,11 @@ export default {
     }
   },
   computed: {
+    snapshotEmptyText () {
+      if (this.$route.name !== 'vmsnapshot') return ''
+      const filtered = ['keyword', 'q', 'state', 'type', 'current', 'virtualmachineid', 'virtualmachineids', 'account', 'domainid'].some(key => this.$route.query[key] !== undefined && this.$route.query[key] !== '')
+      return this.$t(filtered ? 'message.vmsnapshot.list.no.results' : 'message.vmsnapshot.list.empty')
+    },
     snapshotSecurityScope () { return JSON.stringify([this.$store.getters.userInfo?.id, this.$store.getters.project?.id, this.$store.state?.user?.token]) },
     activeFiltersList () {
       const queryParams = Object.assign({}, this.$route.query)

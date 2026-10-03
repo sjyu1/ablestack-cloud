@@ -51,3 +51,8 @@ test('explicit snapshot bulk delete stays in the toolbar while existing unnamed 
   view.selectedRowKeys = []
   expect(AutogenView.computed.visibleListActions.call(view)).toEqual([create])
 })
+
+
+test.each([['vmsnapshot', {}, 'message.vmsnapshot.list.empty'], ['vmsnapshot', { current: 'false' }, 'message.vmsnapshot.list.no.results'], ['vmsnapshot', { keyword: 'missing' }, 'message.vmsnapshot.list.no.results'], ['vm', {}, '']])('empty state distinguishes %s %j', (name, query, expected) => {
+  expect(AutogenView.computed.snapshotEmptyText.call({ $route: { name, query }, $t: key => key })).toBe(expected)
+})

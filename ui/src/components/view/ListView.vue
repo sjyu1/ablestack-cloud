@@ -20,6 +20,7 @@
     <a-table
       size="middle"
       :loading="loading"
+      :locale="emptyText ? { emptyText } : undefined"
       :columns="isOrderUpdatable() ? columns : columns.filter(x => x.dataIndex !== 'order')"
       :dataSource="items"
       :rowKey="listRowKey"
@@ -1226,6 +1227,10 @@ export default {
     items: {
       type: Array,
       required: true
+    },
+    emptyText: {
+      type: String,
+      default: ''
     },
     loading: {
       type: Boolean,
