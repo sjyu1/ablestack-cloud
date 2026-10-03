@@ -1,0 +1,105 @@
+<!--
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements. See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership. The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied. See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Mold · VM 스냅샷 목록 개선안</title>
+<link rel="stylesheet" href="mockup.css">
+<script src="mockup.js" defer></script>
+</head>
+<body>
+<div class="designbar">
+  <span class="designlabel">UI 개선안</span><span>컴퓨트 · VM 스냅샷</span><span class="designnote">예시 데이터 · 실제 VM 작업 없음</span>
+  <label class="scenario-label" for="scenario">화면 상태</label>
+  <select id="scenario"><option value="normal">정상 목록</option><option value="loading">최초 로딩</option><option value="empty">등록된 스냅샷 없음</option><option value="error">조회 실패 · 이전 결과 유지</option><option value="partial">관계 데이터 일부 조회</option></select>
+  <button id="theme" class="designbutton" aria-label="라이트 테마로 전환">라이트 보기</button>
+</div>
+<div class="app" id="app">
+  <aside class="sidebar" aria-label="주 메뉴">
+    <div class="brand"><img class="logo-dark" src="assets/logo-dark.png" alt="ABLESTACK"><img class="logo-light" src="assets/logo-light.png" alt="ABLESTACK"><span>Mold</span></div>
+    <nav>
+      <button class="navitem"><span class="navicon">◫</span>대시보드</button>
+      <div class="navsection"><span class="navicon">☁</span>컴퓨트 <span class="navchevron">⌃</span></div>
+      <button class="navitem sub"><span class="navicon">▣</span>가상머신</button>
+      <button class="navitem sub active" aria-current="page"><span class="navicon">◉</span>VM 스냅샷</button>
+      <button class="navitem sub"><span class="navicon">⬡</span>쿠버네티스</button>
+      <button class="navitem sub"><span class="navicon">▦</span>오토스케일 VM 그룹</button>
+      <button class="navitem sub"><span class="navicon">◇</span>가상머신 그룹</button>
+      <button class="navitem sub"><span class="navicon">⚿</span>SSH 키 쌍</button>
+      <button class="navitem sub"><span class="navicon">▤</span>사용자 데이터 라이브러리</button>
+      <button class="navitem"><span class="navicon">▱</span>스토리지<span class="navchevron">⌄</span></button>
+      <button class="navitem"><span class="navicon">⌘</span>네트워크<span class="navchevron">⌄</span></button>
+      <button class="navitem"><span class="navicon">▧</span>이미지<span class="navchevron">⌄</span></button>
+      <button class="navitem"><span class="navicon">▢</span>키 관리<span class="navchevron">⌄</span></button>
+      <button class="navitem"><span class="navicon">▥</span>이벤트</button>
+      <button class="navitem"><span class="navicon">▣</span>인프라스트럭처<span class="navchevron">⌄</span></button>
+      <button class="navitem"><span class="navicon">⚙</span>구성<span class="navchevron">⌄</span></button>
+    </nav>
+    <div class="sidebarfoot"><span class="online-dot"></span>31번 클러스터<span>Europa</span></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span class="topmenu" aria-hidden="true">☰</span><button class="project">▣ &nbsp; 기본 보기 <span>⌄</span></button><div class="topspacer"></div><span class="topicon" aria-hidden="true">♧</span><span class="avatar">AC</span><span>admin cloud</span></header>
+    <main>
+      <div class="breadcrumbs"><span aria-hidden="true">⌂</span><span>컴퓨트</span><span>/</span><span>VM 스냅샷</span></div>
+      <div class="pageheading"><div><h1>VM 스냅샷</h1><p>VM의 복원 지점을 찾고, 상태와 관계를 확인하세요.</p></div><button id="help" class="textbutton">VM 스냅샷 도움말 <span aria-hidden="true">ⓘ</span></button></div>
+      <section class="panel" aria-label="VM 스냅샷 목록">
+        <div class="toolbar"><button id="create" class="primary"><span aria-hidden="true">＋</span> 스냅샷 생성</button><button id="refresh"><span aria-hidden="true">↻</span> 새로고침</button><span id="updated" class="muted">마지막 조회 · 14:30:00</span><div class="toolbarspacer"></div><div class="viewtoggle" role="group" aria-label="보기 방식"><button id="list-view" class="selected" aria-pressed="true">목록</button><button id="tree-view" aria-pressed="false">VM별 관계</button></div><button id="columns" aria-expanded="false">열 설정 ▾</button></div>
+        <div id="columnsettings" class="columnsettings" hidden><strong>추가 정보</strong><label><input id="owner-column" type="checkbox"> 계정 · 도메인</label><label><input id="zone-column" type="checkbox"> Zone</label></div>
+        <form id="filters" class="filters" role="search">
+          <div class="searchbox"><span aria-hidden="true">⌕</span><input id="search" aria-label="VM 및 스냅샷 검색" placeholder="VM · 스냅샷 이름 또는 설명 검색"><button id="clear-search" type="button" aria-label="검색어 지우기" hidden>×</button></div>
+          <label><span class="sr-only">VM 선택</span><select id="vm-filter" aria-label="VM 선택"><option value="">모든 VM</option></select></label>
+          <label><span class="sr-only">상태</span><select id="state-filter" aria-label="상태"><option value="">모든 상태</option><option value="Ready">사용 가능</option><option value="Creating">생성 중</option><option value="Error">오류</option></select></label>
+          <label><span class="sr-only">유형</span><select id="type-filter" aria-label="유형"><option value="">모든 유형</option><option value="DiskAndMemory">디스크 + 메모리</option><option value="Disk">디스크</option></select></label>
+          <label><span class="sr-only">현재 기준점</span><select id="current-filter" aria-label="현재 기준점"><option value="">전체 기준점</option><option value="true">현재 기준점</option><option value="false">이전 기준점</option></select></label>
+          <button id="reset-filters" class="textbutton" type="button">초기화</button>
+        </form>
+        <div id="notice" aria-live="polite"></div>
+        <div class="listmeta"><strong id="resultcount">조회 결과 16개</strong><span id="activefilters" class="muted"></span><span class="meta-right"><span id="sortdescription">생성일 최신순</span> · Asia/Seoul (UTC+09:00)</span></div>
+        <div id="selectionbar" class="selectionbar" hidden><strong id="selectioncount"></strong><span>선택한 항목에만 적용</span><button id="bulk-delete" class="danger-outline">선택 삭제</button><button id="clear-selection" class="textbutton">선택 해제</button></div>
+        <div id="tablewrap" class="tablewrap">
+          <table><caption class="sr-only">VM 스냅샷 목록. 행 작업은 해당 행만 대상으로 합니다.</caption><thead><tr>
+            <th class="checkcell"><input id="select-page" type="checkbox" aria-label="현재 페이지 모두 선택"></th>
+            <th class="namecol"><button class="sortbutton" data-sort="title">스냅샷 이름 <span>↕</span></button></th>
+            <th class="vmcol"><button class="sortbutton" data-sort="vm">VM <span>↕</span></button></th>
+            <th class="statecol">상태</th><th class="typecol">유형</th><th class="currentcol"><span class="currentheader" title="Cloud 스냅샷 체인에서 현재로 표시된 항목입니다. 최신 생성 항목이나 현재 VM의 모든 변경 내용이 포함되었다는 보장은 아닙니다.">현재 기준점 ⓘ</span></th>
+            <th class="datecol"><button class="sortbutton" data-sort="created">생성일 <span id="datearrow">↓</span></button></th>
+            <th class="optional-owner" hidden>계정 · 도메인</th><th class="optional-zone" hidden>Zone</th><th class="actioncol">작업</th>
+          </tr></thead><tbody id="rows"></tbody></table>
+        </div>
+        <div id="treewrap" hidden></div>
+        <div id="pagination" class="pagination"><span id="pagerange" class="muted"></span><div><button id="prev" aria-label="이전 페이지">‹</button><span id="pages"></span><button id="next" aria-label="다음 페이지">›</button><select id="page-size" aria-label="페이지 크기"><option value="6">6개 / 페이지</option><option value="10">10개 / 페이지</option><option value="20">20개 / 페이지</option></select></div></div>
+      </section>
+      <p class="pagefoot">현재 기준점은 스냅샷 체인의 기준 표시입니다. VM의 최신 변경 내용이 포함되었다는 의미는 아닙니다.</p>
+    </main>
+  </div>
+</div>
+<div id="actionmenu" class="actionmenu" role="menu" aria-label="스냅샷 작업" hidden></div>
+<div id="overlay" class="overlay" hidden>
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogtitle" aria-describedby="dialogdescription">
+    <div class="dialoghead"><div><p id="dialogeyebrow"></p><h2 id="dialogtitle"></h2></div><button id="close-dialog" class="closebutton" aria-label="대화상자 닫기">×</button></div>
+    <div id="dialogbody" class="dialogbody"></div>
+    <div class="dialogfoot"><button id="cancel-dialog">취소</button><button id="confirm-dialog" class="primary">확인</button></div>
+  </section>
+</div>
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

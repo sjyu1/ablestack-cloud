@@ -1,0 +1,57 @@
+<!--
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements. See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership. The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied. See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+
+# 목업 검증 기록
+
+검증일: 2026-10-03. 대상은 이 디렉터리의 standalone HTML/CSS/JS 목업이다.
+최종 동기화 기준은 upstream Europa b31026f919856a1b61c1f86dca450e16ac0673e1이다. 작업 중 새로 반영된 #1215와 초기 기준 사이에서 분석 대상 VM 스냅샷 목록·strategy·capacity 계산 파일은 변경되지 않았다. 새 스토리지 선택 API의 동일 계산 사용도 확인했다.
+실제 Vue/Java 구현이나 배포 환경의 E2E 결과가 아니다. Chromium 브라우저에서 예시 16개 데이터를 사용했다.
+
+## 확인 결과
+
+| 항목 | 관찰 결과 |
+|---|---|
+| Windows11-Process 검색 | 조회 결과 1개. 예시 배열 전체의 VM 이름 검색 |
+| A 선택 후 B 우클릭 | Windows11 체크 유지 중 Debian13 행 우클릭 → Debian13 이름/내부 VM 이름과 해당 행 적용 안내 표시 |
+| 유형·VM 상태 제약 | 정지된 Debian13의 메모리 포함 복원 메뉴가 비활성화되고 시작 필요 사유 표시 |
+| 복원 확인 | Windows11/UUID/시각/유형/상태/영향 표시. 확인 체크 전 최종 버튼 비활성, 체크 후 활성 |
+| 선택 삭제 | Windows11 + Debian13 2개 대상이 대화상자에 일치. 원본 VM 삭제가 아닌 복원 지점 삭제와 순차 처리 영향 안내 |
+| 선택 삭제 차단 | Windows11 + 생성 중 Windows25 선택 → Windows25 진행 중 사유 표시, 전체 제출 비활성 |
+| 정렬·페이징 | VM 이름 오름차순 지정 후 2페이지 7–12개 표시. 이 결과는 예시 배열 정렬이며 서버 정렬 검증은 S3/S6에서 수행 |
+| VM 관계 | W2025 예시 3개/현재 기준점/부모 상세 표시. 목록 필터와 별도의 VM 전체 조회 범위 명시 |
+| 부분 관계 | 2개 예시 노드/미완성 안내, 연결선 생략과 복원 비활성, 다시 조회 제공 |
+| 로딩·빈 목록 | 각각 별도 문구. 조회 실패는 이전 결과를 유지하며 다시 시도 제공 |
+| 테마 | 다크/라이트 목록과 대화상자를 화면에서 검토하고 캡처 |
+| 포커스 | 차단된 다중 삭제창에서 Tab → close-dialog, Shift+Tab → cancel-dialog, Escape → bulk-delete로 복귀 |
+| JS 문법·콘솔 | Node --check 통과. 브라우저 warn/error 로그 0건 |
+
+화면 이미지: 01 다크 목록, 02 행 대상 메뉴, 03 복원 확인창, 04 선택 삭제, 05 VM 관계, 06 라이트 목록, 07 선택 삭제 차단.
+모두 예시 데이터의 실제 브라우저 캡처이다. 현재 클러스터 상태나 작업 성공 증거로 해석하지 않는다.
+
+## 제한 및 이후 검증
+
+브라우저 viewport capability에 1366×768/390×844를 요청했지만 DOM 관찰은 1920×855로 유지되어, 해당 breakpoint 검증은 미완료로 기록한다. 반응형 CSS는 작성되어 있으나 모바일 통과를 주장하지 않는다. Full-page 캡처는 도구 timeout으로 완료되지 않아 정상 viewport 캡처를 사용했다.
+
+정식 제품의 API/ACL/async job/최신 상태 재검증/실제 복원·삭제, Maven/UI production build, 배포, provider 물리 통계와 DB 용량 전환은 미수행이다.
+실제 서버 검색·정렬, 누락 부모/순환/대규모 관계, 25개 이상 데이터, 모든 권한·테마·반응형·텍스트 대비 및 회귀는 하위 이슈 #1223에서 검증한다.
+
+## 31번 읽기 검토
+
+기존 목록의 잘못된 우클릭 대상, 대상 없는 복원 확인창, VM 이름 검색 실패를 관찰했다. 대화상자를 취소했으며 복원·삭제를 실행하지 않았다.
+1차 Primary 상세의 사용 9.06%/할당 75.66%와 최신 소스 계산 경로를 확인했다. 생성 전후 증분/배포 JAR 동일성/DB chain 합산/실제 풀 통계 검증은 아직 하지 않았다. [용량 분석](storage-accounting.ko.md)에 근거와 범위를 기록했다.
