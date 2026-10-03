@@ -476,6 +476,7 @@
           :spinning="actionLoading"
           v-ctrl-enter="handleSubmit"
         >
+          <VmSnapshotSummary v-if="currentAction.api === 'createVMSnapshot'" vm-only :snapshot="{ virtualmachineid: currentAction.resource.id, virtualmachinename: currentAction.resource.displayname || currentAction.resource.name, virtualmachineinstancename: currentAction.resource.instancename, virtualmachinestate: currentAction.resource.state }" />
           <span v-if="currentAction.message">
             <div v-if="selectedRowKeys.length > 0 && currentAction.invokedAsGroupAction">
               <a-alert
@@ -876,6 +877,9 @@ import { createListRefresh, listRowKey, canRefreshList } from '@/utils/listRefre
 import { ref, reactive, toRaw, h } from 'vue'
 import { Button } from 'ant-design-vue'
 import { getAPI, postAPI, callAPI } from '@/api'
+import { freshSnapshotContext } from '@/utils/vmSnapshotList'
+import { snapshotBusy, snapshotSubmissions } from '@/utils/vmSnapshotActions'
+import VmSnapshotSummary from '@/components/view/VmSnapshotSummary'
 import { mixinDevice } from '@/utils/mixin.js'
 import { genericCompare } from '@/utils/sort.js'
 import { sourceToken } from '@/utils/request'
@@ -903,6 +907,7 @@ export default {
     ResourceView,
     ListView,
     ActionButton,
+    VmSnapshotSummary,
     SearchView,
     SearchFilter,
     BulkActionProgress,
@@ -1120,6 +1125,9 @@ export default {
     next()
   },
   watch: {
+    snapshotSecurityScope () {
+      if (['createVMSnapshot', 'revertToVMSnapshot', 'deleteVMSnapshot', 'createSnapshotFromVMSnapshot'].includes(this.currentAction.api)) this.closeAction()
+    },
     '$route' (to, from) {
       if (to.fullPath !== from.fullPath && !to.path.startsWith('/action/') && to?.query?.tab !== 'browser') {
         this.resetSelection()
@@ -1164,6 +1172,7 @@ export default {
     }
   },
   computed: {
+    snapshotSecurityScope () { return JSON.stringify([this.$store.getters.userInfo?.id, this.$store.getters.project?.id, this.$store.state?.user?.token]) },
     activeFiltersList () {
       const queryParams = Object.assign({}, this.$route.query)
       const activeFilters = []
@@ -1921,6 +1930,7 @@ export default {
       this.execAction(action, false)
     },
     execAction (action, isGroupAction) {
+      if (action.api === 'createVMSnapshot') action = { ...action, resource: Object.freeze({ ...action.resource }) }
       if (action.snapshotMode) {
         this.currentAction = { ...action, invokedAsGroupAction: !!isGroupAction, snapshotTargets: Object.freeze((isGroupAction ? this.selectedItems : [action.resource]).filter(Boolean).map(row => Object.freeze({ ...row }))) }
         this.resource = action.resource || {}
@@ -2405,6 +2415,19 @@ export default {
         resolve(false)
       })
     },
+    async postSnapshotAwareAction (action, params) {
+      if (action.api !== 'createVMSnapshot') return postAPI(action.api, params)
+      const security = JSON.stringify([this.$store.getters.userInfo?.id, this.$store.getters.project?.id, this.$store.state?.user?.token])
+      const id = action.resource.id
+      const [context] = await freshSnapshotContext(getAPI, [{ virtualmachineid: id }], 'listBackups' in this.$store.getters.apis)
+      const vm = context.vm
+      if (security !== JSON.stringify([this.$store.getters.userInfo?.id, this.$store.getters.project?.id, this.$store.state?.user?.token]) || !('createVMSnapshot' in this.$store.getters.apis)) throw new Error(this.$t('message.vmsnapshot.permission'))
+      if (!vm || !action.show(vm, this.$store.getters)) throw new Error(this.$t('message.vmsnapshot.vm.state'))
+      if (context.busy || snapshotBusy(id) || action.disabled(vm, this.$store.getters, [])) throw new Error(this.$t(vm.vmsnapshotblockedreason ? 'message.backup.snapshot.snapshot.blocked' : 'message.vmsnapshot.busy'))
+      const submission = Symbol(id)
+      snapshotSubmissions[id] = submission
+      try { return await postAPI(action.api, { ...params, virtualmachineid: id }) } finally { if (snapshotSubmissions[id] === submission) delete snapshotSubmissions[id] }
+    },
     execSubmit (e) {
       e.preventDefault()
       this.formRef.value.validate().then(() => {
@@ -2518,8 +2541,7 @@ export default {
 
         var hasJobId = false
         this.actionLoading = true
-        const args = [action.api, params]
-        postAPI(...args).then(json => {
+        this.postSnapshotAwareAction(action, params).then(json => {
           var response = this.handleResponse(json, resourceName, this.getDataIdentifier(params), action)
           if (!response) {
             this.fetchData()

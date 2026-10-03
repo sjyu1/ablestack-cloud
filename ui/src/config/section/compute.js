@@ -739,6 +739,7 @@ export default {
         },
         {
           api: 'createSnapshotFromVMSnapshot',
+          selfManagedDialog: true,
           disabled: record => !!snapshotActionReason('createSnapshotFromVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           tooltip: record => snapshotActionReason('createSnapshotFromVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           icon: 'camera-outlined',

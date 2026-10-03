@@ -72,9 +72,7 @@
         <a-button type="primary" :danger="actionApi === 'deleteVMSnapshot'" :loading="submitting" :disabled="!acknowledged || !!confirmationReason" @click="submitAction">{{ $t(actionApi === 'deleteVMSnapshot' ? actionLabel : 'label.vmsnapshot.restore.submit') }}</a-button>
       </template>
     </MoldDialog>
-    <a-modal :visible="!!volumeSnapshot" :title="$t('label.action.create.snapshot.from.vmsnapshot')" :footer="null" @cancel="volumeSnapshot = null">
-      <CreateSnapshotFromVMSnapshot v-if="volumeSnapshot" full-width :resource="volumeSnapshot" @close-action="volumeSnapshot = null" />
-    </a-modal>
+    <CreateSnapshotFromVMSnapshot v-if="volumeSnapshot" full-width :resource="volumeSnapshot" @close-action="volumeSnapshot = null" />
   </div>
 </template>
 

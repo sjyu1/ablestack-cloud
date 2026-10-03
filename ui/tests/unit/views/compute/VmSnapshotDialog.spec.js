@@ -4,6 +4,7 @@
 // a copy at http://www.apache.org/licenses/LICENSE-2.0 . Distributed on an
 // "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
 import { shallowMount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import VmSnapshotDialog from '@/views/compute/VmSnapshotDialog'
 import { getAPI, postAPI } from '@/api'
 import { clearSnapshotJobs } from '@/utils/vmSnapshotActions'
@@ -16,7 +17,7 @@ let poll
 function mount (mode = 'delete', targets = [Object.freeze({ ...row })]) {
   return shallowMount(VmSnapshotDialog, {
     props: { resource: row, currentAction: { snapshotMode: mode, snapshotTargets: Object.freeze(targets) } },
-    global: { mocks: { $store: { getters: { apis: { listVMSnapshot: {}, listVirtualMachines: {}, revertToVMSnapshot: {}, deleteVMSnapshot: {} }, userInfo: { id: 'user' }, project: {} }, state: { user: { token: 'token' } } }, $route: { path: '/vmsnapshot', fullPath: '/vmsnapshot' }, $t: key => key, $toLocaleDate: value => value, $notifyError: jest.fn(), $pollJob: poll } }
+    global: { mocks: { $store: reactive({ getters: { apis: { listVMSnapshot: {}, listVirtualMachines: {}, revertToVMSnapshot: {}, deleteVMSnapshot: {} }, userInfo: { id: 'user' }, project: {} }, state: { user: { token: 'token' } } }), $route: { path: '/vmsnapshot', fullPath: '/vmsnapshot' }, $t: key => key, $toLocaleDate: value => value, $notifyError: jest.fn(), $pollJob: poll } }
   })
 }
 beforeEach(() => {

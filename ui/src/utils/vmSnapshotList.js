@@ -42,7 +42,8 @@ export function snapshotRelationTree (rows) {
 }
 
 export async function freshSnapshotContext (get, targets, checkBackups = false) {
-  const snapshots = (await get('listVMSnapshot', { vmsnapshotids: targets.map(row => row.id).join(','), listall: true, pagesize: targets.length })).listvmsnapshotresponse.vmSnapshot || []
+  const ids = targets.filter(row => row.id).map(row => row.id)
+  const snapshots = ids.length ? (await get('listVMSnapshot', { vmsnapshotids: ids.join(','), listall: true, pagesize: ids.length })).listvmsnapshotresponse.vmSnapshot || [] : []
   const vmIds = [...new Set(targets.map(row => row.virtualmachineid))]
   const vms = (await get('listVirtualMachines', { ids: vmIds.join(','), listall: true, pagesize: vmIds.length })).listvirtualmachinesresponse.virtualmachine || []
   // Fetch VM-wide transitional snapshots as well, independently of list filters.

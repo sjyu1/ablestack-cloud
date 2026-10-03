@@ -106,7 +106,7 @@ export default {
     createDefinition () { return compute.children.find(item => item.name === 'vm').actions.find(action => action.api === 'createVMSnapshot') },
     createReason () { return !this.selectedVm ? '' : !this.createDefinition.show(this.selectedVm, this.$store.getters) ? 'message.vmsnapshot.vm.state' : this.createDefinition.disabled(this.selectedVm, this.$store.getters, []) ? (this.createDefinition.tooltip(this.selectedVm, this.$store.getters, []) || 'message.vmsnapshot.busy') : '' }
   },
-  watch: { security () { this.close() } },
+  watch: { security () { this.disposed = true; this.requestVersion++; this.$emit('close-action') } },
   created () { this.reload() },
   beforeUnmount () { this.disposed = true; this.requestVersion++ },
   methods: {
@@ -171,6 +171,7 @@ export default {
         const response = await postAPI(this.api, { vmsnapshotid: target.id })
         const jobId = response[this.api.toLowerCase() + 'response']?.jobid
         if (!jobId) throw new Error(this.$t('message.job.result.unknown'))
+        if (security !== this.security) return { jobstatus: null, trackingStatus: 'unknown', jobid: jobId }
         const job = await this.$pollJob({ jobId, originalPage: this.$route.path, title: this.$t(this.title), description: target.displayname || target.name, resourceId: target.id, action: { api: this.api, resource: target, isFetchData: false }, successMethod: () => { if (this.parentFetchData && !this.disposed) this.parentFetchData({ irefresh: true }) } })
         return { ...job, jobid: jobId }
       } finally { if (snapshotSubmissions[vmId] === submission) delete snapshotSubmissions[vmId] }
