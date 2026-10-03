@@ -693,13 +693,11 @@
   .ant-descriptions {
     color: @dark-text-color-4;
     &-title, &-item-label, &-item-content { color: @dark-text-color-4; }
-    &-bordered &-view { border-color: @dark-border-color; }
-    &-bordered &-row { border-color: @dark-border-color; }
-    &-bordered &-item-label {
-      background-color: @dark-bgColor;
-      border-color: @dark-border-color;
-    }
-    &-bordered &-item-content { border-color: @dark-border-color; }
+  }
+  .ant-descriptions-bordered {
+    .ant-descriptions-view, .ant-descriptions-row,
+    .ant-descriptions-item-label, .ant-descriptions-item-content { border-color: @dark-border-color; }
+    .ant-descriptions-item-label { background-color: @dark-bgColor; }
   }
   .ant-picker-input > input {
     color: @dark-text-color-3;

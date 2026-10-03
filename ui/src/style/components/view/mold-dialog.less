@@ -36,3 +36,19 @@
   .mold-dialog { max-width: calc(100vw - 16px); margin: 0 auto; }
   .mold-dialog .ant-modal-content { max-height: calc(100dvh - 24px); }
 }
+
+.dark-mode .mold-dialog .ant-btn-primary:not(:disabled) {
+  background-color: darken(@primary-color, 15%);
+  border-color: darken(@primary-color, 15%);
+  color: contrast(darken(@primary-color, 15%), #161b22, #fff, 20%);
+  &:hover, &:focus {
+    background-color: darken(@primary-color, 12%);
+    border-color: darken(@primary-color, 12%);
+    color: contrast(darken(@primary-color, 12%), #161b22, #fff, 20%);
+  }
+  &.ant-btn-dangerous {
+    background-color: darken(@error-color, 12%);
+    border-color: darken(@error-color, 12%);
+    color: contrast(darken(@error-color, 12%), #161b22, #fff, 20%);
+  }
+}
