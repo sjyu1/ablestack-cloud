@@ -19,7 +19,7 @@ under the License.
 
 # VM 스냅샷 Epic #1216: 구현 및 검증 기록
 
-최종 통합 PR은 #1217~#1223의 검증을 완료한 뒤 생성한다. 이 문서는 배포 전 기록이며, 미실행 항목을 완료로 취급하지 않는다.
+Epic #1216과 하위 #1217~#1223의 구현·빌드·31번 배포·검증 기록이다. 자동 검증과 실환경에서 실행한 범위를 구분하며, 미실행 항목을 실환경 성공으로 취급하지 않는다.
 
 ## 구현 계약
 
@@ -65,6 +65,7 @@ source /home/ablecloud/work/dhslove/europa-build-env.sh
 cd /home/ablecloud/work/dhslove/ablestack-cloud-epic-1216
 mvn -B -pl api,engine/schema,server,engine/storage/snapshot install
 cd ui
+unset NODE_OPTIONS
 npm ci --ignore-scripts --no-audit --no-fund
 npm run lint
 npm run test:unit -- --runInBand \
@@ -78,51 +79,88 @@ UI는 `/usr/share/cloudstack-management/webapp`의 정적 파일만 업데이트
 
 복구 시 백업한 JAR을 원래 경로에 되돌리고 서비스를 재시작한다. 정적 파일은 개별 백업에서 복구한다. DB를 보존하는 배포이므로 배포 복구에 DB 카운터 복원이 필요하지 않다.
 
-## 31번 검증 상태
+## 31번 배포와 검증 결과
 
-- 관리 서버 `10.10.31.10`, SSH 22, Mold active, `/client/` HTTP 200, WEB-INF 존재를 배포 전 확인했다.
-- 활성 스냅샷은 16개이며 모두 Ready/DiskAndMemory이다. 관리되지 않는 SharedMountPoint 풀과 CLVM/CLVM_NG 풀이 있다.
-- 기존 양수 카운터 14개, 합계 1,717,986,918,400 bytes를 read-only 감사에서 확인했다. 실제 물리 사용량이나 전체 할당량 차이를 이 수치만으로 설명하지 않는다.
-- 생성한 전용 시험 VM: `epic1216-a` (`47fbae47-18cb-43d7-b00b-f14080bf9a2f`), `epic1216-b` (`5e6a5131-d75e-48af-be7e-70caa6460c03`), `epic1216-c` (`3b6b4c34-1d7d-4765-87ef-769420088670`). 세 VM 모두 Stopped로 생성했다. 기존 사용자 VM에 복원·삭제를 실행하지 않았다.
-- API·스키마·서버·스냅샷 네 모듈의 전체 단위 테스트 및 모듈 install이 통과했다. 상세 결과는 아래 표에 기록한다. 최종 UI 프로덕션 빌드도 통과했다. 이는 31번 배포·기능 검증 완료를 뜻하지 않는다.
-- 배포 실행은 자동 승인 검토에 두 번 차단됐다. 첫 명령은 카운터 전환을 포함했고 두 번째 명령은 DB를 보존했으나 동일한 `blocked by policy`가 반환됐다. 실제 배포가 성공한 것으로 취급하지 않는다.
+2026-10-03, 관리 서버 `10.10.31.10` 및 호스트 31.2/31.3에서 검증했다. upstream Europa를 다시 fetch하여 기준 commit `b31026f919856a1b61c1f86dca450e16ac0673e1`과 같음을 확인했다. 기존 사용자 VM은 읽기만 수행했고, 복원·삭제·추출은 이 Epic의 전용 시험 자원에서 수행했다.
 
-## 배포 전 완료한 검증과 산출물
+### 빌드 범위
 
 | 검사 | 결과 |
 | --- | --- |
-| API 전체 단위 테스트 | 1,025개, 실패 0, 오류 0 |
-| 스키마 전체 단위 테스트 | 410개, 실패 0, 오류 0 |
-| 서버 전체 단위 테스트 | 3,905개, 실패 0, 오류 0, 기존 skip 5개 |
-| 스냅샷 모듈 전체 단위 테스트 | 67개, 실패 0, 오류 0 |
-| UI 관련 회귀 테스트 | 11개 suite, 176개 통과 |
-| UI lint / production build | 통과. 기존 번들 크기 관련 경고 2건, Browserslist 데이터 갱신 안내가 있다. |
-| Apache RAT | 실제 CI 명령을 tracked-source archive에서 실행. 미승인 0, unknown 0 |
-| 카운터 감사 도구 단위 테스트 | 4개 통과. 실제 DB apply/rollback은 미실행 |
+| API 모듈 install / 전체 단위 테스트 | 1,025개, 실패 0, 오류 0 |
+| 스키마 모듈 install / 전체 단위 테스트 | 410개, 실패 0, 오류 0 |
+| 서버 모듈 install / 전체 단위 테스트 | 3,905개, 실패 0, 오류 0, 기존 skip 5개 |
+| 스냅샷 모듈 install / 전체 단위 테스트 | 68개, 실패 0, 오류 0 |
+| UI 회귀 | 17 suites, 260개 통과 |
+| UI 변경 파일 lint / production build | 통과. 기존 번들 크기 관련 경고 2건과 Browserslist 안내가 있다. |
+| 카운터 전환 Python 단위 테스트 | 4개 통과 |
+| MySQL 전환 통합 검증 | 격리 fixture DB에서 실제 SQL apply/재실행/rollback/재실행, 출처·resize·migration·스냅샷 변경 거부 검증. fixture DB 제거 완료 |
+| Apache RAT | 최종 tracked-source archive에서 CI와 같은 RAT 명령 실행. 결과는 최종 배포 기록에 기재 |
 
-WSL ext4에서 module install 및 테스트를 수행했다. API/서버 전체 실행 로그는 `module-build-10-all-tests.log`, 스키마는 `module-build-9-all-tests.log`, 최종 스냅샷은 `module-build-12-snapshot.log`이다. UI는 `ui-lint-8.log`, `ui-tests-8.log`, `ui-build-final.log`, RAT는 `license-check-3.log`이다. 이 로그와 인증을 제외한 산출물은 `/home/ablecloud/work/vm-snapshot-epic-1216`에 유지한다. 전체 Cloud 빌드와 GitHub Actions CI는 실행하지 않았다.
+Maven 테스트 합계는 5,408개이며 실패·오류는 0, skip은 5개이다. 로그: `module-build-10-all-tests.log` (API/서버), `module-build-9-all-tests.log` (스키마), `module-build-14-snapshot.log` (최종 스냅샷), `ui-tests-final-9.log`, `ui-lint-final-9.log`, `ui-build-final-9.log`. WSL ext4에서 실행했다. 전체 Cloud 빌드와 수동 GitHub Actions full build는 실행하지 않았다.
 
-전체 테스트에서 최신 upstream ISO 기본값(2)을 과거 기본값(1)로 기대하던 fixture를 수정했고, 스냅샷 Spring 테스트 두 곳에 신규 DAO mock bean을 등록했다. 운영 ISO 동작을 변경하지 않았다.
+서버 전체 테스트에서 upstream ISO 기본값 2를 과거 기본값 1로 기대하던 fixture를 수정했다. 운영 ISO 동작은 변경하지 않았다. 제품 버전은 lockfile의 Vue/compiler-sfc 3.2.37, Ant Design Vue 3.2.20이며 별도 목업과 배포 제품을 구분한다.
 
-제품 의존성은 pinned lockfile로 설치한 Vue/compiler-sfc 3.2.37, Ant Design Vue 3.2.20이다. UI 빌드 이후 자동 생성 config 변경이 남아 있지 않음을 확인했다. 목업 번들은 별도 설계 산출물이며 제품 빌드와 버전·검증 범위를 구분한다.
+### 실제 용량과 스냅샷 동작
 
-배포 디렉터리: `/home/ablecloud/work/vm-snapshot-epic-1216/deployment`.
+| 항목 | 실제 검증 |
+| --- | --- |
+| 기존 데이터 재계산 | 양수 legacy 카운터 14개의 합계 1,717,986,918,400 B를 보존. Primary 논리 할당량이 6,052,431,595,232 → 4,334,444,676,832 B로 정확히 이 합계만큼 줄었다. 배포 전후 61개 볼륨과 기존 16개 스냅샷 DB 값은 동일 |
+| 다른 풀 | CLVM / CLVM_NG는 각각 230,477,004,800 B로 유지 |
+| 새 시험 볼륨 | A/B/C 및 ACL용 3개, 각 root 100 GiB. 실제 볼륨 6개만큼 증가하여 Primary 4,978,689,969,440 B. 내부 스냅샷 생성·복원·삭제로 반복 증가하지 않음 |
+| 게스트 복원 | A에 marker/16 MiB payload 1 기록 → A1 → payload 2/A2 → A1 복원. QGA로 marker 1과 원래 payload SHA-256 일치 및 payload 2와 다름 확인. 이어 A1에서 A3 분기 생성, parent/current/DB/provider 대조 |
+| 실제 물리 사용 | A qcow2 파일 7,000,080,384 → A1 7,661,678,592 → A2 8,342,761,472 → A3 9,025,028,096 B. C의 UI 메모리 스냅샷은 vm-state-size 1,212,637,415 B. RAM/COW 사용을 0으로 취급하지 않음 |
+| 단일 대상 | A 체크/B 우클릭 상태에서 B 복원과 B 중간 삭제 각각 POST 1회, B UUID만 전달. 다른 A 스냅샷은 보존 |
+| 선택 삭제 | B 2개/C 3개를 UI에서 삭제. POST 정확히 5회, 같은 VM 직렬/다른 VM 최대 2개 병렬, 이중 클릭 중복 없음. 결과 5개 성공 및 job ID 표시. DB/provider에서 B/C 체인 제거, 논리 할당량 유지 |
+| 물리 회수 | 삭제 전후 B 7,967,473,664 → 7,522,471,936 B, C 8,773,877,760 → 6,871,363,584 B. 가상 크기 100 GiB와 회수량을 동일시하지 않음 |
+| 생성 UI | B Disk 생성 job `372c6f7e-2cfa-4c4c-98a6-11b4e50daa5a`, C DiskAndMemory 생성 job `8bda3a34-51eb-4145-b188-0022e3486fe3` 성공. 각각 POST 1회, C Cloud Ready와 libvirt/qcow2 provider 일치, 논리 할당량 유지. B Disk는 Cloud Ready/연결된 volume snapshot과 Primary Ready 참조를 확인했으며, libvirt 내부 스냅샷 성공으로 보고하지 않음 |
+| 볼륨 추출 UI | C snapshot `1badd54f-295f-4e6d-89c8-920f92620c6e` / 소유 volume `bfd1919a-8589-4c67-bb8a-1b5b428280b5`로 POST 1회. job `5331ccee-3500-4998-9068-45871fce35a4` 성공. 결과 snapshot `51df57e9-bed5-4c4d-bce9-351d32e6dfda` BackedUp/Image Ready. 실제 secondary qcow2 virtual 107,374,182,400 B / 파일 크기 6,910,246,912 B / 디스크 점유 6,922,641,408 B 확인 |
+| 공간 부족 | 풀 임계치를 일시적으로 0.01로 설정한 시험은 최신 실제 통계에서 거부. agent/provider에 새 스냅샷 없음. 원래 임계치 0.85 복구 확인. logical over-provisioning으로 우회하지 않음 |
+| 동일 풀 동시 생성 | ACL 시험 VM A/B의 메모리 생성 요청을 1ms 이내에 함께 시작, 두 job 성공. 동일 풀 논리 할당량 4,978,689,969,440 B 유지. job `cde49624-743a-4741-ab42-f0ac9b435f2f` / `2c142a00-c435-4456-a8fc-31e98b77cd95` |
+| 상태 경쟁 | Running A의 메모리 복원창을 연 후 Cloud API로 Stopped 확인. 최종 버튼에서 fresh 조회로 start-first 거부, restore POST 0회. 이후 A를 다시 Running으로 복구 |
+| 목록/상세/배치 | Primary list/detail 모두 4,978,689,969,440 B (4,636.77 GiB / 62.24%). listDeploymentStoragePools 및 capacity DB와 동일. 100 GiB 배치 적합성·물리 가용량·3개 호스트 후보 확인. 경보·allocator는 동일 CapacityManager 계산 경로를 사용하며 별도 용량 수식을 추가하지 않음 |
 
-- 소스 기준: `e5ea705eb43fc77a33c4df806bd672a2cb021a9c`; upstream Europa: `b31026f919856a1b61c1f86dca450e16ac0673e1`.
-- UI 기능 소스: `f81bb3f37f9`; 이후 커밋은 설계 라이선스와 테스트 fixture뿐이며 제품 UI 변경은 없다.
-- `backend-overlay.zip`: 변경 클래스/내부 클래스 20개. SHA-256 `86e00466a0a27823863b609d602c0539c3816da1337664ea1917bc6dd6f736b6`.
-- `ui-static.tgz`: 정적 파일 834개. `config.json`, `WEB-INF`, `META-INF`를 포함하지 않는다. SHA-256 `1dbad9f0410cdfddb1eac80269f2144cdfaa562746aea3e542bde984870820b3`.
-- `backend-class-hashes.json`, `ui-static-hashes.json`, `manifest.json`으로 각 파일/클래스 및 패키지의 해시를 대조한다.
+전용 VM A `47fbae47-18cb-43d7-b00b-f14080bf9a2f`, B `5e6a5131-d75e-48af-be7e-70caa6460c03`, C `3b6b4c34-1d7d-4765-87ef-769420088670` 및 ACL fixture VM은 검토를 위해 보존한다. 최종 root 카운터는 0이며 `kvm-internal-cow-v1`/최초 legacy 출처가 유지된다. 실제 `cloud` DB에서 기존 카운터 apply/rollback을 실행한 것으로 보고하지 않는다. active Mold에서 transition apply가 거부됨도 확인했다.
 
-실제 관리 서버 JAR은 배포 직전에 다시 식별·해시 확인하고 백업한다. 기존 원본 JAR 항목과 manifest를 유지하면서 빌드한 클래스만 반영하고 원본 소유자·권한을 보존한다. 클래스 단위 반영은 변경 모듈 배포 방식이며 전체 Cloud 패키지 빌드 결과로 보고하지 않는다. 실패하면 백업한 원본 JAR과 정적 파일로 복구하고 원인 확인 전 시험 작업을 진행하지 않는다.
+A의 추가 생성 시험은 기존 KVM process guard의 `restore-vm-snapshot` 잔여 lease가 `Unreconciled operation lease; observation unknown`으로 판정되어 실패했다 (job `d96e444f-cec1-46b0-af58-e674caf602fd`). UI/DB는 오류를 표시하고 실제 스냅샷을 추가하지 않았으며 할당량도 변하지 않았다. 이 lease를 임의 삭제하거나 host guard를 완화하지 않았다. VM process contract #1171의 복구 정책은 이 Epic에 포함하지 않는다. B/C의 생성 성공과 기존 A1 복원 성공을 이 실패와 구분한다.
 
-배포가 차단된 상태이므로 하위 이슈를 닫거나 최종 통합 PR을 생성하지 않았다. 다음 검증을 통과한 후 Epic과 모든 하위 이슈의 closing reference를 포함한 PR 하나를 생성한다.
+### 조회·권한·UI
 
-## 배포 후 남은 통합 검증
+- 실제 25개 목록을 20+5 두 페이지로 읽고 6개 정렬 키의 asc/desc, 동률 ID 순서, VM 표시 이름/내부 이름/중복 이름, 유형/current/여러 VM 필터, count/중복 없는 ID, 잘못된 정렬 거부를 확인했다.
+- 신규 User A/B, DomainAdmin A 및 project A의 API 키로 own/foreign 조회·count·프로젝트 범위와 다른 계정 삭제 거부를 확인했다. 프로젝트 VM은 멤버만 접근하며 domain 관리자라는 이유로 비멤버 프로젝트를 자동 노출하지 않는다.
+- 가상머신 목록과 같은 AutogenView/ListView/SearchView의 `size=middle`, 기본 20개/쪽, 헤더 열 설정과 하단 페이지 배치. 선택 열 설정 30px/실제 렌더 32px. 별도 ellipsis 버튼 없음.
+- 기존 ResourceActionMenu의 272px/28px 항목, 그룹·아이콘·삭제 강조·비활성 사유 형식을 유지한다. Shift+F10/방향키/Escape·포커스 복귀와 오른쪽 8px 경계 제한, resize 및 실제 목록 scrollTop 517에서 닫힘을 확인했다. ‘상세’ 메뉴와 별도 상세 대화상자를 제거하고 항목 이름 링크의 기존 상세 페이지를 유지한다.
+- 조회 오류를 브라우저에서 주입한 뒤 로그아웃 없이 마지막 행·선택·검색어·URL을 보존하고 실패 안내를 표시했다. 차단을 해제하여 업데이트로 복구했다. 검색 결과 없음과 등록 없음 문구를 구분한다. 401은 기존 인증 만료 처리를 유지한다.
+- 복원/삭제/생성/관계/추출은 공유 MoldDialog와 테마를 사용한다. 요약은 VM 이름·스냅샷 이름·생성일·유형·현재 여부·상위의 6행이며 ID·중복 이름·설명·긴 current 설명을 제거했다. 요약 다음 입력 영역 간격은 24px. 작업 대상 UUID는 내부 불변 컨텍스트로 보존한다.
+- 1920×1080, 1366×768, 390×640에서 가운데 정렬과 고정 헤더/푸터, 본문만 스크롤 확인. 1366 화면의 긴 삭제창은 body scrollTop 23→335 동안 헤더 Y=24/푸터 Y=691과 document scrollTop=0 유지. 모바일 body 가로 overflow 없음/푸터 버튼 노출.
+- 다크모드 Descriptions label은 bg `rgb(22,27,34)` / fg white 85%. 트리 expand svg는 white 85%; 선택 텍스트는 밝은 색, 선택 배경은 공통 primary의 18%. 실측 대비는 헤더 7.13:1, 요약 label 12.70:1, 값 11.12:1, 펼침 아이콘 11.12:1, 선택 텍스트 10.89:1, 현재 tag 5.28:1이다. label/tag는 8px 간격이고 모바일 줄바꿈 시 세로 간격도 8px. 긴 기존 i-2-13 체인으로 재현·수정 검증했다.
+- VM 상세 스냅샷 탭과 볼륨 목록(59개/20개 페이지), 프로젝트 범위 전환(프로젝트 snapshot 1개)을 실제 확인했다. 31번의 listApis 1,051개에는 listBackups가 없고 백업 UI/API가 비활성이다. 이 환경에서 백업 목록을 성공 검증한 것으로 보고하지 않는다. 백업 제약·API가 있을 때의 fresh 조회는 서버/UI 자동 회귀에 포함한다. 대상 변경/삭제 경쟁·백업/권한 변경·결과 불명·HTTP/network 오류·누락 부모/순환/부분 페이지는 자동 회귀에도 포함한다. 결과를 확인할 수 없는 제출은 같은 VM의 재제출을 잠그고 후속 삭제를 중단한다.
 
-1. 새 API 필터·VM 키워드·정렬·count·25개 이상/두 페이지·URL 복원·마지막 페이지를 실제 응답과 대조한다. Admin/DomainAdmin/User·프로젝트에서 서로의 데이터가 섞이지 않는지 확인한다.
-2. 전용 VM에서 쓰기 전후 스냅샷 생성·분기 복원·첫/중간/마지막 삭제를 실행한다. Job, DB 상태/부모/current, provider 목록과 실제 파일 상태가 일치하는지 확인한다.
-3. A를 체크하고 B를 우클릭해 확인창 및 실제 API UUID가 B인지 확인한다. 정렬·새로고침·페이지 이동 후에도 대상이 바뀌지 않는지 확인한다. 선택 삭제 직렬화와 실패·결과 불명·미실행 결과를 확인한다.
-4. 1차 스토리지 목록·상세·API·capacity·경보/할당 경로를 대조한다. 내부 스냅샷이 논리 할당량을 반복 증가시키지 않고 실제 RAM/COW 쓰기는 물리 통계에 남는지 확인한다. 다른 제공자·볼륨·백업·스토리지 선택 경로의 회귀를 점검한다.
-5. 실제 배포 UI에서 기존 메뉴 폭·그룹·아이콘·삭제/비활성 이유를 확인한다. Shift+F10/Menu, Escape, 외부 클릭·스크롤·resize, 포커스 복귀를 검증한다. 밝은/어두운 테마, 1920×1080·1366×768·작은 화면에서 대화상자 제목/푸터 고정과 본문 스크롤을 확인한다.
-6. 실패가 해결되고 모든 하위 이슈의 검증 증거가 갖춰진 뒤 Epic 수준의 한국어 PR 하나를 생성한다. merge 전 이슈를 수동으로 완료 처리하지 않는다.
+다중 root/data 풀 잠금 순서·풀별 threshold·통계 불명 거부·provider 범위·resize/migration·중단 출처 보존·재실행/rollback·음수 방지는 Maven/Python 및 격리 MySQL 검증이다. 실제 모든 provider에서 생성·복원이나 모든 resize/migration을 수행한 결과로 확대하지 않는다. 실환경은 unmanaged SharedMountPoint 내부 memory 및 file-based Disk 경로, CLVM/CLVM_NG 조회 회귀이며 managed/NFS/RBD/VMware 정책은 자동 테스트와 범위 제한으로 보존했다. Default KVM memory 경로의 stopped VM 거부와 기존 runtime guard는 우회하지 않는다.
+
+### 실제 화면
+
+UI 요약·트리 스타일은 `38352ee9c27`에서 먼저 검증하고 최종 `fac80416b51` 번들에서도 다시 확인했다. 최종 UI는 같은 스타일과 후속 ‘상세’ 제거/상세 탭의 결과 불명 보호를 포함한다. 이름 기준 영향 확인 문구의 locale 소스는 `036da8b71eb`이다. bulk/state-race 증거는 `a2e440cfab8` 배포 시점의 실제 시험이며 후속 요약 축약 이전이다.
+
+![다크모드 트리 아이콘과 기준점 태그 간격](evidence/vm-snapshot-epic-1216/tree-dark-fixed.jpg)
+![축약 요약과 24px 입력 간격](evidence/vm-snapshot-epic-1216/extract-dark-summary.jpg)
+![모바일 관계 트리 줄바꿈](evidence/vm-snapshot-epic-1216/tree-dark-mobile.jpg)
+![최종 컨텍스트 메뉴: 상세 항목 제거](evidence/vm-snapshot-epic-1216/context-menu-final.jpg)
+![최종 라이트 복원 요약](evidence/vm-snapshot-epic-1216/restore-light-final.jpg)
+![다중 삭제 실제 결과](evidence/vm-snapshot-epic-1216/bulk-success-dark.jpg)
+
+브라우저 측정은 `evidence/vm-snapshot-epic-1216/ui-validation.json`에 저장한다. 원본 인증/키/쿠키/세션·raw management log는 Git/이슈에 포함하지 않는다. 전체 실행 증거는 WSL `/home/ablecloud/work/vm-snapshot-epic-1216`에 보존한다.
+
+### 최종 배포 식별
+
+- backend 빌드 소스: `53e7b35400bba48d3ec1951e77dddef299fa8d7f`; 변경 클래스 20개와 실제 JAR class SHA-256 일치.
+- 활성 JAR SHA-256: `eb1ca2d2248baca89141e7079f9f921eee4b6f5259c305528adc1c2f59c6d32c`.
+- 원본 JAR SHA-256: `a15a08feab011da04138bc9d8bed278fb5b4e4e774943b6973fdc9458dee52c9`, 백업 `/root/epic1216/deploy-20261003-201318`.
+- `backend-overlay.zip` SHA-256: `3f9dfb7097daaebbefecdb6c8ce8e819672e7810333a623b755b68d52aeb55fd`.
+- 최종 UI build source: `fac80416b51d25815f505bfcfffda0936c03a0a1`. locale/정적 패키지 소스: `036da8b71ebf176707a73566f762117bfa16d4dd`. 최종 UI-static SHA-256: `2fbe863cb43fd142ce8b0e9d57099d609efe2e69574359b0b5bea2e02405cdbe`. 정적 파일 834개.
+- 최종 UI backup: `/root/epic1216/ui-backup-20261003-220348`.
+- WEB-INF/META-INF 및 원래 config 보존; config SHA-256 `b54d18abc5a143c64e2dec3441af0a45619ec20f110647119e6b8d2e199ff453`. Mold active, /client/ 200, served index/bundle 전체 해시 대조 및 FTCTL 기존 marker 3개 보존 확인.
+- locale은 런타임 `fetch(locales/...)` JSON이다. 마지막 문구 수정은 en/ko_KR JSON 구문 검증 후 public→dist 정적 복사로 반영했고, 변경 파일이 정확히 이 두 파일이며 JS/CSS 해시는 동일함을 확인했다. webpack/build source와 locale/package source를 manifest에서 별도로 기록한다.
+- 최종 RAT: 검사 결과는 `license-check-final.log` 및 통합 PR의 검증 항목에 기록한다..
+
+원본 manifest와 관련 없는 JAR 항목을 유지한 변경 모듈 배포이며 전체 Cloud 패키지 빌드로 보고하지 않는다. merge 전에 이슈를 수동 종료하지 않고 #1216~#1223 closing reference를 가진 통합 PR 하나로 검토한다.
