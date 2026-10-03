@@ -477,7 +477,7 @@ export default {
       }
     },
     getState (state) {
-      if (this.apiName === 'listVMSnapshots') {
+      if (this.apiName === 'listVMSnapshot') {
         const value = String(state).toLowerCase()
         return ['ready', 'creating', 'allocated', 'reverting', 'expunging', 'error'].includes(value) ? this.$t('state.' + value) : state
       } else if (this.apiName.includes('listVolumes')) {

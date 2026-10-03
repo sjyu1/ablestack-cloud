@@ -76,7 +76,7 @@ test('other lists retain their existing filter tags', () => {
 })
 
 test.each([['ko_KR', ko], ['en', en]])('snapshot state tags use real %s status translations', (locale, messages) => {
-  const context = { apiName: 'listVMSnapshots', $t: key => messages[key] || key }
+  const context = { apiName: snapshot.permission[0], $t: key => messages[key] || key }
   for (const state of ['Ready', 'Creating', 'Allocated', 'Reverting', 'Expunging', 'Error']) {
     const label = SearchFilter.methods.getState.call(context, state)
     expect(label).toBe(messages['state.' + state.toLowerCase()])
@@ -85,7 +85,7 @@ test.each([['ko_KR', ko], ['en', en]])('snapshot state tags use real %s status t
 })
 
 test('unknown snapshot states remain readable', () => {
-  expect(SearchFilter.methods.getState.call({ apiName: 'listVMSnapshots', $t: key => key }, 'FutureState')).toBe('FutureState')
+  expect(SearchFilter.methods.getState.call({ apiName: snapshot.permission[0], $t: key => key }, 'FutureState')).toBe('FutureState')
 })
 
 test('volume state tags retain their existing translation', () => {
