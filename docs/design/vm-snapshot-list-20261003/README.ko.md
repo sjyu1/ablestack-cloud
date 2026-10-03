@@ -25,19 +25,42 @@ under the License.
 
 ## 보기
 
-[mockup.html](mockup.html)을 브라우저에서 연다. 외부 라이브러리나 네트워크 API 없이 예시 데이터만으로 동작한다.
+[mockup.html](mockup.html)을 브라우저에서 연다. Vue 3 + 현재 Mold의 **Ant Design Vue 3.2.20**으로 구현한 SFC 앱이며, HTML은 앱을 마운트하는 진입점만 제공한다. Vue/AntD와 스타일은 로컬 번들에 포함되어 외부 CDN이나 네트워크 API 없이 예시 데이터만으로 동작한다.
 한 번에 받으려면 [mockup.zip](mockup.zip)을 다운로드하고 압축을 풀어 mockup.html을 연다.
-상단의 UI 개선안 표시와 상태 선택기는 목업 시연 도구이며 제품 화면에 추가할 요소가 아니다.
+우측 하단의 작은 `목업` 버튼에서 상태 시나리오와 테마를 바꾼다. 이 버튼은 시연 도구이며 제품 화면에 추가할 요소가 아니다.
+
+## 기존 UI 형식 준수
+
+31번 가상머신 목록을 표준으로 삼는다. 브레드크럼 옆 업데이트·상태 선택, 우측 기본 작업·검색, 단일 행 표, 표 헤더 열 설정, 하단 우측 페이지를 같은 위치에 배치한다. 기본 20개/쪽, AntD Table size=middle과 30px 선택 열을 유지한다. 큰 제목/소개문/통계/상시 필터 바/보기 전환 등 별도 목록 배치를 사용하지 않는다.
+
+추가 조건은 기존 SearchView처럼 검색 입력의 필터 팝오버에서 제공한다. 행 이름 옆 작업 아이콘/우클릭으로 복원·삭제·상세·관계 보기를 연다. 관계 보기는 중앙 대화상자로 제공하며 목록을 다른 페이지 형식으로 바꾸지 않는다.
+
+대화상자는 기존 AntD Modal/Descriptions/Form/Alert 형식이다. 화면 중앙에 정렬하고 헤더 제목·푸터 버튼을 고정하며 콘텐츠만 스크롤한다. 상세·복원·삭제·다중 삭제·생성·관계 보기에 동일 규칙을 적용한다.
+
+현재 소스의 [Status.vue](../../../ui/src/components/widgets/Status.vue), [TooltipButton.vue](../../../ui/src/components/widgets/TooltipButton.vue)와 `ui/src/style/theme/*.less`를 직접 사용한다. 목록/검색 레이아웃은 AutogenView/ListView/SearchView와 같은 AntD 컴포넌트 계약으로 구성한다. 제품 구현 시 해당 공통 뷰의 기존 형식을 유지하고 기능만 확장한다.
 
 - 라이트/다크 테마를 전환한다.
 - VM/스냅샷 이름 및 설명으로 검색하고 VM·상태·유형·현재 기준점 필터를 조합한다.
 - 열 머리글로 전체 예시 데이터를 정렬한 후 페이지를 이동한다.
 - 행 작업 메뉴 및 우클릭은 그 행을 대상으로 한다. 다른 행의 체크 여부와 무관하다.
-- 여러 항목을 선택하면 선택 삭제 도구 모음이 나타난다. 실행 불가 항목이 있으면 사유를 표시한다.
+- 여러 항목을 선택하면 기존 작업 버튼 위치에 선택 삭제가 나타난다. 실행 불가 항목이 있으면 사유를 표시한다.
 - 복원/삭제 확인창의 대상 정보·영향·조건과 확인 체크를 살펴본다. 최종 동작은 시연 안내만 표시한다.
-- VM별 관계 보기에서 W2025-GFS2-Sparse의 3개 예시 복원 지점과 현재 기준점을 확인한다.
+- W2025-GFS2-Sparse 행의 VM 링크 또는 행 작업 메뉴에서 관계 대화상자를 열고 3개 예시 복원 지점과 현재 기준점을 확인한다.
 - 최초 로딩, 빈 목록, 검색 결과 없음, 조회 실패, 부분 관계 조회 상태를 전환한다.
-- 소유자/Zone 선택 열을 켜고 상세 창에서 UUID/내부 이름/설명을 확인한다.
+- 표 헤더 우측 필터 아이콘으로 표시 열을 바꾸고 상세 창에서 UUID/내부 이름/설명을 확인한다.
+
+## 소스와 재빌드
+
+화면은 [src/App.vue](src/App.vue), 진입점은 [src/main.js](src/main.js), 예시는 [src/mock-data.js](src/mock-data.js)이다. [build.cjs](build.cjs)는 이 설계 앱만 번들링한다. Cloud/운영 UI 전체 빌드를 수행하지 않는다. 설치된 `ui/node_modules`를 사용하며 별도 설치나 CDN이 필요하지 않다.
+
+```powershell
+$env:NODE_OPTIONS = '--openssl-legacy-provider'
+# ui/node_modules가 다른 dhslove 작업 트리에 있으면 그 절대 경로를 지정한다.
+# $env:MOLD_UI_NODE_MODULES = 'C:\path\to\dhslove\ablestack-cloud\ui\node_modules'
+node docs/design/vm-snapshot-list-20261003/build.cjs
+```
+
+번들에 사용된 실제 버전은 [assets/build-info.json](assets/build-info.json)에 기록한다. 이번 빌드의 Vue 및 compiler-sfc는 설치된 UI 의존성 3.5.41이며 UI package.json의 Vue 3 허용 범위 안이다. Ant Design Vue는 현재 UI와 동일한 3.2.20이다. 압축 파일에는 완성된 번들과 SFC 소스를 모두 포함한다. 소스 재빌드는 저장소의 공유 컴포넌트/테마와 UI 의존성이 필요하다.
 
 ## 예시 데이터와 실제 구현의 차이
 
