@@ -820,7 +820,10 @@
         <advisories-view
           v-if="$route.meta.advisories && !loading"
         />
-        <p v-if="listRefreshError" role="status">{{ $t('message.list.refresh.stale') }}</p>
+        <a-alert v-if="listRefreshError && $route.name === 'vmsnapshot'" type="error" show-icon :message="$t(listLoadedScope ? 'message.list.refresh.stale' : 'error.fetching.data')">
+          <template #action><a-button size="small" @click="fetchData">{{ $t('label.refresh') }}</a-button></template>
+        </a-alert>
+        <p v-else-if="listRefreshError" role="status">{{ $t('message.list.refresh.stale') }}</p>
         <list-view
           :loading="loading"
           :columns="columns"
@@ -1812,7 +1815,7 @@ export default {
         }
       }).catch(error => {
         if (version !== this.listRequestVersion || scope !== this.listScope()) return
-        if (sameList || (this.$route.name === 'vmsnapshot' && this.listLoadedScope)) {
+        if (sameList || this.$route.name === 'vmsnapshot') {
           this.listRefreshError = true
           if (isAutoScheduled) throw error
           this.$notifyError(error)
