@@ -1132,12 +1132,10 @@ export default {
     '$route' (to, from) {
       if (to.fullPath !== from.fullPath && !to.path.startsWith('/action/') && to?.query?.tab !== 'browser') {
         this.resetSelection()
-        if ('page' in to.query) {
-          this.page = Number(to.query.page)
-          this.pageSize = Number(to.query.pagesize)
-        } else {
-          this.page = 1
-        }
+        const page = Number(to.query.page)
+        const pageSize = Number(to.query.pagesize)
+        this.page = Number.isInteger(page) && page > 0 ? page : 1
+        if (Number.isInteger(pageSize) && pageSize > 0) this.pageSize = pageSize
         this.itemCount = 0
         this.clearAutoRefresh()
         this.fetchData()
@@ -1183,6 +1181,7 @@ export default {
       const queryParams = Object.assign({}, this.$route.query)
       const activeFilters = []
       for (const filter in queryParams) {
+        if (['sortkey', 'sortorder'].includes(filter)) continue
         if (this.$route.name === 'vmsnapshot' && filter === 'filter') {
           continue
         }
@@ -2819,7 +2818,7 @@ export default {
     },
     handleTableChange (pagination, filters, sorter) {
       if (this.$route.name !== 'vmsnapshot') return
-      this.$router.push({ query: { ...this.$route.query, page: '1', sortkey: sorter?.order ? sorter.field : 'created', sortorder: sorter?.order === 'ascend' ? 'asc' : 'desc' } })
+      this.$router.push({ query: { ...this.$route.query, page: '1', pagesize: String(this.pageSize), sortkey: sorter?.order ? sorter.field : 'created', sortorder: sorter?.order === 'ascend' ? 'asc' : 'desc' } })
     },
     changePageSize (currentPage, pageSize) {
       const query = Object.assign({}, this.$route.query)

@@ -103,3 +103,34 @@ test('other lists retain their existing state tag removal behavior', () => {
   AutogenView.methods.removeFilter.call(context, { key: 'state', isTag: false })
   expect(context.$router.push.mock.calls[0][0].query).toEqual({ filter: 'running', page: '1', pagesize: '20' })
 })
+
+test('sorting metadata is hidden while real snapshot filters remain visible', () => {
+  expect(AutogenView.computed.activeFiltersList.call(view({ sortkey: 'displayname', sortorder: 'asc', state: 'Ready', account: 'account-a' }))).toEqual([
+    { key: 'state', value: 'Ready', isTag: false },
+    { key: 'account', value: 'account-a', isTag: false }
+  ])
+})
+
+test.each(['displayname', 'state', 'type', 'current', 'created'])('sorting %s preserves page size, resets page and retains search scope', field => {
+  const context = { ...view({ page: '2', state: 'Ready', keyword: 'vm-a', account: 'account-a' }), pageSize: 50, $router: { push: jest.fn() } }
+  AutogenView.methods.handleTableChange.call(context, {}, {}, { field, order: 'ascend' })
+  expect(context.$router.push.mock.calls[0][0].query).toEqual({ page: '1', pagesize: '50', state: 'Ready', keyword: 'vm-a', account: 'account-a', sortkey: field, sortorder: 'asc' })
+  AutogenView.methods.handleTableChange.call(context, {}, {}, { field, order: 'descend' })
+  expect(context.$router.push.mock.calls[1][0].query.sortorder).toBe('desc')
+})
+
+test.each([undefined, 'NaN', '0', '-1', '2.5'])('a page-only or invalid page-size URL keeps the selected page size (%s)', pagesize => {
+  const context = { pageSize: 20, resetSelection: jest.fn(), clearAutoRefresh: jest.fn(), fetchData: jest.fn(), scheduleAutoRefresh: jest.fn() }
+  const query = { page: '1', sortkey: 'displayname', sortorder: 'asc', ...(pagesize === undefined ? {} : { pagesize }) }
+  AutogenView.watch.$route.call(context, { path: '/vmsnapshot', fullPath: '/vmsnapshot?page=1', query }, { fullPath: '/vmsnapshot' })
+  expect(context.pageSize).toBe(20)
+  expect(context.page).toBe(1)
+  expect(context.fetchData).toHaveBeenCalledTimes(1)
+})
+
+test('page size changes without a page parameter are applied independently', () => {
+  const context = { pageSize: 20, resetSelection: jest.fn(), clearAutoRefresh: jest.fn(), fetchData: jest.fn(), scheduleAutoRefresh: jest.fn() }
+  AutogenView.watch.$route.call(context, { path: '/vmsnapshot', fullPath: '/vmsnapshot?pagesize=50', query: { pagesize: '50' } }, { fullPath: '/vmsnapshot' })
+  expect(context.pageSize).toBe(50)
+  expect(context.page).toBe(1)
+})

@@ -24,7 +24,7 @@
       v-for="filter in this.searchFilters"
       :key="filter.key + filter.value"
     >
-      <a-col v-if="!['page', 'pagesize', 'q', 'keyword', 'tags', 'projectid'].includes(filter.key)">
+      <a-col v-if="!['page', 'pagesize', 'q', 'keyword', 'tags', 'projectid', 'sortkey', 'sortorder'].includes(filter.key)">
         <a-tag
           v-if="!filter.isTag"
           closable
