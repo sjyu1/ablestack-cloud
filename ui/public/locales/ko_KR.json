@@ -2996,7 +2996,7 @@
   "message.action.unmanage.virtualmachine": "가상머신을 관리 해제할 것인지 확인하십시오.",
   "message.action.unmanage.volume": "볼륨 관리를 취소할지 확인하세요.",
   "message.action.unmanage.volumes": "볼륨 관리를 취소할지 확인하세요.",
-  "message.action.vmsnapshot.delete": "이 VM 스냅샷을 삭제할 것인지 확인하십시오. <br>인스턴스가 스냅샷 삭제 전에 일시 중지되고 KVM에서 실행되는 경우 삭제 후 다시 시작된다는 점에 유의하십시오.",
+  "message.action.vmsnapshot.delete": "선택한 VM 스냅샷을 삭제하면 해당 복원 지점을 사용할 수 없습니다. KVM의 디스크 + 메모리 스냅샷을 삭제할 때 VM은 잠시 일시정지되고 다시 실행됩니다. 실제 회수 용량은 다른 스냅샷의 참조와 변경 데이터에 따라 달라집니다.",
   "message.activate.project": "현재 프로젝트를 활성화 하시겠습니까?",
   "message.add.egress.rule.failed": "새 송신 규칙 추가에 실패하였습니다.",
   "message.add.egress.rule.processing": "새 송신 규칙 추가하는 중...",
