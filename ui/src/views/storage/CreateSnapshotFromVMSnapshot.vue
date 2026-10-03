@@ -40,7 +40,7 @@ import { getAPI, postAPI } from '@/api'
 import MoldDialog from '@/components/view/MoldDialog'
 import VmSnapshotSummary from '@/components/view/VmSnapshotSummary'
 import { freshSnapshotContext } from '@/utils/vmSnapshotList'
-import { snapshotActionReason, snapshotBusy, snapshotSubmissions } from '@/utils/vmSnapshotActions'
+import { snapshotActionReason, snapshotBusy, snapshotSubmissions, trackUnknownSnapshotSubmission } from '@/utils/vmSnapshotActions'
 export default {
   name: 'CreateSnapshotFromVMSnapshot',
   components: { MoldDialog, VmSnapshotSummary },
@@ -73,6 +73,7 @@ export default {
       const security = this.security
       const vmId = this.target.virtualmachineid
       const submission = Symbol(vmId)
+      let postStarted = false
       try {
         await this.formRef.value.validate()
         const values = { ...toRaw(this.form) }
@@ -83,13 +84,21 @@ export default {
         const reason = snapshotActionReason('createSnapshotFromVMSnapshot', context.snapshot, context.vm, context.busy || snapshotBusy(vmId))
         if (reason) throw new Error(this.$t(reason))
         snapshotSubmissions[vmId] = submission
+        postStarted = true
         const response = await postAPI('createSnapshotFromVMSnapshot', { ...values, vmsnapshotid: this.target.id })
         const jobId = response.createsnapshotfromvmsnapshotresponse?.jobid
-        if (!jobId) throw new Error(this.$t('message.job.result.unknown'))
+        if (!jobId) {
+          trackUnknownSnapshotSubmission(vmId, this.target.id)
+          throw new Error(this.$t('message.vmsnapshot.submission.unknown'))
+        }
         if (security !== this.security) return
         this.$pollJob({ jobId, originalPage: this.$route.path, title: this.$t('message.success.create.snapshot.from.vmsnapshot'), action: { api: 'createSnapshotFromVMSnapshot', resource: this.target }, description: values.name, successMessage: this.$t('message.success.create.snapshot.from.vmsnapshot'), errorMessage: this.$t('message.create.snapshot.from.vmsnapshot.failed'), loadingMessage: this.$t('message.create.snapshot.from.vmsnapshot.progress'), catchMessage: this.$t('error.fetching.async.job.result') }).catch(() => {})
         this.$emit('close-action')
       } catch (error) {
+        if (postStarted && error.isAxiosError && !error.response) {
+          trackUnknownSnapshotSubmission(vmId, this.target.id)
+          error = new Error(this.$t('message.vmsnapshot.submission.unknown'))
+        }
         if (error.errorFields?.length) this.formRef.value.scrollToField(error.errorFields[0].name)
         else this.$notifyError(error)
       } finally { if (snapshotSubmissions[vmId] === submission) delete snapshotSubmissions[vmId]; this.loading = false }

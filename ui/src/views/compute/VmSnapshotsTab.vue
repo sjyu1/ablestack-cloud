@@ -34,7 +34,7 @@
           <a-tag v-if="record.current" color="blue" class="current-tag">{{ $t('label.current') }}</a-tag>
           <small v-if="record.parentName" class="snapshot-parent">{{ $t('label.parentName') }}: {{ record.parentName }}</small>
         </template>
-        <template v-else-if="column.key === 'state'"><status :text="record.state" /> {{ record.state }}</template>
+        <template v-else-if="column.key === 'state'"><status :text="record.state" display-text /></template>
         <template v-else-if="column.key === 'type'">{{ typeLabel(record.type) }}</template>
         <template v-else-if="column.key === 'created'">{{ $toLocaleDate(record.created) }}</template>
         <template v-else-if="column.key === 'actions'">
@@ -79,7 +79,7 @@
 <script>
 import { getAPI, postAPI } from '@/api'
 import { listRefreshMixin } from '@/utils/listRefreshMixin'
-import { snapshotBusy, snapshotActionReason, snapshotJobs, snapshotSubmissions } from '@/utils/vmSnapshotActions'
+import { snapshotBusy, snapshotActionReason, snapshotJobs, snapshotSubmissions, trackUnknownSnapshotSubmission } from '@/utils/vmSnapshotActions'
 import compute from '@/config/section/compute'
 import eventBus from '@/config/eventBus'
 import Status from '@/components/widgets/Status'
@@ -170,6 +170,7 @@ export default {
       const api = this.actionApi
       this.submitting = true
       const submission = Symbol(snapshot.virtualmachineid)
+      let postStarted = false
       try {
         const [context] = await freshSnapshotContext(getAPI, [snapshot], this.allowed('listBackups'))
         if (scope !== this.scopeKey || this.listRefreshDisposed || security !== JSON.stringify([this.$store.getters.project?.id, this.$store.getters.userInfo?.id, this.$store.state?.user?.token])) return
@@ -178,9 +179,13 @@ export default {
         const reason = !fresh || !vm ? 'message.vmsnapshot.not.ready' : snapshotActionReason(api, fresh, vm, snapshotBusy(vm.id) || context.busy)
         if (!this.allowed(api) || reason) throw new Error(this.$t(reason || 'message.vmsnapshot.permission'))
         snapshotSubmissions[snapshot.virtualmachineid] = submission
+        postStarted = true
         const response = await postAPI(api, { vmsnapshotid: snapshot.id })
         const jobId = response[api.toLowerCase() + 'response']?.jobid
-        if (!jobId) throw new Error(this.$t('message.job.result.unknown'))
+        if (!jobId) {
+          trackUnknownSnapshotSubmission(snapshot.virtualmachineid, snapshot.id)
+          throw new Error(this.$t('message.vmsnapshot.submission.unknown'))
+        }
         if (security !== JSON.stringify([this.$store.getters.project?.id, this.$store.getters.userInfo?.id, this.$store.state?.user?.token])) return
         if (scope === this.scopeKey) this.selected = null
         const refresh = () => {
@@ -191,6 +196,10 @@ export default {
         }
         this.$pollJob({ jobId, originalPage, title: this.$t(api === 'deleteVMSnapshot' ? 'label.action.vmsnapshot.delete' : 'label.action.vmsnapshot.revert'), description: snapshot.displayname || snapshot.name, resourceId: snapshot.id, action: { api, resource: snapshot, isFetchData: false }, successMethod: refresh, errorMethod: refresh }).catch(() => {})
       } catch (error) {
+        if (postStarted && error.isAxiosError && !error.response) {
+          trackUnknownSnapshotSubmission(snapshot.virtualmachineid, snapshot.id)
+          error = new Error(this.$t('message.vmsnapshot.submission.unknown'))
+        }
         if (scope === this.scopeKey && !this.listRefreshDisposed) {
           this.$notifyError(error)
           this.fetchData()

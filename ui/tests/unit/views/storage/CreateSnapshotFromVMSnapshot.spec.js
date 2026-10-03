@@ -17,7 +17,7 @@
 import { shallowMount } from '@vue/test-utils'
 import Dialog from '@/views/storage/CreateSnapshotFromVMSnapshot'
 import { getAPI, postAPI } from '@/api'
-import { clearSnapshotJobs } from '@/utils/vmSnapshotActions'
+import { clearSnapshotJobs, snapshotBusy } from '@/utils/vmSnapshotActions'
 jest.mock('@/api', () => ({ getAPI: jest.fn(), postAPI: jest.fn() }))
 const target = { id: 'snapshot-b', virtualmachineid: 'vm-b', state: 'Ready', hypervisor: 'KVM', type: 'DiskAndMemory' }
 const flush = async () => { for (let i = 0; i < 25; i++) await Promise.resolve() }
@@ -44,5 +44,19 @@ test('a detached volume is rejected before extraction POST', async () => {
   await w.vm.handleSubmit()
   expect(postAPI).not.toHaveBeenCalled()
   expect(w.vm.$notifyError).toHaveBeenCalled()
+  w.unmount()
+})
+
+
+test.each(['lost response', 'missing job ID'])('unconfirmed extraction %s prevents a second POST', async kind => {
+  const w = mount(); await flush()
+  w.vm.formRef.value = { validate: jest.fn().mockResolvedValue(), scrollToField: jest.fn() }; w.vm.form.name = 'extract'
+  if (kind === 'lost response') postAPI.mockRejectedValue(Object.assign(new Error('network'), { isAxiosError: true }))
+  else postAPI.mockResolvedValue({ createsnapshotfromvmsnapshotresponse: {} })
+  await w.vm.handleSubmit()
+  expect(snapshotBusy('vm-b')).toBe(true)
+  expect(w.vm.$notifyError).toHaveBeenCalledWith(expect.objectContaining({ message: 'message.vmsnapshot.submission.unknown' }))
+  await w.vm.handleSubmit()
+  expect(postAPI).toHaveBeenCalledTimes(1)
   w.unmount()
 })
