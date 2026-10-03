@@ -477,7 +477,10 @@ export default {
       }
     },
     getState (state) {
-      if (this.apiName.includes('listVolumes')) {
+      if (this.apiName === 'listVMSnapshots') {
+        const value = String(state).toLowerCase()
+        return ['ready', 'creating', 'allocated', 'reverting', 'expunging', 'error'].includes(value) ? this.$t('state.' + value) : state
+      } else if (this.apiName.includes('listVolumes')) {
         switch (state.toLowerCase()) {
           case 'allocated':
             return this.$t('label.allocated')

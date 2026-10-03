@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 import AutogenView from '@/views/AutogenView'
+import SearchFilter from '@/components/view/SearchFilter'
 import compute from '@/config/section/compute'
 import store from '@/store'
 import en from '@public/locales/en.json'
@@ -61,9 +62,10 @@ test.each(['Admin', 'DomainAdmin', 'User'])('snapshot columns follow VM account/
   expect(snapshot.columns()).toContain('project')
 })
 
-test.each(['all', 'ready', 'self'])('snapshot filter tags exclude the %s selector and state already displayed in the dropdown while preserving search conditions', filter => {
+test.each(['all', 'ready', 'self'])('snapshot filter tags exclude the internal %s selector while preserving the state and search conditions', filter => {
   const query = { filter, state: 'Ready', current: 'true', account: 'account-a' }
   expect(AutogenView.computed.activeFiltersList.call(view(query))).toEqual([
+    { key: 'state', value: 'Ready', isTag: false },
     { key: 'current', value: 'true', isTag: false },
     { key: 'account', value: 'account-a', isTag: false }
   ])
@@ -71,4 +73,33 @@ test.each(['all', 'ready', 'self'])('snapshot filter tags exclude the %s selecto
 
 test('other lists retain their existing filter tags', () => {
   expect(AutogenView.computed.activeFiltersList.call({ $route: { name: 'vm', query: { filter: 'running' } } })).toEqual([{ key: 'filter', value: 'running', isTag: false }])
+})
+
+test.each([['ko_KR', ko], ['en', en]])('snapshot state tags use real %s status translations', (locale, messages) => {
+  const context = { apiName: 'listVMSnapshots', $t: key => messages[key] || key }
+  for (const state of ['Ready', 'Creating', 'Allocated', 'Reverting', 'Expunging', 'Error']) {
+    const label = SearchFilter.methods.getState.call(context, state)
+    expect(label).toBe(messages['state.' + state.toLowerCase()])
+    expect(label).not.toMatch(/^(label|state)\./)
+  }
+})
+
+test('unknown snapshot states remain readable', () => {
+  expect(SearchFilter.methods.getState.call({ apiName: 'listVMSnapshots', $t: key => key }, 'FutureState')).toBe('FutureState')
+})
+
+test('volume state tags retain their existing translation', () => {
+  expect(SearchFilter.methods.getState.call({ apiName: 'listVolumes', $t: key => key }, 'Ready')).toBe('label.isready')
+})
+
+test('removing the snapshot state tag resets the selector and preserves search and ACL scope', () => {
+  const context = { ...view({ filter: 'ready', state: 'Ready', domainid: 'domain-a', account: 'account-a', projectid: 'project-a', keyword: 'vm-a', current: 'true', type: 'DiskAndMemory', page: '2' }), pageSize: 20, $router: { push: jest.fn() } }
+  AutogenView.methods.removeFilter.call(context, { key: 'state', value: ko['state.ready'], isTag: false })
+  expect(context.$router.push.mock.calls[0][0].query).toEqual({ domainid: 'domain-a', account: 'account-a', projectid: 'project-a', keyword: 'vm-a', current: 'true', type: 'DiskAndMemory', page: '1', pagesize: '20' })
+})
+
+test('other lists retain their existing state tag removal behavior', () => {
+  const context = { $route: { name: 'vm', query: { filter: 'running', state: 'Running' } }, pageSize: 20, $router: { push: jest.fn() } }
+  AutogenView.methods.removeFilter.call(context, { key: 'state', isTag: false })
+  expect(context.$router.push.mock.calls[0][0].query).toEqual({ filter: 'running', page: '1', pagesize: '20' })
 })

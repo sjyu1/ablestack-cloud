@@ -1183,7 +1183,7 @@ export default {
       const queryParams = Object.assign({}, this.$route.query)
       const activeFilters = []
       for (const filter in queryParams) {
-        if (this.$route.name === 'vmsnapshot' && ['filter', 'state'].includes(filter)) {
+        if (this.$route.name === 'vmsnapshot' && filter === 'filter') {
           continue
         }
         if (this.$route.name === 'host' && filter === 'type') {
@@ -1922,6 +1922,7 @@ export default {
         delete queryParams[`tags[${filter.tagIdx}].value`]
       } else {
         delete queryParams[filter.key]
+        if (this.$route.name === 'vmsnapshot' && filter.key === 'state') delete queryParams.filter
       }
       queryParams.page = '1'
       queryParams.pagesize = String(this.pageSize)
