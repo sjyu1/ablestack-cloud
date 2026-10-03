@@ -8221,7 +8221,6 @@
   "label.items.selected.count": "{0}개 선택",
   "label.vmsnapshot.current.yes": "현재 기준점",
   "label.vmsnapshot.current.no": "—",
-  "message.vmsnapshot.current.reference": "Cloud의 현재 스냅샷 기준점입니다. 생성 이후 VM의 변경 데이터를 포함한다는 뜻은 아닙니다.",
   "label.vmsnapshot.relations": "VM 스냅샷 관계",
   "label.vmsnapshot.restore.submit": "이 스냅샷으로 복원",
   "message.vmsnapshot.restore.memory.impact": "포함된 모든 디스크와 저장된 메모리 상태를 복원합니다. 스냅샷 이후 변경은 사라지고 현재 VM 실행이 중단됩니다.",

@@ -8256,7 +8256,6 @@
   "label.items.selected.count": "Selected {0} items",
   "label.vmsnapshot.current.yes": "Current reference",
   "label.vmsnapshot.current.no": "—",
-  "message.vmsnapshot.current.reference": "Cloud snapshot reference; it does not include changes made after its creation.",
   "label.vmsnapshot.relations": "VM snapshot relations",
   "label.vmsnapshot.restore.submit": "Restore this snapshot",
   "message.vmsnapshot.restore.memory.impact": "Restores every included disk and the saved memory state. Changes after the snapshot are lost; current VM execution is interrupted.",

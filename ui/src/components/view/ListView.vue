@@ -868,9 +868,7 @@
         <status :text="record.autoscalingenabled ? 'Enabled' : 'Disabled'" displayText/>
       </template>
       <template v-if="column.key === 'current'">
-        <a-tooltip v-if="$route.name === 'vmsnapshot'" :title="$t('message.vmsnapshot.current.reference')">
-          <span>{{ $t(record.current ? 'label.vmsnapshot.current.yes' : 'label.vmsnapshot.current.no') }}</span>
-        </a-tooltip>
+        <span v-if="$route.name === 'vmsnapshot'">{{ $t(record.current ? 'label.vmsnapshot.current.yes' : 'label.vmsnapshot.current.no') }}</span>
         <status v-else :text="record.current ? record.current.toString() : 'false'" />
       </template>
       <template v-if="column.key === 'enabled'">
