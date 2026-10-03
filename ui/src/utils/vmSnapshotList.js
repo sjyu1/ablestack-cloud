@@ -80,7 +80,7 @@ export async function runSnapshotDeleteBatch (targets, execute, concurrency = 2)
         try {
           const job = await execute(row)
           result.jobid = job.jobid
-          result.error = job.jobstatus === 2 ? (job.jobresult?.errortext || job.error || '') : ''
+          result.error = job.jobstatus === 2 ? (job.jobresult?.errortext || job.error || '') : (job.error || '')
           result.outcome = job.jobstatus === 1 ? 'success' : job.jobstatus === 2 ? 'failed' : 'unknown'
         } catch (error) { result.outcome = 'failed'; result.error = error.message }
         if (result.outcome !== 'success') break
