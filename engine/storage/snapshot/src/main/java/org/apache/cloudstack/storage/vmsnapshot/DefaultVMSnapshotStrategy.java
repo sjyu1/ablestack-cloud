@@ -409,7 +409,9 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
             UserVmVO accountingVm = volumeVO.getInstanceId() == null ? null : userVmDao.findById(volumeVO.getInstanceId());
             if (InternalVmSnapshotAccounting.applies(accountingPool, accountingVm == null ? null : accountingVm.getHypervisorType(), volumeVO.getFormat())) {
                 if (volumeDetailsDao.findDetail(volumeVO.getId(), InternalVmSnapshotAccounting.VERSION_KEY) == null) {
-                    volumeDetailsDao.addDetail(volumeVO.getId(), InternalVmSnapshotAccounting.LEGACY_KEY, Long.toString(currentVmSnapshotChainSize), false);
+                    if (volumeDetailsDao.findDetail(volumeVO.getId(), InternalVmSnapshotAccounting.LEGACY_KEY) == null) {
+                        volumeDetailsDao.addDetail(volumeVO.getId(), InternalVmSnapshotAccounting.LEGACY_KEY, Long.toString(currentVmSnapshotChainSize), false);
+                    }
                     volumeDetailsDao.addDetail(volumeVO.getId(), InternalVmSnapshotAccounting.VERSION_KEY, InternalVmSnapshotAccounting.VERSION, false);
                     logger.info("Transition internal VM snapshot logical accounting for volume {}: legacy chain bytes {}", volumeVO.getUuid(), currentVmSnapshotChainSize);
                 }
