@@ -49,7 +49,7 @@ row-key="id"
         </a-tree>
         <a-empty v-if="!relations.rows.length && !loading" />
       </template>
-      <template v-if="mode !== 'create' && (mode !== 'relation' || selected)">
+      <template v-if="['restore', 'delete', 'relation'].includes(mode) && (mode !== 'relation' || selected)">
         <VmSnapshotSummary v-if="selected" :snapshot="selected" />
         <template v-if="['restore', 'delete'].includes(mode)">
           <a-alert class="mold-dialog-section" type="warning" show-icon :message="$t(mode === 'delete' ? 'message.action.vmsnapshot.delete' : selected.type === 'DiskAndMemory' ? 'message.vmsnapshot.restore.memory.impact' : 'message.vmsnapshot.restore.disk.impact')" />
@@ -114,7 +114,7 @@ export default {
     return { mode: this.currentAction.snapshotMode, targets: targets.filter(row => row.id), selected: targets[0]?.id ? { ...targets[0] } : null, loading: false, submitting: false, acknowledged: false, contexts: [], results: [], error: '', relations: { rows: [], total: 0, partial: false }, vms: [], vmPage: 1, vmTotal: 0, vmKeyword: '', selectedVm: null, disposed: false, requestVersion: 0 }
   },
   computed: {
-    title () { return this.mode === 'restore' ? 'label.action.vmsnapshot.revert' : this.mode === 'delete' ? 'label.action.vmsnapshot.delete' : this.mode === 'relation' ? 'label.vmsnapshot.relations' : this.mode === 'create' ? 'label.action.vmsnapshot.create' : 'label.details' },
+    title () { return { restore: 'label.action.vmsnapshot.revert', delete: 'label.action.vmsnapshot.delete', relation: 'label.vmsnapshot.relations', create: 'label.action.vmsnapshot.create' }[this.mode] },
     api () { return this.mode === 'delete' ? 'deleteVMSnapshot' : 'revertToVMSnapshot' },
     tree () { return snapshotRelationTree(this.relations.rows) },
     security () { return JSON.stringify([this.$store.getters.project?.id, this.$store.getters.userInfo?.id, this.$store.state?.user?.token]) },

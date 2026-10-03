@@ -727,17 +727,6 @@ export default {
           component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue')))
         },
         {
-          api: 'listVMSnapshot',
-          icon: 'info-circle-outlined',
-          label: 'label.details',
-          dataView: true,
-          popup: true,
-          snapshotMode: 'detail',
-          selfManagedDialog: true,
-          menuGroup: 'GENERAL',
-          component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue')))
-        },
-        {
           api: 'createSnapshotFromVMSnapshot',
           selfManagedDialog: true,
           disabled: record => !!snapshotActionReason('createSnapshotFromVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
