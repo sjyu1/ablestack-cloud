@@ -13,6 +13,7 @@ const fromUI = createRequire(path.join(modules, '../package.json'))
 const webpack = fromUI('webpack')
 const { VueLoaderPlugin } = fromUI('vue-loader')
 const loader = name => fromUI.resolve(name)
+const bundleLicense = fs.readFileSync(path.join(repo, "LICENSE.header"), "utf8")
 const config = {
   mode: 'production',
   entry: path.join(__dirname, 'src/main.js'),
@@ -26,7 +27,7 @@ const config = {
     { test: /\.less$/, use: [loader('vue-style-loader'), loader('css-loader'), { loader: loader('less-loader'), options: { javascriptEnabled: true } }] },
     { test: /\.scss$/, use: [loader('vue-style-loader'), loader('css-loader'), loader('sass-loader')] }
   ] },
-  plugins: [new VueLoaderPlugin(), new webpack.DefinePlugin({ __VUE_OPTIONS_API__: true, __VUE_PROD_DEVTOOLS__: false, __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false })],
+  plugins: [new webpack.BannerPlugin({ banner: bundleLicense, raw: false, entryOnly: true }), new VueLoaderPlugin(), new webpack.DefinePlugin({ __VUE_OPTIONS_API__: true, __VUE_PROD_DEVTOOLS__: false, __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false })],
   optimization: { minimize: true },
   performance: { hints: false },
   devtool: false
