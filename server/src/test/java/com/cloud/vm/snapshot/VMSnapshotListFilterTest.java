@@ -9,8 +9,10 @@ import com.cloud.exception.InvalidParameterValueException;
 import com.cloud.utils.db.Filter;
 import org.apache.cloudstack.api.command.user.vmsnapshot.ListVMSnapshotCmd;
 import org.junit.Test;
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class VMSnapshotListFilterTest {
     @Test
