@@ -46,6 +46,7 @@ import org.apache.cloudstack.storage.to.VolumeObjectTO;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import com.cloud.capacity.CapacityManager;
 import com.cloud.agent.AgentManager;
 import com.cloud.agent.api.Answer;
 import com.cloud.agent.api.CreateVMSnapshotAnswer;
@@ -444,7 +445,6 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
         }
         if (pools.isEmpty()) return;
         long memoryBytes = serviceOfferingDao.findById(vm.getId(), vm.getServiceOfferingId()).getRamSize().longValue() * 1024 * 1024;
-        double threshold = Double.parseDouble(configurationDao.getValue("pool.storage.capacity.disablethreshold"));
         List<StoragePool> ordered = new ArrayList<>(pools.values());
         ordered.sort(Comparator.comparingLong(StoragePool::getId));
         for (StoragePool pool : ordered) {
@@ -460,10 +460,15 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
             long required = InternalVmSnapshotAccounting.requiredFreeBytes(pool.getId() == (rootPoolId == null ? -1L : rootPoolId) ? memoryBytes : 0);
             if (!(answer instanceof GetStorageStatsAnswer) || !answer.getResult()
                     || !InternalVmSnapshotAccounting.hasPhysicalSpace(((GetStorageStatsAnswer) answer).getCapacityBytes(),
-                        ((GetStorageStatsAnswer) answer).getByteUsed(), required, threshold)) {
+                        ((GetStorageStatsAnswer) answer).getByteUsed(), required, internalSnapshotPhysicalThreshold(pool))) {
                 throw new CloudRuntimeException("Fresh physical storage statistics are unavailable or insufficient for internal memory snapshot on pool " + pool.getUuid());
             }
         }
+    }
+
+    protected double internalSnapshotPhysicalThreshold(StoragePool pool) {
+        // Match allocator policy, including storage-pool and zone overrides.
+        return CapacityManager.StorageCapacityDisableThreshold.valueIn(pool.getId());
     }
 
     protected GlobalLock internalSnapshotPoolLock(long poolId) {

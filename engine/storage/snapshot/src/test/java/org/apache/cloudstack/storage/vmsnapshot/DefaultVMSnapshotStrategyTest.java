@@ -248,7 +248,7 @@ public class DefaultVMSnapshotStrategyTest {
         com.cloud.service.ServiceOfferingVO offering = Mockito.mock(com.cloud.service.ServiceOfferingVO.class);
         Mockito.when(offering.getRamSize()).thenReturn(2048);
         Mockito.when(serviceOfferingDao.findById(vm.getId(), vm.getServiceOfferingId())).thenReturn(offering);
-        Mockito.when(configurationDao.getValue("pool.storage.capacity.disablethreshold")).thenReturn("0.9");
+        Mockito.doReturn(0.9d).when(defaultVMSnapshotStrategy).internalSnapshotPhysicalThreshold(Mockito.any(com.cloud.storage.StoragePool.class));
         List<VolumeObjectTO> tos = new ArrayList<>();
         for (long id : List.of(2L, 1L)) {
             VolumeVO volume = createVolume(20L, id);
@@ -285,6 +285,15 @@ public class DefaultVMSnapshotStrategyTest {
         List<VolumeObjectTO> tos = setupPhysicalGuard();
         Mockito.when(agentMgr.send(Mockito.eq(3L), Mockito.any(com.cloud.agent.api.GetStorageStatsCommand.class)))
             .thenAnswer(invocation -> new com.cloud.agent.api.GetStorageStatsAnswer(invocation.getArgument(1), 100L << 30, 89L << 30));
+        defaultVMSnapshotStrategy.checkInternalSnapshotPhysicalSpace(userVmDao.findById(20L), tos, 3L, new ArrayList<>());
+    }
+
+    @Test(expected = com.cloud.utils.exception.CloudRuntimeException.class)
+    public void dataPoolPhysicalThresholdIsRespectedIndependentlyOfRootPool() throws Exception {
+        List<VolumeObjectTO> tos = setupPhysicalGuard();
+        Mockito.doReturn(0.65d).when(defaultVMSnapshotStrategy).internalSnapshotPhysicalThreshold(primaryDataStoreDao.findById(2L));
+        Mockito.when(agentMgr.send(Mockito.eq(3L), Mockito.any(com.cloud.agent.api.GetStorageStatsCommand.class)))
+            .thenAnswer(invocation -> new com.cloud.agent.api.GetStorageStatsAnswer(invocation.getArgument(1), 100L << 30, 70L << 30));
         defaultVMSnapshotStrategy.checkInternalSnapshotPhysicalSpace(userVmDao.findById(20L), tos, 3L, new ArrayList<>());
     }
 
