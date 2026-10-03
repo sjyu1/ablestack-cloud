@@ -42,7 +42,7 @@ test('fresh checks detect withdrawn ACL rows and other operations with a fixed n
   expect(contexts[0].busy).toBe(true)
   expect(contexts[1].snapshot).toBeUndefined()
   expect(contexts[1].vm).toBeUndefined()
-  expect(get).toHaveBeenCalledTimes(5)
+  expect(get).toHaveBeenCalledTimes(6)
 })
 
 test('same VM delete failure stops its remaining requests and other VM completes', async () => {

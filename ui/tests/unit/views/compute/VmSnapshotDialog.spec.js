@@ -65,3 +65,17 @@ test('ACL withdrawal at fresh lookup prevents every captured target from startin
   expect(postAPI).not.toHaveBeenCalled()
   wrapper.unmount()
 })
+
+
+test('project changes during the last fresh lookup prevent POST', async () => {
+  const wrapper = mount(); await flush()
+  const security = wrapper.vm.security
+  const original = getAPI.getMockImplementation()
+  getAPI.mockImplementation((api, args) => {
+    if (api === 'listVirtualMachines') wrapper.vm.$store.getters.project.id = 'different-project'
+    return original(api, args)
+  })
+  await expect(wrapper.vm.execute(row, security)).rejects.toThrow('message.vmsnapshot.permission')
+  expect(postAPI).not.toHaveBeenCalled()
+  wrapper.unmount()
+})

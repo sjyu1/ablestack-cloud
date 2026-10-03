@@ -448,7 +448,7 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
         for (StoragePool pool : ordered) {
             // Cross-management-server pool locking serializes memory snapshot
             // reservations until the agent completes; no stale DB stats fallback.
-            GlobalLock lock = GlobalLock.getInternLock("internal-vmsnapshot-physical-" + pool.getId());
+            GlobalLock lock = internalSnapshotPoolLock(pool.getId());
             if (!lock.lock(120)) {
                 lock.releaseRef();
                 throw new CloudRuntimeException("Another internal snapshot is reserving physical space on pool " + pool.getUuid());
@@ -462,6 +462,10 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
                 throw new CloudRuntimeException("Fresh physical storage statistics are unavailable or insufficient for internal memory snapshot on pool " + pool.getUuid());
             }
         }
+    }
+
+    protected GlobalLock internalSnapshotPoolLock(long poolId) {
+        return GlobalLock.getInternLock("internal-vmsnapshot-physical-" + poolId);
     }
 
     protected void publishUsageEvent(String type, VMSnapshot vmSnapshot, UserVm userVm, VolumeObjectTO volumeTo) {

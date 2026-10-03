@@ -171,14 +171,15 @@ export default {
       const snapshot = { ...this.selected }
       const api = this.actionApi
       this.submitting = true
+      const submission = Symbol(snapshot.virtualmachineid)
       try {
         const [context] = await freshSnapshotContext(getAPI, [snapshot], this.allowed('listBackups'))
-        if (scope !== this.scopeKey || this.listRefreshDisposed) return
+        if (scope !== this.scopeKey || this.listRefreshDisposed || security !== JSON.stringify([this.$store.getters.project?.id, this.$store.getters.userInfo?.id, this.$store.state?.user?.token])) return
         const fresh = context.snapshot
         const vm = context.vm
         const reason = !fresh || !vm ? 'message.vmsnapshot.not.ready' : snapshotActionReason(api, fresh, vm, snapshotBusy(vm.id) || context.busy)
         if (!this.allowed(api) || reason) throw new Error(this.$t(reason || 'message.vmsnapshot.permission'))
-        snapshotSubmissions[this.resource.id] = true
+        snapshotSubmissions[snapshot.virtualmachineid] = submission
         const response = await postAPI(api, { vmsnapshotid: snapshot.id })
         const jobId = response[api.toLowerCase() + 'response']?.jobid
         if (!jobId) throw new Error(this.$t('message.job.result.unknown'))
@@ -196,7 +197,7 @@ export default {
           this.$notifyError(error)
           this.fetchData()
         }
-      } finally { delete snapshotSubmissions[snapshot.virtualmachineid]; this.submitting = false }
+      } finally { if (snapshotSubmissions[snapshot.virtualmachineid] === submission) delete snapshotSubmissions[snapshot.virtualmachineid]; this.submitting = false }
     }
   }
 }
