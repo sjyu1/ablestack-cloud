@@ -17,30 +17,23 @@ specific language governing permissions and limitations
 under the License.
 -->
 <template>
-        <a-descriptions class="mold-dialog-section" :column="1" bordered size="small">
-          <a-descriptions-item :label="$t('label.virtualmachinename')">{{ snapshot.virtualmachinename }} · {{ snapshot.virtualmachineinstancename || '—' }}</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.virtualmachineid')"><CopyLabel :label="snapshot.virtualmachineid" /></a-descriptions-item>
-          <a-descriptions-item v-if="vmOnly" :label="$t('label.state')"><Status :text="snapshot.virtualmachinestate" display-text /></a-descriptions-item>
-          <template v-if="!vmOnly">
-          <a-descriptions-item :label="$t('label.displayname')">{{ snapshot.displayname || snapshot.name }}</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.id')"><CopyLabel :label="snapshot.id" /></a-descriptions-item>
-          <a-descriptions-item :label="$t('label.name')">{{ snapshot.name }}</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.description')">{{ snapshot.description || '—' }}</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.created')">{{ $toLocaleDate(snapshot.created) }} ({{ timezone }})</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.type')">{{ $t(snapshot.type === 'DiskAndMemory' ? 'label.vmsnapshot.disk.memory' : 'label.vmsnapshot.disk') }}</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.state')"><Status :text="snapshot.state" display-text /> · {{ $t('label.vm') }}: <Status v-if="snapshot.virtualmachinestate" :text="snapshot.virtualmachinestate" display-text :show-tooltip="false" /><span v-else>—</span></a-descriptions-item>
-          <a-descriptions-item :label="$t('label.current')">{{ $t(snapshot.current ? 'label.vmsnapshot.current.yes' : 'label.vmsnapshot.current.no') }} — {{ $t('message.vmsnapshot.current.reference') }}</a-descriptions-item>
-          <a-descriptions-item :label="$t('label.parentname')">{{ snapshot.parentName || '—' }}<span v-if="snapshot.parent"> · </span><CopyLabel v-if="snapshot.parent" :label="snapshot.parent" /></a-descriptions-item>
-          </template>
-        </a-descriptions>
+  <a-descriptions class="mold-dialog-section mold-dialog-summary" :column="1" bordered size="small">
+    <a-descriptions-item :label="$t('label.virtualmachinename')">{{ snapshot.virtualmachinename || snapshot.virtualmachineinstancename || '—' }}</a-descriptions-item>
+    <a-descriptions-item v-if="vmOnly" :label="$t('label.state')"><Status :text="snapshot.virtualmachinestate" display-text /></a-descriptions-item>
+    <template v-else>
+      <a-descriptions-item :label="$t('label.snapshot.name')">{{ snapshot.displayname || snapshot.name || '—' }}</a-descriptions-item>
+      <a-descriptions-item :label="$t('label.created')">{{ $toLocaleDate(snapshot.created) }}</a-descriptions-item>
+      <a-descriptions-item :label="$t('label.type')">{{ $t(snapshot.type === 'DiskAndMemory' ? 'label.vmsnapshot.disk.memory' : 'label.vmsnapshot.disk') }}</a-descriptions-item>
+      <a-descriptions-item :label="$t('label.current')">{{ $t(snapshot.current ? 'label.vmsnapshot.current.yes' : 'label.vmsnapshot.current.no') }}</a-descriptions-item>
+      <a-descriptions-item :label="$t('label.parentname')">{{ snapshot.parentName || '—' }}</a-descriptions-item>
+    </template>
+  </a-descriptions>
 </template>
 <script>
-import CopyLabel from '@/components/widgets/CopyLabel'
 import Status from '@/components/widgets/Status'
 export default {
   name: 'VmSnapshotSummary',
-  components: { CopyLabel, Status },
-  props: { snapshot: { type: Object, required: true }, vmOnly: { type: Boolean, default: false } },
-  computed: { timezone () { return Intl.DateTimeFormat().resolvedOptions().timeZone } }
+  components: { Status },
+  props: { snapshot: { type: Object, required: true }, vmOnly: { type: Boolean, default: false } }
 }
 </script>
