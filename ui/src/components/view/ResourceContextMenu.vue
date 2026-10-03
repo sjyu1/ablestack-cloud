@@ -75,7 +75,8 @@ export default {
     window.addEventListener('scroll', this.handleWindowScroll, true)
     this.$nextTick(() => {
       this.clampToViewport()
-      this.$refs.menu?.querySelector('[role="menuitem"]:not([aria-disabled="true"])')?.focus()
+      const first = this.$refs.menu?.querySelector('[role="menuitem"]:not([aria-disabled="true"])')
+      if (first) first.focus()
     })
   },
   beforeUnmount () {
