@@ -188,7 +188,15 @@ public final class KvmVmOperationGuard implements AutoCloseable {
             }
             Path archived = auditVm.resolve(marker.getFileName());
             if (Files.exists(archived, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Snapshot recovery audit already exists");
-            Files.writeString(auditVm.resolve(marker.getFileName() + ".proof"), second, StandardOpenOption.CREATE_NEW);
+            Path proof = auditVm.resolve(marker.getFileName() + ".proof");
+            if (Files.exists(proof, LinkOption.NOFOLLOW_LINKS)) {
+                if (Files.isSymbolicLink(proof) || !Files.isRegularFile(proof, LinkOption.NOFOLLOW_LINKS)
+                        || !Files.readString(proof).equals(second)) {
+                    throw new IOException("Snapshot recovery audit proof changed");
+                }
+            } else {
+                Files.writeString(proof, second, StandardOpenOption.CREATE_NEW);
+            }
             Files.move(marker, archived, StandardCopyOption.ATOMIC_MOVE);
             LOG.info("Snapshot mutation reconciled vmUuid={} operation={} evidence={}", uuid, marker.getFileName(), second);
         }

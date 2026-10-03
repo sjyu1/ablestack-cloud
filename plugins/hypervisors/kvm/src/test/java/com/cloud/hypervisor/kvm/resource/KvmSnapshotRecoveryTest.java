@@ -148,4 +148,15 @@ public class KvmSnapshotRecoveryTest {
         assertFalse(KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk"), Map.of(), access, root).getResult());
         assertTrue(Files.exists(marker)); assertEquals(0, access.writes);
     }
+
+    @Test public void restartBetweenAuditProofAndLeaseArchiveCanRetryTheSameObservation() throws Exception {
+        Path root = Files.createTempDirectory("recover"); Native access = new Native();
+        try (KvmVmOperationGuard original = new KvmVmOperationGuard(root, UUID_VALUE, "restore-vm-snapshot", false)) { original.uncertain(); }
+        Path marker;
+        try (java.util.stream.Stream<Path> markers = Files.list(root.resolve(UUID_VALUE))) { marker = markers.findFirst().orElseThrow(); }
+        Path audit = root.resolve("reconciled/" + UUID_VALUE); Files.createDirectories(audit);
+        Files.writeString(audit.resolve(marker.getFileName() + ".proof"), KvmSnapshotRecovery.inspect(command(), Map.of(1L, "/disk"), Map.of(), access).fingerprint());
+        assertTrue(KvmSnapshotRecovery.execute(command(), Map.of(1L, "/disk"), Map.of(), access, root).getResult());
+        assertFalse(Files.exists(marker)); assertTrue(Files.exists(audit.resolve(marker.getFileName()))); assertEquals(0, access.writes);
+    }
 }
