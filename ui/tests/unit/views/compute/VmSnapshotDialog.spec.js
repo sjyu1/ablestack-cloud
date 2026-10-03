@@ -91,7 +91,6 @@ test('project changes during the last fresh lookup prevent POST', async () => {
   wrapper.unmount()
 })
 
-
 test.each(['lost response', 'missing job ID'])('unconfirmed %s remains unknown and blocks the VM', async kind => {
   if (kind === 'lost response') postAPI.mockRejectedValue(Object.assign(new Error('Network Error'), { isAxiosError: true }))
   else postAPI.mockResolvedValue({ deletevmsnapshotresponse: {} })

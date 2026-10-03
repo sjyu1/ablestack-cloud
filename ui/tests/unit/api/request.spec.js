@@ -135,7 +135,6 @@ describe('optional discovery login generation boundary', () => {
   })
 })
 
-
 describe('snapshot read failure isolation', () => {
   beforeEach(() => jest.clearAllMocks())
   it.each([undefined, 503, 404, 403])('preserves session for retry after read failure %s', async status => {
