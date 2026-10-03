@@ -77,7 +77,6 @@ test('unknown results stop the VM chain and cross VM concurrency is bounded', as
   expect(results.map(result => result.outcome)).toEqual(['unknown', 'notrun', 'success', 'success'])
 })
 
-
 test('purged parents are explicit roots with a missing warning', () => {
   const tree = snapshotRelationTree([{ ...row('orphan'), parentmissing: true }])
   expect(tree.warnings).toEqual([{ id: 'orphan', reason: 'missing' }])
