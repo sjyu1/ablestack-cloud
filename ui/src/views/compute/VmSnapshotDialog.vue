@@ -39,7 +39,13 @@ row-key="id"
         <a-alert v-if="tree.warnings.length" class="mold-dialog-section" type="warning" show-icon :message="$t('message.vmsnapshot.relations.invalid')" />
         <div class="mold-dialog-toolbar"><a-button @click="loadRelations">{{ $t('label.refresh') }}</a-button></div>
         <a-tree :tree-data="tree.roots" :selected-keys="selected ? [selected.id] : []" default-expand-all @select="selectNode">
-          <template #title="{ row }"><span>{{ row.displayname || row.name }} · {{ $toLocaleDate(row.created) }} · {{ $t(row.type === 'DiskAndMemory' ? 'label.vmsnapshot.disk.memory' : 'label.vmsnapshot.disk') }}<a-tag v-if="row.current">{{ $t('label.vmsnapshot.current.yes') }}</a-tag><span v-if="tree.warnings.some(item => item.id === row.id)"> · {{ $t('label.warning') }}</span></span></template>
+          <template #title="{ row }">
+            <span class="mold-dialog-tree-node">
+              <span class="mold-dialog-tree-label">{{ row.displayname || row.name }} · {{ $toLocaleDate(row.created) }} · {{ $t(row.type === 'DiskAndMemory' ? 'label.vmsnapshot.disk.memory' : 'label.vmsnapshot.disk') }}</span>
+              <a-tag v-if="row.current">{{ $t('label.vmsnapshot.current.yes') }}</a-tag>
+              <span v-if="tree.warnings.some(item => item.id === row.id)">{{ $t('label.warning') }}</span>
+            </span>
+          </template>
         </a-tree>
         <a-empty v-if="!relations.rows.length && !loading" />
       </template>

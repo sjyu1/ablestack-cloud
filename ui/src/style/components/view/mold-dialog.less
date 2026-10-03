@@ -52,3 +52,12 @@
     color: contrast(darken(@error-color, 12%), #000, #fff, 20%);
   }
 }
+
+
+// Tree labels and status tags retain separate space in every dialog and theme.
+.mold-dialog {
+  .ant-tree-node-content-wrapper { min-width: 0; white-space: normal; }
+  .mold-dialog-tree-node { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+  .mold-dialog-tree-label { min-width: 0; overflow-wrap: anywhere; }
+  .mold-dialog-tree-node .ant-tag { flex: 0 0 auto; margin: 0; }
+}
