@@ -255,11 +255,12 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         Boolean isRecursive = domainIdRecursiveListProject.second();
         ListProjectResourcesCriteria listProjectResourcesCriteria = domainIdRecursiveListProject.third();
 
-        Filter searchFilter = new Filter(VMSnapshotVO.class, "created", false, cmd.getStartIndex(), cmd.getPageSizeVal());
+        Filter searchFilter = snapshotListFilter(cmd);
         SearchBuilder<VMSnapshotVO> sb = _vmSnapshotDao.createSearchBuilder();
         _accountMgr.buildACLSearchBuilder(sb, domainId, isRecursive, permittedAccounts, listProjectResourcesCriteria);
 
         sb.and("vm_id", sb.entity().getVmId(), SearchCriteria.Op.EQ);
+        sb.and("vm_ids", sb.entity().getVmId(), SearchCriteria.Op.IN);
         sb.and("domain_id", sb.entity().getDomainId(), SearchCriteria.Op.EQ);
         sb.and("status", sb.entity().getState(), SearchCriteria.Op.IN);
         sb.and("state", sb.entity().getState(), SearchCriteria.Op.EQ);
@@ -267,6 +268,8 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         sb.and("idIN", sb.entity().getId(), SearchCriteria.Op.IN);
         sb.and("display_name", sb.entity().getDisplayName(), SearchCriteria.Op.EQ);
         sb.and("account_id", sb.entity().getAccountId(), SearchCriteria.Op.EQ);
+        sb.and("type", sb.entity().getType(), SearchCriteria.Op.EQ);
+        sb.and("current", sb.entity().getCurrent(), SearchCriteria.Op.EQ);
 
         if (MapUtils.isNotEmpty(tags)) {
             SearchBuilder<ResourceTagVO> tagSearch = _resourceTagDao.createSearchBuilder();
@@ -301,6 +304,9 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
         if (vmId != null) {
             sc.setParameters("vm_id", vmId);
         }
+        if (cmd.getVmIds() != null && !cmd.getVmIds().isEmpty()) {
+            sc.setParameters("vm_ids", cmd.getVmIds().toArray());
+        }
 
         setIdsListToSearchCriteria(sc, ids);
 
@@ -321,12 +327,36 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
             sc.setParameters("display_name", name);
         }
 
+        if (cmd.getSnapshotType() != null) {
+            try {
+                sc.setParameters("type", VMSnapshot.Type.valueOf(cmd.getSnapshotType()));
+            } catch (IllegalArgumentException e) {
+                throw new InvalidParameterValueException("type must be Disk or DiskAndMemory");
+            }
+        }
+        if (cmd.getCurrent() != null) {
+            sc.setParameters("current", cmd.getCurrent());
+        }
+
         if (keyword != null) {
             SearchCriteria<VMSnapshotVO> ssc = _vmSnapshotDao.createSearchCriteria();
             ssc.addOr("name", SearchCriteria.Op.LIKE, "%" + keyword + "%");
             ssc.addOr("displayName", SearchCriteria.Op.LIKE, "%" + keyword + "%");
             ssc.addOr("description", SearchCriteria.Op.LIKE, "%" + keyword + "%");
             ssc.addOr("uuid", SearchCriteria.Op.LIKE, "%" + keyword + "%");
+            // One projected VM query, shared by rows and count. The outer snapshot ACL
+            // remains authoritative, including project and recursive domain scope.
+            com.cloud.utils.db.GenericSearchBuilder<UserVmVO, Long> vmSearch = _userVMDao.createSearchBuilder(Long.class);
+            vmSearch.select(null, SearchCriteria.Func.DISTINCT, vmSearch.entity().getId());
+            vmSearch.or("displayName", vmSearch.entity().getDisplayName(), SearchCriteria.Op.LIKE);
+            vmSearch.or("instanceName", vmSearch.entity().getInstanceName(), SearchCriteria.Op.LIKE);
+            vmSearch.or("hostName", vmSearch.entity().getHostName(), SearchCriteria.Op.LIKE);
+            SearchCriteria<Long> vmCriteria = vmSearch.create();
+            for (String field : List.of("displayName", "instanceName", "hostName")) {
+                vmCriteria.setParameters(field, "%" + keyword + "%");
+            }
+            List<Long> matchingVms = _userVMDao.customSearch(vmCriteria, null);
+            ssc.addOr("vmId", SearchCriteria.Op.IN, matchingVms.isEmpty() ? new Object[] { -1L } : matchingVms.toArray());
             sc.addAnd("name", SearchCriteria.Op.SC, ssc);
         }
 
@@ -341,6 +371,20 @@ public class VMSnapshotManagerImpl extends MutualExclusiveIdsManagerBase impleme
 
     protected Account getCaller() {
         return CallContext.current().getCallingAccount();
+    }
+
+    static Filter snapshotListFilter(ListVMSnapshotCmd cmd) {
+        Map<String, String> fields = Map.of("created", "created", "displayname", "displayName", "name", "name",
+                "state", "state", "type", "type", "current", "current");
+        String key = cmd.getSortKey() == null ? "created" : cmd.getSortKey().toLowerCase(java.util.Locale.ROOT);
+        String order = cmd.getSortOrder() == null ? "desc" : cmd.getSortOrder().toLowerCase(java.util.Locale.ROOT);
+        if (!fields.containsKey(key) || !("asc".equals(order) || "desc".equals(order))) {
+            throw new InvalidParameterValueException("Unsupported VM snapshot sortkey or sortorder");
+        }
+        boolean ascending = "asc".equals(order);
+        Filter filter = new Filter(VMSnapshotVO.class, fields.get(key), ascending, cmd.getStartIndex(), cmd.getPageSizeVal());
+        filter.addOrderBy(VMSnapshotVO.class, "id", ascending);
+        return filter;
     }
 
     @Override

@@ -53,6 +53,38 @@ public class DefaultVMSnapshotStrategyTest {
     PrimaryDataStoreDao primaryDataStoreDao;
     @Mock
     UserVmDao userVmDao;
+    @Mock
+    com.cloud.storage.dao.VolumeDetailsDao volumeDetailsDao;
+
+    @Test
+    public void internalCounterTransitionPreservesProvenanceAndDoesNotGrowOnReplayOrResize() {
+        setupVolumeDaoPersistMock();
+        VolumeVO volume = new VolumeVO();
+        volume.setId(10L);
+        volume.setInstanceId(20L);
+        volume.setPoolId(1L);
+        volume.setFormat(Storage.ImageFormat.QCOW2);
+        volume.setSize(100L);
+        volume.setVmSnapshotChainSize(300L);
+        Mockito.when(volumeDao.findById(10L)).thenReturn(volume);
+        StoragePoolVO pool = createStoragePool("shared", Storage.StoragePoolType.SharedMountPoint);
+        Mockito.when(primaryDataStoreDao.findById(1L)).thenReturn(pool);
+        UserVmVO vm = Mockito.mock(UserVmVO.class);
+        Mockito.when(vm.getHypervisorType()).thenReturn(com.cloud.hypervisor.Hypervisor.HypervisorType.KVM);
+        Mockito.when(userVmDao.findById(20L)).thenReturn(vm);
+        VolumeObjectTO to = new VolumeObjectTO();
+        to.setId(10L); to.setPath("same-qcow-path");
+        defaultVMSnapshotStrategy.updateVolumePath(List.of(to), "finalizeCreate");
+        Assert.assertEquals(Long.valueOf(0), volume.getVmSnapshotChainSize());
+        Mockito.verify(volumeDetailsDao).addDetail(10L, com.cloud.storage.InternalVmSnapshotAccounting.LEGACY_KEY, "300", false);
+        Mockito.when(volumeDetailsDao.findDetail(10L, com.cloud.storage.InternalVmSnapshotAccounting.VERSION_KEY)).thenReturn(new com.cloud.storage.VolumeDetailVO());
+        volume.setSize(200L);
+        for (String action : List.of("finalizeCreate", "finalizeCreate", "finalizeRevert", "finalizeDelete", "finalizeDelete")) {
+            defaultVMSnapshotStrategy.updateVolumePath(List.of(to), action);
+            Assert.assertEquals(Long.valueOf(0), volume.getVmSnapshotChainSize());
+        }
+        Mockito.verify(volumeDetailsDao, Mockito.times(1)).addDetail(10L, com.cloud.storage.InternalVmSnapshotAccounting.LEGACY_KEY, "300", false);
+    }
 
     @Spy
     @InjectMocks

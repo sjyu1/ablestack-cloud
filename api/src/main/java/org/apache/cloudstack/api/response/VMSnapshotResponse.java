@@ -68,6 +68,17 @@ public class VMSnapshotResponse extends BaseResponseWithTagInformation implement
     @Param(description = "The Instance name of the Instance Snapshot", since = "4.15.1")
     private String virtualMachineName;
 
+    @SerializedName("virtualmachinestate")
+    @Param(description = "Current VM state; revalidate before a snapshot operation")
+    private String virtualMachineState;
+
+    @SerializedName("virtualmachineinstancename")
+    @Param(description = "The internal VM instance name")
+    private String virtualMachineInstanceName;
+
+    public void setVirtualMachineState(String value) { virtualMachineState = value; }
+    public void setVirtualMachineInstanceName(String value) { virtualMachineInstanceName = value; }
+
     @SerializedName("parent")
     @Param(description = "The parent ID of the Instance Snapshot")
     private String parent;

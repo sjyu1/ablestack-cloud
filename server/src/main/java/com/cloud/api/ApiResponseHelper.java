@@ -851,6 +851,8 @@ public class ApiResponseHelper implements ResponseGenerator, ResourceIdSupport {
         UserVm vm = ApiDBUtils.findUserVmById(vmSnapshot.getVmId());
         if (vm != null) {
             vmSnapshotResponse.setVirtualMachineId(vm.getUuid());
+            vmSnapshotResponse.setVirtualMachineState(vm.getState().toString());
+            vmSnapshotResponse.setVirtualMachineInstanceName(vm.getInstanceName());
             vmSnapshotResponse.setVirtualMachineName(StringUtils.isEmpty(vm.getDisplayName()) ? vm.getHostName() : vm.getDisplayName());
             vmSnapshotResponse.setHypervisor(vm.getHypervisorType().getHypervisorDisplayName());
             DataCenterVO datacenter = ApiDBUtils.findZoneById(vm.getDataCenterId());

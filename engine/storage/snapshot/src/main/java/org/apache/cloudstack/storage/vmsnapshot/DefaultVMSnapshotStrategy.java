@@ -21,6 +21,8 @@ package org.apache.cloudstack.storage.vmsnapshot;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Comparator;
 
 import javax.inject.Inject;
 import javax.naming.ConfigurationException;
@@ -66,6 +68,13 @@ import com.cloud.storage.GuestOSVO;
 import com.cloud.storage.Storage.ImageFormat;
 import com.cloud.storage.StoragePool;
 import com.cloud.storage.VolumeVO;
+import com.cloud.storage.VolumeDetailVO;
+import com.cloud.storage.InternalVmSnapshotAccounting;
+import com.cloud.storage.dao.VolumeDetailsDao;
+import com.cloud.service.dao.ServiceOfferingDao;
+import com.cloud.agent.api.GetStorageStatsCommand;
+import com.cloud.agent.api.GetStorageStatsAnswer;
+import com.cloud.utils.db.GlobalLock;
 import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.GuestOSDao;
 import com.cloud.storage.dao.GuestOSHypervisorDao;
@@ -112,6 +121,11 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
     PrimaryDataStoreDao primaryDataStoreDao;
 
     @Inject
+    VolumeDetailsDao volumeDetailsDao;
+    @Inject
+    ServiceOfferingDao serviceOfferingDao;
+
+    @Inject
     private VMSnapshotDetailsDao vmSnapshotDetailsDao;
 
     @Inject
@@ -147,10 +161,14 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
 
         CreateVMSnapshotAnswer answer = null;
         boolean result = false;
+        List<GlobalLock> physicalLocks = new ArrayList<>();
         try {
             GuestOSVO guestOS = guestOSDao.findById(userVm.getGuestOSId());
 
             List<VolumeObjectTO> volumeTOs = vmSnapshotHelper.getVolumeTOList(userVm.getId());
+            if (vmSnapshot.getType() == VMSnapshot.Type.DiskAndMemory) {
+                checkInternalSnapshotPhysicalSpace(userVm, volumeTOs, hostId, physicalLocks);
+            }
 
             long prev_chain_size = 0;
             long virtual_size=0;
@@ -212,6 +230,11 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
             logger.debug("Creating Instance Snapshot: " + vmSnapshot.getName() + " failed", e);
             throw new CloudRuntimeException("Creating Instance Snapshot: " + vmSnapshot.getName() + " failed: " + e.toString());
         } finally {
+            for (int i = physicalLocks.size() - 1; i >= 0; i--) {
+                GlobalLock lock = physicalLocks.get(i);
+                lock.unlock();
+                lock.releaseRef();
+            }
             if (!result) {
                 try {
                     vmSnapshotHelper.vmSnapshotStateTransitTo(vmSnapshot, VMSnapshot.Event.OperationFailed);
@@ -377,7 +400,16 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
             }
             long currentVmSnapshotChainSize = volumeVO.getVmSnapshotChainSize() == null ? 0 : volumeVO.getVmSnapshotChainSize();
             long volumeSize = volumeVO.getSize() == null ? 0 : volumeVO.getSize();
-            if (type == null) {
+            StoragePool accountingPool = volumeVO.getPoolId() == null ? null : primaryDataStoreDao.findById(volumeVO.getPoolId());
+            UserVmVO accountingVm = volumeVO.getInstanceId() == null ? null : userVmDao.findById(volumeVO.getInstanceId());
+            if (InternalVmSnapshotAccounting.applies(accountingPool, accountingVm == null ? null : accountingVm.getHypervisorType(), volumeVO.getFormat())) {
+                if (volumeDetailsDao.findDetail(volumeVO.getId(), InternalVmSnapshotAccounting.VERSION_KEY) == null) {
+                    volumeDetailsDao.addDetail(volumeVO.getId(), InternalVmSnapshotAccounting.LEGACY_KEY, Long.toString(currentVmSnapshotChainSize), false);
+                    volumeDetailsDao.addDetail(volumeVO.getId(), InternalVmSnapshotAccounting.VERSION_KEY, InternalVmSnapshotAccounting.VERSION, false);
+                    logger.info("Transition internal VM snapshot logical accounting for volume {}: legacy chain bytes {}", volumeVO.getUuid(), currentVmSnapshotChainSize);
+                }
+                volumeVO.setVmSnapshotChainSize(0L);
+            } else if (type == null) {
                 volumeVO.setVmSnapshotChainSize(volume.getSize());
             } else if ("finalizeCreate".equals(type)) {
                 volumeVO.setVmSnapshotChainSize(currentVmSnapshotChainSize + volumeSize);
@@ -388,6 +420,42 @@ public class DefaultVMSnapshotStrategy extends ManagerBase implements VMSnapshot
                 volumeVO.setVmSnapshotChainSize(currentVmSnapshotChainSize);
             }
             volumeDao.persist(volumeVO);
+        }
+    }
+
+    protected void checkInternalSnapshotPhysicalSpace(UserVm vm, List<VolumeObjectTO> volumes, Long hostId, List<GlobalLock> locks)
+            throws AgentUnavailableException, OperationTimedoutException {
+        Map<Long, StoragePool> pools = new HashMap<>();
+        Long rootPoolId = null;
+        for (VolumeObjectTO volume : volumes) {
+            VolumeVO vo = volumeDao.findById(volume.getId());
+            StoragePool pool = vo.getPoolId() == null ? null : primaryDataStoreDao.findById(vo.getPoolId());
+            if (InternalVmSnapshotAccounting.applies(pool, vm.getHypervisorType(), vo.getFormat())) {
+                pools.put(pool.getId(), pool);
+                if (vo.getVolumeType() == com.cloud.storage.Volume.Type.ROOT) rootPoolId = pool.getId();
+            }
+        }
+        if (pools.isEmpty()) return;
+        long memoryBytes = serviceOfferingDao.findById(vm.getId(), vm.getServiceOfferingId()).getRamSize().longValue() * 1024 * 1024;
+        double threshold = Double.parseDouble(configurationDao.getValue("pool.storage.capacity.disablethreshold"));
+        List<StoragePool> ordered = new ArrayList<>(pools.values());
+        ordered.sort(Comparator.comparingLong(StoragePool::getId));
+        for (StoragePool pool : ordered) {
+            // Cross-management-server pool locking serializes memory snapshot
+            // reservations until the agent completes; no stale DB stats fallback.
+            GlobalLock lock = GlobalLock.getInternLock("internal-vmsnapshot-physical-" + pool.getId());
+            if (!lock.lock(120)) {
+                lock.releaseRef();
+                throw new CloudRuntimeException("Another internal snapshot is reserving physical space on pool " + pool.getUuid());
+            }
+            locks.add(lock);
+            Answer answer = agentMgr.send(hostId, new GetStorageStatsCommand(pool.getUuid(), pool.getPoolType(), pool.getPath()));
+            long required = InternalVmSnapshotAccounting.requiredFreeBytes(pool.getId() == (rootPoolId == null ? -1L : rootPoolId) ? memoryBytes : 0);
+            if (!(answer instanceof GetStorageStatsAnswer) || !answer.getResult()
+                    || !InternalVmSnapshotAccounting.hasPhysicalSpace(((GetStorageStatsAnswer) answer).getCapacityBytes(),
+                        ((GetStorageStatsAnswer) answer).getByteUsed(), required, threshold)) {
+                throw new CloudRuntimeException("Fresh physical storage statistics are unavailable or insufficient for internal memory snapshot on pool " + pool.getUuid());
+            }
         }
     }
 
