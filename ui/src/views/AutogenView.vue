@@ -1501,7 +1501,8 @@ export default {
           this.page = Number(this.$route.query.page)
         }
         if ('pagesize' in this.$route.query) {
-          this.pagesize = Number(this.$route.query.pagesize)
+          const pageSize = Number(this.$route.query.pagesize)
+          if (Number.isInteger(pageSize) && pageSize > 0) this.pageSize = pageSize
         }
         Object.assign(params, this.$route.query)
       }
