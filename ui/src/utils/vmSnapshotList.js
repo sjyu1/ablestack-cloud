@@ -10,6 +10,7 @@ export async function loadVmSnapshotRelations (get, vmId, limit = 2000) {
   let partial = false
   for (let page = 1; rows.size < limit; page++) {
     const result = (await get('listVMSnapshot', { virtualmachineid: vmId, includehidden: true, listall: true, page, pagesize: 100, sortkey: 'created', sortorder: 'asc' })).listvmsnapshotresponse
+    if (page > 1 && total !== (result.count || 0)) partial = true
     total = result.count || 0
     const batch = result.vmSnapshot || []
     const previous = rows.size
@@ -27,6 +28,7 @@ export function snapshotRelationTree (rows) {
   const warnings = []
   for (const row of rows) {
     const node = nodes.get(row.id)
+    if (row.parentmissing) { warnings.push({ id: row.id, reason: 'missing' }); roots.push(node); continue }
     if (!row.parent) { roots.push(node); continue }
     if (!ids.has(row.parent)) { warnings.push({ id: row.id, reason: 'missing' }); roots.push(node); continue }
     const seen = new Set([row.id])

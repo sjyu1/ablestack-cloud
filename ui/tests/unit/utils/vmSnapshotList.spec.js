@@ -65,3 +65,16 @@ test('unknown results stop the VM chain and cross VM concurrency is bounded', as
   expect(max).toBeLessThanOrEqual(2)
   expect(results.map(result => result.outcome)).toEqual(['unknown', 'notrun', 'success', 'success'])
 })
+
+
+test('purged parents are explicit roots with a missing warning', () => {
+  const tree = snapshotRelationTree([{ ...row('orphan'), parentmissing: true }])
+  expect(tree.warnings).toEqual([{ id: 'orphan', reason: 'missing' }])
+  expect(tree.roots[0].key).toBe('orphan')
+})
+
+test('concurrent page count changes never claim a complete relationship', async () => {
+  const get = jest.fn((api, args) => Promise.resolve(response(args.page === 1 ? Array.from({ length: 100 }, (_, i) => row(i)) : [row(100)], args.page === 1 ? 102 : 101)))
+  const result = await loadVmSnapshotRelations(get, 'v1')
+  expect(result.partial).toBe(true)
+})

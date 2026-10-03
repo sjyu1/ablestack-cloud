@@ -83,6 +83,12 @@ public class VMSnapshotResponse extends BaseResponseWithTagInformation implement
     @Param(description = "The parent ID of the Instance Snapshot")
     private String parent;
 
+    @SerializedName("parentmissing")
+    @Param(description = "The recorded parent is unavailable or inconsistent")
+    private Boolean parentMissing;
+
+    public void setParentMissing(boolean value) { parentMissing = value; }
+
     @SerializedName("parentName")
     @Param(description = "The parent displayName of the Instance Snapshot")
     private String parentName;
