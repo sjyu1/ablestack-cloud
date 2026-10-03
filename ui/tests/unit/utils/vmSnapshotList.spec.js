@@ -88,3 +88,16 @@ test('concurrent page count changes never claim a complete relationship', async 
   const result = await loadVmSnapshotRelations(get, 'v1')
   expect(result.partial).toBe(true)
 })
+
+test('fresh action queries obey the API page and pagesize contract', async () => {
+  const get = jest.fn(async (command, params) => {
+    if (params.pagesize && !params.page) throw new Error('page is required with pagesize')
+    if (command === 'listVirtualMachines') return { listvirtualmachinesresponse: { virtualmachine: [{ id: 'v1', state: 'Stopped' }] } }
+    if (command === 'listBackups') return { listbackupsresponse: { count: 0, backup: [] } }
+    return { listvmsnapshotresponse: { count: params.vmsnapshotids ? 1 : 0, vmSnapshot: params.vmsnapshotids ? [row('a')] : [] } }
+  })
+  const [context] = await freshSnapshotContext(get, [row('a')], true)
+  expect(context.snapshot.id).toBe('a')
+  expect(context.vm.id).toBe('v1')
+  expect(context.busy).toBe(false)
+})

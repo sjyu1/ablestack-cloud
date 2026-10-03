@@ -55,11 +55,11 @@ export function snapshotRelationTree (rows) {
 
 export async function freshSnapshotContext (get, targets, checkBackups = false) {
   const ids = targets.filter(row => row.id).map(row => row.id)
-  const snapshots = ids.length ? (await get('listVMSnapshot', { vmsnapshotids: ids.join(','), listall: true, pagesize: ids.length })).listvmsnapshotresponse.vmSnapshot || [] : []
+  const snapshots = ids.length ? (await get('listVMSnapshot', { vmsnapshotids: ids.join(','), listall: true, page: 1, pagesize: ids.length })).listvmsnapshotresponse.vmSnapshot || [] : []
   const vmIds = [...new Set(targets.map(row => row.virtualmachineid))]
-  const vms = (await get('listVirtualMachines', { ids: vmIds.join(','), listall: true, pagesize: vmIds.length })).listvirtualmachinesresponse.virtualmachine || []
+  const vms = (await get('listVirtualMachines', { ids: vmIds.join(','), listall: true, page: 1, pagesize: vmIds.length })).listvirtualmachinesresponse.virtualmachine || []
   // Fetch VM-wide transitional snapshots as well, independently of list filters.
-  const transitions = await Promise.all(['Allocated', 'Creating', 'Reverting', 'Expunging'].map(state => get('listVMSnapshot', { virtualmachineids: vmIds.join(','), listall: true, pagesize: 1000, state })))
+  const transitions = await Promise.all(['Allocated', 'Creating', 'Reverting', 'Expunging'].map(state => get('listVMSnapshot', { virtualmachineids: vmIds.join(','), listall: true, page: 1, pagesize: 1000, state })))
   const incomplete = transitions.some(result => (result.listvmsnapshotresponse.count || 0) > (result.listvmsnapshotresponse.vmSnapshot || []).length)
   const busyRows = transitions.flatMap(result => result.listvmsnapshotresponse.vmSnapshot || [])
   const backupResponses = checkBackups ? await Promise.all(['BackingUp', 'Restoring'].map(status => get('listBackups', { listall: true, status, page: 1, pagesize: 1000 }))) : []
