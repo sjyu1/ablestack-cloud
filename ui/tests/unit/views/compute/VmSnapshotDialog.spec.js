@@ -66,7 +66,6 @@ test('ACL withdrawal at fresh lookup prevents every captured target from startin
   wrapper.unmount()
 })
 
-
 test('project changes during the last fresh lookup prevent POST', async () => {
   const wrapper = mount(); await flush()
   const security = wrapper.vm.security
