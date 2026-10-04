@@ -17,10 +17,12 @@
 import { shallowMount } from '@vue/test-utils'
 import { h } from 'vue'
 import ListView from '@/components/view/ListView'
+import AutogenView from '@/views/AutogenView'
+import compute from '@/config/section/compute'
 import ko from '@/../public/locales/ko_KR.json'
 jest.mock('@/api', () => ({ getAPI: jest.fn().mockResolvedValue({}) }))
 
-test.each([['a'], ['a', 'c']])('checked IDs %j do not change the right clicked B target', (...checked) => {
+test.each([[], ['a']])('checked IDs %j do not change a single right clicked B target', (...checked) => {
   const rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
   const element = document.createElement('tr')
   element.classList.add('ant-table-row'); element.setAttribute('data-row-key', 'b')
@@ -33,6 +35,66 @@ test.each([['a'], ['a', 'c']])('checked IDs %j do not change the right clicked B
   const parent = { execAction: jest.fn() }
   ListView.methods.handleContextAction.call({ ...vm, $parent: parent }, { groupAction: true, resource: vm.contextQuickViewRecord })
   expect(parent.execAction.mock.calls[0][1]).toBe(false)
+})
+
+describe('Shared selection context menu', () => {
+  const actions = compute.children.find(section => section.name === 'vmsnapshot').actions
+  const deletion = actions.find(action => action.api === 'deleteVMSnapshot')
+  function menu (name, selection) {
+    const rows = ['a', 'b', 'c'].map(id => ({ id, displayname: id.toUpperCase(), virtualmachineid: 'vm-' + id, state: 'Ready' }))
+    const context = {
+      $route: { name }, items: rows, actions, selectedRowKeys: selection,
+      selectionList: rows.filter(row => selection.includes(row.id)),
+      $store: { getters: { apis: Object.fromEntries(actions.map(action => [action.api, {}])) } },
+      $t: (key, args) => key === 'label.items.more' ? `외 ${args[0]}개 항목` : key,
+      quickViewEnabled: () => true, generateRowKeyValue: row => row.id
+    }
+    context.selectedItems = context.selectionList
+    context.getFirstSelectedItem = () => ListView.methods.getFirstSelectedItem.call(context)
+    context.closeContextQuickView = () => ListView.methods.closeContextQuickView.call(context)
+    Object.defineProperty(context, 'contextMenuActions', { get: () => ListView.computed.contextMenuActions.call(context) })
+    return context
+  }
+
+  test.each(['vm', 'vmsnapshot'])('%s uses the selected group even when an unselected row is right clicked', name => {
+    const context = menu(name, ['a', 'c'])
+    const row = document.createElement('tr')
+    row.classList.add('ant-table-row'); row.setAttribute('data-row-key', 'b')
+    ListView.methods.handleGlobalContextMenu.call(context, { target: row, clientX: 20, clientY: 40, preventDefault: jest.fn(), stopPropagation: jest.fn() })
+    expect(context.contextQuickViewRecord.id).toBe('a')
+    expect(ListView.computed.contextMenuTitle.call(context)).toBe('A 외 1개 항목')
+    expect(context.contextMenuActions.map(action => action.api)).toEqual(['deleteVMSnapshot'])
+
+    const parent = { selectedItems: context.selectedItems }
+    parent.execAction = (action, group) => AutogenView.methods.execAction.call(parent, action, group)
+    ListView.methods.handleContextAction.call({ ...context, $parent: parent }, { ...deletion, resource: context.contextQuickViewRecord })
+    expect(parent.currentAction.invokedAsGroupAction).toBe(true)
+    expect(parent.currentAction.snapshotTargets.map(row => row.id)).toEqual(['a', 'c'])
+    context.selectedItems[0].id = 'replacement'
+    context.selectedItems.pop()
+    expect(parent.currentAction.snapshotTargets.map(row => row.id)).toEqual(['a', 'c'])
+    expect(Object.isFrozen(parent.currentAction.snapshotTargets[0])).toBe(true)
+  })
+
+  test('multi-selection on the table background uses the same group menu', () => {
+    const context = menu('vmsnapshot', ['a', 'c'])
+    ListView.methods.handleGlobalContextMenu.call(context, { target: document.createElement('div'), clientX: 20, clientY: 40, preventDefault: jest.fn(), stopPropagation: jest.fn() })
+    expect(context.contextQuickViewVisible).toBe(true)
+    expect(context.contextQuickViewRecord.id).toBe('a')
+  })
+
+  test('an unavailable delete API never exposes the bulk action', () => {
+    const context = menu('vmsnapshot', ['a', 'c'])
+    delete context.$store.getters.apis.deleteVMSnapshot
+    expect(context.contextMenuActions).toEqual([])
+  })
+
+  test('a transitional first row cannot hide the batch eligibility review', () => {
+    const context = menu('vmsnapshot', ['a', 'c'])
+    context.contextQuickViewRecord = { ...context.selectedItems[0], state: 'Creating' }
+    expect(context.contextMenuActions.map(action => action.api)).toEqual(['deleteVMSnapshot'])
+    expect(deletion.groupShow(context.selectedItems)).toBe(true)
+  })
 })
 
 function currentCell (current, name = 'vmsnapshot') {

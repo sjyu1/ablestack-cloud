@@ -1168,8 +1168,8 @@
     :actions="contextMenuActions"
     :resource="contextQuickViewRecord"
     :position="contextQuickViewPosition"
-    :selectedRowKeys="$route.name === 'vmsnapshot' ? [] : selectedRowKeys"
-    :selectedItems="$route.name === 'vmsnapshot' ? [] : selectedItems"
+    :selectedRowKeys="$route.name === 'vmsnapshot' && selectedRowKeys.length < 2 ? [] : selectedRowKeys"
+    :selectedItems="$route.name === 'vmsnapshot' && selectedRowKeys.length < 2 ? [] : selectedItems"
     :titleOverride="contextMenuTitle"
     @close="closeContextQuickView"
     @exec-action="handleContextAction" />
@@ -1352,7 +1352,7 @@ export default {
       if (!this.actions || this.actions.length === 0) {
         return []
       }
-      if (this.$route.name !== 'vmsnapshot' && this.selectedRowKeys.length > 1) {
+      if (this.selectedRowKeys.length > 1) {
         return this.actions.map(action => {
           if (!(action.api in this.$store.getters.apis)) {
             return null
@@ -1385,7 +1385,7 @@ export default {
       }).filter(Boolean)
     },
     contextMenuTitle () {
-      if (this.$route.name !== 'vmsnapshot' && this.selectedRowKeys.length > 1) {
+      if (this.selectedRowKeys.length > 1) {
         const first = this.getFirstSelectedItem()
         const suffix = this.$t('label.items.more', [this.selectedRowKeys.length - 1])
         const firstName = first?.displayname || first?.name || first?.displaytext || first?.displaytext || first?.hostname || first?.vmname || first?.annotation || first?.hypervisor || first?.type || first?.username || first?.ipaddress || first?.uuid || first?.id || ''
@@ -1442,7 +1442,7 @@ export default {
       const rowElement = event.target.closest('tr.ant-table-row')
       // Allow context menu even when multiple items selected; fall back to first selected item
       const selectionCount = this.selectedRowKeys.length
-      const hasSelection = this.$route.name !== 'vmsnapshot' && selectionCount > 0
+      const hasSelection = this.$route.name === 'vmsnapshot' ? selectionCount > 1 : selectionCount > 0
       if (!rowElement && !hasSelection) {
         this.closeContextQuickView()
         return
@@ -1481,7 +1481,7 @@ export default {
     },
     handleContextAction (action) {
       this.closeContextQuickView()
-      this.$parent.execAction(action, this.$route.name !== 'vmsnapshot' && action.groupAction && this.selectedRowKeys.length > 1)
+      this.$parent.execAction(action, action.groupAction && this.selectedRowKeys.length > 1)
     },
     generateRowKeyValue (record) {
       return record.uid || (record.metadata && record.metadata.rule_uid) || record.id || record.name || record.usageType

@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 import AutogenView from '@/views/AutogenView'
+import compute from '@/config/section/compute'
 import { getAPI, postAPI } from '@/api'
 import { clearSnapshotJobs, snapshotBusy } from '@/utils/vmSnapshotActions'
 jest.mock('@/api', () => ({ getAPI: jest.fn(), postAPI: jest.fn(), callAPI: jest.fn() }))
@@ -42,12 +43,13 @@ test('project changes during create preflight prevent POST', async () => {
   expect(postAPI).not.toHaveBeenCalled()
 })
 
-test('explicit snapshot bulk delete stays in the toolbar while existing unnamed group actions remain hidden', () => {
-  const create = { api: 'createVMSnapshot', listView: true }
-  const bulk = { api: 'deleteVMSnapshot', groupAction: true, toolbarLabel: 'label.vmsnapshot.selected.delete' }
+test('snapshot deletion stays in the context menu and creation remains in the toolbar after selection', () => {
+  const actions = compute.children.find(section => section.name === 'vmsnapshot').actions
+  const create = actions.find(action => action.api === 'createVMSnapshot')
+  const bulk = actions.find(action => action.api === 'deleteVMSnapshot')
   const existingGroup = { api: 'stopVirtualMachine', groupAction: true }
   const view = { actions: [create, bulk, existingGroup], dataView: false, selectedRowKeys: ['one', 'two'], selectedItems: [], resource: {}, $store: { getters: { apis: { createVMSnapshot: {}, deleteVMSnapshot: {}, stopVirtualMachine: {} } } } }
-  expect(AutogenView.computed.visibleListActions.call(view)).toEqual([create, bulk])
+  expect(AutogenView.computed.visibleListActions.call(view)).toEqual([create])
   view.selectedRowKeys = []
   expect(AutogenView.computed.visibleListActions.call(view)).toEqual([create])
 })

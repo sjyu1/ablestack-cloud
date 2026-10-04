@@ -773,7 +773,6 @@ export default {
           api: 'deleteVMSnapshot',
           snapshotMode: 'delete',
           selfManagedDialog: true,
-          toolbarLabel: 'label.vmsnapshot.selected.delete',
           component: shallowRef(defineAsyncComponent(() => import('@/views/compute/VmSnapshotDialog.vue'))),
           disabled: (record, store, selectedItems) => selectedItems?.length ? false : !!snapshotActionReason('deleteVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
           tooltip: record => snapshotActionReason('deleteVMSnapshot', record, null, snapshotBusy(record.virtualmachineid)),
@@ -794,6 +793,7 @@ export default {
             }
           },
           groupAction: true,
+          groupShow: selection => selection.length > 1,
           popup: true,
           groupMap: (selection) => { return selection.map(x => { return { vmsnapshotid: x } }) }
         }
