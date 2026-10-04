@@ -131,7 +131,7 @@ A의 추가 생성 시험은 기존 KVM process guard의 `restore-vm-snapshot` �
 - 가상머신 목록과 같은 AutogenView/ListView/SearchView의 `size=middle`, 기본 20개/쪽, 헤더 열 설정과 하단 페이지 배치. 선택 열 설정 30px/실제 렌더 32px. 별도 ellipsis 버튼 없음.
 - 기존 ResourceActionMenu의 272px/28px 항목, 그룹·아이콘·삭제 강조·비활성 사유 형식을 유지한다. Shift+F10/방향키/Escape·포커스 복귀와 오른쪽 8px 경계 제한, resize 및 실제 목록 scrollTop 517에서 닫힘을 확인했다. ‘상세’ 메뉴와 별도 상세 대화상자를 제거하고 항목 이름 링크의 기존 상세 페이지를 유지한다.
 - 조회 오류를 브라우저에서 주입한 뒤 로그아웃 없이 마지막 행·선택·검색어·URL을 보존하고 실패 안내를 표시했다. 차단을 해제하여 업데이트로 복구했다. 검색 결과 없음과 등록 없음 문구를 구분한다. 401은 기존 인증 만료 처리를 유지한다.
-- 복원/삭제/생성/관계/추출은 공유 MoldDialog와 테마를 사용한다. 요약은 VM 이름·스냅샷 이름·생성일·유형·현재 여부·상위의 6행이며 ID·중복 이름·설명·긴 current 설명을 제거했다. 요약 다음 입력 영역 간격은 24px. 작업 대상 UUID는 내부 불변 컨텍스트로 보존한다.
+- 복원/삭제/생성/관계/추출은 공유 MoldDialog와 테마를 사용한다. 단일 항목 요약은 VM 이름·스냅샷 이름·생성일·유형·현재 여부·상위의 6행이며 ID·중복 이름·설명·긴 current 설명을 제거했다. 다중 삭제는 상단에 VM 수·선택한 스냅샷 수를 표시하고 각 대상의 6개 정보와 실행 가능 여부를 UUID별 최신 조회로 연결한다. 요약 다음 입력 영역 간격은 24px. 작업 대상 UUID는 내부 불변 컨텍스트로 보존한다.
 - 1920×1080, 1366×768, 390×640에서 가운데 정렬과 고정 헤더/푸터, 본문만 스크롤 확인. 1366 화면의 긴 삭제창은 body scrollTop 23→335 동안 헤더 Y=24/푸터 Y=691과 document scrollTop=0 유지. 모바일 body 가로 overflow 없음/푸터 버튼 노출.
 - 다크모드 Descriptions label은 bg `rgb(22,27,34)` / fg white 85%. 트리 expand svg는 white 85%; 선택 텍스트는 밝은 색, 선택 배경은 공통 primary의 18%. 실측 대비는 헤더 7.13:1, 요약 label 12.70:1, 값 11.12:1, 펼침 아이콘 11.12:1, 선택 텍스트 10.89:1, 현재 tag 5.28:1이다. label/tag는 8px 간격이고 모바일 줄바꿈 시 세로 간격도 8px. 긴 기존 i-2-13 체인으로 재현·수정 검증했다.
 - VM 상세 스냅샷 탭과 볼륨 목록(59개/20개 페이지), 프로젝트 범위 전환(프로젝트 snapshot 1개)을 실제 확인했다. 31번의 listApis 1,051개에는 listBackups가 없고 백업 UI/API가 비활성이다. 이 환경에서 백업 목록을 성공 검증한 것으로 보고하지 않는다. 백업 제약·API가 있을 때의 fresh 조회는 서버/UI 자동 회귀에 포함한다. 대상 변경/삭제 경쟁·백업/권한 변경·결과 불명·HTTP/network 오류·누락 부모/순환/부분 페이지는 자동 회귀에도 포함한다. 결과를 확인할 수 없는 제출은 같은 VM의 재제출을 잠그고 후속 삭제를 중단한다.
@@ -196,3 +196,7 @@ UI 전체 lint(`--no-fix`)는 `73506b83ba5`에서 통과했다. 최종 소스 `7
 ### 자동 CI 결과
 
 직전 PR HEAD `6c12e5e206f`의 자동 CI는 전체 통과 상태가 아니었다. UI Build의 테스트 파일 중복 빈 줄 5건은 `a96695eb29b`에서 수정했고 최신 소스의 UI 전체 lint가 통과했다. Build 및 두 Rocky 패키지 작업은 upstream 기준과 동일한 `core/src/test/java/com/cloud/agent/api/VmProcessProfileTest.java:18`의 wildcard import 검사에서 실패했다. 공통 pre-commit Lint에는 기존 저장소 파일뿐 아니라 이 Epic 초기 목업의 번들과 문서에 대한 codespell/문서 검사도 포함되므로 모두 upstream 원인으로 분류하지 않는다. License Check와 Merge Conflict Check는 통과했다. 수동 Full Cloud build나 전체 workflow 디스패치는 실행하지 않았다. 최신 PR HEAD의 GitHub Checks 결과와 로컬 변경 모듈·UI·31번 검증은 구분한다.
+
+## 다중 삭제 요약 후속 검증 (2026-10-04)
+
+첫 스냅샷의 정보를 전체 요약처럼 표시하던 문제를 수정했다. VM 수·스냅샷 수 집계와 UUID별 최신 대상 정보를 표시하며 단일 6행 요약은 유지한다. 관련 252개·lint·UI build, 31번 정적 834개 hash와 13개 화면 관측 및 실제 API 대조를 확인했다. 이번에는 삭제를 제출하지 않았다. [최종 구현·배포·검증 기록](vm-snapshot-bulk-summary-1224.md).
