@@ -19,5 +19,5 @@
   ],
   "networkWindowComplete": false,
   "deleteRequestsInObservedWindow": 0,
-  "verification": "All deletion dialogs were cancelled; no delete submit control was invoked."
+  "verification": "Validation dialogs were cancelled; the final review dialog remains open without invoking the delete submit control."
 }
