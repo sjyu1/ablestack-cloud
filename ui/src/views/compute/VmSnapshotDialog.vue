@@ -50,19 +50,29 @@ row-key="id"
         <a-empty v-if="!relations.rows.length && !loading" />
       </template>
       <template v-if="['restore', 'delete', 'relation'].includes(mode) && (mode !== 'relation' || selected)">
-        <VmSnapshotSummary v-if="selected" :snapshot="selected" />
+        <a-descriptions v-if="multipleDelete" class="mold-dialog-section mold-dialog-summary" :column="1" bordered size="small">
+          <a-descriptions-item :label="$t('label.virtualmachinecount')">{{ targetVmCount }}</a-descriptions-item>
+          <a-descriptions-item :label="$t('label.vmsnapshot.selected.count')">{{ targets.length }}</a-descriptions-item>
+        </a-descriptions>
+        <VmSnapshotSummary v-else-if="selected" :snapshot="selected" />
         <template v-if="['restore', 'delete'].includes(mode)">
           <a-alert class="mold-dialog-section" type="warning" show-icon :message="$t(mode === 'delete' ? 'message.action.vmsnapshot.delete' : selected.type === 'DiskAndMemory' ? 'message.vmsnapshot.restore.memory.impact' : 'message.vmsnapshot.restore.disk.impact')" />
           <a-table
-v-if="targets.length > 1"
+v-if="multipleDelete"
 class="mold-dialog-section"
 size="small"
 row-key="id"
 :columns="targetColumns"
-:data-source="contexts"
+:data-source="targetRows"
 :pagination="false"
-:scroll="{ x: 550 }">
-            <template #bodyCell="{ column, record }"><span v-if="column.key === 'reason'">{{ record.reason ? $t(record.reason) : $t('label.vmsnapshot.eligible') }}</span><span v-else>{{ record[column.dataIndex] }}</span></template>
+:scroll="{ x: 960 }">
+            <template #bodyCell="{ column, record }">
+              <span v-if="column.key === 'reason'">{{ record.reason ? $t(record.reason) : $t('label.vmsnapshot.eligible') }}</span>
+              <span v-else-if="column.key === 'created'">{{ record.created ? $toLocaleDate(record.created) : '—' }}</span>
+              <span v-else-if="column.key === 'type'">{{ record.type ? $t(record.type === 'DiskAndMemory' ? 'label.vmsnapshot.disk.memory' : 'label.vmsnapshot.disk') : '—' }}</span>
+              <span v-else-if="column.key === 'current'">{{ typeof record.current === 'boolean' ? $t(record.current ? 'label.vmsnapshot.current.yes' : 'label.vmsnapshot.current.no') : '—' }}</span>
+              <span v-else>{{ record[column.dataIndex] || '—' }}</span>
+            </template>
           </a-table>
           <a-alert v-if="blockedReason" class="mold-dialog-section" type="error" show-icon :message="$t(blockedReason)" />
           <a-checkbox v-if="forceAvailable" v-model:checked="force" class="mold-dialog-section" :disabled="submitting || loading">{{ $t('label.vmsnapshot.force.delete') }}</a-checkbox>
@@ -116,13 +126,31 @@ export default {
     return { mode: this.currentAction.snapshotMode, targets: targets.filter(row => row.id), selected: targets[0]?.id ? { ...targets[0] } : null, loading: false, submitting: false, force: false, acknowledged: false, contexts: [], results: [], error: '', relations: { rows: [], total: 0, partial: false }, vms: [], vmPage: 1, vmTotal: 0, vmKeyword: '', selectedVm: null, disposed: false, requestVersion: 0 }
   },
   computed: {
+    multipleDelete () { return this.mode === 'delete' && this.targets.length > 1 },
+    targetVmCount () { return new Set(this.targets.map(row => row.virtualmachineid)).size },
+    targetRows () {
+      return this.targets.map(target => {
+        const context = this.contexts.find(item => item.id === target.id && item.virtualmachineid === target.virtualmachineid)
+        const snapshot = context?.snapshot
+        return {
+          ...target,
+          displayname: snapshot?.displayname || snapshot?.name || target.displayname || target.name,
+          virtualmachinename: context?.vm?.displayname || context?.vm?.name || snapshot?.virtualmachinename || target.virtualmachinename || target.virtualmachineinstancename,
+          created: snapshot?.created,
+          type: snapshot?.type,
+          current: snapshot?.current,
+          parentName: snapshot?.parentName,
+          reason: context ? context.reason : 'message.vmsnapshot.not.ready'
+        }
+      })
+    },
     forceAvailable () { return this.mode === 'delete' && this.targets.length === 1 && this.$store.getters.userInfo?.roletype === 'Admin' && this.selected?.forcedeletionallowed === true },
     title () { return { restore: 'label.action.vmsnapshot.revert', delete: 'label.action.vmsnapshot.delete', relation: 'label.vmsnapshot.relations', create: 'label.action.vmsnapshot.create' }[this.mode] },
     api () { return this.mode === 'delete' ? 'deleteVMSnapshot' : 'revertToVMSnapshot' },
     tree () { return snapshotRelationTree(this.relations.rows) },
     security () { return JSON.stringify([this.$store.getters.project?.id, this.$store.getters.userInfo?.id, this.$store.state?.user?.token]) },
     blockedReason () { return !this.contexts.length ? 'message.vmsnapshot.not.ready' : this.contexts.find(item => item.reason)?.reason || '' },
-    targetColumns () { return ['displayname', 'virtualmachinename', 'id', 'reason'].map(key => ({ key, dataIndex: key, title: this.$t(key === 'reason' ? 'label.vmsnapshot.eligibility' : 'label.' + key) })) },
+    targetColumns () { return ['virtualmachinename', 'displayname', 'created', 'type', 'current', 'parentName', 'reason'].map(key => ({ key, dataIndex: key, title: this.$t({ displayname: 'label.snapshot.name', parentName: 'label.parentname', reason: 'label.vmsnapshot.eligibility' }[key] || 'label.' + key) })) },
     resultColumns () { return ['displayname', 'outcome', 'jobid'].map(key => ({ key, dataIndex: key, title: this.$t('label.' + key) })) },
     vmColumns () { return ['displayname', 'instancename', 'id', 'account', 'state'].map(key => ({ key, dataIndex: key, title: this.$t('label.' + key) })) },
     createDefinition () { return compute.children.find(item => item.name === 'vm').actions.find(action => action.api === 'createVMSnapshot') },

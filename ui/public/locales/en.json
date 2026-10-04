@@ -8264,6 +8264,7 @@
   "message.vmsnapshot.fresh.check": "VM, snapshot, permissions and active operations are checked again before submission. Deletes on the same VM run sequentially and stop after failure or an unknown job result.",
   "label.vmsnapshot.eligible": "Available",
   "label.vmsnapshot.eligibility": "Eligibility",
+  "label.vmsnapshot.selected.count": "Selected VM snapshots",
   "message.vmsnapshot.relations.complete": "Loaded {0} of {1} snapshots for this VM.",
   "message.vmsnapshot.relations.partial": "Partial data: loaded {0} of {1} snapshots. Refresh to retry; the limit is 2,000.",
   "message.vmsnapshot.relations.meaning": "Parent links describe Cloud metadata, not physical file dependencies. List filters do not apply here; the current reference comes from the server.",

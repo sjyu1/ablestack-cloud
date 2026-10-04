@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 import { shallowMount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { h, reactive } from 'vue'
 import VmSnapshotDialog from '@/views/compute/VmSnapshotDialog'
+import ko from '@public/locales/ko_KR.json'
 import { getAPI, postAPI } from '@/api'
 import { clearSnapshotJobs, snapshotBusy } from '@/utils/vmSnapshotActions'
 jest.mock('@/api', () => ({ getAPI: jest.fn(), postAPI: jest.fn() }))
@@ -25,10 +26,19 @@ const row = { id: 'b', virtualmachineid: 'vb', displayname: 'B', type: 'Disk', s
 const flush = async () => { for (let i = 0; i < 25; i++) await Promise.resolve() }
 let vmState
 let poll
-function mount (mode = 'delete', targets = [Object.freeze({ ...row })]) {
+function mount (mode = 'delete', targets = [Object.freeze({ ...row })], renderContent = false) {
   return shallowMount(VmSnapshotDialog, {
     props: { resource: row, currentAction: { snapshotMode: mode, snapshotTargets: Object.freeze(targets) } },
-    global: { mocks: { $store: reactive({ getters: { apis: { listVMSnapshot: {}, listVirtualMachines: {}, revertToVMSnapshot: {}, deleteVMSnapshot: {} }, userInfo: { id: 'user' }, project: {} }, state: { user: { token: 'token' } } }), $route: { path: '/vmsnapshot', fullPath: '/vmsnapshot' }, $t: key => key, $toLocaleDate: value => value, $notifyError: jest.fn(), $pollJob: poll } }
+    global: {
+      mocks: { $store: reactive({ getters: { apis: { listVMSnapshot: {}, listVirtualMachines: {}, revertToVMSnapshot: {}, deleteVMSnapshot: {} }, userInfo: { id: 'user' }, project: {} }, state: { user: { token: 'token' } } }), $route: { path: '/vmsnapshot', fullPath: '/vmsnapshot' }, $t: key => renderContent ? ko[key] || key : key, $toLocaleDate: value => value, $notifyError: jest.fn(), $pollJob: poll },
+      stubs: renderContent ? {
+        MoldDialog: { template: '<section><slot /><footer><slot name="footer" /></footer></section>' },
+        'a-spin': { template: '<div><slot /></div>' },
+        'a-descriptions': { template: '<dl><slot /></dl>' },
+        'a-descriptions-item': { props: ['label'], render () { return h('div', { 'data-label': this.label }, [h('dt', this.label), h('dd', this.$slots.default?.())]) } },
+        'a-table': { props: ['columns', 'dataSource'], render () { return h('table', this.dataSource.map(record => h('tr', this.columns.map(column => h('td', this.$slots.bodyCell({ column, record })))))) } }
+      } : {}
+    }
   })
 }
 beforeEach(() => {
@@ -152,4 +162,62 @@ test('failed recovery job retains the backend explanation in results', async () 
   expect(wrapper.vm.results[0].outcome).toBe('failed')
   expect(wrapper.vm.results[0].error).toBe('Native VM job is active or unknown')
   wrapper.unmount()
+})
+
+describe('delete dialog summary', () => {
+  const targets = [
+    { ...row, displayname: 'Captured B', virtualmachinename: 'Old VM B' },
+    { ...row, id: 'c', virtualmachineid: 'vc', displayname: 'Captured C', virtualmachinename: 'Old VM C' },
+    { ...row, id: 'd', virtualmachineid: 'vc', displayname: 'Captured D', virtualmachinename: 'Old VM C' }
+  ]
+  let snapshots
+  let vms
+  beforeEach(() => {
+    snapshots = [
+      { ...targets[2], displayname: 'Fresh D', created: '2026-10-03T09:00:00Z', type: 'Disk', current: false, parentName: 'Fresh C' },
+      { ...targets[0], displayname: 'Fresh B', created: '2026-10-01T09:00:00Z', type: 'DiskAndMemory', current: true },
+      { ...targets[1], displayname: 'Fresh C', created: '2026-10-02T09:00:00Z', type: 'Disk', current: false, parentName: 'Ancestor C' }
+    ]
+    vms = [{ id: 'vc', displayname: 'VM C', state: 'Stopped' }, { id: 'vb', displayname: 'VM B', state: 'Stopped' }]
+    getAPI.mockImplementation((api, args) => Promise.resolve(api === 'listVirtualMachines' ? { listvirtualmachinesresponse: { virtualmachine: vms } } : { listvmsnapshotresponse: { vmSnapshot: args.state ? [] : snapshots, count: args.state ? 0 : snapshots.length } }))
+  })
+
+  test('three snapshots on two VMs show aggregate counts and their own fresh metadata despite response order', async () => {
+    const wrapper = mount('delete', targets, true); await flush()
+    expect(wrapper.findComponent({ name: 'VmSnapshotSummary' }).exists()).toBe(false)
+    expect(wrapper.get('[data-label="VM 수"] dd').text()).toBe('2')
+    expect(wrapper.get('[data-label="선택한 VM 스냅샷 수"] dd').text()).toBe('3')
+    const cells = wrapper.findAll('tr').map(tr => tr.findAll('td').map(td => td.text()))
+    expect(cells).toEqual([
+      ['VM B', 'Fresh B', '2026-10-01T09:00:00Z', '디스크 + 메모리', '현재 기준점', '—', '실행 가능'],
+      ['VM C', 'Fresh C', '2026-10-02T09:00:00Z', '디스크', '—', 'Ancestor C', '실행 가능'],
+      ['VM C', 'Fresh D', '2026-10-03T09:00:00Z', '디스크', '—', 'Fresh C', '실행 가능']
+    ])
+    snapshots[0].parentName = 'New parent'; vms[0].displayname = 'Renamed VM C'
+    await wrapper.vm.refreshContexts(); await flush()
+    expect(wrapper.findAll('tr')[2].text()).toContain('Renamed VM C')
+    expect(wrapper.findAll('tr')[2].text()).toContain('New parent')
+    expect(wrapper.vm.targets.map(target => target.id)).toEqual(['b', 'c', 'd'])
+    wrapper.unmount()
+  })
+
+  test('an unavailable target stays counted and cannot inherit the first snapshot metadata or eligibility', async () => {
+    snapshots = snapshots.filter(snapshot => snapshot.id !== 'c')
+    const wrapper = mount('delete', targets, true); await flush()
+    const missing = wrapper.findAll('tr')[1].findAll('td').map(td => td.text())
+    expect(missing.slice(0, 6)).toEqual(['VM C', 'Captured C', '—', '—', '—', '—'])
+    expect(missing[6]).toBe(ko['message.vmsnapshot.not.ready'])
+    expect(wrapper.get('[data-label="선택한 VM 스냅샷 수"] dd').text()).toBe('3')
+    wrapper.vm.acknowledged = true; await wrapper.vm.submit()
+    expect(postAPI).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test.each(['delete', 'restore'])('single %s keeps its own existing summary', async mode => {
+    const wrapper = mount(mode, [targets[0]], true); await flush()
+    expect(wrapper.find('dl').exists()).toBe(false)
+    expect(wrapper.find('table').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'VmSnapshotSummary' }).props('snapshot').id).toBe('b')
+    wrapper.unmount()
+  })
 })
