@@ -99,6 +99,33 @@ describe('Shared selection context menu', () => {
     expect(context.contextMenuActions.map(action => action.api)).toEqual(['deleteVMSnapshot'])
     expect(deletion.groupShow(context.selectedItems)).toBe(true)
   })
+
+  test.each(['vm', 'vmsnapshot'])('rendered %s menu receives the actual checked rows for group eligibility', async name => {
+    const rows = ['a', 'b', 'c'].map(id => ({ id, displayname: id.toUpperCase(), state: 'Ready' }))
+    const wrapper = shallowMount(ListView, {
+      props: { columns: [], items: rows, actions },
+      global: {
+        provide: { parentFetchData: jest.fn(), parentToggleLoading: jest.fn() },
+        mocks: {
+          $route: { name, path: '/' + name, meta: {} },
+          $store: { getters: { apis: Object.fromEntries(actions.map(action => [action.api, {}])), userInfo: { roletype: 'Admin' } } },
+          $t: (key, args) => key === 'label.items.more' ? `외 ${args[0]}개 항목` : key
+        }
+      }
+    })
+    wrapper.vm.onSelectChange(['a', 'c'], [rows[0], rows[2]])
+    await wrapper.vm.$nextTick()
+    const element = document.createElement('tr')
+    element.classList.add('ant-table-row'); element.setAttribute('data-row-key', 'b')
+    wrapper.vm.handleGlobalContextMenu({ target: element, clientX: 20, clientY: 40, preventDefault: jest.fn(), stopPropagation: jest.fn() })
+    await wrapper.vm.$nextTick()
+    const menu = wrapper.findComponent({ name: 'ResourceContextMenu' })
+    expect(menu.exists()).toBe(true)
+    expect(menu.props('selectedItems')).toEqual([rows[0], rows[2]])
+    expect(menu.props('titleOverride')).toBe('A 외 1개 항목')
+    expect(menu.props('actions').map(action => action.api)).toEqual(['deleteVMSnapshot'])
+    wrapper.unmount()
+  })
 })
 
 function currentCell (current, name = 'vmsnapshot') {

@@ -1169,7 +1169,7 @@
     :resource="contextQuickViewRecord"
     :position="contextQuickViewPosition"
     :selectedRowKeys="$route.name === 'vmsnapshot' && selectedRowKeys.length < 2 ? [] : selectedRowKeys"
-    :selectedItems="$route.name === 'vmsnapshot' && selectedRowKeys.length < 2 ? [] : selectedItems"
+    :selectedItems="$route.name === 'vmsnapshot' && selectedRowKeys.length < 2 ? [] : selectionList"
     :titleOverride="contextMenuTitle"
     @close="closeContextQuickView"
     @exec-action="handleContextAction" />
@@ -1346,7 +1346,8 @@ export default {
       return this.contextQuickViewVisible && this.contextMenuActions.length > 0
     },
     selectionList () {
-      return this.selectedItems || []
+      const selected = new Set(this.selectedRowKeys.map(String))
+      return this.items.filter(record => selected.has(String(this.generateRowKeyValue(record))))
     },
     contextMenuActions () {
       if (!this.actions || this.actions.length === 0) {
