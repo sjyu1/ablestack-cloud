@@ -1,21 +1,21 @@
 <!--
 Licensed to the Apache Software Foundation (ASF) under one
-or more contributor license agreements. See the NOTICE file
+or more contributor license agreements.  See the NOTICE file
 distributed with this work for additional information
-regarding copyright ownership. The ASF licenses this file
+regarding copyright ownership.  The ASF licenses this file
 to you under the Apache License, Version 2.0 (the
 "License"); you may not use this file except in compliance
-with the License. You may obtain a copy of the License at
+with the License.  You may obtain a copy of the License at
 
-http://www.apache.org/licenses/LICENSE-2.0
+  http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing,
 software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-KIND, either express or implied. See the License for the
+KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
--->
+ -->
 
 # VM 스냅샷 다중 선택 공통 컨텍스트 메뉴
 
@@ -45,6 +45,8 @@ PR #1224의 후속 개선이다. 상단의 선택 삭제 버튼을 제거하고,
 - 31번의 활성 webapp에서 **834개 정적 파일 SHA-256 일치**, WEB-INF/server 파일·config 보존, Mold active·PID **1798760 유지**, `/client/` HTTP **200**을 확인했다. 백업은 `/root/epic1224-context/ui-backup-20261004-151746`이다.
 - 브라우저가 사용하는 `app.7d38d664.js`의 빌드 파일·활성 파일·HTTP SHA-256은 모두 `be912d908a0c662836285408bdfd50187fc124cdd155fb11dba8a1c9fd226e19`로 일치한다. 기존 상세 탭·스냅샷·MoldDialog·FTCTL 마커를 보존했다.
 
+증거 파일 검사에서 발견한 JPEG 확장자 4개를 실제 형식에 맞췄고, 새 PNG 7개는 저장소와 같은 oxipng 9.1.5 옵션으로 최적화했다. 변환 전후의 디코딩된 픽셀이 모두 동일하며 재실행해도 파일이 바뀌지 않는다. 이번에 변경한 문서 4개의 라이선스 헤더도 저장소 템플릿과 정확히 맞췄다. 제품 소스와 배포 파일은 변경하지 않았다.
+
 [자동 검증 결과](evidence/vm-snapshot-toolbar-1224/validation.json) · [배포 결과](evidence/vm-snapshot-toolbar-1224/deployment.json) · [패키지](evidence/vm-snapshot-toolbar-1224/package.json) · [실제 HTTP 번들](evidence/vm-snapshot-toolbar-1224/served-bundle.json)
 
 ## 실제 UI 검증
@@ -68,6 +70,6 @@ PR #1224의 후속 개선이다. 상단의 선택 삭제 버튼을 제거하고,
 
 ![라이트에서도 같은 메뉴 형식](evidence/vm-snapshot-toolbar-1224/context-light-1366.png)
 
-![기존 다크 삭제 확인창에 두 대상 전달](evidence/vm-snapshot-toolbar-1224/bulk-delete-dark-1366.png)
+![기존 다크 삭제 확인창에 두 대상 전달](evidence/vm-snapshot-toolbar-1224/bulk-delete-dark-1366.jpg)
 
 ![모바일에서도 제목과 버튼 고정](evidence/vm-snapshot-toolbar-1224/bulk-delete-dark-mobile.png)
