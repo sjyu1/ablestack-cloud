@@ -43,11 +43,15 @@ describe('Shared selection context menu', () => {
   function menu (name, selection) {
     const rows = ['a', 'b', 'c'].map(id => ({ id, displayname: id.toUpperCase(), virtualmachineid: 'vm-' + id, state: 'Ready' }))
     const context = {
-      $route: { name }, items: rows, actions, selectedRowKeys: selection,
+      $route: { name },
+      items: rows,
+      actions,
+      selectedRowKeys: selection,
       selectionList: rows.filter(row => selection.includes(row.id)),
       $store: { getters: { apis: Object.fromEntries(actions.map(action => [action.api, {}])) } },
       $t: (key, args) => key === 'label.items.more' ? `외 ${args[0]}개 항목` : key,
-      quickViewEnabled: () => true, generateRowKeyValue: row => row.id
+      quickViewEnabled: () => true,
+      generateRowKeyValue: row => row.id
     }
     context.selectedItems = context.selectionList
     context.getFirstSelectedItem = () => ListView.methods.getFirstSelectedItem.call(context)
