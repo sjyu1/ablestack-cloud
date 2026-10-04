@@ -23,6 +23,8 @@ under the License.
 기준 소스는 upstream Europa `b31026f919856a1b61c1f86dca450e16ac0673e1`이며 [개선 계획](implementation-plan.ko.md)에 관찰 근거, 우선순위, API 계획, 수용 기준을 기록했다.
 추적 Epic: [ablecloud-team/ablestack-cloud#1216](https://github.com/ablecloud-team/ablestack-cloud/issues/1216). [1차 스토리지 할당량 분석](storage-accounting.ko.md)도 개선 범위에 포함한다.
 
+2026-10-04 구현에서는 사용자 요청에 따라 상단 선택 삭제를 제거하고 기존 VM 목록의 다중 선택 우클릭 메뉴로 통합했다. 이 초기 목업의 선택 삭제 버튼 및 다중 선택 중 단일 행 메뉴는 이전 설계다. 최신 계약은 개선 계획과 [실제 배포 검증](../../operations/vm-snapshot-context-1224.md)을 따른다.
+
 ## 보기
 
 [mockup.html](mockup.html)을 브라우저에서 연다. Vue 3 + 현재 Mold의 **Ant Design Vue 3.2.20**으로 구현한 SFC 앱이며, HTML은 앱을 마운트하는 진입점만 제공한다. Vue/AntD와 스타일은 로컬 번들에 포함되어 외부 CDN이나 네트워크 API 없이 예시 데이터만으로 동작한다.
