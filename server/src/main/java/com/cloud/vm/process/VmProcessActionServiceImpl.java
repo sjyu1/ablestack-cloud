@@ -50,6 +50,8 @@ import java.util.UUID;
 
 import javax.inject.Inject;
 
+import org.apache.commons.codec.binary.Hex;
+
 public class VmProcessActionServiceImpl extends com.cloud.utils.component.ManagerBase
         implements VmProcessActionService, com.cloud.utils.component.PluggableService {
     @Inject private UserVmDao vmDao;
@@ -102,8 +104,7 @@ public class VmProcessActionServiceImpl extends com.cloud.utils.component.Manage
 
     static String fingerprint(long vm, String snapshot, long pid, String action, String service) {
         try {
-            return java.util.HexFormat.of()
-                    .formatHex(
+            return Hex.encodeHexString(
                             java.security.MessageDigest.getInstance("SHA-256")
                                     .digest(
                                             JSON.toJson(
