@@ -448,14 +448,10 @@ public class OntapPrimaryDatastoreDriver implements PrimaryDataStoreDriver {
         // Create or retrieve existing LUN mapping
         String lunNumber = sanStrategy.ensureLunMapped(svmName, cloudStackVolumeName, accessGroupName);
 
-        // Keep the iSCSI name in sync with the current ONTAP LUN mapping. The volume path
-        // may have been explicitly edited, so only update it when it still matches the
-        // previous storage-managed iSCSI name (or has not been set yet).
+        // Update volume path if changed (e.g., after migration or re-mapping)
         String iscsiPath = OntapStorageConstants.SLASH + storagePool.getPath() + OntapStorageConstants.SLASH + lunNumber;
-        boolean pathIsStorageManaged = volumeVO.getPath() == null ||
-                StringUtils.equals(volumeVO.getPath(), volumeVO.get_iScsiName());
-        volumeVO.set_iScsiName(iscsiPath);
-        if (pathIsStorageManaged) {
+        if (volumeVO.getPath() == null || !volumeVO.getPath().equals(iscsiPath)) {
+            volumeVO.set_iScsiName(iscsiPath);
             volumeVO.setPath(iscsiPath);
         }
     }
